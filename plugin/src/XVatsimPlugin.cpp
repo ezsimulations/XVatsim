@@ -1115,6 +1115,18 @@ void ResetFlightScopedManualPlanState() {
     ClearDiversionOverrideState();
 }
 
+void ResetEnrouteInitialDisplayHold() {
+    gEnrouteInitialDisplayStarted = false;
+    gEnrouteInitialDisplayUntilSeconds = -1.0f;
+}
+
+void ResetFlightProgressStateForNewContext() {
+    gDepartureReleasedThisFlight = false;
+    gArrivalAwakeThisFlight = false;
+    gAirborneSinceSeconds = -1.0f;
+    ResetEnrouteInitialDisplayHold();
+}
+
 void LockFlightContextFromNetworkPlan(
     const xvatsim::brain::PilotIdentitySnapshot& pilotIdentitySnapshot,
     const xvatsim::brain::FlightPlanSnapshot& flightPlanSnapshot,
@@ -1175,11 +1187,7 @@ void LockFlightContextFromNetworkPlan(
     gFlightContext = std::move(nextFlightContext);
 
     ResetFlightScopedManualPlanState();
-    gDepartureReleasedThisFlight = false;
-    gArrivalAwakeThisFlight = false;
-    gAirborneSinceSeconds = -1.0f;
-    gEnrouteInitialDisplayStarted = false;
-    gEnrouteInitialDisplayUntilSeconds = -1.0f;
+    ResetFlightProgressStateForNewContext();
     ResetBoardCaches();
     ResetStandbyAssistLatch();
 }
@@ -1230,8 +1238,7 @@ void RetargetFlightContextToPlan(
 
     gFlightContext = std::move(nextFlightContext);
     gArrivalAwakeThisFlight = false;
-    gEnrouteInitialDisplayStarted = false;
-    gEnrouteInitialDisplayUntilSeconds = -1.0f;
+    ResetEnrouteInitialDisplayHold();
     InvalidateFlightContextPresentationCaches();
 }
 
@@ -1829,11 +1836,7 @@ void ResetPresentationStateForColdDark() {
     gManualQueryVisibleUntilSeconds = 0;
     ResetFlightScopedManualPlanState();
     gSawXPilotConnectedThisFlight = false;
-    gDepartureReleasedThisFlight = false;
-    gArrivalAwakeThisFlight = false;
-    gAirborneSinceSeconds = -1.0f;
-    gEnrouteInitialDisplayStarted = false;
-    gEnrouteInitialDisplayUntilSeconds = -1.0f;
+    ResetFlightProgressStateForNewContext();
     gFlightContext = {};
     gHasLastBoardContentsHash = false;
     gLastBoardContentsHash = 0;
@@ -1841,7 +1844,6 @@ void ResetPresentationStateForColdDark() {
     gLastPilotIdentitySnapshot = {};
     gLastFlightPlanSnapshot = {};
     gLastNetworkPlanSnapshot = {};
-    gCruiseGateSatisfiedSinceSeconds = -1.0f;
     gHasLastDisplayDecisionHash = false;
     gLastDisplayDecisionHash = 0;
     gLastXPilotConnected = false;

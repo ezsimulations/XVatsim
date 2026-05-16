@@ -318,6 +318,15 @@ store-upload package.
   installed X-Plane plugin binary was refreshed from the validated build output
   and matches SHA-256
   `812B48CBC92EA52142A3572E952A963F89307EC70661131D2ABBB424FB5547F2`.
+- Seventh Milestone 9 cleanup pass completed: audited reset/session-state paths
+  in `XVatsimPlugin.cpp`. Centralized repeated flight-progress and enroute
+  initial-display reset assignments while preserving distinct diversion-retarget
+  behavior, and removed one redundant cruise-gate reset already covered by the
+  cruise-target reset helper.
+- Release build passed and all 94 saved regression scenarios passed. The
+  installed X-Plane plugin binary was refreshed from the validated build output
+  and matches SHA-256
+  `B6DE976FEC3014517023F6185F8343E479512C4E17CE47EAC4B035843D46C66B`.
 
 ## Release Rule
 
