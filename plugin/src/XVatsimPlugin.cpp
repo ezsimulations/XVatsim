@@ -1146,6 +1146,11 @@ void ResetFlightProgressStateForNewContext() {
     ResetEnrouteInitialDisplayHold();
 }
 
+void ClearXPilotConnectionTracking() {
+    gLastXPilotConnected = false;
+    gLastConnectedPilotCallsign.clear();
+}
+
 void LockFlightContextFromNetworkPlan(
     const xvatsim::brain::PilotIdentitySnapshot& pilotIdentitySnapshot,
     const xvatsim::brain::FlightPlanSnapshot& flightPlanSnapshot,
@@ -1865,8 +1870,7 @@ void ResetPresentationStateForColdDark() {
     gLastNetworkPlanSnapshot = {};
     gHasLastDisplayDecisionHash = false;
     gLastDisplayDecisionHash = 0;
-    gLastXPilotConnected = false;
-    gLastConnectedPilotCallsign.clear();
+    ClearXPilotConnectionTracking();
     gAircraftStateInvalidBoundaryActive = false;
     gPendingControllerMessage = {};
     ResetBoardCaches();
@@ -1922,14 +1926,12 @@ SessionBoundaryResult HandleXPilotSessionBoundary(
 
     if (gLastXPilotConnected && !xPilotSessionSnapshot.connected) {
         ResetFlightScopedStateForSessionBoundary("xPilot disconnected", true);
-        gLastXPilotConnected = false;
-        gLastConnectedPilotCallsign.clear();
+        ClearXPilotConnectionTracking();
         return SessionBoundaryResult::ResetForDisconnect;
     }
 
     if (!xPilotSessionSnapshot.connected) {
-        gLastXPilotConnected = false;
-        gLastConnectedPilotCallsign.clear();
+        ClearXPilotConnectionTracking();
         return SessionBoundaryResult::None;
     }
 
