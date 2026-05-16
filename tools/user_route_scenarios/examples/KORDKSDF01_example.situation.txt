@@ -1,0 +1,12 @@
+# Example situation for C:\X-Plane 12\Output\FMS plans\KORDKSDF01.fms
+# Chicago Center is current but offline. Indianapolis Center is next and online.
+
+name=KORD KSDF SimBrief example
+callsign=TEST123
+
+current_sector=ZAU|ZAU|0
+next_sector=ZID|ZID|120
+
+online=ZID_CTR|134.325|6
+
+expect_callsigns=AUTO

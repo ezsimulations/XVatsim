@@ -29,6 +29,27 @@ Example:
 
   XVatsimRegressionHarness.exe tools\regression_harness\scenarios\kont_departure_release.scn
 
+Owner route scenario builder
+----------------------------
+For SimBrief/X-Plane `.fms` files, use the helper workflow in:
+
+  tools\user_route_scenarios
+
+The helper reads an `.fms` route, combines it with a simple controller situation
+file, creates a regression `.scn`, and runs it immediately.
+
+Double-click:
+
+  tools\user_route_scenarios\Create_XVatsim_Scenario_From_FMS.bat
+
+Or run directly:
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File tools\user_route_scenarios\New-FmsHarnessScenario.ps1 -FmsPath "C:\X-Plane 12\Output\FMS plans\KORDKSDF01.fms"
+
+The first run creates a situation template to edit. The second run generates the
+scenario under `tools\regression_harness\scenarios` so it can become a permanent
+learning case.
+
 Scenario format
 ---------------
 The format is a simple key=value text file. Blank lines and lines starting with # are ignored.
