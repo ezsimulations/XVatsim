@@ -24,6 +24,7 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Data.Json.h>
 
+#include "XVatsim/core/MapDataSource.h"
 #include "XVatsim/core/RouteGrammar.h"
 #include "XVatsim/core/RouteTraversal.h"
 
@@ -32,10 +33,8 @@ namespace xvatsim::modules::route_sector {
 namespace {
 
 constexpr wchar_t kUserAgent[] = L"XVatsim/1.0.0";
-constexpr wchar_t kVatspyBoundaryUrl[] =
-    L"https://raw.githubusercontent.com/vatsimnetwork/vatspy-data-project/master/Boundaries.geojson";
-constexpr wchar_t kVatspyDataUrl[] =
-    L"https://raw.githubusercontent.com/vatsimnetwork/vatspy-data-project/master/VATSpy.dat";
+constexpr wchar_t kVatsimMapDataManifestUrl[] =
+    L"https://api.vatsim.net/api/map_data";
 constexpr wchar_t kTraconBoundaryUrl[] =
     L"https://github.com/vatsimnetwork/simaware-tracon-project/releases/latest/download/TRACONBoundaries.geojson";
 constexpr long long kRefreshCadenceSeconds = 21600;
@@ -380,12 +379,35 @@ std::string DownloadHttpsPayload(const std::wstring& initialUrl) {
     return {};
 }
 
-std::string DownloadBoundaryPayload() {
-    return DownloadHttpsPayload(kVatspyBoundaryUrl);
+std::wstring WidenUrl(const std::string& url) {
+    return std::wstring(url.begin(), url.end());
 }
 
-std::string DownloadVatSpyDataPayload() {
-    return DownloadHttpsPayload(kVatspyDataUrl);
+xvatsim::core::source_data::MapDataManifest DownloadMapDataManifest() {
+    const auto payload = DownloadHttpsPayload(kVatsimMapDataManifestUrl);
+    const auto manifest =
+        xvatsim::core::source_data::ParseMapDataManifestJson(payload);
+    if (manifest.valid) {
+        return manifest;
+    }
+
+    return xvatsim::core::source_data::BuildFallbackMapDataManifest();
+}
+
+std::string DownloadBoundaryPayload(
+    const xvatsim::core::source_data::MapDataManifest& manifest) {
+    if (!manifest.valid || manifest.firBoundariesGeoJsonUrl.empty()) {
+        return {};
+    }
+    return DownloadHttpsPayload(WidenUrl(manifest.firBoundariesGeoJsonUrl));
+}
+
+std::string DownloadVatSpyDataPayload(
+    const xvatsim::core::source_data::MapDataManifest& manifest) {
+    if (!manifest.valid || manifest.vatspyDatUrl.empty()) {
+        return {};
+    }
+    return DownloadHttpsPayload(WidenUrl(manifest.vatspyDatUrl));
 }
 
 std::string DownloadTerminalBoundaryPayload() {
@@ -5488,8 +5510,9 @@ void RouteSectorResolver::StartAsyncBoundaryFetch(long long nowSeconds) const {
     lastFetchTickSeconds_ = nowSeconds;
     fetchInProgress_ = true;
     fetchThread_ = std::thread([this]() {
-        const auto payload = DownloadBoundaryPayload();
-        const auto vatspyPayload = DownloadVatSpyDataPayload();
+        const auto mapDataManifest = DownloadMapDataManifest();
+        const auto payload = DownloadBoundaryPayload(mapDataManifest);
+        const auto vatspyPayload = DownloadVatSpyDataPayload(mapDataManifest);
         const auto terminalPayload = DownloadTerminalBoundaryPayload();
         std::vector<unsigned char> boundaryPayload(payload.begin(), payload.end());
         std::vector<unsigned char> authorityCatalogPayload(

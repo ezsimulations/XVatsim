@@ -1,5 +1,6 @@
 add_library(XVatsimWorkflowCore STATIC
     src/ControllerAuthority.cpp
+    src/MapDataSource.cpp
     src/RouteGrammar.cpp
     src/RouteResolution.cpp
     src/RouteTraversal.cpp

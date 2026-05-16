@@ -14,6 +14,7 @@
 #include "XVatsim/brain/BrainOrchestrator.h"
 #include "XVatsim/brain/BrainTypes.h"
 #include "XVatsim/core/ControllerAuthority.h"
+#include "XVatsim/core/MapDataSource.h"
 #include "XVatsim/core/RouteGrammar.h"
 #include "XVatsim/core/RouteResolution.h"
 #include "XVatsim/core/RouteTraversal.h"
@@ -83,6 +84,8 @@ struct ScenarioExpectations {
     std::vector<std::string> authorityActivePolygonMatches;
     std::vector<std::string> authorityActivePolygonDataGaps;
     std::vector<std::string> authorityRelevantPolygonMatches;
+    std::optional<bool> sourceManifestValid;
+    std::vector<std::string> sourceManifestValues;
     std::optional<bool> routeResolved;
     std::vector<std::string> routeCurrentSectors;
     std::vector<std::string> routeNextSectors;
@@ -184,6 +187,7 @@ struct ScenarioData {
     std::optional<bool> controllerFeedAvailable;
     bool controllerFeedStale = false;
     bool forceControllerFeedEntries = false;
+    std::string sourceManifestJson;
     xvatsim::core::route::AirwayGraph routeGraph;
     std::unordered_map<std::string, xvatsim::core::route::ProcedureCatalogEntry> proceduresByName;
     std::vector<xvatsim::brain::RouteWaypointSnapshot> routeWaypoints;
@@ -642,6 +646,16 @@ std::vector<std::string> ExtractAuthorityRelevantPolygonMatches(
     return values;
 }
 
+std::vector<std::string> ExtractSourceManifestValues(
+    const xvatsim::core::source_data::MapDataManifest& manifest) {
+    return {
+        "commit:" + manifest.currentCommitHash,
+        "dat:" + manifest.firBoundariesDatUrl,
+        "geojson:" + manifest.firBoundariesGeoJsonUrl,
+        "vatspy:" + manifest.vatspyDatUrl,
+    };
+}
+
 xvatsim::brain::AuthorityRelevanceKind ToBrainAuthorityKind(
     xvatsim::core::authority::AuthorityKind kind) {
     switch (kind) {
@@ -894,6 +908,10 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
             &scenario->authorityPolygonRecords,
             xvatsim::core::authority::AuthoritySource::VatsimRadarExtension,
             value);
+    }
+    if (key == "source_manifest.json") {
+        scenario->sourceManifestJson = value;
+        return true;
     }
     if (key == "tuning.arrival_wake_distance_nm") {
         const auto parsed = ParseDouble(value);
@@ -1325,6 +1343,18 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "expect.authority_relevant_polygon_matches") {
         scenario->expectations.authorityRelevantPolygonMatches = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.source_manifest_valid") {
+        bool parsed = false;
+        if (!ParseBool(value, &parsed)) {
+            return false;
+        }
+        scenario->expectations.sourceManifestValid = parsed;
+        return true;
+    }
+    if (key == "expect.source_manifest_values") {
+        scenario->expectations.sourceManifestValues = Split(value, ',');
         return true;
     }
     if (key == "expect.route_resolved") {
@@ -3179,6 +3209,9 @@ int main(int argc, char** argv) {
             scenario.routeWaypoints,
             scenario.traversalFeatures,
             scenario.traversalTuning);
+    const auto sourceManifest =
+        xvatsim::core::source_data::ParseMapDataManifestJson(
+            scenario.sourceManifestJson);
 
     std::cout << "Scenario: " << scenario.name << "\n";
     std::cout << "Stage: " << WorkflowStageToString(handoffDecision.stage) << "\n";
@@ -3301,6 +3334,13 @@ int main(int argc, char** argv) {
     std::cout << "AuthorityRelevantPolygonMatches:";
     for (const auto& value :
          ExtractAuthorityRelevantPolygonMatches(relevantAuthorityPolygons)) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "SourceManifestValid: "
+              << (sourceManifest.valid ? "true" : "false") << "\n";
+    std::cout << "SourceManifestValues:";
+    for (const auto& value : ExtractSourceManifestValues(sourceManifest)) {
         std::cout << " " << value;
     }
     std::cout << "\n";
@@ -3773,6 +3813,22 @@ int main(int argc, char** argv) {
             "authorityRelevantPolygonMatches",
             scenario.expectations.authorityRelevantPolygonMatches,
             ExtractAuthorityRelevantPolygonMatches(relevantAuthorityPolygons));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (scenario.expectations.sourceManifestValid.has_value() &&
+        sourceManifest.valid != *scenario.expectations.sourceManifestValid) {
+        return PrintMismatch(
+            "sourceManifestValid",
+            *scenario.expectations.sourceManifestValid ? "true" : "false",
+            sourceManifest.valid ? "true" : "false");
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "sourceManifestValues",
+            scenario.expectations.sourceManifestValues,
+            ExtractSourceManifestValues(sourceManifest));
         mismatch.has_value()) {
         return *mismatch;
     }

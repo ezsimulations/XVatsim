@@ -104,13 +104,23 @@ Pass 6 starts explicit position ownership ingestion:
 - This is the catalog direction needed for VATGlasses/VATSIM Radar-style
   position ownership data.
 
+Pass 7 starts the source-data ingestion layer:
+
+- The core now parses VATSIM's map-data manifest into a typed source manifest:
+  commit hash, VATSpy.dat URL, FIR boundaries GeoJSON URL, and FIR boundaries
+  DAT URL.
+- The route-sector resolver now asks the official manifest for current VATSpy
+  source URLs before falling back to legacy hardcoded URLs.
+- The harness proves the manifest parser accepts complete HTTPS source records
+  and rejects incomplete/untrusted URL sets.
+
 ## Not Done Yet
 
 - The live plugin has not started producing `AuthorityRelevanceSnapshot` yet;
   the ENROUTE handoff seam is harness-proven but not wired to the running
   plugin feed.
-- Live downloads/parsers for VATSpy, SimAware TRACON, VATGlasses, and
-  VATSIM-Radar-style ownership files are not implemented yet.
+- VATSpy live download is manifest-driven, but VATGlasses and
+  VATSIM-Radar-style ownership downloads/parsers are not implemented yet.
 - TRACON terminal polygon records compile, but terminal controller activation
   rules are not implemented yet.
 - VATGlasses/VATSIM Radar-style extension rules are not implemented yet.
