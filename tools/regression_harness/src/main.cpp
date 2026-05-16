@@ -76,6 +76,10 @@ struct ScenarioExpectations {
     std::vector<std::string> authorityDataGaps;
     std::vector<std::string> authorityActiveMatches;
     std::vector<std::string> authorityUnmappedCallsigns;
+    std::vector<std::string> authorityPolygonIds;
+    std::vector<std::string> authorityPolygonLookupKeys;
+    std::vector<std::string> authorityPolygonRingCounts;
+    std::vector<std::string> authorityPolygonDataGaps;
     std::optional<bool> routeResolved;
     std::vector<std::string> routeCurrentSectors;
     std::vector<std::string> routeNextSectors;
@@ -168,6 +172,8 @@ struct ScenarioData {
     bool hasPendingResolverRoutePayloads = false;
     std::vector<std::string> authorityCatalogFirLines;
     std::vector<std::string> authorityCatalogUirLines;
+    std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord>
+        authorityPolygonRecords;
     std::vector<xvatsim::brain::ControllerSnapshot> controllers;
     std::optional<bool> controllerFeedAvailable;
     bool controllerFeedStale = false;
@@ -185,6 +191,10 @@ struct ScenarioData {
 
 bool AddCenterCoverageFeature(
     std::vector<CenterCoverageFeatureSpec>* features,
+    const std::string& value);
+bool AddAuthorityPolygonSourceRecord(
+    std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord>* records,
+    xvatsim::core::authority::AuthoritySource source,
     const std::string& value);
 
 std::string Trim(std::string value) {
@@ -505,6 +515,61 @@ std::vector<std::string> ExtractAuthorityActiveMatches(
     return values;
 }
 
+std::vector<std::string> ExtractAuthorityPolygonIds(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog) {
+    std::vector<std::string> values;
+    values.reserve(catalog.polygons.size());
+    for (const auto& polygon : catalog.polygons) {
+        values.push_back(polygon.id);
+    }
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
+std::vector<std::string> ExtractAuthorityPolygonLookupKeys(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog) {
+    std::vector<std::string> values;
+    values.reserve(catalog.polygons.size());
+    for (const auto& polygon : catalog.polygons) {
+        auto lookupKeys = polygon.lookupKeys;
+        std::sort(lookupKeys.begin(), lookupKeys.end());
+        std::ostringstream stream;
+        stream << polygon.id << ":";
+        for (std::size_t index = 0; index < lookupKeys.size(); ++index) {
+            if (index > 0) {
+                stream << ">";
+            }
+            stream << lookupKeys[index];
+        }
+        values.push_back(stream.str());
+    }
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
+std::vector<std::string> ExtractAuthorityPolygonRingCounts(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog) {
+    std::vector<std::string> values;
+    values.reserve(catalog.polygons.size());
+    for (const auto& polygon : catalog.polygons) {
+        values.push_back(polygon.id + ":" + std::to_string(polygon.rings.size()));
+    }
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
+std::vector<std::string> ExtractAuthorityPolygonDataGaps(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog) {
+    std::vector<std::string> values;
+    values.reserve(catalog.dataGaps.size());
+    for (const auto& gap : catalog.dataGaps) {
+        values.push_back(
+            gap.authorityId + ":" + gap.polygonKey + ":" + gap.reason);
+    }
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
 std::vector<std::string> ExtractAuthorityGaps(
     const xvatsim::brain::RouteSectorSnapshot& snapshot) {
     std::vector<std::string> gaps;
@@ -704,6 +769,30 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     if (key == "authority_catalog.uir") {
         scenario->authorityCatalogUirLines.push_back(value);
         return true;
+    }
+    if (key == "authority_polygon.vatspy") {
+        return AddAuthorityPolygonSourceRecord(
+            &scenario->authorityPolygonRecords,
+            xvatsim::core::authority::AuthoritySource::VatSpyBoundary,
+            value);
+    }
+    if (key == "authority_polygon.tracon") {
+        return AddAuthorityPolygonSourceRecord(
+            &scenario->authorityPolygonRecords,
+            xvatsim::core::authority::AuthoritySource::SimAwareTracon,
+            value);
+    }
+    if (key == "authority_polygon.vatglasses") {
+        return AddAuthorityPolygonSourceRecord(
+            &scenario->authorityPolygonRecords,
+            xvatsim::core::authority::AuthoritySource::VatGlasses,
+            value);
+    }
+    if (key == "authority_polygon.extension") {
+        return AddAuthorityPolygonSourceRecord(
+            &scenario->authorityPolygonRecords,
+            xvatsim::core::authority::AuthoritySource::VatsimRadarExtension,
+            value);
     }
     if (key == "tuning.arrival_wake_distance_nm") {
         const auto parsed = ParseDouble(value);
@@ -1107,6 +1196,22 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "expect.authority_unmapped_callsigns") {
         scenario->expectations.authorityUnmappedCallsigns = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.authority_polygon_ids") {
+        scenario->expectations.authorityPolygonIds = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.authority_polygon_lookup_keys") {
+        scenario->expectations.authorityPolygonLookupKeys = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.authority_polygon_ring_counts") {
+        scenario->expectations.authorityPolygonRingCounts = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.authority_polygon_data_gaps") {
+        scenario->expectations.authorityPolygonDataGaps = Split(value, ',');
         return true;
     }
     if (key == "expect.route_resolved") {
@@ -1858,6 +1963,58 @@ bool AddCenterCoverageFeature(
     }
 
     features->push_back(std::move(feature));
+    return true;
+}
+
+bool AddAuthorityPolygonSourceRecord(
+    std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord>* records,
+    xvatsim::core::authority::AuthoritySource source,
+    const std::string& value) {
+    if (records == nullptr) {
+        return false;
+    }
+
+    xvatsim::core::authority::AuthorityPolygonSourceRecord record;
+    record.source = source;
+    record.sourceRecord = value;
+
+    for (const auto& part : Split(value, ';')) {
+        const auto equalsIndex = part.find('=');
+        if (equalsIndex == std::string::npos) {
+            continue;
+        }
+
+        const auto field = Trim(part.substr(0, equalsIndex));
+        const auto fieldValue = Trim(part.substr(equalsIndex + 1));
+        if (field == "id" || field == "key" || field == "label") {
+            record.id = fieldValue;
+        } else if (field == "name") {
+            record.name = fieldValue;
+        } else if (field == "suffix") {
+            record.suffix = fieldValue;
+        } else if (field == "prefixes" || field == "prefix") {
+            record.prefixes = Split(fieldValue, ',');
+        } else if (field == "tokens" || field == "lookupTokens") {
+            record.lookupTokens = Split(fieldValue, ',');
+        } else if (field == "polygon") {
+            xvatsim::core::authority::AuthorityPolygonRing ring;
+            for (const auto& pointToken : Split(fieldValue, '|')) {
+                const auto parts = Split(pointToken, ',');
+                if (parts.size() != 2) {
+                    return false;
+                }
+                const auto lat = ParseDouble(parts[0]);
+                const auto lon = ParseDouble(parts[1]);
+                if (!lat.has_value() || !lon.has_value()) {
+                    return false;
+                }
+                ring.points.push_back({*lat, *lon});
+            }
+            record.rings.push_back(std::move(ring));
+        }
+    }
+
+    records->push_back(std::move(record));
     return true;
 }
 
@@ -2624,6 +2781,9 @@ int main(int argc, char** argv) {
             BuildAuthorityCompilerPayload(
                 scenario.authorityCatalogFirLines,
                 scenario.authorityCatalogUirLines));
+    const auto authorityPolygonCatalog =
+        xvatsim::core::authority::CompileAuthorityPolygons(
+            scenario.authorityPolygonRecords);
     std::vector<xvatsim::core::authority::ActiveControllerAuthority>
         activeAuthorityMatches;
     std::vector<std::string> authorityUnmappedCallsigns;
@@ -2862,6 +3022,26 @@ int main(int argc, char** argv) {
     std::cout << "\n";
     std::cout << "AuthorityUnmappedCallsigns:";
     for (const auto& value : authorityUnmappedCallsigns) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "AuthorityPolygonIds:";
+    for (const auto& value : ExtractAuthorityPolygonIds(authorityPolygonCatalog)) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "AuthorityPolygonLookupKeys:";
+    for (const auto& value : ExtractAuthorityPolygonLookupKeys(authorityPolygonCatalog)) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "AuthorityPolygonRingCounts:";
+    for (const auto& value : ExtractAuthorityPolygonRingCounts(authorityPolygonCatalog)) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "AuthorityPolygonDataGaps:";
+    for (const auto& value : ExtractAuthorityPolygonDataGaps(authorityPolygonCatalog)) {
         std::cout << " " << value;
     }
     std::cout << "\n";
@@ -3278,6 +3458,38 @@ int main(int argc, char** argv) {
             "authorityUnmappedCallsigns",
             scenario.expectations.authorityUnmappedCallsigns,
             authorityUnmappedCallsigns);
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "authorityPolygonIds",
+            scenario.expectations.authorityPolygonIds,
+            ExtractAuthorityPolygonIds(authorityPolygonCatalog));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "authorityPolygonLookupKeys",
+            scenario.expectations.authorityPolygonLookupKeys,
+            ExtractAuthorityPolygonLookupKeys(authorityPolygonCatalog));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "authorityPolygonRingCounts",
+            scenario.expectations.authorityPolygonRingCounts,
+            ExtractAuthorityPolygonRingCounts(authorityPolygonCatalog));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "authorityPolygonDataGaps",
+            scenario.expectations.authorityPolygonDataGaps,
+            ExtractAuthorityPolygonDataGaps(authorityPolygonCatalog));
         mismatch.has_value()) {
         return *mismatch;
     }

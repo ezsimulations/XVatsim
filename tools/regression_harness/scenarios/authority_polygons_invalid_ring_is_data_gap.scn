@@ -1,0 +1,9 @@
+name=Authority Polygons Invalid Ring Is Data Gap
+now_seconds=1000
+
+authority_polygon.vatspy=key=BAD;name=Bad Boundary;polygon=0.0,0.0|1.0,1.0
+
+expect.authority_polygon_ids=<none>
+expect.authority_polygon_lookup_keys=<none>
+expect.authority_polygon_ring_counts=<none>
+expect.authority_polygon_data_gaps=VATSPY_BOUNDARY:BAD:BAD:missing-valid-polygon-ring

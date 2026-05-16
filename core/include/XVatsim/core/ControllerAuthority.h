@@ -8,10 +8,25 @@ namespace xvatsim::core::authority {
 enum class AuthoritySource {
     VatSpyFir,
     VatSpyUir,
+    VatSpyBoundary,
+    SimAwareTracon,
+    VatGlasses,
+    VatsimRadarExtension,
 };
 
 enum class AuthorityKind {
     Center,
+    Terminal,
+    Extension,
+};
+
+struct GeoPoint {
+    double latitudeDeg = 0.0;
+    double longitudeDeg = 0.0;
+};
+
+struct AuthorityPolygonRing {
+    std::vector<GeoPoint> points;
 };
 
 struct ControllerAuthority {
@@ -26,6 +41,17 @@ struct ControllerAuthority {
     std::string sourceRecord;
 };
 
+struct AuthorityPolygon {
+    std::string id;
+    AuthoritySource source = AuthoritySource::VatSpyBoundary;
+    AuthorityKind kind = AuthorityKind::Center;
+    std::string name;
+    std::string polygonKey;
+    std::vector<std::string> lookupKeys;
+    std::vector<AuthorityPolygonRing> rings;
+    std::string sourceRecord;
+};
+
 struct AuthorityDataGap {
     std::string authorityId;
     std::string polygonKey;
@@ -36,6 +62,22 @@ struct AuthorityDataGap {
 struct ControllerAuthorityCatalog {
     std::vector<ControllerAuthority> authorities;
     std::vector<AuthorityDataGap> dataGaps;
+};
+
+struct AuthorityPolygonCatalog {
+    std::vector<AuthorityPolygon> polygons;
+    std::vector<AuthorityDataGap> dataGaps;
+};
+
+struct AuthorityPolygonSourceRecord {
+    AuthoritySource source = AuthoritySource::VatSpyBoundary;
+    std::string id;
+    std::string name;
+    std::string suffix;
+    std::vector<std::string> prefixes;
+    std::vector<std::string> lookupTokens;
+    std::vector<AuthorityPolygonRing> rings;
+    std::string sourceRecord;
 };
 
 struct ActiveControllerAuthority {
@@ -54,6 +96,9 @@ bool CallsignMatchesPattern(
 
 ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
     const std::string& vatspyDat);
+
+AuthorityPolygonCatalog CompileAuthorityPolygons(
+    const std::vector<AuthorityPolygonSourceRecord>& sourceRecords);
 
 std::vector<ActiveControllerAuthority> ResolveControllerAuthority(
     const ControllerAuthorityCatalog& catalog,

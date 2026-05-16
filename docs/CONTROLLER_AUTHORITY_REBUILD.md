@@ -39,7 +39,7 @@ the data gap.
 
 ## Current Pass
 
-Pass 1 adds an isolated `core` authority compiler:
+Pass 1 added an isolated `core` authority compiler:
 
 - `VATSpy` FIR/UIR rows compile into authority records.
 - Non-empty VATSpy callsign prefixes compile explicit center/FSS activation
@@ -50,11 +50,21 @@ Pass 1 adds an isolated `core` authority compiler:
 - The regression harness can assert compiled authority IDs, data gaps, active
   matches, and unmapped live callsigns.
 
+Pass 2 adds authoritative polygon compilation:
+
+- VATSpy boundary-style source records compile into center authority polygons.
+- SimAware TRACON-style source records compile into terminal authority polygons.
+- Polygon lookup keys are source-derived and normalized.
+- Invalid or missing polygon rings become explicit data gaps.
+- The regression harness can assert compiled polygon IDs, lookup keys, ring
+  counts, and polygon data gaps.
+
 ## Not Done Yet
 
 - The live ENROUTE/DEPARTURE/ARRIVAL modules are not switched to the new
   authority engine yet.
-- TRACON and terminal authority compilation is not implemented yet.
+- TRACON terminal polygon records compile, but terminal controller activation
+  rules are not implemented yet.
 - VATGlasses/VATSIM Radar-style extension rules are not implemented yet.
 - Active polygon geometry resolution is not implemented yet.
 - Old live authority seams still exist and must be removed after replacement.

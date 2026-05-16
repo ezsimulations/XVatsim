@@ -115,11 +115,17 @@ Controller authority compiler replay:
 
 - authority_catalog.fir=VHHK|Hong Kong|HKG|VHHK
 - authority_catalog.uir=EXAMPLE|Example Upper|EXM|EXAMPLE
+- authority_polygon.vatspy=key=VHHK;name=Hong Kong;tokens=VHHK,HKG;polygon=20,112|24,112|24,116|20,116
+- authority_polygon.tracon=id=SCT;name=SoCal TRACON;suffix=APP;prefixes=SCT,SOCAL;polygon=32,-119|35,-119|35,-116|32,-116
 - controller.entry=callsign=HKG_W_CTR;frequency=125.320;facility=6;actionable=true;atis=false
 - expect.authority_catalog_ids=VATSPY_FIR:VHHK
 - expect.authority_data_gaps=<none>
 - expect.authority_active_matches=HKG_W_CTR:VATSPY_FIR:VHHK:VHHK:HKG_*_CTR
 - expect.authority_unmapped_callsigns=<none>
+- expect.authority_polygon_ids=VATSPY_BOUNDARY:VHHK,SIMAWARE_TRACON:SCT_APP
+- expect.authority_polygon_lookup_keys=VATSPY_BOUNDARY:VHHK:HKG>VHHK,SIMAWARE_TRACON:SCT_APP:SCT>SCT_APP>SOCAL>SOCAL_APP
+- expect.authority_polygon_ring_counts=VATSPY_BOUNDARY:VHHK:1,SIMAWARE_TRACON:SCT_APP:1
+- expect.authority_polygon_data_gaps=<none>
 
 Overlay/RX presentation replay:
 
@@ -467,6 +473,15 @@ Included scenarios
 
 - authority_compiler_rejects_wrong_facility.scn
   Proves a matching callsign pattern still cannot activate a center authority when the VATSIM facility code is not center/FSS service.
+
+- authority_polygons_vatspy_boundary_compiles.scn
+  Proves a VATSpy boundary-style polygon compiles with source-derived lookup keys and ring truth.
+
+- authority_polygons_simaware_tracon_compiles.scn
+  Proves a SimAware TRACON-style polygon compiles as terminal authority with suffix-aware lookup keys.
+
+- authority_polygons_invalid_ring_is_data_gap.scn
+  Proves invalid polygon geometry becomes an explicit data gap instead of a usable authority polygon.
 
 - resolver_authority_blank_prefix_is_data_gap.scn
   Proves a VATSpy FIR/UIR row with a blank callsign-prefix field does not invent the boundary identifier as a controller prefix and instead surfaces an explicit route authority gap.

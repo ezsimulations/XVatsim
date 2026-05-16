@@ -79,7 +79,54 @@ bool PatternFacilityMatches(const std::string& pattern, int vatsimFacility) {
 }
 
 std::string SourcePrefix(AuthoritySource source) {
-    return source == AuthoritySource::VatSpyUir ? "VATSPY_UIR" : "VATSPY_FIR";
+    switch (source) {
+        case AuthoritySource::VatSpyFir:
+            return "VATSPY_FIR";
+        case AuthoritySource::VatSpyUir:
+            return "VATSPY_UIR";
+        case AuthoritySource::VatSpyBoundary:
+            return "VATSPY_BOUNDARY";
+        case AuthoritySource::SimAwareTracon:
+            return "SIMAWARE_TRACON";
+        case AuthoritySource::VatGlasses:
+            return "VATGLASSES";
+        case AuthoritySource::VatsimRadarExtension:
+            return "VATSIM_RADAR_EXTENSION";
+    }
+    return "UNKNOWN";
+}
+
+AuthorityKind SourceDefaultKind(AuthoritySource source) {
+    switch (source) {
+        case AuthoritySource::SimAwareTracon:
+            return AuthorityKind::Terminal;
+        case AuthoritySource::VatsimRadarExtension:
+            return AuthorityKind::Extension;
+        case AuthoritySource::VatSpyFir:
+        case AuthoritySource::VatSpyUir:
+        case AuthoritySource::VatSpyBoundary:
+        case AuthoritySource::VatGlasses:
+            return AuthorityKind::Center;
+    }
+    return AuthorityKind::Center;
+}
+
+std::string PolygonIdFromRecord(const AuthorityPolygonSourceRecord& record) {
+    const auto sourcePrefix = SourcePrefix(record.source);
+    const auto baseId = NormalizeAuthorityToken(record.id);
+    if (baseId.empty()) {
+        return {};
+    }
+
+    if (record.source == AuthoritySource::SimAwareTracon) {
+        // SimAware TRACON records use a missing suffix for approach coverage.
+        const auto suffix = NormalizeAuthorityToken(record.suffix).empty()
+                                ? std::string("APP")
+                                : NormalizeAuthorityToken(record.suffix);
+        return sourcePrefix + ":" + baseId + "_" + suffix;
+    }
+
+    return sourcePrefix + ":" + baseId;
 }
 
 void AddLookupKey(std::vector<std::string>* lookupKeys, const std::string& rawKey) {
@@ -90,6 +137,44 @@ void AddLookupKey(std::vector<std::string>* lookupKeys, const std::string& rawKe
     if (!key.empty()) {
         lookupKeys->push_back(key);
     }
+}
+
+void AddSimAwareTraconLookupKeys(
+    const AuthorityPolygonSourceRecord& record,
+    std::vector<std::string>* lookupKeys) {
+    if (lookupKeys == nullptr) {
+        return;
+    }
+
+    const auto id = NormalizeAuthorityToken(record.id);
+    const auto suffix = NormalizeAuthorityToken(record.suffix).empty()
+                            ? std::string("APP")
+                            : NormalizeAuthorityToken(record.suffix);
+    AddLookupKey(lookupKeys, id);
+    AddLookupKey(lookupKeys, id + "_" + suffix);
+    for (const auto& prefix : record.prefixes) {
+        const auto normalizedPrefix = NormalizeAuthorityToken(prefix);
+        if (normalizedPrefix.empty()) {
+            continue;
+        }
+        AddLookupKey(lookupKeys, normalizedPrefix);
+        AddLookupKey(lookupKeys, normalizedPrefix + "_" + suffix);
+    }
+}
+
+bool RingIsValid(const AuthorityPolygonRing& ring) {
+    return ring.points.size() >= 3;
+}
+
+std::vector<AuthorityPolygonRing> ValidRings(
+    const std::vector<AuthorityPolygonRing>& rings) {
+    std::vector<AuthorityPolygonRing> validRings;
+    for (const auto& ring : rings) {
+        if (RingIsValid(ring)) {
+            validRings.push_back(ring);
+        }
+    }
+    return validRings;
 }
 
 }  // namespace
@@ -239,6 +324,73 @@ ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
     std::sort(
         catalog.authorities.begin(),
         catalog.authorities.end(),
+        [](const auto& left, const auto& right) {
+            return left.id < right.id;
+        });
+    std::sort(
+        catalog.dataGaps.begin(),
+        catalog.dataGaps.end(),
+        [](const auto& left, const auto& right) {
+            if (left.authorityId != right.authorityId) {
+                return left.authorityId < right.authorityId;
+            }
+            return left.reason < right.reason;
+        });
+    return catalog;
+}
+
+AuthorityPolygonCatalog CompileAuthorityPolygons(
+    const std::vector<AuthorityPolygonSourceRecord>& sourceRecords) {
+    AuthorityPolygonCatalog catalog;
+
+    for (const auto& record : sourceRecords) {
+        const auto polygonId = PolygonIdFromRecord(record);
+        const auto polygonKey = NormalizeAuthorityToken(record.id);
+        if (polygonId.empty() || polygonKey.empty()) {
+            catalog.dataGaps.push_back({
+                polygonId.empty() ? SourcePrefix(record.source) + ":<missing-id>" : polygonId,
+                polygonKey,
+                "missing-polygon-key",
+                record.sourceRecord,
+            });
+            continue;
+        }
+
+        AuthorityPolygon polygon;
+        polygon.id = polygonId;
+        polygon.source = record.source;
+        polygon.kind = SourceDefaultKind(record.source);
+        polygon.name = Trim(record.name);
+        polygon.polygonKey = polygonKey;
+        polygon.sourceRecord = record.sourceRecord;
+
+        if (record.source == AuthoritySource::SimAwareTracon) {
+            AddSimAwareTraconLookupKeys(record, &polygon.lookupKeys);
+        } else {
+            AddLookupKey(&polygon.lookupKeys, record.id);
+            for (const auto& token : record.lookupTokens) {
+                AddLookupKey(&polygon.lookupKeys, token);
+            }
+        }
+        SortUnique(&polygon.lookupKeys);
+
+        polygon.rings = ValidRings(record.rings);
+        if (polygon.rings.empty()) {
+            catalog.dataGaps.push_back({
+                polygon.id,
+                polygon.polygonKey,
+                "missing-valid-polygon-ring",
+                record.sourceRecord,
+            });
+            continue;
+        }
+
+        catalog.polygons.push_back(std::move(polygon));
+    }
+
+    std::sort(
+        catalog.polygons.begin(),
+        catalog.polygons.end(),
         [](const auto& left, const auto& right) {
             return left.id < right.id;
         });
