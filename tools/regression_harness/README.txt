@@ -111,6 +111,16 @@ ENROUTE expectations:
 - expect.enroute_available=true
 - expect.enroute_callsigns=KZAK,HCF_CTR
 
+Controller authority compiler replay:
+
+- authority_catalog.fir=VHHK|Hong Kong|HKG|VHHK
+- authority_catalog.uir=EXAMPLE|Example Upper|EXM|EXAMPLE
+- controller.entry=callsign=HKG_W_CTR;frequency=125.320;facility=6;actionable=true;atis=false
+- expect.authority_catalog_ids=VATSPY_FIR:VHHK
+- expect.authority_data_gaps=<none>
+- expect.authority_active_matches=HKG_W_CTR:VATSPY_FIR:VHHK:VHHK:HKG_*_CTR
+- expect.authority_unmapped_callsigns=<none>
+
 Overlay/RX presentation replay:
 
 - overlay.stage=Departure
@@ -448,6 +458,15 @@ Included scenarios
 
 - enroute_rejects_ctr_suffix_without_enroute_facility.scn
   Proves a `_CTR` callsign suffix alone cannot make a controller eligible for ENROUTE when the controller feed facility code says it is not center/FSS service.
+
+- authority_compiler_vatspy_hkg_activates_polygon.scn
+  Proves a VATSpy FIR row compiles explicit HKG activation patterns and maps HKG_W_CTR to the VHHK authority polygon.
+
+- authority_compiler_blank_prefix_is_unmapped_gap.scn
+  Proves a blank VATSpy callsign-prefix row remains an unmapped data gap and does not infer PAZA_FSS from the boundary identifier.
+
+- authority_compiler_rejects_wrong_facility.scn
+  Proves a matching callsign pattern still cannot activate a center authority when the VATSIM facility code is not center/FSS service.
 
 - resolver_authority_blank_prefix_is_data_gap.scn
   Proves a VATSpy FIR/UIR row with a blank callsign-prefix field does not invent the boundary identifier as a controller prefix and instead surfaces an explicit route authority gap.

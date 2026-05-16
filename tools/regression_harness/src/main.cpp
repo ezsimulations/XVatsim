@@ -13,6 +13,7 @@
 
 #include "XVatsim/brain/BrainOrchestrator.h"
 #include "XVatsim/brain/BrainTypes.h"
+#include "XVatsim/core/ControllerAuthority.h"
 #include "XVatsim/core/RouteGrammar.h"
 #include "XVatsim/core/RouteResolution.h"
 #include "XVatsim/core/RouteTraversal.h"
@@ -71,6 +72,10 @@ struct ScenarioExpectations {
     std::vector<std::string> resolverRouteCurrentControllerPrefixes;
     std::vector<std::string> resolverRouteNextControllerPrefixes;
     std::vector<std::string> resolverRouteGenerations;
+    std::vector<std::string> authorityCatalogIds;
+    std::vector<std::string> authorityDataGaps;
+    std::vector<std::string> authorityActiveMatches;
+    std::vector<std::string> authorityUnmappedCallsigns;
     std::optional<bool> routeResolved;
     std::vector<std::string> routeCurrentSectors;
     std::vector<std::string> routeNextSectors;
@@ -161,6 +166,8 @@ struct ScenarioData {
     std::vector<CenterCoverageFeatureSpec> pendingResolverRouteCenterFeatures;
     std::vector<std::string> pendingResolverRouteAuthorityCatalogLines;
     bool hasPendingResolverRoutePayloads = false;
+    std::vector<std::string> authorityCatalogFirLines;
+    std::vector<std::string> authorityCatalogUirLines;
     std::vector<xvatsim::brain::ControllerSnapshot> controllers;
     std::optional<bool> controllerFeedAvailable;
     bool controllerFeedStale = false;
@@ -460,6 +467,44 @@ std::vector<std::string> ExtractRouteGenerations(
     };
 }
 
+std::vector<std::string> ExtractAuthorityCatalogIds(
+    const xvatsim::core::authority::ControllerAuthorityCatalog& catalog) {
+    std::vector<std::string> values;
+    values.reserve(catalog.authorities.size());
+    for (const auto& authority : catalog.authorities) {
+        values.push_back(authority.id);
+    }
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
+std::vector<std::string> ExtractAuthorityDataGaps(
+    const xvatsim::core::authority::ControllerAuthorityCatalog& catalog) {
+    std::vector<std::string> values;
+    values.reserve(catalog.dataGaps.size());
+    for (const auto& gap : catalog.dataGaps) {
+        values.push_back(
+            gap.authorityId + ":" + gap.polygonKey + ":" + gap.reason);
+    }
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
+std::vector<std::string> ExtractAuthorityActiveMatches(
+    const std::vector<xvatsim::core::authority::ActiveControllerAuthority>& matches) {
+    std::vector<std::string> values;
+    values.reserve(matches.size());
+    for (const auto& match : matches) {
+        values.push_back(
+            match.callsign + ":" +
+            match.authorityId + ":" +
+            match.polygonKey + ":" +
+            match.matchedPattern);
+    }
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
 std::vector<std::string> ExtractAuthorityGaps(
     const xvatsim::brain::RouteSectorSnapshot& snapshot) {
     std::vector<std::string> gaps;
@@ -650,6 +695,14 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     if (key == "resolver.pending_authority_catalog_fir") {
         scenario->pendingResolverRouteAuthorityCatalogLines.push_back(value);
         scenario->hasPendingResolverRoutePayloads = true;
+        return true;
+    }
+    if (key == "authority_catalog.fir") {
+        scenario->authorityCatalogFirLines.push_back(value);
+        return true;
+    }
+    if (key == "authority_catalog.uir") {
+        scenario->authorityCatalogUirLines.push_back(value);
         return true;
     }
     if (key == "tuning.arrival_wake_distance_nm") {
@@ -1038,6 +1091,22 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "expect.resolver_route_generations") {
         scenario->expectations.resolverRouteGenerations = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.authority_catalog_ids") {
+        scenario->expectations.authorityCatalogIds = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.authority_data_gaps") {
+        scenario->expectations.authorityDataGaps = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.authority_active_matches") {
+        scenario->expectations.authorityActiveMatches = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.authority_unmapped_callsigns") {
+        scenario->expectations.authorityUnmappedCallsigns = Split(value, ',');
         return true;
     }
     if (key == "expect.route_resolved") {
@@ -1935,6 +2004,29 @@ std::string BuildAuthorityCatalogPayload(const std::vector<std::string>& firLine
     return stream.str();
 }
 
+std::string BuildAuthorityCompilerPayload(
+    const std::vector<std::string>& firLines,
+    const std::vector<std::string>& uirLines) {
+    if (firLines.empty() && uirLines.empty()) {
+        return {};
+    }
+
+    std::ostringstream stream;
+    if (!firLines.empty()) {
+        stream << "[FIRs]\n";
+        for (const auto& line : firLines) {
+            stream << line << "\n";
+        }
+    }
+    if (!uirLines.empty()) {
+        stream << "[UIRs]\n";
+        for (const auto& line : uirLines) {
+            stream << line << "\n";
+        }
+    }
+    return stream.str();
+}
+
 bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std::string* outError) {
     if (scenario == nullptr) {
         return false;
@@ -2527,6 +2619,37 @@ int main(int argc, char** argv) {
         controllerFeedSnapshot.controllers = &scenario.controllers;
     }
 
+    const auto authorityCatalog =
+        xvatsim::core::authority::CompileVatSpyAuthorityCatalog(
+            BuildAuthorityCompilerPayload(
+                scenario.authorityCatalogFirLines,
+                scenario.authorityCatalogUirLines));
+    std::vector<xvatsim::core::authority::ActiveControllerAuthority>
+        activeAuthorityMatches;
+    std::vector<std::string> authorityUnmappedCallsigns;
+    if (!scenario.authorityCatalogFirLines.empty() ||
+        !scenario.authorityCatalogUirLines.empty()) {
+        for (const auto& controller : scenario.controllers) {
+            const auto matches = xvatsim::core::authority::ResolveControllerAuthority(
+                authorityCatalog,
+                controller.callsign,
+                controller.facility);
+            if (matches.empty()) {
+                authorityUnmappedCallsigns.push_back(
+                    xvatsim::core::authority::NormalizeControllerCallsign(
+                        controller.callsign));
+                continue;
+            }
+            activeAuthorityMatches.insert(
+                activeAuthorityMatches.end(),
+                matches.begin(),
+                matches.end());
+        }
+        std::sort(
+            authorityUnmappedCallsigns.begin(),
+            authorityUnmappedCallsigns.end());
+    }
+
     xvatsim::modules::departure::DepartureModule departureModule;
     const auto collectedDepartureBoard = departureModule.Collect(
         scenario.xPilotSessionSnapshot,
@@ -2720,6 +2843,26 @@ int main(int argc, char** argv) {
     std::cout << "EnrouteCallsigns:";
     for (const auto& callsign : ExtractCallsigns(collectedEnrouteBoard)) {
         std::cout << " " << callsign;
+    }
+    std::cout << "\n";
+    std::cout << "AuthorityCatalogIds:";
+    for (const auto& value : ExtractAuthorityCatalogIds(authorityCatalog)) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "AuthorityDataGaps:";
+    for (const auto& value : ExtractAuthorityDataGaps(authorityCatalog)) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "AuthorityActiveMatches:";
+    for (const auto& value : ExtractAuthorityActiveMatches(activeAuthorityMatches)) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "AuthorityUnmappedCallsigns:";
+    for (const auto& value : authorityUnmappedCallsigns) {
+        std::cout << " " << value;
     }
     std::cout << "\n";
     std::cout << "ResolverRouteAvailable: "
@@ -3103,6 +3246,38 @@ int main(int argc, char** argv) {
             "enrouteCallsigns",
             scenario.expectations.enrouteCallsigns,
             ExtractCallsigns(collectedEnrouteBoard));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "authorityCatalogIds",
+            scenario.expectations.authorityCatalogIds,
+            ExtractAuthorityCatalogIds(authorityCatalog));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "authorityDataGaps",
+            scenario.expectations.authorityDataGaps,
+            ExtractAuthorityDataGaps(authorityCatalog));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "authorityActiveMatches",
+            scenario.expectations.authorityActiveMatches,
+            ExtractAuthorityActiveMatches(activeAuthorityMatches));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "authorityUnmappedCallsigns",
+            scenario.expectations.authorityUnmappedCallsigns,
+            authorityUnmappedCallsigns);
         mismatch.has_value()) {
         return *mismatch;
     }

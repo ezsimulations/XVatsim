@@ -1,0 +1,10 @@
+name=Authority Compiler Blank Prefix Is Unmapped Gap
+now_seconds=1000
+
+authority_catalog.fir=PAZA|Anchorage||PAZA
+controller.entry=callsign=PAZA_FSS;frequency=123.950;facility=1;actionable=true;atis=false
+
+expect.authority_catalog_ids=VATSPY_FIR:PAZA
+expect.authority_data_gaps=VATSPY_FIR:PAZA:PAZA:missing-callsign-prefix
+expect.authority_active_matches=<none>
+expect.authority_unmapped_callsigns=PAZA_FSS

@@ -1,0 +1,10 @@
+name=Authority Compiler Rejects Wrong Facility
+now_seconds=1000
+
+authority_catalog.fir=VHHK|Hong Kong|HKG|VHHK
+controller.entry=callsign=HKG_W_CTR;frequency=125.320;facility=3;actionable=true;atis=false
+
+expect.authority_catalog_ids=VATSPY_FIR:VHHK
+expect.authority_data_gaps=<none>
+expect.authority_active_matches=<none>
+expect.authority_unmapped_callsigns=HKG_W_CTR
