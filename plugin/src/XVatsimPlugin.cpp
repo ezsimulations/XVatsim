@@ -2697,103 +2697,101 @@ void RegisterPluginMenu() {
         return;
     }
 
-    if (gPluginMenu != nullptr) {
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Manual CTAF Lookup",
-            reinterpret_cast<void*>(kManualCtafMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Open Display",
-            reinterpret_cast<void*>(kDisplayOpenMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Close Display",
-            reinterpret_cast<void*>(kDisplayCloseMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Auto Display",
-            reinterpret_cast<void*>(kDisplayAutoMenuItemRef),
-            1);
-        XPLMAppendMenuSeparator(gPluginMenu);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "More Opacity",
-            reinterpret_cast<void*>(kOpacityUpMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Less Opacity",
-            reinterpret_cast<void*>(kOpacityDownMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Larger UI",
-            reinterpret_cast<void*>(kScaleUpMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Smaller UI",
-            reinterpret_cast<void*>(kScaleDownMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Faster Animation",
-            reinterpret_cast<void*>(kAnimationFasterMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Slower Animation",
-            reinterpret_cast<void*>(kAnimationSlowerMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Reset Appearance",
-            reinterpret_cast<void*>(kResetAppearanceMenuItemRef),
-            1);
-        XPLMAppendMenuSeparator(gPluginMenu);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Set Cruise Target To Current Altitude",
-            reinterpret_cast<void*>(kCruiseTargetCurrentMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Reset Cruise Target To Filed Altitude",
-            reinterpret_cast<void*>(kCruiseTargetFiledMenuItemRef),
-            1);
-        XPLMAppendMenuSeparator(gPluginMenu);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Reset XVatsim Session",
-            reinterpret_cast<void*>(kResetSessionMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Set Diversion Airport...",
-            reinterpret_cast<void*>(kSetDiversionAirportMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Revert To VATSIM Flight Plan",
-            reinterpret_cast<void*>(kRevertToFlightPlanMenuItemRef),
-            1);
-        XPLMAppendMenuSeparator(gPluginMenu);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Standby Assist On",
-            reinterpret_cast<void*>(kStandbyAssistOnMenuItemRef),
-            1);
-        XPLMAppendMenuItem(
-            gPluginMenu,
-            "Standby Assist Off",
-            reinterpret_cast<void*>(kStandbyAssistOffMenuItemRef),
-            1);
-        XPLMAppendMenuSeparator(gPluginMenu);
-    }
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Manual CTAF Lookup",
+        reinterpret_cast<void*>(kManualCtafMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Open Display",
+        reinterpret_cast<void*>(kDisplayOpenMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Close Display",
+        reinterpret_cast<void*>(kDisplayCloseMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Auto Display",
+        reinterpret_cast<void*>(kDisplayAutoMenuItemRef),
+        1);
+    XPLMAppendMenuSeparator(gPluginMenu);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "More Opacity",
+        reinterpret_cast<void*>(kOpacityUpMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Less Opacity",
+        reinterpret_cast<void*>(kOpacityDownMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Larger UI",
+        reinterpret_cast<void*>(kScaleUpMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Smaller UI",
+        reinterpret_cast<void*>(kScaleDownMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Faster Animation",
+        reinterpret_cast<void*>(kAnimationFasterMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Slower Animation",
+        reinterpret_cast<void*>(kAnimationSlowerMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Reset Appearance",
+        reinterpret_cast<void*>(kResetAppearanceMenuItemRef),
+        1);
+    XPLMAppendMenuSeparator(gPluginMenu);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Set Cruise Target To Current Altitude",
+        reinterpret_cast<void*>(kCruiseTargetCurrentMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Reset Cruise Target To Filed Altitude",
+        reinterpret_cast<void*>(kCruiseTargetFiledMenuItemRef),
+        1);
+    XPLMAppendMenuSeparator(gPluginMenu);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Reset XVatsim Session",
+        reinterpret_cast<void*>(kResetSessionMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Set Diversion Airport...",
+        reinterpret_cast<void*>(kSetDiversionAirportMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Revert To VATSIM Flight Plan",
+        reinterpret_cast<void*>(kRevertToFlightPlanMenuItemRef),
+        1);
+    XPLMAppendMenuSeparator(gPluginMenu);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Standby Assist On",
+        reinterpret_cast<void*>(kStandbyAssistOnMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        "Standby Assist Off",
+        reinterpret_cast<void*>(kStandbyAssistOffMenuItemRef),
+        1);
+    XPLMAppendMenuSeparator(gPluginMenu);
 }
 
 void UnregisterPluginMenu() {

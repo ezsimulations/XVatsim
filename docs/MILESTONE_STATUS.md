@@ -301,6 +301,14 @@ store-upload package.
   installed X-Plane plugin binary was refreshed from the validated build output
   and matches SHA-256
   `6158711A76D66C648D429860695EFC781BF5140BB8223A6FFCE6ACB0C016E46E`.
+- Fifth Milestone 9 cleanup pass completed: audited the plugin menu lifecycle
+  seam in `XVatsimPlugin.cpp`. Removed the redundant post-create menu null
+  guard after `XPLMCreateMenu(...)` already fails closed; menu item order and
+  command behavior are unchanged.
+- Release build passed and all 94 saved regression scenarios passed. The
+  installed X-Plane plugin binary was refreshed from the validated build output
+  and matches SHA-256
+  `1F1EBDC4F0A7A77683CF4F5D5248F5DCA7CF9C31B799F7BB595AED061CF8E38A`.
 
 ## Release Rule
 
