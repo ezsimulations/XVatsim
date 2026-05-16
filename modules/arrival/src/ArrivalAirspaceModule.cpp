@@ -263,7 +263,6 @@ brain::ModuleBoardSnapshot ArrivalAirspaceModule::Collect(
         return snapshot;
     }
 
-    snapshot.available = true;
     snapshot.airportIcao = arrivalAirportIcao;
 
     std::unordered_set<std::string> insertedKeys;

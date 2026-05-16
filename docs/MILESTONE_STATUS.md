@@ -361,6 +361,15 @@ store-upload package.
   installed X-Plane plugin binary was refreshed from the validated build output
   and matches SHA-256
   `2A5A73FD6A67F806FE3B8D93FEB72605CBE3274EDE4454BC04DFBC9F97E970F7`.
+- Twelfth Milestone 9 cleanup pass completed: audited Departure and Arrival
+  module collection setup. Removed redundant provisional `snapshot.available`
+  writes so module availability is set only once from the final station list,
+  preserving local controller, terminal-airspace, CTAF/UNICOM, and arrival
+  display behavior.
+- Release build passed and all 94 saved regression scenarios passed. The
+  installed X-Plane plugin binary was refreshed from the validated build output
+  and matches SHA-256
+  `91987AD0CCA61441D1C52473BB81EFC7837636D795E368A2B35202CC29B57043`.
 
 ## Release Rule
 

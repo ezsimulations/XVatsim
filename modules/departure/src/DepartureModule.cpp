@@ -349,7 +349,6 @@ brain::ModuleBoardSnapshot DepartureModule::Collect(
         return snapshot;
     }
 
-    snapshot.available = true;
     snapshot.airportIcao = departureAirportIcao;
 
     const auto airportTokens = BuildAirportTokens(departureAirportIcao);
