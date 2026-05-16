@@ -199,7 +199,6 @@ std::string FormatRouteDistanceAnnotation(double distanceNm) {
 }
 
 struct RouteControllerMatch {
-    bool matched = false;
     bool current = false;
     double entryDistanceNm = 0.0;
 };
@@ -213,7 +212,6 @@ bool FindRouteControllerMatch(
     }
 
     if (SectorSetMatchesController(routeSectorSnapshot.currentSectors, callsign)) {
-        outMatch->matched = true;
         outMatch->current = true;
         outMatch->entryDistanceNm = 0.0;
         return true;
@@ -224,7 +222,6 @@ bool FindRouteControllerMatch(
             continue;
         }
 
-        outMatch->matched = true;
         outMatch->current = false;
         outMatch->entryDistanceNm = sector.entryDistanceNm;
         return true;

@@ -352,6 +352,15 @@ store-upload package.
   installed X-Plane plugin binary was refreshed from the validated build output
   and matches SHA-256
   `28E950E1305326182726727AE0093141D6E7289C5B33C810D408B15CCFE552D1`.
+- Eleventh Milestone 9 cleanup pass completed: audited the ENROUTE board
+  collection seam in `EnrouteModule.cpp`. Removed a stale
+  `RouteControllerMatch` flag that was written during center matching but never
+  read, while preserving authoritative route-sector matching, route-entry
+  distance handling, offline row insertion, and station sorting behavior.
+- Release build passed and all 94 saved regression scenarios passed. The
+  installed X-Plane plugin binary was refreshed from the validated build output
+  and matches SHA-256
+  `2A5A73FD6A67F806FE3B8D93FEB72605CBE3274EDE4454BC04DFBC9F97E970F7`.
 
 ## Release Rule
 
