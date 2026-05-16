@@ -92,11 +92,25 @@ Pass 5 adds a controlled ENROUTE handoff seam:
 - The regression harness can assert that a relevant active polygon displays and
   an irrelevant active polygon fails closed.
 
+Pass 6 starts explicit position ownership ingestion:
+
+- Source records can now map controller position IDs/callsign patterns directly
+  to authority polygons.
+- Explicit position records do not generate suffix guesses; only the
+  source-provided callsign patterns can activate their polygon.
+- The harness proves `HKG_W_CTR` can activate Hong Kong from a VATGlasses-style
+  position record, while an unsourced `HKG_W_CTR` does not match an `HKG_E_CTR`
+  source record.
+- This is the catalog direction needed for VATGlasses/VATSIM Radar-style
+  position ownership data.
+
 ## Not Done Yet
 
 - The live plugin has not started producing `AuthorityRelevanceSnapshot` yet;
   the ENROUTE handoff seam is harness-proven but not wired to the running
   plugin feed.
+- Live downloads/parsers for VATSpy, SimAware TRACON, VATGlasses, and
+  VATSIM-Radar-style ownership files are not implemented yet.
 - TRACON terminal polygon records compile, but terminal controller activation
   rules are not implemented yet.
 - VATGlasses/VATSIM Radar-style extension rules are not implemented yet.

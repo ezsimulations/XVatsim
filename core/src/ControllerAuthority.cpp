@@ -14,6 +14,10 @@ namespace xvatsim::core::authority {
 namespace {
 
 constexpr int kVatsimFlightServiceFacility = 1;
+constexpr int kVatsimDeliveryFacility = 2;
+constexpr int kVatsimGroundFacility = 3;
+constexpr int kVatsimTowerFacility = 4;
+constexpr int kVatsimApproachFacility = 5;
 constexpr int kVatsimCenterFacility = 6;
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kEarthRadiusNm = 3440.065;
@@ -218,6 +222,18 @@ bool EndsWith(const std::string& value, const std::string& suffix) {
 }
 
 bool PatternFacilityMatches(const std::string& pattern, int vatsimFacility) {
+    if (EndsWith(pattern, "_DEL")) {
+        return vatsimFacility == kVatsimDeliveryFacility;
+    }
+    if (EndsWith(pattern, "_GND")) {
+        return vatsimFacility == kVatsimGroundFacility;
+    }
+    if (EndsWith(pattern, "_TWR")) {
+        return vatsimFacility == kVatsimTowerFacility;
+    }
+    if (EndsWith(pattern, "_APP") || EndsWith(pattern, "_DEP")) {
+        return vatsimFacility == kVatsimApproachFacility;
+    }
     if (EndsWith(pattern, "_CTR")) {
         return vatsimFacility == kVatsimCenterFacility;
     }
@@ -273,6 +289,16 @@ std::string PolygonIdFromRecord(const AuthorityPolygonSourceRecord& record) {
                                 ? std::string("APP")
                                 : NormalizeAuthorityToken(record.suffix);
         return sourcePrefix + ":" + baseId + "_" + suffix;
+    }
+
+    return sourcePrefix + ":" + baseId;
+}
+
+std::string AuthorityIdFromPositionRecord(const AuthorityPositionSourceRecord& record) {
+    const auto sourcePrefix = SourcePrefix(record.source);
+    const auto baseId = NormalizeAuthorityToken(record.id);
+    if (baseId.empty()) {
+        return {};
     }
 
     return sourcePrefix + ":" + baseId;
@@ -765,6 +791,119 @@ ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
             return left.reason < right.reason;
         });
     return catalog;
+}
+
+ControllerAuthorityCatalog CompileAuthorityPositionCatalog(
+    const std::vector<AuthorityPositionSourceRecord>& sourceRecords) {
+    ControllerAuthorityCatalog catalog;
+
+    for (const auto& record : sourceRecords) {
+        const auto authorityId = AuthorityIdFromPositionRecord(record);
+        const auto polygonKey = NormalizeAuthorityToken(record.polygonKey);
+        if (authorityId.empty()) {
+            catalog.dataGaps.push_back({
+                SourcePrefix(record.source) + ":<missing-id>",
+                polygonKey,
+                "missing-position-id",
+                record.sourceRecord,
+            });
+            continue;
+        }
+
+        ControllerAuthority authority;
+        authority.id = authorityId;
+        authority.source = record.source;
+        authority.kind = record.kind;
+        authority.name = Trim(record.name);
+        authority.polygonKey = polygonKey;
+        authority.sourceRecord = record.sourceRecord;
+        AddLookupKey(&authority.lookupKeys, record.id);
+        AddLookupKey(&authority.lookupKeys, record.polygonKey);
+
+        for (const auto& pattern : record.controllerCallsignPatterns) {
+            const auto normalizedPattern = NormalizeControllerCallsign(pattern);
+            if (!normalizedPattern.empty()) {
+                authority.controllerCallsignPatterns.push_back(normalizedPattern);
+            }
+        }
+        SortUnique(&authority.lookupKeys);
+        SortUnique(&authority.controllerCallsignPatterns);
+
+        if (authority.polygonKey.empty()) {
+            catalog.dataGaps.push_back({
+                authority.id,
+                authority.polygonKey,
+                "missing-polygon-key",
+                authority.sourceRecord,
+            });
+        }
+        if (authority.controllerCallsignPatterns.empty()) {
+            catalog.dataGaps.push_back({
+                authority.id,
+                authority.polygonKey,
+                "missing-callsign-pattern",
+                authority.sourceRecord,
+            });
+        }
+
+        catalog.authorities.push_back(std::move(authority));
+    }
+
+    std::sort(
+        catalog.authorities.begin(),
+        catalog.authorities.end(),
+        [](const auto& left, const auto& right) {
+            return left.id < right.id;
+        });
+    std::sort(
+        catalog.dataGaps.begin(),
+        catalog.dataGaps.end(),
+        [](const auto& left, const auto& right) {
+            if (left.authorityId != right.authorityId) {
+                return left.authorityId < right.authorityId;
+            }
+            if (left.polygonKey != right.polygonKey) {
+                return left.polygonKey < right.polygonKey;
+            }
+            return left.reason < right.reason;
+        });
+    return catalog;
+}
+
+ControllerAuthorityCatalog MergeControllerAuthorityCatalogs(
+    const ControllerAuthorityCatalog& left,
+    const ControllerAuthorityCatalog& right) {
+    ControllerAuthorityCatalog merged;
+    merged.authorities = left.authorities;
+    merged.authorities.insert(
+        merged.authorities.end(),
+        right.authorities.begin(),
+        right.authorities.end());
+    merged.dataGaps = left.dataGaps;
+    merged.dataGaps.insert(
+        merged.dataGaps.end(),
+        right.dataGaps.begin(),
+        right.dataGaps.end());
+
+    std::sort(
+        merged.authorities.begin(),
+        merged.authorities.end(),
+        [](const auto& leftAuthority, const auto& rightAuthority) {
+            return leftAuthority.id < rightAuthority.id;
+        });
+    std::sort(
+        merged.dataGaps.begin(),
+        merged.dataGaps.end(),
+        [](const auto& leftGap, const auto& rightGap) {
+            if (leftGap.authorityId != rightGap.authorityId) {
+                return leftGap.authorityId < rightGap.authorityId;
+            }
+            if (leftGap.polygonKey != rightGap.polygonKey) {
+                return leftGap.polygonKey < rightGap.polygonKey;
+            }
+            return leftGap.reason < rightGap.reason;
+        });
+    return merged;
 }
 
 AuthorityPolygonCatalog CompileAuthorityPolygons(

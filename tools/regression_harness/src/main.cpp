@@ -177,6 +177,8 @@ struct ScenarioData {
     std::vector<std::string> authorityCatalogUirLines;
     std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord>
         authorityPolygonRecords;
+    std::vector<xvatsim::core::authority::AuthorityPositionSourceRecord>
+        authorityPositionRecords;
     bool authorityEnrouteHandoff = false;
     std::vector<xvatsim::brain::ControllerSnapshot> controllers;
     std::optional<bool> controllerFeedAvailable;
@@ -198,6 +200,10 @@ bool AddCenterCoverageFeature(
     const std::string& value);
 bool AddAuthorityPolygonSourceRecord(
     std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord>* records,
+    xvatsim::core::authority::AuthoritySource source,
+    const std::string& value);
+bool AddAuthorityPositionSourceRecord(
+    std::vector<xvatsim::core::authority::AuthorityPositionSourceRecord>* records,
     xvatsim::core::authority::AuthoritySource source,
     const std::string& value);
 
@@ -321,6 +327,21 @@ std::optional<StationRole> ParseStationRole(const std::string& value) {
     }
     if (normalized == "OTHER") {
         return StationRole::Other;
+    }
+    return std::nullopt;
+}
+
+std::optional<xvatsim::core::authority::AuthorityKind> ParseAuthorityKind(
+    const std::string& value) {
+    const auto normalized = ToUpperCopy(Trim(value));
+    if (normalized == "CENTER" || normalized == "CTR") {
+        return xvatsim::core::authority::AuthorityKind::Center;
+    }
+    if (normalized == "TERMINAL" || normalized == "TRACON" || normalized == "APPROACH") {
+        return xvatsim::core::authority::AuthorityKind::Terminal;
+    }
+    if (normalized == "EXTENSION") {
+        return xvatsim::core::authority::AuthorityKind::Extension;
     }
     return std::nullopt;
 }
@@ -837,6 +858,18 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "authority.enroute_handoff") {
         return ParseBool(value, &scenario->authorityEnrouteHandoff);
+    }
+    if (key == "authority_position.vatglasses") {
+        return AddAuthorityPositionSourceRecord(
+            &scenario->authorityPositionRecords,
+            xvatsim::core::authority::AuthoritySource::VatGlasses,
+            value);
+    }
+    if (key == "authority_position.extension") {
+        return AddAuthorityPositionSourceRecord(
+            &scenario->authorityPositionRecords,
+            xvatsim::core::authority::AuthoritySource::VatsimRadarExtension,
+            value);
     }
     if (key == "authority_polygon.vatspy") {
         return AddAuthorityPolygonSourceRecord(
@@ -2098,6 +2131,47 @@ bool AddAuthorityPolygonSourceRecord(
     return true;
 }
 
+bool AddAuthorityPositionSourceRecord(
+    std::vector<xvatsim::core::authority::AuthorityPositionSourceRecord>* records,
+    xvatsim::core::authority::AuthoritySource source,
+    const std::string& value) {
+    if (records == nullptr) {
+        return false;
+    }
+
+    xvatsim::core::authority::AuthorityPositionSourceRecord record;
+    record.source = source;
+    record.sourceRecord = value;
+
+    for (const auto& part : Split(value, ';')) {
+        const auto equalsIndex = part.find('=');
+        if (equalsIndex == std::string::npos) {
+            continue;
+        }
+
+        const auto field = Trim(part.substr(0, equalsIndex));
+        const auto fieldValue = Trim(part.substr(equalsIndex + 1));
+        if (field == "id" || field == "position" || field == "positionId") {
+            record.id = fieldValue;
+        } else if (field == "name") {
+            record.name = fieldValue;
+        } else if (field == "polygon" || field == "polygonKey" || field == "sector") {
+            record.polygonKey = fieldValue;
+        } else if (field == "patterns" || field == "callsigns" || field == "callsign") {
+            record.controllerCallsignPatterns = Split(fieldValue, ',');
+        } else if (field == "kind") {
+            const auto parsedKind = ParseAuthorityKind(fieldValue);
+            if (!parsedKind.has_value()) {
+                return false;
+            }
+            record.kind = *parsedKind;
+        }
+    }
+
+    records->push_back(std::move(record));
+    return true;
+}
+
 std::string JsonEscape(const std::string& value) {
     std::string escaped;
     escaped.reserve(value.size());
@@ -2856,11 +2930,18 @@ int main(int argc, char** argv) {
         controllerFeedSnapshot.controllers = &scenario.controllers;
     }
 
-    const auto authorityCatalog =
+    const auto vatSpyAuthorityCatalog =
         xvatsim::core::authority::CompileVatSpyAuthorityCatalog(
             BuildAuthorityCompilerPayload(
                 scenario.authorityCatalogFirLines,
                 scenario.authorityCatalogUirLines));
+    const auto positionAuthorityCatalog =
+        xvatsim::core::authority::CompileAuthorityPositionCatalog(
+            scenario.authorityPositionRecords);
+    const auto authorityCatalog =
+        xvatsim::core::authority::MergeControllerAuthorityCatalogs(
+            vatSpyAuthorityCatalog,
+            positionAuthorityCatalog);
     const auto authorityPolygonCatalog =
         xvatsim::core::authority::CompileAuthorityPolygons(
             scenario.authorityPolygonRecords);
@@ -2872,7 +2953,8 @@ int main(int argc, char** argv) {
         activeAuthorityPolygonDataGaps;
     std::vector<std::string> authorityUnmappedCallsigns;
     if (!scenario.authorityCatalogFirLines.empty() ||
-        !scenario.authorityCatalogUirLines.empty()) {
+        !scenario.authorityCatalogUirLines.empty() ||
+        !scenario.authorityPositionRecords.empty()) {
         for (const auto& controller : scenario.controllers) {
             const auto matches = xvatsim::core::authority::ResolveControllerAuthority(
                 authorityCatalog,

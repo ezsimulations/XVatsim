@@ -1,0 +1,18 @@
+name=Authority Position Explicit Callsign Activates Polygon
+now_seconds=1000
+
+xpilot.connected=true
+authority.enroute_handoff=true
+
+authority_position.vatglasses=id=HKG_W_CTR;name=Hong Kong West Center;polygon=VHHK;patterns=HKG_W_CTR;kind=center
+authority_polygon.vatglasses=key=VHHK;name=Hong Kong;tokens=VHHK,HKG;polygon=-1.0,112.0|1.0,112.0|1.0,113.0|-1.0,113.0
+controller.entry=callsign=HKG_W_CTR;frequency=125.320;facility=6;actionable=true;atis=false
+route.waypoint=ident=A;lat=0.0;lon=110.0
+route.waypoint=ident=B;lat=0.0;lon=114.0
+
+expect.authority_catalog_ids=VATGLASSES:HKG_W_CTR
+expect.authority_active_matches=HKG_W_CTR:VATGLASSES:HKG_W_CTR:VHHK:HKG_W_CTR
+expect.authority_active_polygon_matches=HKG_W_CTR:VATGLASSES:HKG_W_CTR:VATGLASSES:VHHK:VHHK:HKG_W_CTR
+expect.authority_relevant_polygon_matches=HKG_W_CTR:VATGLASSES:HKG_W_CTR:VATGLASSES:VHHK:aircraft=0:route=1:entry=120
+expect.enroute_available=true
+expect.enroute_callsigns=HKG_W_CTR

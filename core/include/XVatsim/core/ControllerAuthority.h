@@ -80,6 +80,16 @@ struct AuthorityPolygonSourceRecord {
     std::string sourceRecord;
 };
 
+struct AuthorityPositionSourceRecord {
+    AuthoritySource source = AuthoritySource::VatGlasses;
+    AuthorityKind kind = AuthorityKind::Center;
+    std::string id;
+    std::string name;
+    std::string polygonKey;
+    std::vector<std::string> controllerCallsignPatterns;
+    std::string sourceRecord;
+};
+
 struct ActiveControllerAuthority {
     std::string callsign;
     std::string authorityId;
@@ -118,6 +128,13 @@ bool CallsignMatchesPattern(
 
 ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
     const std::string& vatspyDat);
+
+ControllerAuthorityCatalog CompileAuthorityPositionCatalog(
+    const std::vector<AuthorityPositionSourceRecord>& sourceRecords);
+
+ControllerAuthorityCatalog MergeControllerAuthorityCatalogs(
+    const ControllerAuthorityCatalog& left,
+    const ControllerAuthorityCatalog& right);
 
 AuthorityPolygonCatalog CompileAuthorityPolygons(
     const std::vector<AuthorityPolygonSourceRecord>& sourceRecords);
