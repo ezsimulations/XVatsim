@@ -35,10 +35,20 @@ public:
         const std::string& boundaryGeoJson,
         const std::string& terminalGeoJson,
         const std::string& authorityCatalogDat) const;
+    void LoadBoundaryPayloadsForTesting(
+        const std::string& boundaryGeoJson,
+        const std::string& terminalGeoJson,
+        const std::string& authorityCatalogDat,
+        const std::string& ownershipJson) const;
     void QueueBoundaryPayloadsForTesting(
         const std::string& boundaryGeoJson,
         const std::string& terminalGeoJson,
         const std::string& authorityCatalogDat) const;
+    void QueueBoundaryPayloadsForTesting(
+        const std::string& boundaryGeoJson,
+        const std::string& terminalGeoJson,
+        const std::string& authorityCatalogDat,
+        const std::string& ownershipJson) const;
     // Clears per-flight route/airport results while keeping downloaded source payloads.
     void ResetRuntimeState();
     // Clears downloaded sector/source payloads; use only for true data-source replacement.
@@ -57,7 +67,8 @@ private:
     void StageFetchedPayloads(
         std::vector<unsigned char> boundaryPayload,
         std::vector<unsigned char> terminalBoundaryPayload,
-        std::vector<unsigned char> authorityCatalogPayload) const;
+        std::vector<unsigned char> authorityCatalogPayload,
+        std::vector<unsigned char> ownershipPayload) const;
     void HarvestPendingFetch() const;
     bool IsCenterAuthorityCacheFresh(long long nowSeconds) const;
     bool IsTerminalBoundaryCacheFresh(long long nowSeconds) const;
@@ -85,6 +96,8 @@ private:
     mutable std::vector<unsigned char> pendingTerminalBoundaryPayload_;
     mutable std::vector<unsigned char> vatspyPayload_;
     mutable std::vector<unsigned char> pendingVatspyPayload_;
+    mutable std::vector<unsigned char> ownershipPayload_;
+    mutable std::vector<unsigned char> pendingOwnershipPayload_;
     mutable bool hasPendingPayload_ = false;
     mutable bool hasTerminalBoundaryCache_ = false;
     mutable std::uint64_t centerBoundaryGeneration_ = 0;

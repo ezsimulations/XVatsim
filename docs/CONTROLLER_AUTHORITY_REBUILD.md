@@ -126,13 +126,25 @@ Pass 8 adds supplemental source ingestion:
 - The harness proves supplemental-source defaults and VATGlasses-style position
   ingestion.
 
+Pass 9 wires live ownership into the route-sector source cache:
+
+- The optional VATGlasses/ownership URL is now downloaded with the same source
+  package as VATSpy and SimAware.
+- Ownership payloads are cached beside VATSpy.dat and participate in the live
+  authority catalog cache key.
+- Parsed ownership positions supplement VATSpy controller patterns for matching
+  route sectors instead of replacing VATSpy baseline coverage.
+- The harness proves ownership JSON can fill a VATSpy blank-prefix authority
+  gap for a route-sector snapshot.
+
 ## Not Done Yet
 
 - The live plugin has not started producing `AuthorityRelevanceSnapshot` yet;
   the ENROUTE handoff seam is harness-proven but not wired to the running
   plugin feed.
-- VATSpy and SimAware live downloads are manifest-driven, but live
-  VATGlasses/VATSIM-Radar-style ownership downloading is not wired yet.
+- VATSpy, SimAware, and optional ownership downloads are in the source cache,
+  but live ENROUTE still needs to consume the authority-polygon relevance
+  snapshot rather than the legacy route-sector handoff.
 - TRACON terminal polygon records compile, but terminal controller activation
   rules are not implemented yet.
 - VATGlasses/VATSIM Radar-style extension rules are not implemented yet.

@@ -174,8 +174,10 @@ struct ScenarioData {
     bool resolverRouteBuildsPreRefreshSnapshot = false;
     std::vector<CenterCoverageFeatureSpec> resolverRouteCenterFeatures;
     std::vector<std::string> resolverRouteAuthorityCatalogLines;
+    std::string resolverRouteOwnershipJson;
     std::vector<CenterCoverageFeatureSpec> pendingResolverRouteCenterFeatures;
     std::vector<std::string> pendingResolverRouteAuthorityCatalogLines;
+    std::string pendingResolverRouteOwnershipJson;
     bool hasPendingResolverRoutePayloads = false;
     std::vector<std::string> authorityCatalogFirLines;
     std::vector<std::string> authorityCatalogUirLines;
@@ -853,6 +855,10 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         scenario->resolverRouteAuthorityCatalogLines.push_back(value);
         return true;
     }
+    if (key == "resolver.ownership_json") {
+        scenario->resolverRouteOwnershipJson = value;
+        return true;
+    }
     if (key == "resolver.pending_center_feature") {
         if (!AddCenterCoverageFeature(&scenario->pendingResolverRouteCenterFeatures, value)) {
             return false;
@@ -862,6 +868,11 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "resolver.pending_authority_catalog_fir") {
         scenario->pendingResolverRouteAuthorityCatalogLines.push_back(value);
+        scenario->hasPendingResolverRoutePayloads = true;
+        return true;
+    }
+    if (key == "resolver.pending_ownership_json") {
+        scenario->pendingResolverRouteOwnershipJson = value;
         scenario->hasPendingResolverRoutePayloads = true;
         return true;
     }
@@ -3199,7 +3210,8 @@ int main(int argc, char** argv) {
         routeSectorResolver.LoadBoundaryPayloadsForTesting(
             BuildBoundaryPayload(scenario.resolverRouteCenterFeatures),
             {},
-            BuildAuthorityCatalogPayload(scenario.resolverRouteAuthorityCatalogLines));
+            BuildAuthorityCatalogPayload(scenario.resolverRouteAuthorityCatalogLines),
+            scenario.resolverRouteOwnershipJson);
         if (scenario.resolverRouteBuildsPreRefreshSnapshot) {
             (void)routeSectorResolver.Resolve(scenario.aircraftState, routePlanSnapshot);
         }
@@ -3208,7 +3220,8 @@ int main(int argc, char** argv) {
                 BuildBoundaryPayload(scenario.pendingResolverRouteCenterFeatures),
                 {},
                 BuildAuthorityCatalogPayload(
-                    scenario.pendingResolverRouteAuthorityCatalogLines));
+                    scenario.pendingResolverRouteAuthorityCatalogLines),
+                scenario.pendingResolverRouteOwnershipJson);
         }
         resolverRouteSectorSnapshot =
             routeSectorResolver.Resolve(scenario.aircraftState, routePlanSnapshot);

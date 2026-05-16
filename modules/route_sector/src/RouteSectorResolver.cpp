@@ -24,6 +24,7 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Data.Json.h>
 
+#include "XVatsim/core/ControllerAuthority.h"
 #include "XVatsim/core/MapDataSource.h"
 #include "XVatsim/core/RouteGrammar.h"
 #include "XVatsim/core/RouteTraversal.h"
@@ -414,6 +415,14 @@ std::string DownloadTerminalBoundaryPayload(
         return {};
     }
     return DownloadHttpsPayload(WidenUrl(manifest.simawareTraconGeoJsonUrl));
+}
+
+std::string DownloadOwnershipPayload(
+    const xvatsim::core::source_data::MapDataManifest& manifest) {
+    if (!manifest.valid || manifest.vatglassesOwnershipUrl.empty()) {
+        return {};
+    }
+    return DownloadHttpsPayload(WidenUrl(manifest.vatglassesOwnershipUrl));
 }
 
 void AddBoundaryIdentifierToken(
@@ -839,6 +848,68 @@ void MergeControllerAuthorityPatterns(
     }
 }
 
+std::string NormalizeControllerAuthorityPattern(std::string value) {
+    std::string normalized;
+    normalized.reserve(value.size());
+    for (const auto character : value) {
+        if (std::isalnum(static_cast<unsigned char>(character)) != 0 ||
+            character == '_' || character == '-' || character == '*') {
+            normalized.push_back(static_cast<char>(
+                std::toupper(static_cast<unsigned char>(character))));
+        }
+    }
+    return normalized;
+}
+
+void MergeExplicitAuthorityPatterns(
+    std::unordered_map<std::string, std::unordered_set<std::string>>* patternsByKey,
+    const std::string& lookupKey,
+    const std::vector<std::string>& patterns) {
+    if (patternsByKey == nullptr) {
+        return;
+    }
+
+    const auto normalizedLookupKey = NormalizeAuthorityCatalogKey(lookupKey);
+    if (normalizedLookupKey.empty()) {
+        return;
+    }
+
+    auto& resolvedPatterns = (*patternsByKey)[normalizedLookupKey];
+    for (const auto& pattern : patterns) {
+        const auto normalizedPattern = NormalizeControllerAuthorityPattern(pattern);
+        if (!normalizedPattern.empty()) {
+            resolvedPatterns.insert(normalizedPattern);
+        }
+    }
+}
+
+void MergeOwnershipAuthorityRecords(
+    std::unordered_map<std::string, std::unordered_set<std::string>>* patternsByKey,
+    const std::string& ownershipPayload) {
+    if (patternsByKey == nullptr || ownershipPayload.empty()) {
+        return;
+    }
+
+    auto mergeRecords = [&](
+        const std::vector<xvatsim::core::authority::AuthorityPositionSourceRecord>& records) {
+        for (const auto& record : records) {
+            MergeExplicitAuthorityPatterns(
+                patternsByKey,
+                record.polygonKey,
+                record.controllerCallsignPatterns);
+        }
+    };
+
+    mergeRecords(
+        xvatsim::core::authority::ParseAuthorityPositionSourceRecordsJson(
+            xvatsim::core::authority::AuthoritySource::VatGlasses,
+            ownershipPayload));
+    mergeRecords(
+        xvatsim::core::authority::ParseAuthorityPositionSourceRecordsJson(
+            xvatsim::core::authority::AuthoritySource::VatsimRadarExtension,
+            ownershipPayload));
+}
+
 ControllerAuthorityCatalog ParseControllerAuthorityCatalog(const std::string& payload) {
     enum class Section {
         None,
@@ -947,6 +1018,29 @@ ControllerAuthorityCatalog ParseControllerAuthorityCatalog(const std::string& pa
     return catalog;
 }
 
+ControllerAuthorityCatalog ParseControllerAuthorityCatalog(
+    const std::string& vatspyPayload,
+    const std::string& ownershipPayload) {
+    auto catalog = ParseControllerAuthorityCatalog(vatspyPayload);
+
+    std::unordered_map<std::string, std::unordered_set<std::string>> patternsByKey;
+    for (const auto& [key, patterns] : catalog.callsignPatternsByKey) {
+        auto& mergedPatterns = patternsByKey[key];
+        mergedPatterns.insert(patterns.begin(), patterns.end());
+    }
+
+    MergeOwnershipAuthorityRecords(&patternsByKey, ownershipPayload);
+
+    catalog.callsignPatternsByKey.clear();
+    for (auto& [key, patterns] : patternsByKey) {
+        std::vector<std::string> normalizedPatterns(patterns.begin(), patterns.end());
+        std::sort(normalizedPatterns.begin(), normalizedPatterns.end());
+        catalog.callsignPatternsByKey.emplace(std::move(key), std::move(normalizedPatterns));
+    }
+
+    return catalog;
+}
+
 std::size_t HashPayload(const std::vector<unsigned char>& payload) {
     std::size_t hash = 1469598103934665603ull;
     for (const auto byte : payload) {
@@ -954,6 +1048,36 @@ std::size_t HashPayload(const std::vector<unsigned char>& payload) {
         hash *= 1099511628211ull;
     }
     return hash;
+}
+
+std::size_t HashPayloads(
+    const std::vector<unsigned char>& left,
+    const std::vector<unsigned char>& right) {
+    std::size_t hash = 1469598103934665603ull;
+    auto appendByte = [&](unsigned char byte) {
+        hash ^= static_cast<std::size_t>(byte);
+        hash *= 1099511628211ull;
+    };
+
+    for (const auto byte : left) {
+        appendByte(byte);
+    }
+    appendByte(0xff);
+    appendByte(0x00);
+    for (const auto byte : right) {
+        appendByte(byte);
+    }
+    return hash;
+}
+
+std::string PayloadToString(const std::vector<unsigned char>& payload) {
+    if (payload.empty()) {
+        return {};
+    }
+
+    return std::string(
+        reinterpret_cast<const char*>(payload.data()),
+        payload.size());
 }
 
 const std::vector<SectorFeature>& GetCachedSectorFeatures(
@@ -1001,24 +1125,28 @@ const std::vector<SectorFeature>& GetCachedTerminalSectorFeatures(
 }
 
 const ControllerAuthorityCatalog& GetCachedControllerAuthorityCatalog(
-    const std::vector<unsigned char>& payload) {
+    const std::vector<unsigned char>& vatspyPayload,
+    const std::vector<unsigned char>& ownershipPayload) {
     static std::mutex cacheMutex;
     static std::size_t cachedHash = 0;
-    static std::size_t cachedSize = 0;
+    static std::size_t cachedVatspySize = 0;
+    static std::size_t cachedOwnershipSize = 0;
     static ControllerAuthorityCatalog cachedCatalog;
 
-    const auto payloadHash = HashPayload(payload);
+    const auto payloadHash = HashPayloads(vatspyPayload, ownershipPayload);
     std::lock_guard<std::mutex> lock(cacheMutex);
-    if (payloadHash == cachedHash && payload.size() == cachedSize) {
+    if (payloadHash == cachedHash &&
+        vatspyPayload.size() == cachedVatspySize &&
+        ownershipPayload.size() == cachedOwnershipSize) {
         return cachedCatalog;
     }
 
     cachedHash = payloadHash;
-    cachedSize = payload.size();
+    cachedVatspySize = vatspyPayload.size();
+    cachedOwnershipSize = ownershipPayload.size();
     cachedCatalog = ParseControllerAuthorityCatalog(
-        std::string(
-            reinterpret_cast<const char*>(payload.data()),
-            payload.size()));
+        PayloadToString(vatspyPayload),
+        PayloadToString(ownershipPayload));
     return cachedCatalog;
 }
 
@@ -4987,6 +5115,18 @@ void RouteSectorResolver::LoadBoundaryPayloadsForTesting(
     const std::string& boundaryGeoJson,
     const std::string& terminalGeoJson,
     const std::string& authorityCatalogDat) const {
+    LoadBoundaryPayloadsForTesting(
+        boundaryGeoJson,
+        terminalGeoJson,
+        authorityCatalogDat,
+        {});
+}
+
+void RouteSectorResolver::LoadBoundaryPayloadsForTesting(
+    const std::string& boundaryGeoJson,
+    const std::string& terminalGeoJson,
+    const std::string& authorityCatalogDat,
+    const std::string& ownershipJson) const {
     if (fetchThread_.joinable()) {
         fetchThread_.join();
     }
@@ -4995,9 +5135,11 @@ void RouteSectorResolver::LoadBoundaryPayloadsForTesting(
     boundaryPayload_.assign(boundaryGeoJson.begin(), boundaryGeoJson.end());
     terminalBoundaryPayload_.assign(terminalGeoJson.begin(), terminalGeoJson.end());
     vatspyPayload_.assign(authorityCatalogDat.begin(), authorityCatalogDat.end());
+    ownershipPayload_.assign(ownershipJson.begin(), ownershipJson.end());
     pendingBoundaryPayload_.clear();
     pendingTerminalBoundaryPayload_.clear();
     pendingVatspyPayload_.clear();
+    pendingOwnershipPayload_.clear();
     hasBoundaryCache_ = !boundaryPayload_.empty();
     hasAuthorityCatalogCache_ = !vatspyPayload_.empty();
     hasTerminalBoundaryCache_ = !terminalBoundaryPayload_.empty();
@@ -5033,6 +5175,18 @@ void RouteSectorResolver::QueueBoundaryPayloadsForTesting(
     const std::string& boundaryGeoJson,
     const std::string& terminalGeoJson,
     const std::string& authorityCatalogDat) const {
+    QueueBoundaryPayloadsForTesting(
+        boundaryGeoJson,
+        terminalGeoJson,
+        authorityCatalogDat,
+        {});
+}
+
+void RouteSectorResolver::QueueBoundaryPayloadsForTesting(
+    const std::string& boundaryGeoJson,
+    const std::string& terminalGeoJson,
+    const std::string& authorityCatalogDat,
+    const std::string& ownershipJson) const {
     if (fetchThread_.joinable()) {
         fetchThread_.join();
     }
@@ -5040,7 +5194,8 @@ void RouteSectorResolver::QueueBoundaryPayloadsForTesting(
     StageFetchedPayloads(
         std::vector<unsigned char>(boundaryGeoJson.begin(), boundaryGeoJson.end()),
         std::vector<unsigned char>(terminalGeoJson.begin(), terminalGeoJson.end()),
-        std::vector<unsigned char>(authorityCatalogDat.begin(), authorityCatalogDat.end()));
+        std::vector<unsigned char>(authorityCatalogDat.begin(), authorityCatalogDat.end()),
+        std::vector<unsigned char>(ownershipJson.begin(), ownershipJson.end()));
     fetchInProgress_ = false;
 }
 
@@ -5064,6 +5219,7 @@ void RouteSectorResolver::ResetRuntimeState() {
     pendingBoundaryPayload_.clear();
     pendingTerminalBoundaryPayload_.clear();
     pendingVatspyPayload_.clear();
+    pendingOwnershipPayload_.clear();
     hasPendingPayload_ = false;
     fetchInProgress_ = false;
 }
@@ -5078,6 +5234,7 @@ void RouteSectorResolver::ResetSourceCaches() {
     boundaryPayload_.clear();
     terminalBoundaryPayload_.clear();
     vatspyPayload_.clear();
+    ownershipPayload_.clear();
     centerBoundaryGeneration_ = 0;
     authorityCatalogGeneration_ = 0;
     terminalBoundaryGeneration_ = 0;
@@ -5356,7 +5513,8 @@ brain::RouteSectorSnapshot RouteSectorResolver::BuildSnapshot(
     }
 
     const auto& features = GetCachedSectorFeatures(boundaryPayload_);
-    const auto& authorityCatalog = GetCachedControllerAuthorityCatalog(vatspyPayload_);
+    const auto& authorityCatalog =
+        GetCachedControllerAuthorityCatalog(vatspyPayload_, ownershipPayload_);
     if (features.empty()) {
         snapshot.statusLine = "ROUTE sectors unavailable";
         return snapshot;
@@ -5441,7 +5599,8 @@ brain::AirportSectorSnapshot RouteSectorResolver::BuildAirportCoverageSnapshot(
         hasAuthorityCatalogCache_ ? authorityCatalogGeneration_ : 0;
     snapshot.terminalCoverageGeneration =
         hasTerminalBoundaryCache_ ? terminalBoundaryGeneration_ : 0;
-    const auto& authorityCatalog = GetCachedControllerAuthorityCatalog(vatspyPayload_);
+    const auto& authorityCatalog =
+        GetCachedControllerAuthorityCatalog(vatspyPayload_, ownershipPayload_);
 
     const GeoPoint airportPoint{airportLatitudeDeg, airportLongitudeDeg};
     std::size_t centerSectorCount = 0;
@@ -5516,6 +5675,7 @@ void RouteSectorResolver::StartAsyncBoundaryFetch(long long nowSeconds) const {
         const auto payload = DownloadBoundaryPayload(mapDataManifest);
         const auto vatspyPayload = DownloadVatSpyDataPayload(mapDataManifest);
         const auto terminalPayload = DownloadTerminalBoundaryPayload(mapDataManifest);
+        const auto ownershipPayload = DownloadOwnershipPayload(mapDataManifest);
         std::vector<unsigned char> boundaryPayload(payload.begin(), payload.end());
         std::vector<unsigned char> authorityCatalogPayload(
             vatspyPayload.begin(),
@@ -5523,6 +5683,9 @@ void RouteSectorResolver::StartAsyncBoundaryFetch(long long nowSeconds) const {
         std::vector<unsigned char> terminalBoundaryPayload(
             terminalPayload.begin(),
             terminalPayload.end());
+        std::vector<unsigned char> ownershipAuthorityPayload(
+            ownershipPayload.begin(),
+            ownershipPayload.end());
 
         // Warm the polygon caches off the X-Plane thread so the first sector lookup
         // does not pay the GeoJSON parse cost during taxi or departure.
@@ -5530,7 +5693,9 @@ void RouteSectorResolver::StartAsyncBoundaryFetch(long long nowSeconds) const {
             (void)GetCachedSectorFeatures(boundaryPayload);
         }
         if (!authorityCatalogPayload.empty()) {
-            (void)GetCachedControllerAuthorityCatalog(authorityCatalogPayload);
+            (void)GetCachedControllerAuthorityCatalog(
+                authorityCatalogPayload,
+                ownershipAuthorityPayload);
         }
         if (!terminalBoundaryPayload.empty()) {
             (void)GetCachedTerminalSectorFeatures(terminalBoundaryPayload);
@@ -5539,7 +5704,8 @@ void RouteSectorResolver::StartAsyncBoundaryFetch(long long nowSeconds) const {
         StageFetchedPayloads(
             std::move(boundaryPayload),
             std::move(terminalBoundaryPayload),
-            std::move(authorityCatalogPayload));
+            std::move(authorityCatalogPayload),
+            std::move(ownershipAuthorityPayload));
         fetchInProgress_ = false;
     });
 }
@@ -5547,15 +5713,18 @@ void RouteSectorResolver::StartAsyncBoundaryFetch(long long nowSeconds) const {
 void RouteSectorResolver::StageFetchedPayloads(
     std::vector<unsigned char> boundaryPayload,
     std::vector<unsigned char> terminalBoundaryPayload,
-    std::vector<unsigned char> authorityCatalogPayload) const {
+    std::vector<unsigned char> authorityCatalogPayload,
+    std::vector<unsigned char> ownershipPayload) const {
     std::lock_guard<std::mutex> lock(fetchMutex_);
     pendingBoundaryPayload_.clear();
     pendingVatspyPayload_.clear();
     pendingTerminalBoundaryPayload_.clear();
+    pendingOwnershipPayload_.clear();
 
     if (!boundaryPayload.empty() && !authorityCatalogPayload.empty()) {
         pendingBoundaryPayload_ = std::move(boundaryPayload);
         pendingVatspyPayload_ = std::move(authorityCatalogPayload);
+        pendingOwnershipPayload_ = std::move(ownershipPayload);
     }
     if (!terminalBoundaryPayload.empty()) {
         pendingTerminalBoundaryPayload_ = std::move(terminalBoundaryPayload);
@@ -5589,6 +5758,7 @@ void RouteSectorResolver::HarvestPendingFetch() const {
     if (hasPendingCenterPackage) {
         boundaryPayload_ = std::move(pendingBoundaryPayload_);
         vatspyPayload_ = std::move(pendingVatspyPayload_);
+        ownershipPayload_ = std::move(pendingOwnershipPayload_);
         hasBoundaryCache_ = true;
         hasAuthorityCatalogCache_ = true;
         ++centerBoundaryGeneration_;
@@ -5613,6 +5783,7 @@ void RouteSectorResolver::HarvestPendingFetch() const {
     pendingBoundaryPayload_.clear();
     pendingVatspyPayload_.clear();
     pendingTerminalBoundaryPayload_.clear();
+    pendingOwnershipPayload_.clear();
     lastFetchSucceeded_ = hasPendingCenterPackage && hasPendingTerminalPackage;
     hasSnapshotCache_ = false;
     lastSnapshotRouteKey_.clear();
