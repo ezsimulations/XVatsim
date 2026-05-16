@@ -1,0 +1,136 @@
+# User-supplied live-flight regression:
+#   C:\X-Plane 12\Output\FMS plans\PANCVHHH01.fms
+# Scenario:
+#   GTI947 from PANC to VHHH.
+#   The only center online is HKG_W_CTR, and ENROUTE must display it when
+#   the route authority catalog identifies the Hong Kong FIR with base prefix HKG.
+#
+# Failure captured:
+#   HKG_W_CTR was previously ignored because ENROUTE required an exact
+#   controller-prefix match. The catalog supplied HKG, while the live segmented
+#   controller prefix was HKG_W.
+
+name=PANC VHHH GTI947 HKG W Center
+now_seconds=1000
+
+state.flight_active=true
+state.departure_released=true
+state.arrival_awake=false
+state.airborne_since_seconds=900
+
+flight.callsign=GTI947
+flight.departure_icao=PANC
+flight.departure_lat=61.174086
+flight.departure_lon=-149.998139
+flight.has_departure_coordinates=true
+flight.destination_icao=VHHH
+flight.destination_lat=22.308889
+flight.destination_lon=113.914722
+flight.has_destination_coordinates=true
+flight.route_text=NODLE NICHO NOSHO NEONN NANZA NOLTI NAYLD NULUK NANDY NATES NIKLL NYMPH NUZAN NRKEY NIPPI NOGAL NUBDA NANNO NODAN NANAC NIKON BEKEN IXE DAIGO HAGAR NIKKO AKAGI GYODA TEPEX OSPAN PIGAP TENRU SUGAL NAKTU POTEB KOHWA RUPAP TURFY JAKAL GREEN SUC KOSHI JEDAI RUSAR AKVAS URUMA SAPET IGMON BULAN AIPOM OSTAR AISAR DRAKE ANNNA APU PIDGY HLG HOMEI WUCHI SWORD MKG KADLO ANPOG ELATO MAGOG ENPET FISHA ABBEY
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.battery_on=true
+aircraft.latitude_deg=22.955000
+aircraft.longitude_deg=118.541667
+
+radio.com1_active=122.800
+xpilot.connected=true
+controller.feed_available=true
+controller.feed_stale=false
+
+plan.matched=true
+plan.departure_icao=PANC
+plan.departure_lat=61.174086
+plan.departure_lon=-149.998139
+plan.has_departure_coordinates=true
+plan.destination_icao=VHHH
+plan.destination_lat=22.308889
+plan.destination_lon=113.914722
+plan.has_destination_coordinates=true
+plan.route_text=NODLE NICHO NOSHO NEONN NANZA NOLTI NAYLD NULUK NANDY NATES NIKLL NYMPH NUZAN NRKEY NIPPI NOGAL NUBDA NANNO NODAN NANAC NIKON BEKEN IXE DAIGO HAGAR NIKKO AKAGI GYODA TEPEX OSPAN PIGAP TENRU SUGAL NAKTU POTEB KOHWA RUPAP TURFY JAKAL GREEN SUC KOSHI JEDAI RUSAR AKVAS URUMA SAPET IGMON BULAN AIPOM OSTAR AISAR DRAKE ANNNA APU PIDGY HLG HOMEI WUCHI SWORD MKG KADLO ANPOG ELATO MAGOG ENPET FISHA ABBEY
+
+graph.node=ident=NODLE;region=USER;type=11;lat=61.283333;lon=-152.000000
+graph.node=ident=NICHO;region=USER;type=11;lat=61.250000;lon=-156.000000
+graph.node=ident=NOSHO;region=USER;type=11;lat=61.116667;lon=-163.000000
+graph.node=ident=NEONN;region=USER;type=11;lat=60.822019;lon=-165.010111
+graph.node=ident=NANZA;region=USER;type=11;lat=60.308306;lon=-168.043222
+graph.node=ident=NOLTI;region=USER;type=11;lat=59.546094;lon=-171.902425
+graph.node=ident=NAYLD;region=USER;type=11;lat=59.052389;lon=-174.207778
+graph.node=ident=NULUK;region=USER;type=11;lat=58.382000;lon=-177.102389
+graph.node=ident=NANDY;region=USER;type=11;lat=56.832889;lon=177.348167
+graph.node=ident=NATES;region=USER;type=11;lat=54.933547;lon=171.974692
+graph.node=ident=NIKLL;region=USER;type=11;lat=53.627342;lon=169.343942
+graph.node=ident=NYMPH;region=USER;type=11;lat=53.303475;lon=168.346178
+graph.node=ident=NUZAN;region=USER;type=11;lat=51.607208;lon=163.702353
+graph.node=ident=NRKEY;region=USER;type=11;lat=50.195600;lon=160.390631
+graph.node=ident=NIPPI;region=USER;type=11;lat=49.710000;lon=159.346667
+graph.node=ident=NOGAL;region=USER;type=11;lat=46.216667;lon=153.003336
+graph.node=ident=NUBDA;region=USER;type=11;lat=42.391050;lon=147.475761
+graph.node=ident=NANNO;region=USER;type=11;lat=41.916083;lon=146.859178
+graph.node=ident=NODAN;region=USER;type=11;lat=40.419525;lon=144.996092
+graph.node=ident=NANAC;region=USER;type=11;lat=38.906308;lon=143.227992
+graph.node=ident=NIKON;region=USER;type=11;lat=38.320517;lon=142.470031
+graph.node=ident=BEKEN;region=USER;type=11;lat=38.005869;lon=142.061656
+graph.node=ident=IXE;region=USER;type=3;lat=37.148864;lon=140.975686
+graph.node=ident=DAIGO;region=USER;type=11;lat=36.744367;lon=140.349850
+graph.node=ident=HAGAR;region=USER;type=11;lat=36.581111;lon=140.039758
+graph.node=ident=NIKKO;region=USER;type=11;lat=36.487447;lon=139.863117
+graph.node=ident=AKAGI;region=USER;type=11;lat=36.391203;lon=139.698967
+graph.node=ident=GYODA;region=USER;type=11;lat=36.163939;lon=139.311028
+graph.node=ident=TEPEX;region=USER;type=11;lat=36.004103;lon=138.882750
+graph.node=ident=OSPAN;region=USER;type=11;lat=35.896231;lon=138.596944
+graph.node=ident=PIGAP;region=USER;type=11;lat=35.789211;lon=138.316942
+graph.node=ident=TENRU;region=USER;type=11;lat=35.669592;lon=138.006936
+graph.node=ident=SUGAL;region=USER;type=11;lat=35.593114;lon=137.794692
+graph.node=ident=NAKTU;region=USER;type=11;lat=35.467097;lon=137.463078
+graph.node=ident=POTEB;region=USER;type=11;lat=35.144719;lon=137.248114
+graph.node=ident=KOHWA;region=USER;type=11;lat=34.704636;lon=136.957947
+graph.node=ident=RUPAP;region=USER;type=11;lat=33.405178;lon=134.997556
+graph.node=ident=TURFY;region=USER;type=11;lat=33.162525;lon=134.642294
+graph.node=ident=JAKAL;region=USER;type=11;lat=33.062028;lon=134.234275
+graph.node=ident=GREEN;region=USER;type=11;lat=32.898675;lon=133.566500
+graph.node=ident=SUC;region=USER;type=3;lat=32.755969;lon=132.996647
+graph.node=ident=KOSHI;region=USER;type=11;lat=31.288503;lon=129.964714
+graph.node=ident=JEDAI;region=USER;type=11;lat=30.774644;lon=129.201156
+graph.node=ident=RUSAR;region=USER;type=11;lat=29.865028;lon=127.837142
+graph.node=ident=AKVAS;region=USER;type=11;lat=29.586997;lon=127.464681
+graph.node=ident=URUMA;region=USER;type=11;lat=28.970067;lon=126.579300
+graph.node=ident=SAPET;region=USER;type=11;lat=28.637081;lon=126.131483
+graph.node=ident=IGMON;region=USER;type=11;lat=27.622128;lon=124.720519
+graph.node=ident=BULAN;region=USER;type=11;lat=27.091667;lon=124.000000
+graph.node=ident=AIPOM;region=USER;type=11;lat=26.656389;lon=123.424444
+graph.node=ident=OSTAR;region=USER;type=11;lat=26.331667;lon=123.000000
+graph.node=ident=AISAR;region=USER;type=11;lat=25.943056;lon=122.497500
+graph.node=ident=DRAKE;region=USER;type=11;lat=25.615556;lon=122.078056
+graph.node=ident=ANNNA;region=USER;type=11;lat=25.571944;lon=122.022222
+graph.node=ident=APU;region=USER;type=3;lat=25.176861;lon=121.522250
+graph.node=ident=PIDGY;region=USER;type=11;lat=24.833056;lon=121.077778
+graph.node=ident=HLG;region=USER;type=3;lat=24.559806;lon=120.727167
+graph.node=ident=HOMEI;region=USER;type=11;lat=24.234444;lon=120.356667
+graph.node=ident=WUCHI;region=USER;type=11;lat=24.201053;lon=120.318708
+graph.node=ident=SWORD;region=USER;type=11;lat=24.002500;lon=120.094167
+graph.node=ident=MKG;region=USER;type=3;lat=23.595444;lon=119.637278
+graph.node=ident=KADLO;region=USER;type=11;lat=22.955000;lon=118.541667
+graph.node=ident=ANPOG;region=USER;type=11;lat=22.604167;lon=117.954444
+graph.node=ident=ELATO;region=USER;type=11;lat=22.333333;lon=117.500000
+graph.node=ident=MAGOG;region=USER;type=11;lat=22.296111;lon=115.825000
+graph.node=ident=ENPET;region=USER;type=11;lat=22.292544;lon=115.690100
+graph.node=ident=FISHA;region=USER;type=11;lat=22.282678;lon=115.336558
+graph.node=ident=ABBEY;region=USER;type=11;lat=22.269722;lon=114.923867
+
+route.current_sector=identifier=VHHK;entryDistanceNm=0;matchTokens=VHHK;controllerPrefixes=HKG
+
+controller.entry=callsign=HKG_W_CTR;frequency=125.320;facility=6;actionable=true;atis=false
+enroute.station=role=Center;callsign=HKG_W_CTR;frequency=125.320;online=true;offline=false;sectorActive=true;routeEntryDistanceNm=0
+
+expect.stage=Enroute
+expect.reason=enroute-primary
+expect.display_source=Enroute
+expect.display_callsigns=HKG_W_CTR
+expect.enroute_available=true
+expect.enroute_callsigns=HKG_W_CTR
+expect.resolved_waypoints=ACFT,ANPOG,ELATO,MAGOG,ENPET,FISHA,ABBEY,VHHH
+expect.unsupported_tokens=<none>
+expect.unresolved_tokens=<none>

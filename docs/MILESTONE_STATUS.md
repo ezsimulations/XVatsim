@@ -382,6 +382,22 @@ package.
   validated build output and matches SHA-256
   `9CCC4E0430D48E43384AC424926DC08F45F62211B9BCA1FCBC34511597FD7956`.
 
+## Post-Milestone Live Regressions
+
+- Captured the live GTI947 PANC to VHHH failure where segmented Hong Kong Center
+  `HKG_W_CTR` did not appear in ENROUTE when the route authority catalog exposed
+  the base `HKG` controller prefix. ENROUTE now accepts an authoritative base
+  prefix followed by an underscore segment, while still requiring center/FSS
+  facility truth before matching.
+- Release build passed and all 97 saved regression scenarios passed, including
+  focused `HKG_W_CTR` matching and the full user-supplied PANC to VHHH scenario.
+  The validated build output SHA-256 is
+  `E0E048B77E96E78107D966898071D380CD33C20ED8A1B9DF2B99D4BDFE5A9E40`.
+  The installed X-Plane plugin binary could not be refreshed during the live
+  flight because X-Plane had the file locked, so it still matches the prior
+  installed SHA-256
+  `9CCC4E0430D48E43384AC424926DC08F45F62211B9BCA1FCBC34511597FD7956`.
+
 ## Release Rule
 
 Milestones 6 through 9 are complete, and the final package validation pass has

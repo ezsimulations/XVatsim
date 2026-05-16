@@ -1,0 +1,9 @@
+name=HKG Segmented Center Prefix
+now_seconds=1000
+
+xpilot.connected=true
+route.current_sector=identifier=VHHK;entryDistanceNm=0;matchTokens=VHHK;controllerPrefixes=HKG
+controller.entry=callsign=HKG_W_CTR;frequency=125.320;facility=6;actionable=true;atis=false
+
+expect.enroute_available=true
+expect.enroute_callsigns=HKG_W_CTR

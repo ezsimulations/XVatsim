@@ -129,7 +129,15 @@ bool SectorMatchesController(
     }
 
     for (const auto& controllerPrefix : sector.controllerPrefixes) {
-        if (ToUpperCopy(controllerPrefix) == prefix) {
+        const auto authoritativePrefix = ToUpperCopy(controllerPrefix);
+        if (authoritativePrefix.empty()) {
+            continue;
+        }
+        // Segmented live positions (for example HKG_W_CTR) inherit the base FIR prefix.
+        if (authoritativePrefix == prefix ||
+            (prefix.size() > authoritativePrefix.size() &&
+             prefix.compare(0, authoritativePrefix.size(), authoritativePrefix) == 0 &&
+             prefix[authoritativePrefix.size()] == '_')) {
             return true;
         }
     }
