@@ -1,0 +1,11 @@
+name=Authority Activation Controller Lights Polygon
+now_seconds=1000
+
+authority_catalog.fir=VHHK|Hong Kong|HKG|VHHK
+authority_polygon.vatspy=key=VHHK;name=Hong Kong;tokens=VHHK,HKG;polygon=20.0,112.0|24.0,112.0|24.0,116.0|20.0,116.0
+controller.entry=callsign=HKG_W_CTR;frequency=125.320;facility=6;actionable=true;atis=false
+
+expect.authority_active_matches=HKG_W_CTR:VATSPY_FIR:VHHK:VHHK:HKG_*_CTR
+expect.authority_active_polygon_matches=HKG_W_CTR:VATSPY_FIR:VHHK:VATSPY_BOUNDARY:VHHK:VHHK:HKG_*_CTR
+expect.authority_active_polygon_data_gaps=<none>
+expect.authority_unmapped_callsigns=<none>

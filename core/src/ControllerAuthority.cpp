@@ -177,6 +177,22 @@ std::vector<AuthorityPolygonRing> ValidRings(
     return validRings;
 }
 
+bool PolygonMatchesAuthorityKey(
+    const AuthorityPolygon& polygon,
+    const std::string& rawAuthorityKey) {
+    const auto authorityKey = NormalizeAuthorityToken(rawAuthorityKey);
+    if (authorityKey.empty()) {
+        return false;
+    }
+    if (polygon.polygonKey == authorityKey) {
+        return true;
+    }
+    return std::find(
+               polygon.lookupKeys.begin(),
+               polygon.lookupKeys.end(),
+               authorityKey) != polygon.lookupKeys.end();
+}
+
 }  // namespace
 
 std::string AuthoritySourceLabel(AuthoritySource source) {
@@ -448,6 +464,88 @@ std::vector<ActiveControllerAuthority> ResolveControllerAuthority(
             return left.matchedPattern < right.matchedPattern;
         });
     return matches;
+}
+
+AuthorityActivationResult ActivateAuthorityPolygons(
+    const ControllerAuthorityCatalog& controllerCatalog,
+    const AuthorityPolygonCatalog& polygonCatalog,
+    const std::string& callsign,
+    int vatsimFacility) {
+    AuthorityActivationResult result;
+    std::unordered_set<std::string> insertedActiveKeys;
+    std::unordered_set<std::string> insertedGapKeys;
+
+    const auto authorityMatches =
+        ResolveControllerAuthority(controllerCatalog, callsign, vatsimFacility);
+    for (const auto& authorityMatch : authorityMatches) {
+        bool matchedPolygon = false;
+        for (const auto& polygon : polygonCatalog.polygons) {
+            if (!PolygonMatchesAuthorityKey(polygon, authorityMatch.polygonKey)) {
+                continue;
+            }
+
+            matchedPolygon = true;
+            const auto activeKey = authorityMatch.callsign + "|" +
+                                   authorityMatch.authorityId + "|" +
+                                   polygon.id + "|" +
+                                   authorityMatch.matchedPattern;
+            if (!insertedActiveKeys.insert(activeKey).second) {
+                continue;
+            }
+
+            result.activePolygons.push_back({
+                authorityMatch.callsign,
+                authorityMatch.authorityId,
+                polygon.id,
+                polygon.polygonKey,
+                authorityMatch.matchedPattern,
+                polygon.source,
+                polygon.kind,
+            });
+        }
+
+        if (!matchedPolygon) {
+            const auto gapKey = authorityMatch.authorityId + "|" +
+                                authorityMatch.polygonKey + "|missing-authority-polygon";
+            if (insertedGapKeys.insert(gapKey).second) {
+                result.dataGaps.push_back({
+                    authorityMatch.authorityId,
+                    authorityMatch.polygonKey,
+                    "missing-authority-polygon",
+                    authorityMatch.callsign,
+                });
+            }
+        }
+    }
+
+    std::sort(
+        result.activePolygons.begin(),
+        result.activePolygons.end(),
+        [](const auto& left, const auto& right) {
+            if (left.callsign != right.callsign) {
+                return left.callsign < right.callsign;
+            }
+            if (left.authorityId != right.authorityId) {
+                return left.authorityId < right.authorityId;
+            }
+            if (left.polygonId != right.polygonId) {
+                return left.polygonId < right.polygonId;
+            }
+            return left.matchedPattern < right.matchedPattern;
+        });
+    std::sort(
+        result.dataGaps.begin(),
+        result.dataGaps.end(),
+        [](const auto& left, const auto& right) {
+            if (left.authorityId != right.authorityId) {
+                return left.authorityId < right.authorityId;
+            }
+            if (left.polygonKey != right.polygonKey) {
+                return left.polygonKey < right.polygonKey;
+            }
+            return left.reason < right.reason;
+        });
+    return result;
 }
 
 }  // namespace xvatsim::core::authority

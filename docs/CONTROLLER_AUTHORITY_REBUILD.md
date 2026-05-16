@@ -59,6 +59,18 @@ Pass 2 adds authoritative polygon compilation:
 - The regression harness can assert compiled polygon IDs, lookup keys, ring
   counts, and polygon data gaps.
 
+Pass 3 adds active polygon activation:
+
+- Live controller callsign plus VATSIM facility truth resolves to controller
+  authority.
+- Controller authority joins to compiled authority polygons through explicit
+  polygon lookup keys.
+- A controller can activate a polygon only when both the authority record and
+  polygon record exist.
+- Missing polygon records become `missing-authority-polygon` data gaps.
+- The regression harness can assert active authority polygon matches and active
+  polygon data gaps.
+
 ## Not Done Yet
 
 - The live ENROUTE/DEPARTURE/ARRIVAL modules are not switched to the new
@@ -66,5 +78,6 @@ Pass 2 adds authoritative polygon compilation:
 - TRACON terminal polygon records compile, but terminal controller activation
   rules are not implemented yet.
 - VATGlasses/VATSIM Radar-style extension rules are not implemented yet.
-- Active polygon geometry resolution is not implemented yet.
+- Active polygon geometry intersection against route/aircraft position is not
+  implemented yet.
 - Old live authority seams still exist and must be removed after replacement.

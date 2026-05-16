@@ -126,6 +126,8 @@ Controller authority compiler replay:
 - expect.authority_polygon_lookup_keys=VATSPY_BOUNDARY:VHHK:HKG>VHHK,SIMAWARE_TRACON:SCT_APP:SCT>SCT_APP>SOCAL>SOCAL_APP
 - expect.authority_polygon_ring_counts=VATSPY_BOUNDARY:VHHK:1,SIMAWARE_TRACON:SCT_APP:1
 - expect.authority_polygon_data_gaps=<none>
+- expect.authority_active_polygon_matches=HKG_W_CTR:VATSPY_FIR:VHHK:VATSPY_BOUNDARY:VHHK:VHHK:HKG_*_CTR
+- expect.authority_active_polygon_data_gaps=<none>
 
 Overlay/RX presentation replay:
 
@@ -482,6 +484,12 @@ Included scenarios
 
 - authority_polygons_invalid_ring_is_data_gap.scn
   Proves invalid polygon geometry becomes an explicit data gap instead of a usable authority polygon.
+
+- authority_activation_controller_lights_polygon.scn
+  Proves a live center controller activates a compiled authority polygon only through controller-authority truth plus polygon-source truth.
+
+- authority_activation_missing_polygon_is_data_gap.scn
+  Proves a matching controller authority cannot activate anything when the polygon record is missing, and instead reports a missing-polygon data gap.
 
 - resolver_authority_blank_prefix_is_data_gap.scn
   Proves a VATSpy FIR/UIR row with a blank callsign-prefix field does not invent the boundary identifier as a controller prefix and instead surfaces an explicit route authority gap.

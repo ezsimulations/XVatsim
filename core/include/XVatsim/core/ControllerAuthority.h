@@ -87,6 +87,21 @@ struct ActiveControllerAuthority {
     std::string matchedPattern;
 };
 
+struct ActiveAuthorityPolygon {
+    std::string callsign;
+    std::string authorityId;
+    std::string polygonId;
+    std::string polygonKey;
+    std::string matchedPattern;
+    AuthoritySource polygonSource = AuthoritySource::VatSpyBoundary;
+    AuthorityKind kind = AuthorityKind::Center;
+};
+
+struct AuthorityActivationResult {
+    std::vector<ActiveAuthorityPolygon> activePolygons;
+    std::vector<AuthorityDataGap> dataGaps;
+};
+
 std::string AuthoritySourceLabel(AuthoritySource source);
 std::string NormalizeAuthorityToken(std::string value);
 std::string NormalizeControllerCallsign(std::string value);
@@ -102,6 +117,12 @@ AuthorityPolygonCatalog CompileAuthorityPolygons(
 
 std::vector<ActiveControllerAuthority> ResolveControllerAuthority(
     const ControllerAuthorityCatalog& catalog,
+    const std::string& callsign,
+    int vatsimFacility);
+
+AuthorityActivationResult ActivateAuthorityPolygons(
+    const ControllerAuthorityCatalog& controllerCatalog,
+    const AuthorityPolygonCatalog& polygonCatalog,
     const std::string& callsign,
     int vatsimFacility);
 
