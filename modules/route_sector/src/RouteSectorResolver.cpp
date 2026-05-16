@@ -98,6 +98,7 @@ struct SectorFeature {
 
 struct ControllerAuthorityCatalog {
     std::unordered_map<std::string, std::vector<std::string>> prefixesByKey;
+    std::unordered_map<std::string, std::vector<std::string>> callsignPatternsByKey;
 };
 
 struct RouteResolveDiagnostics {
@@ -777,6 +778,43 @@ void MergeControllerAuthorityPrefixes(
     }
 }
 
+void AddCenterActivationPatterns(
+    const std::string& activationBase,
+    std::unordered_set<std::string>* patterns) {
+    if (patterns == nullptr) {
+        return;
+    }
+
+    const auto normalizedBase = NormalizeAuthorityCatalogKey(activationBase);
+    if (normalizedBase.empty()) {
+        return;
+    }
+
+    patterns->insert(normalizedBase + "_CTR");
+    patterns->insert(normalizedBase + "_*_CTR");
+    patterns->insert(normalizedBase + "_FSS");
+    patterns->insert(normalizedBase + "_*_FSS");
+}
+
+void MergeControllerAuthorityPatterns(
+    std::unordered_map<std::string, std::unordered_set<std::string>>* patternsByKey,
+    const std::string& lookupKey,
+    const std::vector<std::string>& activationBases) {
+    if (patternsByKey == nullptr) {
+        return;
+    }
+
+    const auto normalizedLookupKey = NormalizeAuthorityCatalogKey(lookupKey);
+    if (normalizedLookupKey.empty()) {
+        return;
+    }
+
+    auto& patterns = (*patternsByKey)[normalizedLookupKey];
+    for (const auto& activationBase : activationBases) {
+        AddCenterActivationPatterns(activationBase, &patterns);
+    }
+}
+
 ControllerAuthorityCatalog ParseControllerAuthorityCatalog(const std::string& payload) {
     enum class Section {
         None,
@@ -790,6 +828,7 @@ ControllerAuthorityCatalog ParseControllerAuthorityCatalog(const std::string& pa
     }
 
     std::unordered_map<std::string, std::unordered_set<std::string>> prefixesByKey;
+    std::unordered_map<std::string, std::unordered_set<std::string>> patternsByKey;
     Section currentSection = Section::None;
 
     std::istringstream stream(payload);
@@ -854,9 +893,17 @@ ControllerAuthorityCatalog ParseControllerAuthorityCatalog(const std::string& pa
             &prefixesByKey,
             boundaryIdentifier,
             acceptedPrefixes);
+        MergeControllerAuthorityPatterns(
+            &patternsByKey,
+            boundaryIdentifier,
+            acceptedPrefixes);
         if (!sectorIdentifier.empty() && sectorIdentifier != boundaryIdentifier) {
             MergeControllerAuthorityPrefixes(
                 &prefixesByKey,
+                sectorIdentifier,
+                acceptedPrefixes);
+            MergeControllerAuthorityPatterns(
+                &patternsByKey,
                 sectorIdentifier,
                 acceptedPrefixes);
         }
@@ -866,6 +913,11 @@ ControllerAuthorityCatalog ParseControllerAuthorityCatalog(const std::string& pa
         std::vector<std::string> normalizedPrefixes(prefixes.begin(), prefixes.end());
         std::sort(normalizedPrefixes.begin(), normalizedPrefixes.end());
         catalog.prefixesByKey.emplace(std::move(key), std::move(normalizedPrefixes));
+    }
+    for (auto& [key, patterns] : patternsByKey) {
+        std::vector<std::string> normalizedPatterns(patterns.begin(), patterns.end());
+        std::sort(normalizedPatterns.begin(), normalizedPatterns.end());
+        catalog.callsignPatternsByKey.emplace(std::move(key), std::move(normalizedPatterns));
     }
 
     return catalog;
@@ -4568,7 +4620,8 @@ std::vector<std::string> ExtractAuthorityGapIdentifiers(
     std::string_view label) {
     std::vector<std::string> gaps;
     for (const auto& sector : sectors) {
-        if (!sector.controllerPrefixes.empty()) {
+        if (!sector.controllerCallsignPatterns.empty() ||
+            !sector.controllerPrefixes.empty()) {
             continue;
         }
         gaps.push_back(std::string(label) + ":" + sector.identifier);
@@ -4615,11 +4668,51 @@ std::vector<std::string> ResolveAuthoritativeControllerPrefixes(
     return resolvedPrefixes;
 }
 
+std::vector<std::string> ResolveAuthoritativeControllerCallsignPatterns(
+    const std::string& identifier,
+    const std::unordered_set<std::string>& matchTokens,
+    const ControllerAuthorityCatalog& catalog) {
+    std::unordered_set<std::string> patterns;
+
+    auto mergePatterns = [&](const std::string& key) {
+        const auto normalizedKey = NormalizeAuthorityCatalogKey(key);
+        if (normalizedKey.empty()) {
+            return;
+        }
+
+        const auto entry = catalog.callsignPatternsByKey.find(normalizedKey);
+        if (entry == catalog.callsignPatternsByKey.end()) {
+            return;
+        }
+
+        patterns.insert(entry->second.begin(), entry->second.end());
+    };
+
+    mergePatterns(identifier);
+    for (const auto& token : matchTokens) {
+        mergePatterns(token);
+    }
+
+    std::vector<std::string> resolvedPatterns(patterns.begin(), patterns.end());
+    std::sort(resolvedPatterns.begin(), resolvedPatterns.end());
+    return resolvedPatterns;
+}
+
 std::vector<std::string> ResolveAuthoritativeControllerPrefixes(
     const std::string& identifier,
     const std::vector<std::string>& matchTokens,
     const ControllerAuthorityCatalog& catalog) {
     return ResolveAuthoritativeControllerPrefixes(
+        identifier,
+        std::unordered_set<std::string>(matchTokens.begin(), matchTokens.end()),
+        catalog);
+}
+
+std::vector<std::string> ResolveAuthoritativeControllerCallsignPatterns(
+    const std::string& identifier,
+    const std::vector<std::string>& matchTokens,
+    const ControllerAuthorityCatalog& catalog) {
+    return ResolveAuthoritativeControllerCallsignPatterns(
         identifier,
         std::unordered_set<std::string>(matchTokens.begin(), matchTokens.end()),
         catalog);
@@ -4822,7 +4915,8 @@ std::size_t CountControllerAuthorityGaps(
     const std::vector<brain::RouteSectorMatchSnapshot>& sectors) {
     std::size_t gapCount = 0;
     for (const auto& sector : sectors) {
-        if (sector.controllerPrefixes.empty()) {
+        if (sector.controllerCallsignPatterns.empty() &&
+            sector.controllerPrefixes.empty()) {
             ++gapCount;
         }
     }
@@ -5210,6 +5304,11 @@ void PopulateTraversalControllerPrefixes(
     }
 
     for (auto& sector : *sectors) {
+        sector.controllerCallsignPatterns =
+            ResolveAuthoritativeControllerCallsignPatterns(
+                sector.identifier,
+                sector.matchTokens,
+                authorityCatalog);
         sector.controllerPrefixes =
             ResolveAuthoritativeControllerPrefixes(
                 sector.identifier,
@@ -5334,6 +5433,11 @@ brain::AirportSectorSnapshot RouteSectorResolver::BuildAirportCoverageSnapshot(
             sector.entryDistanceNm = 0.0;
             sector.matchTokens.assign(feature.tokens.begin(), feature.tokens.end());
             std::sort(sector.matchTokens.begin(), sector.matchTokens.end());
+            sector.controllerCallsignPatterns =
+                ResolveAuthoritativeControllerCallsignPatterns(
+                    feature.label,
+                    feature.tokens,
+                    authorityCatalog);
             sector.controllerPrefixes =
                 ResolveAuthoritativeControllerPrefixes(
                     feature.label,

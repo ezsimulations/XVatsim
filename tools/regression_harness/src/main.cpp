@@ -66,6 +66,8 @@ struct ScenarioExpectations {
     std::vector<std::string> resolverRouteAuthorityGaps;
     std::vector<std::string> resolverRouteCurrentSectors;
     std::vector<std::string> resolverRouteNextSectors;
+    std::vector<std::string> resolverRouteCurrentControllerPatterns;
+    std::vector<std::string> resolverRouteNextControllerPatterns;
     std::vector<std::string> resolverRouteCurrentControllerPrefixes;
     std::vector<std::string> resolverRouteNextControllerPrefixes;
     std::vector<std::string> resolverRouteGenerations;
@@ -380,6 +382,27 @@ std::vector<std::string> ExtractSectorControllerPrefixes(
     return values;
 }
 
+std::vector<std::string> ExtractSectorControllerPatterns(
+    const std::vector<xvatsim::brain::RouteSectorMatchSnapshot>& sectors) {
+    std::vector<std::string> values;
+    values.reserve(sectors.size());
+    for (const auto& sector : sectors) {
+        auto patterns = sector.controllerCallsignPatterns;
+        std::sort(patterns.begin(), patterns.end());
+        std::ostringstream stream;
+        stream << sector.identifier << ":";
+        for (std::size_t index = 0; index < patterns.size(); ++index) {
+            if (index > 0) {
+                stream << ">";
+            }
+            stream << patterns[index];
+        }
+        values.push_back(stream.str());
+    }
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
 std::vector<std::string> ExtractCoverageMatchTokens(
     const xvatsim::brain::AirportSectorSnapshot& snapshot) {
     std::vector<std::string> values;
@@ -442,7 +465,8 @@ std::vector<std::string> ExtractAuthorityGaps(
     std::vector<std::string> gaps;
     auto appendGaps = [&](const auto& sectors, const std::string& label) {
         for (const auto& sector : sectors) {
-            if (!sector.controllerPrefixes.empty()) {
+            if (!sector.controllerCallsignPatterns.empty() ||
+                !sector.controllerPrefixes.empty()) {
                 continue;
             }
             gaps.push_back(label + ":" + sector.identifier);
@@ -996,6 +1020,14 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         scenario->expectations.resolverRouteNextSectors = Split(value, ',');
         return true;
     }
+    if (key == "expect.resolver_route_current_controller_patterns") {
+        scenario->expectations.resolverRouteCurrentControllerPatterns = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.resolver_route_next_controller_patterns") {
+        scenario->expectations.resolverRouteNextControllerPatterns = Split(value, ',');
+        return true;
+    }
     if (key == "expect.resolver_route_current_controller_prefixes") {
         scenario->expectations.resolverRouteCurrentControllerPrefixes = Split(value, ',');
         return true;
@@ -1267,6 +1299,9 @@ bool AddRouteSector(
             sector.entryDistanceNm = *parsed;
         } else if (field == "matchTokens") {
             sector.matchTokens = Split(fieldValue, ',');
+        } else if (field == "controllerPatterns" ||
+                   field == "controllerCallsignPatterns") {
+            sector.controllerCallsignPatterns = Split(fieldValue, ',');
         } else if (field == "controllerPrefixes") {
             sector.controllerPrefixes = Split(fieldValue, ',');
         } else if (field == "centerCoverage") {
@@ -1614,6 +1649,9 @@ bool AddTraversalFeature(
             hasLabel = true;
         } else if (field == "tokens") {
             feature.tokens = Split(fieldValue, ',');
+        } else if (field == "controllerPatterns" ||
+                   field == "controllerCallsignPatterns") {
+            feature.controllerCallsignPatterns = Split(fieldValue, ',');
         } else if (field == "controllerPrefixes") {
             feature.controllerPrefixes = Split(fieldValue, ',');
         } else if (field == "polygon") {
@@ -2706,6 +2744,18 @@ int main(int argc, char** argv) {
         std::cout << " " << identifier;
     }
     std::cout << "\n";
+    std::cout << "ResolverRouteCurrentControllerPatterns:";
+    for (const auto& value :
+         ExtractSectorControllerPatterns(resolverRouteSectorSnapshot.currentSectors)) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "ResolverRouteNextControllerPatterns:";
+    for (const auto& value :
+         ExtractSectorControllerPatterns(resolverRouteSectorSnapshot.nextSectors)) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
     std::cout << "ResolverRouteCurrentControllerPrefixes:";
     for (const auto& value :
          ExtractSectorControllerPrefixes(resolverRouteSectorSnapshot.currentSectors)) {
@@ -3103,6 +3153,22 @@ int main(int argc, char** argv) {
             "resolverRouteNextSectors",
             scenario.expectations.resolverRouteNextSectors,
             ExtractSectorIdentifiers(resolverRouteSectorSnapshot.nextSectors));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "resolverRouteCurrentControllerPatterns",
+            scenario.expectations.resolverRouteCurrentControllerPatterns,
+            ExtractSectorControllerPatterns(resolverRouteSectorSnapshot.currentSectors));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "resolverRouteNextControllerPatterns",
+            scenario.expectations.resolverRouteNextControllerPatterns,
+            ExtractSectorControllerPatterns(resolverRouteSectorSnapshot.nextSectors));
         mismatch.has_value()) {
         return *mismatch;
     }

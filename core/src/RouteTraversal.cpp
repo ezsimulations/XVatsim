@@ -450,11 +450,25 @@ std::string NormalizeAuthorityIdentifier(std::string value) {
     return normalized;
 }
 
+std::string NormalizeAuthorityPattern(std::string value) {
+    std::string normalized;
+    normalized.reserve(value.size());
+    for (const auto character : value) {
+        if (std::isalnum(static_cast<unsigned char>(character)) != 0 ||
+            character == '_' || character == '-' || character == '*') {
+            normalized.push_back(static_cast<char>(
+                std::toupper(static_cast<unsigned char>(character))));
+        }
+    }
+    return normalized;
+}
+
 std::vector<brain::RouteSectorMatchSnapshot> CollapseSectorAuthorities(
     const std::vector<brain::RouteSectorMatchSnapshot>& sectors) {
     struct Accumulator {
         brain::RouteSectorMatchSnapshot sector;
         std::unordered_set<std::string> tokens;
+        std::unordered_set<std::string> controllerCallsignPatterns;
         std::unordered_set<std::string> controllerPrefixes;
         bool centerCoverage = false;
         bool terminalCoverage = false;
@@ -499,6 +513,13 @@ std::vector<brain::RouteSectorMatchSnapshot> CollapseSectorAuthorities(
             }
         }
 
+        for (const auto& controllerPattern : sector.controllerCallsignPatterns) {
+            const auto normalizedPattern = NormalizeAuthorityPattern(controllerPattern);
+            if (!normalizedPattern.empty()) {
+                accumulator.controllerCallsignPatterns.insert(normalizedPattern);
+            }
+        }
+
         for (const auto& controllerPrefix : sector.controllerPrefixes) {
             const auto normalizedPrefix = NormalizeAuthorityIdentifier(controllerPrefix);
             if (!normalizedPrefix.empty()) {
@@ -516,6 +537,12 @@ std::vector<brain::RouteSectorMatchSnapshot> CollapseSectorAuthorities(
         std::sort(
             accumulator.sector.matchTokens.begin(),
             accumulator.sector.matchTokens.end());
+        accumulator.sector.controllerCallsignPatterns.assign(
+            accumulator.controllerCallsignPatterns.begin(),
+            accumulator.controllerCallsignPatterns.end());
+        std::sort(
+            accumulator.sector.controllerCallsignPatterns.begin(),
+            accumulator.sector.controllerCallsignPatterns.end());
         accumulator.sector.controllerPrefixes.assign(
             accumulator.controllerPrefixes.begin(),
             accumulator.controllerPrefixes.end());
@@ -610,6 +637,7 @@ brain::RouteSectorSnapshot BuildRouteSectorSnapshotFromWaypoints(
         sector.identifier = feature.label;
         sector.entryDistanceNm = 0.0;
         sector.matchTokens = feature.tokens;
+        sector.controllerCallsignPatterns = feature.controllerCallsignPatterns;
         sector.controllerPrefixes = feature.controllerPrefixes;
         sector.centerCoverage = true;
         snapshot.currentSectors.push_back(std::move(sector));
@@ -651,6 +679,7 @@ brain::RouteSectorSnapshot BuildRouteSectorSnapshotFromWaypoints(
                     sector.identifier = feature.label;
                     sector.entryDistanceNm = accumulatedDistanceNm + segmentDistanceNm * fraction;
                     sector.matchTokens = feature.tokens;
+                    sector.controllerCallsignPatterns = feature.controllerCallsignPatterns;
                     sector.controllerPrefixes = feature.controllerPrefixes;
                     sector.centerCoverage = true;
                     snapshot.nextSectors.push_back(std::move(sector));
@@ -675,6 +704,7 @@ brain::RouteSectorSnapshot BuildRouteSectorSnapshotFromWaypoints(
                 sector.entryDistanceNm =
                     accumulatedDistanceNm + segmentDistanceNm * *entryFraction;
                 sector.matchTokens = feature.tokens;
+                sector.controllerCallsignPatterns = feature.controllerCallsignPatterns;
                 sector.controllerPrefixes = feature.controllerPrefixes;
                 sector.centerCoverage = true;
                 snapshot.nextSectors.push_back(std::move(sector));

@@ -19,6 +19,7 @@ struct SectorPolygon {
 struct SectorFeature {
     std::string label;
     std::vector<std::string> tokens;
+    std::vector<std::string> controllerCallsignPatterns;
     std::vector<std::string> controllerPrefixes;
     std::vector<SectorPolygon> polygons;
 };

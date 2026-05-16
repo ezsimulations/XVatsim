@@ -1,0 +1,9 @@
+name=HKG Segmented Center Requires Catalog Pattern
+now_seconds=1000
+
+xpilot.connected=true
+route.current_sector=identifier=VHHK;entryDistanceNm=0;matchTokens=VHHK;controllerPrefixes=HKG
+controller.entry=callsign=HKG_W_CTR;frequency=125.320;facility=6;actionable=true;atis=false
+
+expect.enroute_available=false
+expect.enroute_callsigns=VHHK

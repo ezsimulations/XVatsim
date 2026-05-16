@@ -116,6 +116,49 @@ bool IsActionableCenter(const brain::ControllerSnapshot& controller) {
            controller.facility == kVatsimFlightServiceFacility;
 }
 
+std::string NormalizeCallsignPattern(std::string value) {
+    value = ToUpperCopy(std::move(value));
+    value.erase(
+        std::remove_if(
+            value.begin(),
+            value.end(),
+            [](unsigned char c) { return std::isspace(c) != 0; }),
+        value.end());
+    return value;
+}
+
+bool CallsignMatchesPattern(
+    const std::string& rawPattern,
+    const std::string& rawCallsign) {
+    const auto pattern = NormalizeCallsignPattern(rawPattern);
+    const auto callsign = NormalizeCallsignPattern(rawCallsign);
+    if (pattern.empty() || callsign.empty()) {
+        return false;
+    }
+
+    const auto wildcardIndex = pattern.find('*');
+    if (wildcardIndex == std::string::npos) {
+        return pattern == callsign;
+    }
+    if (pattern.find('*', wildcardIndex + 1) != std::string::npos) {
+        return false;
+    }
+
+    const auto prefix = pattern.substr(0, wildcardIndex);
+    const auto suffix = pattern.substr(wildcardIndex + 1);
+    if (callsign.size() < prefix.size() + suffix.size()) {
+        return false;
+    }
+
+    return callsign.compare(0, prefix.size(), prefix) == 0 &&
+           callsign.compare(callsign.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+bool SectorHasControllerAuthority(const brain::RouteSectorMatchSnapshot& sector) {
+    return !sector.controllerCallsignPatterns.empty() ||
+           !sector.controllerPrefixes.empty();
+}
+
 bool SectorMatchesController(
     const brain::RouteSectorMatchSnapshot& sector,
     const std::string& callsign) {
@@ -124,20 +167,18 @@ bool SectorMatchesController(
         return false;
     }
 
-    if (sector.controllerPrefixes.empty()) {
+    if (!sector.controllerCallsignPatterns.empty()) {
+        for (const auto& controllerPattern : sector.controllerCallsignPatterns) {
+            if (CallsignMatchesPattern(controllerPattern, callsign)) {
+                return true;
+            }
+        }
         return false;
     }
 
     for (const auto& controllerPrefix : sector.controllerPrefixes) {
         const auto authoritativePrefix = ToUpperCopy(controllerPrefix);
-        if (authoritativePrefix.empty()) {
-            continue;
-        }
-        // Segmented live positions (for example HKG_W_CTR) inherit the base FIR prefix.
-        if (authoritativePrefix == prefix ||
-            (prefix.size() > authoritativePrefix.size() &&
-             prefix.compare(0, authoritativePrefix.size(), authoritativePrefix) == 0 &&
-             prefix[authoritativePrefix.size()] == '_')) {
+        if (!authoritativePrefix.empty() && authoritativePrefix == prefix) {
             return true;
         }
     }
@@ -307,7 +348,7 @@ void AppendOfflineRouteRows(
     auto appendSector = [&](
         const brain::RouteSectorMatchSnapshot& sector,
         bool current) {
-        if (sector.controllerPrefixes.empty()) {
+        if (!SectorHasControllerAuthority(sector)) {
             return;
         }
 

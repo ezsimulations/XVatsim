@@ -307,6 +307,9 @@ std::size_t HashRouteSectorMatch(const xvatsim::brain::RouteSectorMatchSnapshot&
     for (const auto& token : match.matchTokens) {
         HashCombineString(&hash, token);
     }
+    for (const auto& pattern : match.controllerCallsignPatterns) {
+        HashCombineString(&hash, pattern);
+    }
     for (const auto& prefix : match.controllerPrefixes) {
         HashCombineString(&hash, prefix);
     }
@@ -1650,7 +1653,8 @@ std::string SummarizeAuthorityGapSectors(
     std::vector<std::string> gaps;
     auto appendGaps = [&](const auto& sectors, const char* label) {
         for (const auto& sector : sectors) {
-            if (!sector.controllerPrefixes.empty()) {
+            if (!sector.controllerCallsignPatterns.empty() ||
+                !sector.controllerPrefixes.empty()) {
                 continue;
             }
             gaps.push_back(

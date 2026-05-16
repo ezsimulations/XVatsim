@@ -197,6 +197,7 @@ struct RouteSectorMatchSnapshot {
     std::string identifier;
     double entryDistanceNm = 0.0;
     std::vector<std::string> matchTokens;
+    std::vector<std::string> controllerCallsignPatterns;
     std::vector<std::string> controllerPrefixes;
     bool centerCoverage = false;
     bool terminalCoverage = false;

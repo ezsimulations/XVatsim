@@ -120,7 +120,7 @@ graph.node=ident=ENPET;region=USER;type=11;lat=22.292544;lon=115.690100
 graph.node=ident=FISHA;region=USER;type=11;lat=22.282678;lon=115.336558
 graph.node=ident=ABBEY;region=USER;type=11;lat=22.269722;lon=114.923867
 
-route.current_sector=identifier=VHHK;entryDistanceNm=0;matchTokens=VHHK;controllerPrefixes=HKG
+route.current_sector=identifier=VHHK;entryDistanceNm=0;matchTokens=VHHK;controllerPatterns=HKG_CTR,HKG_*_CTR,HKG_FSS,HKG_*_FSS;controllerPrefixes=HKG
 
 controller.entry=callsign=HKG_W_CTR;frequency=125.320;facility=6;actionable=true;atis=false
 enroute.station=role=Center;callsign=HKG_W_CTR;frequency=125.320;online=true;offline=false;sectorActive=true;routeEntryDistanceNm=0
