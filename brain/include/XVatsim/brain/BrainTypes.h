@@ -215,6 +215,31 @@ struct RouteSectorSnapshot {
     std::vector<RouteSectorMatchSnapshot> nextSectors;
 };
 
+enum class AuthorityRelevanceKind {
+    Center,
+    Terminal,
+    Extension,
+};
+
+struct RelevantAuthoritySnapshot {
+    std::string callsign;
+    std::string frequency;
+    std::string authorityId;
+    std::string polygonId;
+    std::string polygonKey;
+    std::string matchedPattern;
+    AuthorityRelevanceKind kind = AuthorityRelevanceKind::Center;
+    bool aircraftInside = false;
+    bool routeIntersects = false;
+    double routeEntryDistanceNm = 0.0;
+};
+
+struct AuthorityRelevanceSnapshot {
+    bool available = false;
+    bool stale = true;
+    std::vector<RelevantAuthoritySnapshot> relevantAuthorities;
+};
+
 struct AirportSectorSnapshot {
     bool available = false;
     bool stale = true;

@@ -12,7 +12,8 @@ public:
         const brain::XPilotSessionSnapshot& xPilotSessionSnapshot,
         const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
         const brain::RadioStateSnapshot& radioStateSnapshot,
-        const brain::RouteSectorSnapshot& routeSectorSnapshot);
+        const brain::RouteSectorSnapshot& routeSectorSnapshot,
+        const brain::AuthorityRelevanceSnapshot* authorityRelevanceSnapshot = nullptr);
     void Reset();
 };
 

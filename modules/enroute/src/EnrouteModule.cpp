@@ -337,6 +337,58 @@ void CollectRouteDrivenCenters(
     }
 }
 
+void AppendAuthorityController(
+    const brain::RelevantAuthoritySnapshot& authority,
+    const brain::RadioStateSnapshot& radioStateSnapshot,
+    std::vector<brain::BoardStationSnapshot>* routeStations,
+    std::unordered_set<std::string>* insertedKeys) {
+    if (authority.kind == brain::AuthorityRelevanceKind::Terminal) {
+        return;
+    }
+    if (authority.callsign.empty()) {
+        return;
+    }
+
+    const auto tuned = IsFrequencyTuned(authority.frequency, radioStateSnapshot);
+    const auto sectorActive =
+        authority.aircraftInside ||
+        (authority.routeIntersects && authority.routeEntryDistanceNm <= 0.0);
+
+    brain::BoardStationSnapshot station;
+    station.role = brain::StationRole::Center;
+    station.callsign = authority.callsign;
+    station.frequency = authority.frequency;
+    station.tuned = tuned;
+    station.next = false;
+    station.standby = false;
+    station.sectorActive = sectorActive;
+    station.online = false;
+    station.hasRouteEntryDistance = true;
+    station.routeEntryDistanceNm = std::max(0.0, authority.routeEntryDistanceNm);
+    if (!sectorActive) {
+        station.annotation = FormatRouteDistanceAnnotation(authority.routeEntryDistanceNm);
+    }
+
+    AppendUnique(
+        station,
+        routeStations,
+        insertedKeys);
+}
+
+void CollectAuthorityDrivenCenters(
+    const brain::AuthorityRelevanceSnapshot& authorityRelevanceSnapshot,
+    const brain::RadioStateSnapshot& radioStateSnapshot,
+    std::vector<brain::BoardStationSnapshot>* routeStations,
+    std::unordered_set<std::string>* insertedKeys) {
+    for (const auto& authority : authorityRelevanceSnapshot.relevantAuthorities) {
+        AppendAuthorityController(
+            authority,
+            radioStateSnapshot,
+            routeStations,
+            insertedKeys);
+    }
+}
+
 void AppendOfflineRouteRows(
     const brain::RouteSectorSnapshot& routeSectorSnapshot,
     std::vector<brain::BoardStationSnapshot>* routeStations,
@@ -435,7 +487,8 @@ brain::ModuleBoardSnapshot EnrouteModule::Collect(
     const brain::XPilotSessionSnapshot& xPilotSessionSnapshot,
     const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
     const brain::RadioStateSnapshot& radioStateSnapshot,
-    const brain::RouteSectorSnapshot& routeSectorSnapshot) {
+    const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    const brain::AuthorityRelevanceSnapshot* authorityRelevanceSnapshot) {
     brain::ModuleBoardSnapshot snapshot;
     snapshot.source = brain::BoardSource::Enroute;
 
@@ -446,6 +499,23 @@ brain::ModuleBoardSnapshot EnrouteModule::Collect(
     std::vector<brain::BoardStationSnapshot> currentStations;
     std::unordered_set<std::string> insertedKeys;
     bool hasLiveStations = false;
+
+    if (authorityRelevanceSnapshot != nullptr &&
+        authorityRelevanceSnapshot->available &&
+        !authorityRelevanceSnapshot->stale) {
+        CollectAuthorityDrivenCenters(
+            *authorityRelevanceSnapshot,
+            radioStateSnapshot,
+            &currentStations,
+            &insertedKeys);
+        hasLiveStations = !currentStations.empty();
+        SortStations(&currentStations);
+
+        snapshot.stations = currentStations;
+        snapshot.available = hasLiveStations;
+        snapshot.displayStations = !snapshot.stations.empty();
+        return snapshot;
+    }
 
     if (!RouteHasAuthoritativeSectors(routeSectorSnapshot)) {
         return snapshot;

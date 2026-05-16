@@ -177,6 +177,7 @@ struct ScenarioData {
     std::vector<std::string> authorityCatalogUirLines;
     std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord>
         authorityPolygonRecords;
+    bool authorityEnrouteHandoff = false;
     std::vector<xvatsim::brain::ControllerSnapshot> controllers;
     std::optional<bool> controllerFeedAvailable;
     bool controllerFeedStale = false;
@@ -620,6 +621,20 @@ std::vector<std::string> ExtractAuthorityRelevantPolygonMatches(
     return values;
 }
 
+xvatsim::brain::AuthorityRelevanceKind ToBrainAuthorityKind(
+    xvatsim::core::authority::AuthorityKind kind) {
+    switch (kind) {
+        case xvatsim::core::authority::AuthorityKind::Terminal:
+            return xvatsim::brain::AuthorityRelevanceKind::Terminal;
+        case xvatsim::core::authority::AuthorityKind::Extension:
+            return xvatsim::brain::AuthorityRelevanceKind::Extension;
+        case xvatsim::core::authority::AuthorityKind::Center:
+            return xvatsim::brain::AuthorityRelevanceKind::Center;
+    }
+
+    return xvatsim::brain::AuthorityRelevanceKind::Center;
+}
+
 std::vector<std::string> ExtractAuthorityGaps(
     const xvatsim::brain::RouteSectorSnapshot& snapshot) {
     std::vector<std::string> gaps;
@@ -819,6 +834,9 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     if (key == "authority_catalog.uir") {
         scenario->authorityCatalogUirLines.push_back(value);
         return true;
+    }
+    if (key == "authority.enroute_handoff") {
+        return ParseBool(value, &scenario->authorityEnrouteHandoff);
     }
     if (key == "authority_polygon.vatspy") {
         return AddAuthorityPolygonSourceRecord(
@@ -2908,6 +2926,48 @@ int main(int argc, char** argv) {
             scenario.aircraftState.valid,
             authorityAircraftPosition,
             authorityRoutePoints);
+    xvatsim::brain::AuthorityRelevanceSnapshot authorityRelevanceSnapshot;
+    if (scenario.authorityEnrouteHandoff) {
+        authorityRelevanceSnapshot.available = true;
+        authorityRelevanceSnapshot.stale = false;
+
+        std::unordered_map<std::string, std::string> controllerFrequenciesByCallsign;
+        for (const auto& controller : scenario.controllers) {
+            controllerFrequenciesByCallsign[ToUpperCopy(Trim(controller.callsign))] =
+                controller.frequency;
+        }
+
+        for (const auto& relevantAuthorityPolygon : relevantAuthorityPolygons) {
+            xvatsim::brain::RelevantAuthoritySnapshot relevantAuthority;
+            relevantAuthority.callsign =
+                relevantAuthorityPolygon.activePolygon.callsign;
+            relevantAuthority.authorityId =
+                relevantAuthorityPolygon.activePolygon.authorityId;
+            relevantAuthority.polygonId =
+                relevantAuthorityPolygon.activePolygon.polygonId;
+            relevantAuthority.polygonKey =
+                relevantAuthorityPolygon.activePolygon.polygonKey;
+            relevantAuthority.matchedPattern =
+                relevantAuthorityPolygon.activePolygon.matchedPattern;
+            relevantAuthority.kind =
+                ToBrainAuthorityKind(relevantAuthorityPolygon.activePolygon.kind);
+            relevantAuthority.aircraftInside =
+                relevantAuthorityPolygon.aircraftInside;
+            relevantAuthority.routeIntersects =
+                relevantAuthorityPolygon.routeIntersects;
+            relevantAuthority.routeEntryDistanceNm =
+                relevantAuthorityPolygon.routeEntryDistanceNm;
+
+            const auto frequencyIt = controllerFrequenciesByCallsign.find(
+                ToUpperCopy(Trim(relevantAuthority.callsign)));
+            if (frequencyIt != controllerFrequenciesByCallsign.end()) {
+                relevantAuthority.frequency = frequencyIt->second;
+            }
+
+            authorityRelevanceSnapshot.relevantAuthorities.push_back(
+                std::move(relevantAuthority));
+        }
+    }
 
     xvatsim::modules::departure::DepartureModule departureModule;
     const auto collectedDepartureBoard = departureModule.Collect(
@@ -2979,7 +3039,8 @@ int main(int argc, char** argv) {
         scenario.xPilotSessionSnapshot,
         controllerFeedSnapshot,
         scenario.radioStateSnapshot,
-        scenario.routeSectorSnapshot);
+        scenario.routeSectorSnapshot,
+        scenario.authorityEnrouteHandoff ? &authorityRelevanceSnapshot : nullptr);
     xvatsim::brain::BrainOrchestrator brainOrchestrator;
     const auto overlayWorkflowStage =
         scenario.overlayWorkflowStage.value_or(handoffDecision.stage);

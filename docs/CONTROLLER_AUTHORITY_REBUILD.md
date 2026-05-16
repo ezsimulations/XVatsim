@@ -81,13 +81,24 @@ Pass 4 adds geometry relevance:
 - The regression harness can assert aircraft-inside, route-intersection, and
   ignored non-intersecting active polygons.
 
+Pass 5 adds a controlled ENROUTE handoff seam:
+
+- ENROUTE can consume a fresh `AuthorityRelevanceSnapshot` of active,
+  geometry-relevant authority polygons.
+- When that snapshot is available and fresh, ENROUTE does not fall back to the
+  old sector-prefix matching path.
+- Irrelevant active polygons produce no ENROUTE display instead of being
+  rescued by a guessed prefix match.
+- The regression harness can assert that a relevant active polygon displays and
+  an irrelevant active polygon fails closed.
+
 ## Not Done Yet
 
-- The live ENROUTE/DEPARTURE/ARRIVAL modules are not switched to the new
-  authority engine yet.
+- The live plugin has not started producing `AuthorityRelevanceSnapshot` yet;
+  the ENROUTE handoff seam is harness-proven but not wired to the running
+  plugin feed.
 - TRACON terminal polygon records compile, but terminal controller activation
   rules are not implemented yet.
 - VATGlasses/VATSIM Radar-style extension rules are not implemented yet.
-- Live ENROUTE/DEPARTURE/ARRIVAL modules do not consume relevant active
-  polygons yet.
+- DEPARTURE/ARRIVAL modules do not consume relevant active polygons yet.
 - Old live authority seams still exist and must be removed after replacement.
