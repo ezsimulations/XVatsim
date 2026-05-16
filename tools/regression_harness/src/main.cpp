@@ -82,6 +82,7 @@ struct ScenarioExpectations {
     std::vector<std::string> authorityPolygonDataGaps;
     std::vector<std::string> authorityActivePolygonMatches;
     std::vector<std::string> authorityActivePolygonDataGaps;
+    std::vector<std::string> authorityRelevantPolygonMatches;
     std::optional<bool> routeResolved;
     std::vector<std::string> routeCurrentSectors;
     std::vector<std::string> routeNextSectors;
@@ -595,6 +596,25 @@ std::vector<std::string> ExtractAuthorityActivePolygonDataGaps(
     for (const auto& gap : dataGaps) {
         values.push_back(
             gap.authorityId + ":" + gap.polygonKey + ":" + gap.reason);
+    }
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
+std::vector<std::string> ExtractAuthorityRelevantPolygonMatches(
+    const std::vector<xvatsim::core::authority::RelevantAuthorityPolygon>& relevantPolygons) {
+    std::vector<std::string> values;
+    values.reserve(relevantPolygons.size());
+    for (const auto& relevantPolygon : relevantPolygons) {
+        const auto roundedEntryNm =
+            static_cast<int>(std::round(std::max(0.0, relevantPolygon.routeEntryDistanceNm)));
+        values.push_back(
+            relevantPolygon.activePolygon.callsign + ":" +
+            relevantPolygon.activePolygon.authorityId + ":" +
+            relevantPolygon.activePolygon.polygonId + ":aircraft=" +
+            (relevantPolygon.aircraftInside ? "1" : "0") + ":route=" +
+            (relevantPolygon.routeIntersects ? "1" : "0") + ":entry=" +
+            std::to_string(roundedEntryNm));
     }
     std::sort(values.begin(), values.end());
     return values;
@@ -1250,6 +1270,10 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "expect.authority_active_polygon_data_gaps") {
         scenario->expectations.authorityActivePolygonDataGaps = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.authority_relevant_polygon_matches") {
+        scenario->expectations.authorityRelevantPolygonMatches = Split(value, ',');
         return true;
     }
     if (key == "expect.route_resolved") {
@@ -2865,6 +2889,25 @@ int main(int argc, char** argv) {
             authorityUnmappedCallsigns.begin(),
             authorityUnmappedCallsigns.end());
     }
+    std::vector<xvatsim::core::authority::GeoPoint> authorityRoutePoints;
+    authorityRoutePoints.reserve(scenario.routeWaypoints.size());
+    for (const auto& waypoint : scenario.routeWaypoints) {
+        authorityRoutePoints.push_back({
+            waypoint.latitudeDeg,
+            waypoint.longitudeDeg,
+        });
+    }
+    const xvatsim::core::authority::GeoPoint authorityAircraftPosition{
+        scenario.aircraftState.latitudeDeg,
+        scenario.aircraftState.longitudeDeg,
+    };
+    const auto relevantAuthorityPolygons =
+        xvatsim::core::authority::ResolveRelevantAuthorityPolygons(
+            activeAuthorityPolygons,
+            authorityPolygonCatalog,
+            scenario.aircraftState.valid,
+            authorityAircraftPosition,
+            authorityRoutePoints);
 
     xvatsim::modules::departure::DepartureModule departureModule;
     const auto collectedDepartureBoard = departureModule.Collect(
@@ -3109,6 +3152,12 @@ int main(int argc, char** argv) {
     std::cout << "AuthorityActivePolygonDataGaps:";
     for (const auto& value :
          ExtractAuthorityActivePolygonDataGaps(activeAuthorityPolygonDataGaps)) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "AuthorityRelevantPolygonMatches:";
+    for (const auto& value :
+         ExtractAuthorityRelevantPolygonMatches(relevantAuthorityPolygons)) {
         std::cout << " " << value;
     }
     std::cout << "\n";
@@ -3573,6 +3622,14 @@ int main(int argc, char** argv) {
             "authorityActivePolygonDataGaps",
             scenario.expectations.authorityActivePolygonDataGaps,
             ExtractAuthorityActivePolygonDataGaps(activeAuthorityPolygonDataGaps));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "authorityRelevantPolygonMatches",
+            scenario.expectations.authorityRelevantPolygonMatches,
+            ExtractAuthorityRelevantPolygonMatches(relevantAuthorityPolygons));
         mismatch.has_value()) {
         return *mismatch;
     }

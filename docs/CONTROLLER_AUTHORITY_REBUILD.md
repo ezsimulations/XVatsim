@@ -71,6 +71,16 @@ Pass 3 adds active polygon activation:
 - The regression harness can assert active authority polygon matches and active
   polygon data gaps.
 
+Pass 4 adds geometry relevance:
+
+- Active polygons are relevant only when the aircraft is inside them or the
+  planned route intersects them.
+- Route relevance uses exact route-leg versus polygon boundary entry logic with
+  anti-meridian-safe longitude handling.
+- Online-but-irrelevant active polygons remain out of relevance results.
+- The regression harness can assert aircraft-inside, route-intersection, and
+  ignored non-intersecting active polygons.
+
 ## Not Done Yet
 
 - The live ENROUTE/DEPARTURE/ARRIVAL modules are not switched to the new
@@ -78,6 +88,6 @@ Pass 3 adds active polygon activation:
 - TRACON terminal polygon records compile, but terminal controller activation
   rules are not implemented yet.
 - VATGlasses/VATSIM Radar-style extension rules are not implemented yet.
-- Active polygon geometry intersection against route/aircraft position is not
-  implemented yet.
+- Live ENROUTE/DEPARTURE/ARRIVAL modules do not consume relevant active
+  polygons yet.
 - Old live authority seams still exist and must be removed after replacement.

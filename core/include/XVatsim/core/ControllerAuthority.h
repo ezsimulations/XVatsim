@@ -102,6 +102,13 @@ struct AuthorityActivationResult {
     std::vector<AuthorityDataGap> dataGaps;
 };
 
+struct RelevantAuthorityPolygon {
+    ActiveAuthorityPolygon activePolygon;
+    bool aircraftInside = false;
+    bool routeIntersects = false;
+    double routeEntryDistanceNm = 0.0;
+};
+
 std::string AuthoritySourceLabel(AuthoritySource source);
 std::string NormalizeAuthorityToken(std::string value);
 std::string NormalizeControllerCallsign(std::string value);
@@ -125,5 +132,12 @@ AuthorityActivationResult ActivateAuthorityPolygons(
     const AuthorityPolygonCatalog& polygonCatalog,
     const std::string& callsign,
     int vatsimFacility);
+
+std::vector<RelevantAuthorityPolygon> ResolveRelevantAuthorityPolygons(
+    const std::vector<ActiveAuthorityPolygon>& activePolygons,
+    const AuthorityPolygonCatalog& polygonCatalog,
+    bool hasAircraftPosition,
+    const GeoPoint& aircraftPosition,
+    const std::vector<GeoPoint>& routePoints);
 
 }  // namespace xvatsim::core::authority

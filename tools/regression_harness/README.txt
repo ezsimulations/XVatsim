@@ -128,6 +128,9 @@ Controller authority compiler replay:
 - expect.authority_polygon_data_gaps=<none>
 - expect.authority_active_polygon_matches=HKG_W_CTR:VATSPY_FIR:VHHK:VATSPY_BOUNDARY:VHHK:VHHK:HKG_*_CTR
 - expect.authority_active_polygon_data_gaps=<none>
+- route.waypoint=ident=A;lat=0;lon=110
+- route.waypoint=ident=B;lat=0;lon=114
+- expect.authority_relevant_polygon_matches=HKG_W_CTR:VATSPY_FIR:VHHK:VATSPY_BOUNDARY:VHHK:aircraft=0:route=1:entry=120
 
 Overlay/RX presentation replay:
 
@@ -490,6 +493,15 @@ Included scenarios
 
 - authority_activation_missing_polygon_is_data_gap.scn
   Proves a matching controller authority cannot activate anything when the polygon record is missing, and instead reports a missing-polygon data gap.
+
+- authority_relevance_aircraft_inside_active_polygon.scn
+  Proves an active authority polygon becomes relevant when the aircraft position is inside it.
+
+- authority_relevance_route_intersects_active_polygon.scn
+  Proves an active authority polygon becomes relevant when the planned route crosses it, including an entry-distance annotation.
+
+- authority_relevance_ignores_non_intersecting_active_polygon.scn
+  Proves an online active polygon is not relevant when neither aircraft position nor route geometry intersects it.
 
 - resolver_authority_blank_prefix_is_data_gap.scn
   Proves a VATSpy FIR/UIR row with a blank callsign-prefix field does not invent the boundary identifier as a controller prefix and instead surfaces an explicit route authority gap.

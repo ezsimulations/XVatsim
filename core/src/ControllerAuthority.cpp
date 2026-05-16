@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <limits>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -12,6 +15,152 @@ namespace {
 
 constexpr int kVatsimFlightServiceFacility = 1;
 constexpr int kVatsimCenterFacility = 6;
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kEarthRadiusNm = 3440.065;
+
+struct Vector3 {
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+};
+
+struct Point2D {
+    double x = 0.0;
+    double y = 0.0;
+};
+
+double ToRadians(double degrees) {
+    return degrees * kPi / 180.0;
+}
+
+double ClampUnit(double value) {
+    return std::clamp(value, -1.0, 1.0);
+}
+
+double NormalizeLongitudeDeg(double longitudeDeg) {
+    while (longitudeDeg > 180.0) {
+        longitudeDeg -= 360.0;
+    }
+    while (longitudeDeg < -180.0) {
+        longitudeDeg += 360.0;
+    }
+    return longitudeDeg;
+}
+
+double ShortestLongitudeDeltaDeg(double fromLongitudeDeg, double toLongitudeDeg) {
+    auto deltaDeg = toLongitudeDeg - fromLongitudeDeg;
+    while (deltaDeg > 180.0) {
+        deltaDeg -= 360.0;
+    }
+    while (deltaDeg < -180.0) {
+        deltaDeg += 360.0;
+    }
+    return deltaDeg;
+}
+
+double UnwrapLongitudeRelativeDeg(double referenceLongitudeDeg, double longitudeDeg) {
+    return referenceLongitudeDeg +
+           ShortestLongitudeDeltaDeg(referenceLongitudeDeg, longitudeDeg);
+}
+
+double AngularDistanceRad(
+    double latitudeDegA,
+    double longitudeDegA,
+    double latitudeDegB,
+    double longitudeDegB) {
+    const auto latitudeRadA = ToRadians(latitudeDegA);
+    const auto latitudeRadB = ToRadians(latitudeDegB);
+    const auto deltaLatitude = ToRadians(latitudeDegB - latitudeDegA);
+    const auto deltaLongitude = ToRadians(longitudeDegB - longitudeDegA);
+
+    const auto sinLatitude = std::sin(deltaLatitude / 2.0);
+    const auto sinLongitude = std::sin(deltaLongitude / 2.0);
+    const auto a = sinLatitude * sinLatitude +
+                   std::cos(latitudeRadA) * std::cos(latitudeRadB) *
+                       sinLongitude * sinLongitude;
+    const auto clampedA = std::clamp(a, 0.0, 1.0);
+    return 2.0 * std::atan2(std::sqrt(clampedA), std::sqrt(1.0 - clampedA));
+}
+
+double GreatCircleDistanceNm(
+    double latitudeDegA,
+    double longitudeDegA,
+    double latitudeDegB,
+    double longitudeDegB) {
+    return kEarthRadiusNm *
+           AngularDistanceRad(latitudeDegA, longitudeDegA, latitudeDegB, longitudeDegB);
+}
+
+double DotProduct(const Vector3& a, const Vector3& b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+Vector3 AddVector(const Vector3& a, const Vector3& b) {
+    return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+Vector3 ScaleVector(const Vector3& vector, double scale) {
+    return {vector.x * scale, vector.y * scale, vector.z * scale};
+}
+
+double VectorLength(const Vector3& vector) {
+    return std::sqrt(DotProduct(vector, vector));
+}
+
+std::optional<Vector3> NormalizeVector(const Vector3& vector) {
+    const auto length = VectorLength(vector);
+    if (length <= 1e-12) {
+        return std::nullopt;
+    }
+    return ScaleVector(vector, 1.0 / length);
+}
+
+Vector3 ToUnitVector(const GeoPoint& point) {
+    const auto latitudeRad = ToRadians(point.latitudeDeg);
+    const auto longitudeRad = ToRadians(NormalizeLongitudeDeg(point.longitudeDeg));
+    const auto cosLatitude = std::cos(latitudeRad);
+    return {
+        cosLatitude * std::cos(longitudeRad),
+        cosLatitude * std::sin(longitudeRad),
+        std::sin(latitudeRad),
+    };
+}
+
+GeoPoint ToGeoPoint(const Vector3& vector) {
+    const auto normalized = NormalizeVector(vector);
+    if (!normalized.has_value()) {
+        return {};
+    }
+
+    const auto horizontalLength =
+        std::sqrt(normalized->x * normalized->x + normalized->y * normalized->y);
+    return {
+        std::atan2(normalized->z, horizontalLength) * 180.0 / kPi,
+        NormalizeLongitudeDeg(std::atan2(normalized->y, normalized->x) * 180.0 / kPi),
+    };
+}
+
+double AngularDistanceRad(const Vector3& a, const Vector3& b) {
+    return std::acos(ClampUnit(DotProduct(a, b)));
+}
+
+GeoPoint InterpolatePoint(const GeoPoint& start, const GeoPoint& end, double fraction) {
+    const auto startVector = ToUnitVector(start);
+    const auto endVector = ToUnitVector(end);
+    const auto angularDistanceRad = AngularDistanceRad(startVector, endVector);
+    const auto sinAngularDistance = std::sin(angularDistanceRad);
+    if (angularDistanceRad <= 1e-10 || std::fabs(sinAngularDistance) <= 1e-12) {
+        return fraction < 0.5 ? start : end;
+    }
+
+    const auto startScale =
+        std::sin((1.0 - fraction) * angularDistanceRad) / sinAngularDistance;
+    const auto endScale =
+        std::sin(fraction * angularDistanceRad) / sinAngularDistance;
+    return ToGeoPoint(AddVector(
+        ScaleVector(startVector, startScale),
+        ScaleVector(endVector, endScale)));
+}
 
 std::string Trim(std::string value) {
     const auto notSpace = [](unsigned char ch) { return std::isspace(ch) == 0; };
@@ -191,6 +340,269 @@ bool PolygonMatchesAuthorityKey(
                polygon.lookupKeys.begin(),
                polygon.lookupKeys.end(),
                authorityKey) != polygon.lookupKeys.end();
+}
+
+bool CrossesAntiMeridian(double longitudeDegA, double longitudeDegB) {
+    return std::fabs(
+               NormalizeLongitudeDeg(longitudeDegB) -
+               NormalizeLongitudeDeg(longitudeDegA)) > 180.0;
+}
+
+bool RingCrossesAntiMeridian(const AuthorityPolygonRing& ring) {
+    double minLongitudeDeg = std::numeric_limits<double>::max();
+    double maxLongitudeDeg = std::numeric_limits<double>::lowest();
+    for (std::size_t index = 0; index < ring.points.size(); ++index) {
+        const auto longitudeDeg = NormalizeLongitudeDeg(ring.points[index].longitudeDeg);
+        minLongitudeDeg = std::min(minLongitudeDeg, longitudeDeg);
+        maxLongitudeDeg = std::max(maxLongitudeDeg, longitudeDeg);
+        if (index > 0 &&
+            CrossesAntiMeridian(
+                ring.points[index - 1].longitudeDeg,
+                ring.points[index].longitudeDeg)) {
+            return true;
+        }
+    }
+
+    return (maxLongitudeDeg - minLongitudeDeg) > 180.0;
+}
+
+bool PointInRing(const GeoPoint& point, const AuthorityPolygonRing& ring) {
+    bool inside = false;
+    const auto count = ring.points.size();
+    if (count < 3) {
+        return false;
+    }
+
+    const auto crossesAntiMeridian = RingCrossesAntiMeridian(ring);
+    const auto pointLongitudeDeg = NormalizeLongitudeDeg(point.longitudeDeg);
+
+    for (std::size_t i = 0, j = count - 1; i < count; j = i++) {
+        const auto& pi = ring.points[i];
+        const auto& pj = ring.points[j];
+        const auto piLongitudeDeg =
+            crossesAntiMeridian
+                ? UnwrapLongitudeRelativeDeg(pointLongitudeDeg, pi.longitudeDeg)
+                : pi.longitudeDeg;
+        const auto pjLongitudeDeg =
+            crossesAntiMeridian
+                ? UnwrapLongitudeRelativeDeg(pointLongitudeDeg, pj.longitudeDeg)
+                : pj.longitudeDeg;
+        const auto intersects =
+            ((pi.latitudeDeg > point.latitudeDeg) != (pj.latitudeDeg > point.latitudeDeg)) &&
+            (pointLongitudeDeg <
+             (pjLongitudeDeg - piLongitudeDeg) * (point.latitudeDeg - pi.latitudeDeg) /
+                     ((pj.latitudeDeg - pi.latitudeDeg) == 0.0
+                          ? 1e-12
+                          : (pj.latitudeDeg - pi.latitudeDeg)) +
+                 piLongitudeDeg);
+        if (intersects) {
+            inside = !inside;
+        }
+    }
+
+    return inside;
+}
+
+bool PointInPolygon(const GeoPoint& point, const AuthorityPolygon& polygon) {
+    for (const auto& ring : polygon.rings) {
+        if (PointInRing(point, ring)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+Point2D ProjectPointForSegment(
+    const GeoPoint& point,
+    double referenceLatitudeDeg,
+    double referenceLongitudeDeg) {
+    const auto unwrappedLongitudeDeg =
+        UnwrapLongitudeRelativeDeg(referenceLongitudeDeg, point.longitudeDeg);
+    const auto cosReferenceLatitude =
+        std::max(std::cos(ToRadians(referenceLatitudeDeg)), 1e-6);
+    return {
+        (unwrappedLongitudeDeg - referenceLongitudeDeg) * cosReferenceLatitude,
+        point.latitudeDeg - referenceLatitudeDeg,
+    };
+}
+
+double Cross2D(const Point2D& left, const Point2D& right) {
+    return left.x * right.y - left.y * right.x;
+}
+
+Point2D Subtract2D(const Point2D& left, const Point2D& right) {
+    return {left.x - right.x, left.y - right.y};
+}
+
+std::optional<double> SegmentIntersectionFraction(
+    const Point2D& segmentStart,
+    const Point2D& segmentEnd,
+    const Point2D& edgeStart,
+    const Point2D& edgeEnd) {
+    constexpr double kIntersectionTolerance = 1e-9;
+
+    const auto segmentDelta = Subtract2D(segmentEnd, segmentStart);
+    const auto edgeDelta = Subtract2D(edgeEnd, edgeStart);
+    const auto denominator = Cross2D(segmentDelta, edgeDelta);
+    if (std::fabs(denominator) <= kIntersectionTolerance) {
+        return std::nullopt;
+    }
+
+    const auto delta = Subtract2D(edgeStart, segmentStart);
+    const auto segmentFraction = Cross2D(delta, edgeDelta) / denominator;
+    const auto edgeFraction = Cross2D(delta, segmentDelta) / denominator;
+    if (segmentFraction < -kIntersectionTolerance ||
+        segmentFraction > 1.0 + kIntersectionTolerance ||
+        edgeFraction < -kIntersectionTolerance ||
+        edgeFraction > 1.0 + kIntersectionTolerance) {
+        return std::nullopt;
+    }
+
+    return std::clamp(segmentFraction, 0.0, 1.0);
+}
+
+std::vector<double> CollectSegmentBoundaryFractions(
+    const GeoPoint& start,
+    const GeoPoint& end,
+    const AuthorityPolygon& polygon) {
+    std::vector<double> fractions;
+    const auto referenceLatitudeDeg = (start.latitudeDeg + end.latitudeDeg) / 2.0;
+    const auto referenceLongitudeDeg =
+        NormalizeLongitudeDeg(
+            start.longitudeDeg +
+            ShortestLongitudeDeltaDeg(start.longitudeDeg, end.longitudeDeg) / 2.0);
+    const auto projectedStart =
+        ProjectPointForSegment(start, referenceLatitudeDeg, referenceLongitudeDeg);
+    const auto projectedEnd =
+        ProjectPointForSegment(end, referenceLatitudeDeg, referenceLongitudeDeg);
+
+    for (const auto& ring : polygon.rings) {
+        const auto count = ring.points.size();
+        if (count < 2) {
+            continue;
+        }
+
+        for (std::size_t index = 0; index < count; ++index) {
+            const auto& edgeStartPoint = ring.points[index];
+            const auto& edgeEndPoint = ring.points[(index + 1) % count];
+            const auto projectedEdgeStart =
+                ProjectPointForSegment(
+                    edgeStartPoint,
+                    referenceLatitudeDeg,
+                    referenceLongitudeDeg);
+            const auto projectedEdgeEnd =
+                ProjectPointForSegment(
+                    edgeEndPoint,
+                    referenceLatitudeDeg,
+                    referenceLongitudeDeg);
+            const auto fraction = SegmentIntersectionFraction(
+                projectedStart,
+                projectedEnd,
+                projectedEdgeStart,
+                projectedEdgeEnd);
+            if (fraction.has_value()) {
+                fractions.push_back(*fraction);
+            }
+        }
+    }
+
+    std::sort(fractions.begin(), fractions.end());
+    fractions.erase(
+        std::unique(
+            fractions.begin(),
+            fractions.end(),
+            [](double left, double right) { return std::fabs(left - right) <= 1e-6; }),
+        fractions.end());
+    return fractions;
+}
+
+std::optional<double> FindEntryFractionByBinarySearch(
+    const GeoPoint& start,
+    const GeoPoint& end,
+    const AuthorityPolygon& polygon) {
+    const auto startInside = PointInPolygon(start, polygon);
+    const auto endInside = PointInPolygon(end, polygon);
+    if (startInside || !endInside) {
+        return std::nullopt;
+    }
+
+    double outsideFraction = 0.0;
+    double insideFraction = 1.0;
+    for (int iteration = 0; iteration < 48; ++iteration) {
+        const auto middleFraction = (outsideFraction + insideFraction) / 2.0;
+        const auto middlePoint = InterpolatePoint(start, end, middleFraction);
+        if (PointInPolygon(middlePoint, polygon)) {
+            insideFraction = middleFraction;
+        } else {
+            outsideFraction = middleFraction;
+        }
+    }
+
+    return insideFraction;
+}
+
+std::optional<double> FindPolygonEntryFraction(
+    const GeoPoint& start,
+    const GeoPoint& end,
+    const AuthorityPolygon& polygon) {
+    if (PointInPolygon(start, polygon)) {
+        return 0.0;
+    }
+
+    const auto boundaryFractions = CollectSegmentBoundaryFractions(start, end, polygon);
+    for (const auto fraction : boundaryFractions) {
+        const auto beforeFraction = std::max(0.0, fraction - 1e-6);
+        const auto afterFraction = std::min(1.0, fraction + 1e-6);
+        const auto beforePoint = InterpolatePoint(start, end, beforeFraction);
+        const auto afterPoint = InterpolatePoint(start, end, afterFraction);
+        const auto beforeInside = PointInPolygon(beforePoint, polygon);
+        const auto afterInside = PointInPolygon(afterPoint, polygon);
+        if (!beforeInside && afterInside) {
+            return fraction;
+        }
+    }
+
+    return FindEntryFractionByBinarySearch(start, end, polygon);
+}
+
+std::optional<double> FindRouteEntryDistanceNm(
+    const std::vector<GeoPoint>& routePoints,
+    const AuthorityPolygon& polygon) {
+    if (routePoints.empty()) {
+        return std::nullopt;
+    }
+    if (PointInPolygon(routePoints.front(), polygon)) {
+        return 0.0;
+    }
+
+    double accumulatedDistanceNm = 0.0;
+    for (std::size_t index = 1; index < routePoints.size(); ++index) {
+        const auto& start = routePoints[index - 1];
+        const auto& end = routePoints[index];
+        const auto segmentDistanceNm = GreatCircleDistanceNm(
+            start.latitudeDeg,
+            start.longitudeDeg,
+            end.latitudeDeg,
+            end.longitudeDeg);
+        const auto entryFraction = FindPolygonEntryFraction(start, end, polygon);
+        if (entryFraction.has_value()) {
+            return accumulatedDistanceNm + segmentDistanceNm * *entryFraction;
+        }
+        accumulatedDistanceNm += segmentDistanceNm;
+    }
+
+    return std::nullopt;
+}
+
+const AuthorityPolygon* FindPolygonById(
+    const AuthorityPolygonCatalog& catalog,
+    const std::string& polygonId) {
+    for (const auto& polygon : catalog.polygons) {
+        if (polygon.id == polygonId) {
+            return &polygon;
+        }
+    }
+    return nullptr;
 }
 
 }  // namespace
@@ -546,6 +958,59 @@ AuthorityActivationResult ActivateAuthorityPolygons(
             return left.reason < right.reason;
         });
     return result;
+}
+
+std::vector<RelevantAuthorityPolygon> ResolveRelevantAuthorityPolygons(
+    const std::vector<ActiveAuthorityPolygon>& activePolygons,
+    const AuthorityPolygonCatalog& polygonCatalog,
+    bool hasAircraftPosition,
+    const GeoPoint& aircraftPosition,
+    const std::vector<GeoPoint>& routePoints) {
+    std::vector<RelevantAuthorityPolygon> relevantPolygons;
+
+    for (const auto& activePolygon : activePolygons) {
+        const auto* polygon = FindPolygonById(polygonCatalog, activePolygon.polygonId);
+        if (polygon == nullptr) {
+            continue;
+        }
+
+        RelevantAuthorityPolygon relevant;
+        relevant.activePolygon = activePolygon;
+        relevant.aircraftInside =
+            hasAircraftPosition && PointInPolygon(aircraftPosition, *polygon);
+
+        const auto routeEntryDistanceNm =
+            FindRouteEntryDistanceNm(routePoints, *polygon);
+        if (routeEntryDistanceNm.has_value()) {
+            relevant.routeIntersects = true;
+            relevant.routeEntryDistanceNm = *routeEntryDistanceNm;
+        }
+
+        if (relevant.aircraftInside || relevant.routeIntersects) {
+            relevantPolygons.push_back(std::move(relevant));
+        }
+    }
+
+    std::sort(
+        relevantPolygons.begin(),
+        relevantPolygons.end(),
+        [](const auto& left, const auto& right) {
+            if (left.routeIntersects != right.routeIntersects) {
+                return left.routeIntersects && !right.routeIntersects;
+            }
+            if (left.routeIntersects && right.routeIntersects &&
+                left.routeEntryDistanceNm != right.routeEntryDistanceNm) {
+                return left.routeEntryDistanceNm < right.routeEntryDistanceNm;
+            }
+            if (left.aircraftInside != right.aircraftInside) {
+                return left.aircraftInside && !right.aircraftInside;
+            }
+            if (left.activePolygon.callsign != right.activePolygon.callsign) {
+                return left.activePolygon.callsign < right.activePolygon.callsign;
+            }
+            return left.activePolygon.polygonId < right.activePolygon.polygonId;
+        });
+    return relevantPolygons;
 }
 
 }  // namespace xvatsim::core::authority

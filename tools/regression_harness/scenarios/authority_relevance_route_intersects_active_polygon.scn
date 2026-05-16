@@ -1,0 +1,11 @@
+name=Authority Relevance Route Intersects Active Polygon
+now_seconds=1000
+
+authority_catalog.fir=VHHK|Hong Kong|HKG|VHHK
+authority_polygon.vatspy=key=VHHK;name=Hong Kong;tokens=VHHK,HKG;polygon=-1.0,112.0|1.0,112.0|1.0,113.0|-1.0,113.0
+controller.entry=callsign=HKG_W_CTR;frequency=125.320;facility=6;actionable=true;atis=false
+route.waypoint=ident=A;lat=0.0;lon=110.0
+route.waypoint=ident=B;lat=0.0;lon=114.0
+
+expect.authority_active_polygon_matches=HKG_W_CTR:VATSPY_FIR:VHHK:VATSPY_BOUNDARY:VHHK:VHHK:HKG_*_CTR
+expect.authority_relevant_polygon_matches=HKG_W_CTR:VATSPY_FIR:VHHK:VATSPY_BOUNDARY:VHHK:aircraft=0:route=1:entry=120
