@@ -1,0 +1,137 @@
+# User-supplied SimBrief/X-Plane FMS test:
+#   C:\X-Plane 12\Output\FMS plans\KHOURKSM01.fms
+# Scenario:
+#   DAL120 from KHOU to RKSM.
+#   HOU Tower, Fort Worth Center, PAZA oceanic/FSS, RKRR Center,
+#   RKSM Ground, and RKSM Tower are online. All other controllers are offline.
+#
+# Assumptions captured for replay:
+#   Fort Worth Center callsign prefix is FTW.
+#   PAZA is represented as PAZA_FSS with VATSIM FSS/Oceanic facility truth.
+#   The enroute route-authority chain relevant to this test is KZFW -> PAZA -> RKRR.
+
+name=KHOU RKSM DAL120 Controller Situation
+now_seconds=1000
+
+state.flight_active=true
+state.departure_released=true
+state.arrival_awake=false
+state.airborne_since_seconds=900
+
+flight.callsign=DAL120
+flight.departure_icao=KHOU
+flight.departure_lat=29.645800
+flight.departure_lon=-95.277231
+flight.has_departure_coordinates=true
+flight.destination_icao=RKSM
+flight.destination_lat=37.445833
+flight.destination_lon=127.114167
+flight.has_destination_coordinates=true
+flight.route_text=FUZ BATIK SPS LAA HGO QUAIL FQF OCS PIH DNJ BEAMO PDT BRUKK YKM RADDY SEA ROSLN DISCO VIXOR ARRUE ROYST YZT YZP JOWEN LOHNE ARCAL 59N60 OGGOE NANDY NATES NIKLL NYMPH NUZAN NRKEY NIPPI SUBEK TOZAR PTR UREBI ODERI UBRAS TBE GINGA TB30B RUGMO MKE HWE TAPPI SKIPE GNITS SEPCO KAMSA ANDOL SABET TENAS BUSKO UGOVI LESBU KAE BIKSI TORUS KARBU EGOBA
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.battery_on=true
+aircraft.latitude_deg=29.645800
+aircraft.longitude_deg=-95.277231
+
+radio.com1_active=122.800
+xpilot.connected=true
+controller.feed_available=true
+controller.feed_stale=false
+
+plan.matched=true
+plan.departure_icao=KHOU
+plan.departure_lat=29.645800
+plan.departure_lon=-95.277231
+plan.has_departure_coordinates=true
+plan.destination_icao=RKSM
+plan.destination_lat=37.445833
+plan.destination_lon=127.114167
+plan.has_destination_coordinates=true
+plan.route_text=FUZ BATIK SPS LAA HGO QUAIL FQF OCS PIH DNJ BEAMO PDT BRUKK YKM RADDY SEA ROSLN DISCO VIXOR ARRUE ROYST YZT YZP JOWEN LOHNE ARCAL 59N60 OGGOE NANDY NATES NIKLL NYMPH NUZAN NRKEY NIPPI SUBEK TOZAR PTR UREBI ODERI UBRAS TBE GINGA TB30B RUGMO MKE HWE TAPPI SKIPE GNITS SEPCO KAMSA ANDOL SABET TENAS BUSKO UGOVI LESBU KAE BIKSI TORUS KARBU EGOBA
+
+graph.node=ident=FUZ;region=USER;type=3;lat=32.889450;lon=-97.179425
+graph.node=ident=BATIK;region=USER;type=11;lat=33.449075;lon=-97.893239
+graph.node=ident=SPS;region=USER;type=3;lat=33.987286;lon=-98.593472
+graph.node=ident=LAA;region=USER;type=3;lat=38.197092;lon=-102.687533
+graph.node=ident=HGO;region=USER;type=3;lat=38.817500;lon=-103.621389
+graph.node=ident=QUAIL;region=USER;type=11;lat=39.260781;lon=-104.124894
+graph.node=ident=FQF;region=USER;type=3;lat=39.690139;lon=-104.620972
+graph.node=ident=OCS;region=USER;type=3;lat=41.590211;lon=-109.015328
+graph.node=ident=PIH;region=USER;type=3;lat=42.870383;lon=-112.652231
+graph.node=ident=DNJ;region=USER;type=3;lat=44.767114;lon=-116.206267
+graph.node=ident=BEAMO;region=USER;type=11;lat=45.314419;lon=-117.777667
+graph.node=ident=PDT;region=USER;type=3;lat=45.698419;lon=-118.938711
+graph.node=ident=BRUKK;region=USER;type=11;lat=46.191350;lon=-119.780044
+graph.node=ident=YKM;region=USER;type=3;lat=46.570244;lon=-120.444636
+graph.node=ident=RADDY;region=USER;type=11;lat=47.074469;lon=-121.516181
+graph.node=ident=SEA;region=USER;type=3;lat=47.435372;lon=-122.309617
+graph.node=ident=ROSLN;region=USER;type=11;lat=48.319767;lon=-123.106294
+graph.node=ident=DISCO;region=USER;type=11;lat=48.376614;lon=-123.158500
+graph.node=ident=VIXOR;region=USER;type=11;lat=48.727050;lon=-123.484489
+graph.node=ident=ARRUE;region=USER;type=11;lat=49.073056;lon=-124.129722
+graph.node=ident=ROYST;region=USER;type=11;lat=49.591389;lon=-125.126389
+graph.node=ident=YZT;region=USER;type=3;lat=50.684517;lon=-127.365964
+graph.node=ident=YZP;region=USER;type=3;lat=53.252181;lon=-131.807125
+graph.node=ident=JOWEN;region=USER;type=11;lat=54.083333;lon=-134.500000
+graph.node=ident=LOHNE;region=USER;type=11;lat=56.500000;lon=-140.000000
+graph.node=ident=ARCAL;region=USER;type=11;lat=58.500000;lon=-150.000000
+graph.node=ident=59N60;region=USER;type=28;lat=59.000000;lon=-160.000000
+graph.node=ident=OGGOE;region=USER;type=11;lat=58.273536;lon=-173.573225
+graph.node=ident=NANDY;region=USER;type=11;lat=56.832889;lon=177.348167
+graph.node=ident=NATES;region=USER;type=11;lat=54.933547;lon=171.974692
+graph.node=ident=NIKLL;region=USER;type=11;lat=53.627342;lon=169.343942
+graph.node=ident=NYMPH;region=USER;type=11;lat=53.303475;lon=168.346178
+graph.node=ident=NUZAN;region=USER;type=11;lat=51.607208;lon=163.702353
+graph.node=ident=NRKEY;region=USER;type=11;lat=50.195600;lon=160.390631
+graph.node=ident=NIPPI;region=USER;type=11;lat=49.710000;lon=159.346667
+graph.node=ident=SUBEK;region=USER;type=11;lat=48.414167;lon=154.474722
+graph.node=ident=TOZAR;region=USER;type=11;lat=46.312778;lon=150.000000
+graph.node=ident=PTR;region=USER;type=3;lat=45.247556;lon=147.980667
+graph.node=ident=UREBI;region=USER;type=11;lat=45.096667;lon=147.211389
+graph.node=ident=ODERI;region=USER;type=11;lat=44.650000;lon=145.255556
+graph.node=ident=UBRAS;region=USER;type=11;lat=44.268692;lon=144.707331
+graph.node=ident=TBE;region=USER;type=3;lat=43.884908;lon=144.166183
+graph.node=ident=GINGA;region=USER;type=11;lat=43.627425;lon=143.953036
+graph.node=ident=TB30B;region=USER;type=11;lat=43.457047;lon=143.809567
+graph.node=ident=RUGMO;region=USER;type=11;lat=43.076011;lon=143.496969
+graph.node=ident=MKE;region=USER;type=3;lat=42.555006;lon=141.955631
+graph.node=ident=HWE;region=USER;type=3;lat=41.774031;lon=140.832217
+graph.node=ident=TAPPI;region=USER;type=11;lat=41.134850;lon=140.165128
+graph.node=ident=SKIPE;region=USER;type=11;lat=40.310217;lon=139.274200
+graph.node=ident=GNITS;region=USER;type=11;lat=39.289594;lon=138.210703
+graph.node=ident=SEPCO;region=USER;type=11;lat=38.932153;lon=137.129636
+graph.node=ident=KAMSA;region=USER;type=11;lat=37.718022;lon=133.733756
+graph.node=ident=ANDOL;region=USER;type=11;lat=37.666111;lon=133.000000
+graph.node=ident=SABET;region=USER;type=11;lat=37.641389;lon=132.671944
+graph.node=ident=TENAS;region=USER;type=11;lat=37.638889;lon=131.574167
+graph.node=ident=BUSKO;region=USER;type=11;lat=37.675833;lon=130.269444
+graph.node=ident=UGOVI;region=USER;type=11;lat=37.684722;lon=129.847500
+graph.node=ident=LESBU;region=USER;type=11;lat=37.687778;lon=129.684444
+graph.node=ident=KAE;region=USER;type=3;lat=37.700778;lon=128.753778
+graph.node=ident=BIKSI;region=USER;type=11;lat=37.675556;lon=128.584444
+graph.node=ident=TORUS;region=USER;type=11;lat=37.606944;lon=128.135278
+graph.node=ident=KARBU;region=USER;type=11;lat=37.533056;lon=127.664444
+graph.node=ident=EGOBA;region=USER;type=11;lat=37.487417;lon=127.379417
+
+route.current_sector=identifier=KZFW;entryDistanceNm=0;matchTokens=KZFW;controllerPrefixes=FTW
+route.next_sector=identifier=PAZA;entryDistanceNm=2350;matchTokens=PAZA;controllerPrefixes=PAZA
+route.next_sector=identifier=RKRR;entryDistanceNm=6100;matchTokens=RKRR;controllerPrefixes=RKRR
+
+controller.entry=callsign=HOU_TWR;frequency=118.700;facility=4;actionable=true;atis=false
+controller.entry=callsign=FTW_CTR;frequency=135.975;facility=6;actionable=true;atis=false
+controller.entry=callsign=PAZA_FSS;frequency=123.950;facility=1;actionable=true;atis=false
+controller.entry=callsign=RKRR_CTR;frequency=128.370;facility=6;actionable=true;atis=false
+controller.entry=callsign=RKSM_GND;frequency=121.750;facility=3;actionable=true;atis=false
+controller.entry=callsign=RKSM_TWR;frequency=118.050;facility=4;actionable=true;atis=false
+
+expect.departure_collected_available=true
+expect.departure_collected_callsigns=HOU_TWR
+expect.enroute_available=true
+expect.enroute_callsigns=FTW_CTR,PAZA_FSS,RKRR_CTR
+expect.arrival_local_available=true
+expect.arrival_local_callsigns=RKSM_GND,RKSM_TWR
+expect.resolved_waypoints=ACFT,FUZ,BATIK,SPS,LAA,HGO,QUAIL,FQF,OCS,PIH,DNJ,BEAMO,PDT,BRUKK,YKM,RADDY,SEA,ROSLN,DISCO,VIXOR,ARRUE,ROYST,YZT,YZP,JOWEN,LOHNE,ARCAL,59N60,OGGOE,NANDY,NATES,NIKLL,NYMPH,NUZAN,NRKEY,NIPPI,SUBEK,TOZAR,PTR,UREBI,ODERI,UBRAS,TBE,GINGA,TB30B,RUGMO,MKE,HWE,TAPPI,SKIPE,GNITS,SEPCO,KAMSA,ANDOL,SABET,TENAS,BUSKO,UGOVI,LESBU,KAE,BIKSI,TORUS,KARBU,EGOBA,RKSM
+expect.unsupported_tokens=<none>
+expect.unresolved_tokens=<none>
