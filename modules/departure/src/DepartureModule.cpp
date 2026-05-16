@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <string>
 #include <unordered_set>
 #include <vector>

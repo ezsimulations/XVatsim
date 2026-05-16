@@ -4,12 +4,14 @@ Updated: 2026-05-16
 
 ## Current Position
 
-Milestones 1 through 5 are complete on the authoritative rebuild plan. Milestone
-6 is active and is focused on the global controller authority catalog: route
-center/enroute matching must be driven by authoritative catalog data and
-controller-feed truth, not inferred aliases. The package zip created during
+Milestones 1 through 9 are complete on the authoritative rebuild plan. The live
+plugin now uses the offline regression harness, fail-closed source handling,
+true route geometry, typed route grammar, deterministic nav-graph resolution,
+data-driven controller authority, proven workflow ownership, audited
+`XPLMFindNavAid` use, and post-rebuild cleanup. The package zip created during
 Milestone 5 remains an internal checkpoint only and must not be treated as the
-store-upload package.
+store-upload package; the next release step is a fresh final package validation
+pass.
 
 ## Milestone 5 Cleanup Completed
 
@@ -370,6 +372,14 @@ store-upload package.
   installed X-Plane plugin binary was refreshed from the validated build output
   and matches SHA-256
   `91987AD0CCA61441D1C52473BB81EFC7837636D795E368A2B35202CC29B57043`.
+- Thirteenth and final Milestone 9 cleanup pass completed: performed the
+  closeout audit across the core Milestone 9 files and removed one stale include
+  from `DepartureModule.cpp`. No route parsing, geometry, controller authority,
+  workflow, wake/sleep, module collection, or display behavior was changed.
+- Milestone 9 is complete. Release build passed and all 94 saved regression
+  scenarios passed. The installed X-Plane plugin binary was refreshed from the
+  validated build output and matches SHA-256
+  `9CCC4E0430D48E43384AC424926DC08F45F62211B9BCA1FCBC34511597FD7956`.
 
 ## Release Rule
 
