@@ -1,0 +1,32 @@
+name=Duplicate Ident Airway Entry Context Resolution
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0000
+aircraft.longitude_deg=0.0000
+
+plan.matched=true
+plan.departure_icao=KAAA
+plan.departure_lat=0.0000
+plan.departure_lon=0.0000
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=40.0000
+plan.destination_lon=0.0000
+plan.has_destination_coordinates=true
+plan.route_text=DUPFX Q75 MXE
+
+graph.node=ident=DUPFX;region=AA;type=11;lat=10.0000;lon=0.0000
+graph.node=ident=DUPFX;region=BB;type=11;lat=20.0000;lon=0.0000
+graph.node=ident=MXE;region=BB;type=11;lat=30.0000;lon=0.0000
+
+graph.edge=startIdent=DUPFX;startRegion=BB;startType=11;endIdent=MXE;endRegion=BB;endType=11;airway=Q75;direction=N
+
+expect.route_token_kinds=DUPFX:Point,Q75:Airway,MXE:Point
+expect.resolved_waypoints=ACFT,DUPFX,MXE,KBBB
+expect.resolved_waypoint_points=ACFT@0.0000,0.0000|DUPFX@20.0000,0.0000|MXE@30.0000,0.0000|KBBB@40.0000,0.0000
+expect.resolved_tokens=DUPFX,MXE
+expect.expanded_tokens=Q75
+expect.ignored_tokens=
+expect.unresolved_tokens=

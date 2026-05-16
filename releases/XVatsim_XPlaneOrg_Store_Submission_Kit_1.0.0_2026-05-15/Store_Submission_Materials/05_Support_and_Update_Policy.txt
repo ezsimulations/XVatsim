@@ -1,0 +1,28 @@
+Suggested support policy:
+
+Support channel:
+- Replace with your preferred support email or support forum thread
+- Suggested placeholder: [replace-with-support-email]
+
+Bug-report expectations:
+Ask customers to include:
+- Departure airport
+- Arrival airport
+- Callsign
+- What xPilot showed
+- What XVatsim showed
+- Screenshots if possible
+- X-Plane Log.txt if the issue can be repeated
+
+Suggested update policy:
+- Free updates within the same major version
+- Critical bug-fix updates prioritized
+- Feature updates delivered as time and roadmap allow
+
+Suggested public support note:
+XVatsim is actively supported, but support works best when users include screenshots and
+their X-Plane Log.txt so behavior can be verified accurately.
+
+Suggested expectations note:
+This release is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.
+

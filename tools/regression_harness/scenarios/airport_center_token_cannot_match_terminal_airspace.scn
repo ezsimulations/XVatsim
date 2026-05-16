@@ -1,0 +1,24 @@
+name=Airport Center Token Cannot Match Terminal Airspace
+now_seconds=1000
+
+xpilot.connected=true
+flight.departure_icao=KONT
+flight.destination_icao=KPHL
+
+departure.coverage.available=true
+departure.coverage.has_center=true
+departure.coverage.has_terminal=true
+departure.coverage.sector=identifier=SCT_CENTER_ALIAS;entryDistanceNm=0;matchTokens=SCT_APP;controllerPrefixes=SCT;centerCoverage=true
+
+arrival.coverage.available=true
+arrival.coverage.has_center=true
+arrival.coverage.has_terminal=true
+arrival.coverage.sector=identifier=PHL_CENTER_ALIAS;entryDistanceNm=0;matchTokens=PHL_APP;controllerPrefixes=PHL;centerCoverage=true
+
+controller.entry=callsign=SCT_APP;frequency=128.050;facility=5;actionable=true;atis=false
+controller.entry=callsign=PHL_APP;frequency=126.850;facility=5;actionable=true;atis=false
+
+expect.departure_collected_available=false
+expect.departure_collected_callsigns=<none>
+expect.arrival_airspace_available=false
+expect.arrival_airspace_callsigns=<none>

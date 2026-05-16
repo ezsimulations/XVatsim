@@ -1,0 +1,30 @@
+name=Duplicate Ident Point Lookahead Resolution
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0000
+aircraft.longitude_deg=0.0000
+
+plan.matched=true
+plan.departure_icao=KAAA
+plan.departure_lat=0.0000
+plan.departure_lon=0.0000
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=41.0000
+plan.destination_lon=41.0000
+plan.has_destination_coordinates=true
+plan.route_text=DUPFX NEXTFX
+
+graph.node=ident=DUPFX;region=AA;type=11;lat=0.1000;lon=1.0000
+graph.node=ident=DUPFX;region=BB;type=11;lat=40.0000;lon=40.0000
+graph.node=ident=NEXTFX;region=BB;type=11;lat=40.2000;lon=40.2000
+
+expect.route_token_kinds=DUPFX:Point,NEXTFX:Point
+expect.resolved_waypoints=ACFT,DUPFX,NEXTFX,KBBB
+expect.resolved_waypoint_points=ACFT@0.0000,0.0000|DUPFX@40.0000,40.0000|NEXTFX@40.2000,40.2000|KBBB@41.0000,41.0000
+expect.resolved_tokens=DUPFX,NEXTFX
+expect.expanded_tokens=
+expect.ignored_tokens=
+expect.unresolved_tokens=

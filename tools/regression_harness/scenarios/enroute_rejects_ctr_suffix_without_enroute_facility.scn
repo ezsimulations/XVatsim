@@ -1,0 +1,9 @@
+name=Enroute Rejects CTR Suffix Without Enroute Facility
+now_seconds=1000
+
+xpilot.connected=true
+route.current_sector=identifier=KZLA;entryDistanceNm=0;matchTokens=KZLA;controllerPrefixes=LAX
+controller.entry=callsign=LAX_CTR;frequency=125.800;facility=5;actionable=true;atis=false
+
+expect.enroute_available=false
+expect.enroute_callsigns=KZLA

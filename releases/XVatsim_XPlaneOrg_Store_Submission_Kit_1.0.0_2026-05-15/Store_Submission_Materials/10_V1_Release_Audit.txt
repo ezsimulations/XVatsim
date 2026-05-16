@@ -1,0 +1,62 @@
+XVatsim V1 Release Audit
+Updated: 2026-05-15
+
+Current customer package payload:
+- Resources\plugins\XVatsim\win_x64\XVatsim.xpl
+- Resources\plugins\XVatsim\win_x64\ui_transition.mp3
+- README.txt
+- CHANGELOG.txt
+- QUICK_START.txt
+
+Internal Milestone 5 checkpoint zip:
+- Store_Submission_Materials\Internal_Checkpoints\XVatsim_1.0.0_Windows_XP12_M5_checkpoint_do_not_upload.zip
+- Size: 377555 bytes
+- SHA256: F10EEEFC34662196EFAEE6EFE4DC2E92532F27F24CB41597D8677441B2B8D78B
+- Created: 2026-05-15 16:04:26
+- This is not the final store-upload package. Recreate the final package only after Milestones 6 through 9 are complete.
+
+Verified release behavior documented for V1:
+- Windows / X-Plane 12 / xPilot / IFR flight-plan workflow
+- Automatic wake/sleep overlay behavior after xPilot connection
+- Departure, Enroute, and Arrival module ownership
+- Route-aware enroute Center selection
+- CTAF/UNICOM display fallback on airport boards
+- Optional Standby Assist for recommended live controller frequencies
+- COM1, COM2, TX, RX, MODE C, and ASST ON/OFF display
+- Airway-aware route parsing, authority-catalog matching, date-line handling, and duplicate-waypoint protection
+
+Explicitly not included in V1:
+- Private-message, PDC, or AUTO_ATC card presentation
+- SimBrief import or comparison
+- Navigraph AIRAC import or local navdata graph
+- Dedicated VFR workflow
+- Mac, Linux, or X-Plane 11 support
+
+Release-seam decisions:
+- Experimental controller/private-message UI is gated off by default.
+- The stale 2026-04-27 quick-start PDF was archived and removed from the customer package.
+- Old beta, preview, showcase, and release-candidate packages were quarantined under releases\Archived_Previous_Test_Packages_do_not_ship.
+- Network user-agent metadata was updated to XVatsim/1.0.0 for live HTTP fetches.
+- Route diagnostic log text is sanitized and bounded before being written to X-Plane logs.
+- Plugin description and lifecycle logs use release/support wording instead of internal bootstrap/brain wording.
+- Command callbacks pass through ignored phases safely, and menu registration removes a parent item if submenu creation fails.
+- The packaged binary must be refreshed from build\dist\XVatsim\win_x64 before zip creation.
+- The final package should contain no Debug, Release, RelWithDebInfo, tmp_*, desktop.ini, .pdb, .lib, .exp, .tmp, or .log files.
+
+Package smoke verification:
+- Clean temporary install from the regenerated checkpoint package Resources folder passed.
+- Expected smoke files were present:
+  X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl
+  X-Plane 12\Resources\plugins\XVatsim\win_x64\ui_transition.mp3
+- Customer package text scan found no rc1, beta, preview, PDF, debug, or test wording.
+- Package and zip forbidden-file scans found no Debug, Release, RelWithDebInfo, tmp_*, desktop.ini, .pdb, .lib, .exp, .tmp, .log, or .pdf files.
+- Packaged XVatsim.xpl SHA256 matched the validated build output.
+- Final Milestone 5 closeout scans found no active stale beta/preview/rc wording, dormant prototype modules, or forbidden package files.
+
+Still required before upload:
+- Completion of Milestones 6 through 9
+- Final screenshots
+- Final storefront/vendor display name
+- Final support email address
+- Final store-upload zip created after the full milestone map is complete
+- Optional final in-sim smoke test from the final zipped customer package

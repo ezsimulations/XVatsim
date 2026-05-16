@@ -1,0 +1,40 @@
+# Replays the KONT bug where APP remained online after departure and DEP never released.
+name=KONT Departure Release
+now_seconds=1000
+
+state.flight_active=true
+state.departure_released=false
+state.arrival_awake=false
+state.airborne_since_seconds=700
+
+flight.callsign=UPS2066
+flight.departure_icao=KONT
+flight.departure_lat=34.0560
+flight.departure_lon=-117.6010
+flight.has_departure_coordinates=true
+flight.destination_icao=KPHL
+flight.destination_lat=39.8744
+flight.destination_lon=-75.2424
+flight.has_destination_coordinates=true
+flight.route_text=POM J65 PMD J6 ABQ J72 STL V14 PXV VHP J42 RBV J230 MXE
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.battery_on=true
+aircraft.latitude_deg=34.3500
+aircraft.longitude_deg=-118.4000
+
+radio.com1_active=122.800
+
+departure.inside_terminal_coverage=false
+
+departure.station=role=Approach;callsign=SCT_APP;frequency=128.050;online=true;offline=false
+departure.station=role=Ctaf;callsign=KONT;frequency=120.600;online=true;offline=false;tuned=false
+
+enroute.station=role=Center;callsign=LAX_CTR;frequency=125.800;online=true;offline=false;sectorActive=true;routeEntryDistanceNm=0
+enroute.station=role=Center;callsign=PHL_CTR;frequency=133.400;online=true;offline=false;sectorActive=false;routeEntryDistanceNm=2100
+
+expect.stage=Enroute
+expect.reason=departure-released
+expect.display_source=Enroute
+expect.display_callsigns=LAX_CTR,PHL_CTR

@@ -1,0 +1,9 @@
+name=Enroute Accepts Data Driven FSS Facility
+now_seconds=1000
+
+xpilot.connected=true
+route.current_sector=identifier=CZQX;entryDistanceNm=0;matchTokens=CZQX;controllerPrefixes=GAND
+controller.entry=callsign=GAND_FSS;frequency=123.450;facility=1;actionable=true;atis=false
+
+expect.enroute_available=true
+expect.enroute_callsigns=GAND_FSS

@@ -1,0 +1,31 @@
+name=Resolver Boundary Callsign Property Is Not Authority Key
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.0
+plan.destination_lon=30.0
+plan.has_destination_coordinates=true
+
+resolver.route_resolve=true
+resolver.center_feature=label=SAFE;callsign=PHZH;polygon=-1,-1|-1,5|1,5|1,-1
+resolver.authority_catalog_fir=PHZH|Honolulu|HCF|PHZH
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_status=ROUTE 2 pts 1/0 sectors exact authority-gaps 1
+expect.resolver_route_authority_gaps=current:SAFE
+expect.resolver_route_current_sectors=SAFE
+expect.resolver_route_next_sectors=<none>
+expect.resolver_route_current_controller_prefixes=SAFE:
+expect.resolver_route_next_controller_prefixes=<none>
+expect.resolver_route_generations=center:1,authority:1

@@ -1,0 +1,15 @@
+Suggested product title:
+XVatsim - Route-Aware VATSIM Overlay for X-Plane 12
+
+Suggested short tagline:
+Clean, route-aware VATSIM frequency awareness for xPilot in X-Plane 12.
+
+Suggested one-line short description:
+XVatsim is a companion overlay for xPilot that removes controller clutter and shows only
+the VATSIM frequencies relevant to your current IFR flight and stage of operation.
+
+Alternate short description options:
+1. A cleaner, smarter VATSIM overlay for xPilot and X-Plane 12 IFR flying.
+2. Route-aware VATSIM frequency display built to reduce cockpit clutter in X-Plane 12.
+3. XVatsim keeps VATSIM frequency awareness clean, relevant, and easy to trust.
+

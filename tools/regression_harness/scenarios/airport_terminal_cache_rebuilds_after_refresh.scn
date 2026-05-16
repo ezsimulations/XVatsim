@@ -1,0 +1,16 @@
+name=Airport Terminal Cache Rebuilds After Refresh
+now_seconds=1000
+
+airport.coverage_builder_icao=TEST
+airport.coverage_builder_lat=10.0
+airport.coverage_builder_lon=10.0
+airport.coverage_builds_pre_refresh_snapshot=true
+airport.terminal_feature=id=SCT;name=SCT_APP;prefixes=SCT;polygon=-1,-1|-1,1|1,1|1,-1
+airport.pending_terminal_feature=id=SCT;name=SCT_APP;prefixes=SCT;polygon=9,9|9,11|11,11|11,9
+airport.terminal_probe_lat=10.0
+airport.terminal_probe_lon=10.0
+
+expect.airport_coverage_available=true
+expect.airport_coverage_match_tokens=SCT:SCT_APP>SCT_DEP
+expect.airport_coverage_generations=center:0,authority:0,terminal:2
+expect.airport_terminal_inside=true

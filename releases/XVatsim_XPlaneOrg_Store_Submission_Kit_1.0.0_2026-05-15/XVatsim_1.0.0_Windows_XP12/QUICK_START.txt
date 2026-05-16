@@ -1,0 +1,43 @@
+XVatsim Quick Start
+Version: 1.0.0
+Updated: 2026-05-15
+
+Install:
+1. Close X-Plane 12.
+2. Copy the included Resources folder into your X-Plane 12 root folder.
+3. Confirm this file exists after copying:
+   X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl
+4. Start X-Plane 12.
+5. Start xPilot and connect to VATSIM.
+
+Basic operation:
+- XVatsim stays hidden until xPilot is connected.
+- Auto Display lets XVatsim wake and sleep based on flight context.
+- Open Display forces the overlay open.
+- Close Display forces the overlay to sleep.
+- Reset XVatsim Session clears flight-scoped state for a fresh start.
+
+Standby Assist:
+- Standby Assist can preload COM1 standby with the recommended live controller frequency.
+- The overlay shows ASST ON or ASST OFF so the current assist state is visible.
+- CTAF/UNICOM and private-message/PDC handling are not part of Standby Assist in V1.
+
+Supported V1 scope:
+- Windows
+- X-Plane 12
+- xPilot
+- IFR flight-plan workflow
+
+Not included in V1:
+- Private-message, PDC, or AUTO_ATC card presentation
+- SimBrief import
+- Navigraph AIRAC import
+- Dedicated VFR workflow
+- Mac, Linux, or X-Plane 11 support
+
+If something looks wrong:
+- Note the departure and arrival airports.
+- Note the callsign.
+- Note what xPilot showed.
+- Note what XVatsim showed.
+- Include screenshots and X-Plane Log.txt if the issue can be repeated.

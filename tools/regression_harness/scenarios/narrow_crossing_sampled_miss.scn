@@ -1,0 +1,12 @@
+name=Narrow Crossing Sampled Miss
+traversal.mode=sampled
+traversal.route_sample_step_nm=500
+
+route.waypoint=ident=ACFT;lat=0.0000;lon=0.0000
+route.waypoint=ident=FIX1;lat=0.0000;lon=2.0000
+
+feature.entry=label=NARROW;tokens=NARROW;controllerPrefixes=NAR;polygon=-0.2000,0.9900|0.2000,0.9900|0.2000,1.0100|-0.2000,1.0100
+
+expect.route_resolved=true
+expect.route_current_sectors=
+expect.route_next_sectors=

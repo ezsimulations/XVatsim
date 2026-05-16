@@ -1,0 +1,35 @@
+XVatsim X-Plane.org Store Submission Checklist
+
+Store contact:
+- X-Plane.org contact page: https://forums.x-plane.org/contactus/
+- If you have a product you want to add to the store, their contact page says to email:
+  [email protected]
+
+Before contacting the store:
+- Confirm the plugin works from a clean install using only the packaged files
+- Confirm the package path is correct
+- Confirm QUICK_START.txt matches the final packaged behavior
+- Confirm README and changelog match the final release version
+- Decide final product title
+- Decide final vendor/storefront name
+- Decide final support email
+
+Store assets to prepare:
+- Customer package zip
+- 5 to 8 strong product screenshots
+- Final short description
+- Final long description
+- Technical specs
+- Support/update policy
+- Changelog / release notes
+
+Before upload:
+- Confirm no rc/beta/preview wording appears in customer-facing package files
+- Name the package zip for the final public version
+- Remove any internal-only notes you do not want visible to customers
+- Double-check that no test/debug-only files are included
+
+After store approval:
+- Keep a copy of the exact uploaded zip
+- Keep a copy of the exact listing text
+- Create a public support thread or support mailbox if desired

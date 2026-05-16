@@ -1,0 +1,9 @@
+name=Enroute Authority Gap Does Not Display Offline Row
+now_seconds=1000
+
+xpilot.connected=true
+route.current_sector=identifier=GAP;entryDistanceNm=0;matchTokens=GAP
+controller.entry=callsign=GAP_CTR;frequency=127.650;facility=6;actionable=true;atis=false
+
+expect.enroute_available=false
+expect.enroute_callsigns=<none>

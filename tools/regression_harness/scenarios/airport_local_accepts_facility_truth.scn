@@ -1,0 +1,15 @@
+name=Airport Local Accepts Facility Truth
+now_seconds=1000
+
+xpilot.connected=true
+flight.departure_icao=KONT
+flight.destination_icao=KONT
+
+controller.entry=callsign=ONT_DEL;frequency=121.900;facility=2;actionable=true;atis=false
+controller.entry=callsign=ONT_GND;frequency=121.800;facility=3;actionable=true;atis=false
+controller.entry=callsign=ONT_TWR;frequency=120.600;facility=4;actionable=true;atis=false
+
+expect.departure_collected_available=true
+expect.departure_collected_callsigns=ONT_DEL,ONT_GND,ONT_TWR
+expect.arrival_local_available=true
+expect.arrival_local_callsigns=ONT_GND,ONT_TWR

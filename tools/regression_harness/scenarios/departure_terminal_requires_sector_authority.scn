@@ -1,0 +1,23 @@
+name=Departure Terminal Requires Sector Authority
+now_seconds=1000
+
+xpilot.connected=true
+flight.departure_icao=KONT
+flight.destination_icao=KPHL
+
+departure.coverage.available=true
+departure.coverage.has_terminal=true
+departure.coverage.sector=identifier=SCT;entryDistanceNm=0;matchTokens=SCT_APP;controllerPrefixes=SCT;terminalCoverage=true
+
+arrival.coverage.available=true
+arrival.coverage.has_terminal=true
+arrival.coverage.sector=identifier=SCT;entryDistanceNm=0;matchTokens=SCT_APP;controllerPrefixes=SCT;terminalCoverage=true
+
+controller.entry=callsign=ONT_TWR;frequency=120.600;facility=4;actionable=true;atis=false
+controller.entry=callsign=ONT_APP;frequency=124.900;facility=5;actionable=true;atis=false
+controller.entry=callsign=SCT_APP;frequency=128.050;facility=5;actionable=true;atis=false
+
+expect.departure_collected_available=true
+expect.departure_collected_callsigns=ONT_TWR,SCT_APP
+expect.arrival_airspace_available=true
+expect.arrival_airspace_callsigns=SCT_APP

@@ -1,0 +1,33 @@
+name=Resolver Authority Gap Identifiers Trace Current And Next
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.0
+plan.destination_lon=30.0
+plan.has_destination_coordinates=true
+
+resolver.route_resolve=true
+resolver.center_feature=label=CURGAP;polygon=-1,-1|-1,5|1,5|1,-1
+resolver.center_feature=label=NEXTGAP;polygon=-1,10|-1,20|1,20|1,10
+resolver.authority_catalog_fir=CURGAP|Current Gap Center||CURGAP
+resolver.authority_catalog_fir=NEXTGAP|Next Gap Center||NEXTGAP
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_status=ROUTE 2 pts 1/1 sectors exact authority-gaps 2
+expect.resolver_route_authority_gaps=current:CURGAP,next:NEXTGAP
+expect.resolver_route_current_sectors=CURGAP
+expect.resolver_route_next_sectors=NEXTGAP
+expect.resolver_route_current_controller_prefixes=CURGAP:
+expect.resolver_route_next_controller_prefixes=NEXTGAP:
+expect.resolver_route_generations=center:1,authority:1

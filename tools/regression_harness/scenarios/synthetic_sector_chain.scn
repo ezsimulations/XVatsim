@@ -1,0 +1,17 @@
+# Synthetic route-sector chain replay for the shared route traversal engine.
+name=Synthetic Sector Chain
+now_seconds=1000
+
+route.waypoint=ident=ACFT;lat=0;lon=0
+route.waypoint=ident=FIX1;lat=0;lon=10
+route.waypoint=ident=FIX2;lat=0;lon=20
+traversal.route_sample_step_nm=5
+traversal.route_sector_sanity_limit=10
+
+feature.entry=label=SECTOR_A;tokens=SECTOR_A;controllerPrefixes=AAA;polygon=-5,-5|5,-5|5,5|-5,5
+feature.entry=label=SECTOR_B;tokens=SECTOR_B;controllerPrefixes=BBB;polygon=-5,5|5,5|5,15|-5,15
+feature.entry=label=SECTOR_C;tokens=SECTOR_C;controllerPrefixes=CCC;polygon=-5,15|5,15|5,25|-5,25
+
+expect.route_resolved=true
+expect.route_current_sectors=SECTOR_A
+expect.route_next_sectors=SECTOR_B,SECTOR_C

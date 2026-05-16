@@ -1,0 +1,11 @@
+name=Enroute Offline Row Uses Sector Identifier
+now_seconds=1000
+
+xpilot.connected=true
+controller.feed_available=true
+controller.feed_stale=false
+
+route.current_sector=identifier=SAFE;entryDistanceNm=0;matchTokens=KZLA;controllerPrefixes=SAFE
+
+expect.enroute_available=false
+expect.enroute_callsigns=SAFE

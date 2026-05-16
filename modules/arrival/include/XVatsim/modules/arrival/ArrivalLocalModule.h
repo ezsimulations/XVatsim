@@ -1,0 +1,20 @@
+#pragma once
+
+#include <string>
+
+#include "XVatsim/brain/BrainTypes.h"
+
+namespace xvatsim::modules::arrival {
+
+class ArrivalLocalModule {
+public:
+    ArrivalLocalModule() = default;
+
+    brain::ModuleBoardSnapshot Collect(
+        const brain::XPilotSessionSnapshot& xPilotSessionSnapshot,
+        const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+        const brain::RadioStateSnapshot& radioStateSnapshot,
+        const std::string& arrivalAirportIcao) const;
+};
+
+}  // namespace xvatsim::modules::arrival

@@ -1,0 +1,7 @@
+name=Enroute Requires Authoritative Route
+now_seconds=1000
+
+xpilot.connected=true
+controller.entry=callsign=HCF_CTR;frequency=127.650;facility=6;actionable=true;atis=false
+
+expect.enroute_available=false

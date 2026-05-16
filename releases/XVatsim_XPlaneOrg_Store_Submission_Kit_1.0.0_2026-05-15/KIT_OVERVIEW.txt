@@ -1,0 +1,40 @@
+XVatsim X-Plane.org Store Submission Kit
+Prepared: 2026-05-15
+Public launch version: 1.0.0
+
+Purpose:
+This folder is the working submission kit for putting XVatsim on the X-Plane.org Store.
+It is split into two parts:
+
+1. XVatsim_1.0.0_Windows_XP12
+   Customer-facing release package with the plugin, install guide, and changelog.
+
+2. Store_Submission_Materials
+   Store-facing materials including product copy, technical specs, pricing notes,
+   screenshot shot list, support/update policy, and a vendor contact draft.
+
+What is already ready:
+- Current Windows/X-Plane 12 plugin build verified on 2026-05-15
+- Transition audio file
+- Quick-start text guide
+- Customer README
+- Customer changelog
+- Internal Milestone 5 package checkpoint zip
+- Store listing copy
+- Store submission checklist
+- Support/update policy draft
+- Pricing/positioning draft
+
+What still needs to be finalized before submission:
+- Milestones 6 through 9
+- Final storefront/vendor display name
+- Final support email address
+- Final screenshots
+- Final store-upload package zip after all milestones are complete
+
+Recommended next steps:
+1. Begin Milestone 6.
+2. Complete Milestones 6 through 9.
+3. Capture the screenshots listed in Store_Submission_Materials\08_Screenshot_Shot_List.txt
+4. Fill in the support email and vendor/storefront name placeholders.
+5. Create the final store-upload package only after the full milestone map is complete.

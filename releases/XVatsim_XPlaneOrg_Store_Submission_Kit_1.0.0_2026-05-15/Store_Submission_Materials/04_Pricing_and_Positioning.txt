@@ -1,0 +1,22 @@
+Recommended launch price:
+$7.99 USD
+
+Positioning:
+XVatsim should be priced as an affordable, high-utility cockpit enhancement rather than
+as a premium aircraft-level add-on. It improves usability and pilot awareness without
+trying to replace xPilot itself.
+
+Why $7.99 makes sense:
+- Low-friction impulse-buy range for VATSIM users
+- Easy value proposition: cleaner controller awareness, less cockpit clutter
+- Fair price for a focused utility rather than a full ecosystem product
+- Encourages community adoption and word of mouth
+
+Optional launch strategy:
+- Standard launch: $7.99
+- Optional intro sale: $6.99 for a short launch window
+
+Recommended positioning sentence:
+XVatsim is a small but high-value cockpit utility built to make VATSIM flying cleaner,
+faster, and easier to trust.
+

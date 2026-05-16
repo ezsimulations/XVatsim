@@ -1,0 +1,9 @@
+name=Enroute Requires Explicit Controller Prefixes
+now_seconds=1000
+
+xpilot.connected=true
+route.current_sector=identifier=PHZH;entryDistanceNm=0;matchTokens=PHZH
+controller.entry=callsign=PHZH_CTR;frequency=127.650;facility=6;actionable=true;atis=false
+
+expect.enroute_available=false
+expect.enroute_callsigns=<none>

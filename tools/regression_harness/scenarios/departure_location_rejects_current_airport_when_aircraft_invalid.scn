@@ -1,0 +1,19 @@
+# Proves a cached/current airport string cannot confirm departure without valid aircraft state.
+name=Departure Location Rejects Current Airport When Aircraft Invalid
+now_seconds=1000
+
+aircraft.valid=false
+aircraft.on_ground=true
+aircraft.battery_on=true
+aircraft.latitude_deg=34.0560
+aircraft.longitude_deg=-117.6010
+
+fms.current_airport_icao=KONT
+
+plan.matched=true
+plan.departure_icao=KONT
+plan.departure_lat=34.0560
+plan.departure_lon=-117.6010
+plan.has_departure_coordinates=true
+
+expect.departure_location_confirmed=false

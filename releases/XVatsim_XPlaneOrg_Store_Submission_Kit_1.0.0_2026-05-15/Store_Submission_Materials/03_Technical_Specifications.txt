@@ -1,0 +1,56 @@
+Product:
+XVatsim
+
+Recommended store title:
+XVatsim - Route-Aware VATSIM Overlay for X-Plane 12
+
+Public version:
+1.0.0
+
+Platform support:
+- Windows
+- X-Plane 12
+
+Required dependency:
+- xPilot
+
+Supported workflow:
+- IFR flight-plan operations
+
+Install path:
+X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl
+
+Included binary:
+- XVatsim.xpl
+- ui_transition.mp3
+
+Operational highlights:
+- Hidden until xPilot connects
+- Auto, manual-open, and manual-close display behavior
+- Roll-down / roll-up animated shell
+- Departure, Enroute, and Arrival ownership separated
+- CTAF fallback to NO CTAF / UNICOM 122.800 when no CTAF is published
+- COM1 standby assist option for recommended live controller frequencies
+- TX / RX / MODE C visual status
+- ASST ON / ASST OFF visual status
+- Airway-aware route parsing and route-sector resolution
+- Controller authority catalog support
+
+Not included in this release:
+- Mac support
+- Linux support
+- X-Plane 11 support
+- Dedicated VFR workflow
+- Private-message, PDC, or AUTO_ATC card presentation
+- SimBrief import
+- Navigraph AIRAC import
+
+Suggested store tags/keywords:
+- VATSIM
+- xPilot
+- ATC
+- overlay
+- IFR
+- utility
+- cockpit
+- communications

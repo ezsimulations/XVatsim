@@ -1,0 +1,31 @@
+name=Resolver Route Rejects Catalog Without Boundary Refresh
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.0
+plan.destination_lon=20.0
+plan.has_destination_coordinates=true
+
+resolver.route_resolve=true
+resolver.route_builds_pre_refresh_snapshot=true
+resolver.center_feature=label=OLD;polygon=-1,-1|-1,25|1,25|1,-1
+resolver.authority_catalog_fir=OLD|Old Center|OLD|OLD
+resolver.pending_authority_catalog_fir=OLD|Old Center|NEW|OLD
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_current_sectors=OLD
+expect.resolver_route_next_sectors=<none>
+expect.resolver_route_current_controller_prefixes=OLD:OLD
+expect.resolver_route_next_controller_prefixes=<none>
+expect.resolver_route_generations=center:1,authority:1

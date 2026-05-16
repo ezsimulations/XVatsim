@@ -1,0 +1,34 @@
+name=Route Waypoint Resolution
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=43.6462
+aircraft.longitude_deg=-70.3093
+
+plan.matched=true
+plan.departure_icao=KPWM
+plan.departure_lat=43.6462
+plan.departure_lon=-70.3093
+plan.has_departure_coordinates=true
+plan.destination_icao=KDCA
+plan.destination_lat=38.8512
+plan.destination_lon=-77.0402
+plan.has_destination_coordinates=true
+plan.route_text=NELIE Q75 MXE
+
+graph.node=ident=NELIE;region=K1;type=11;lat=43.2000;lon=-70.5000
+graph.node=ident=GREKI;region=K1;type=11;lat=42.7000;lon=-70.8000
+graph.node=ident=BIZEX;region=K1;type=11;lat=41.8000;lon=-72.0000
+graph.node=ident=MXE;region=K1;type=3;lat=39.9272;lon=-75.2411
+
+graph.edge=startIdent=NELIE;startRegion=K1;startType=11;endIdent=GREKI;endRegion=K1;endType=11;airway=Q75;direction=N
+graph.edge=startIdent=GREKI;startRegion=K1;startType=11;endIdent=BIZEX;endRegion=K1;endType=11;airway=Q75;direction=N
+graph.edge=startIdent=BIZEX;startRegion=K1;startType=11;endIdent=MXE;endRegion=K1;endType=3;airway=Q75;direction=N
+
+expect.route_token_kinds=NELIE:Point,Q75:Airway,MXE:Point
+expect.resolved_waypoints=ACFT,NELIE,GREKI,BIZEX,MXE,KDCA
+expect.resolved_tokens=NELIE,MXE
+expect.expanded_tokens=Q75
+expect.unresolved_tokens=
+expect.ignored_tokens=

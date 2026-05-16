@@ -1,0 +1,11 @@
+name=Airport Coverage No Catalog No Identifier Fallback
+now_seconds=1000
+
+airport.coverage_builder_icao=PHNL
+airport.coverage_builder_lat=0.0
+airport.coverage_builder_lon=0.0
+airport.center_feature=label=PHZH;tokens=PHZH;polygon=-1,-1|-1,1|1,1|1,-1
+
+expect.airport_coverage_available=true
+expect.airport_coverage_match_tokens=PHZH:PHZH
+expect.airport_coverage_controller_prefixes=PHZH:

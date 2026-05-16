@@ -1,0 +1,13 @@
+name=Transceiver Stale Does Not Display Range Count
+now_seconds=1000
+
+aircraft.valid=true
+xpilot.connected=true
+overlay.stage=Departure
+
+transceiver.available=true
+transceiver.stale=true
+transceiver.status=RX feed stale
+transceiver.candidate=callsign=SCT_APP;frequency=128.050;distanceNm=12;score=50
+
+expect.overlay_body_lines=xPilot connected|RX feed stale

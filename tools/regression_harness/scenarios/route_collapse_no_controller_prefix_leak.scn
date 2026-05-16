@@ -1,0 +1,17 @@
+name=Route Collapse No Controller Prefix Leak
+now_seconds=1000
+
+route.waypoint=ident=ACFT;lat=0.0;lon=0.0
+route.waypoint=ident=FIX1;lat=0.0;lon=2.0
+
+traversal.route_sample_step_nm=10
+traversal.route_sector_sanity_limit=30
+
+feature.entry=label=PHZH-A;tokens=PHZH-A,PHZH;polygon=-1,-1|-1,1|1,1|1,-1
+feature.entry=label=PHZH-B;tokens=PHZH-B,PHZH;polygon=-1,-1|-1,1|1,1|1,-1
+
+expect.route_resolved=true
+expect.route_current_sectors=PHZH
+expect.route_next_sectors=<none>
+expect.route_current_controller_prefixes=PHZH:
+expect.route_next_controller_prefixes=<none>

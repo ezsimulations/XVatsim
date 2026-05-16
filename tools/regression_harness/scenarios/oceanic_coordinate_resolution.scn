@@ -1,0 +1,27 @@
+name=Oceanic Coordinate Resolution
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=29.9902
+aircraft.longitude_deg=-95.3368
+
+plan.matched=true
+plan.departure_icao=KIAH
+plan.departure_lat=29.9902
+plan.departure_lon=-95.3368
+plan.has_departure_coordinates=true
+plan.destination_icao=RCTP
+plan.destination_lat=25.0797
+plan.destination_lon=121.2342
+plan.has_destination_coordinates=true
+plan.route_text=KK45A/N0489F300 55N130W 58N140W 6030N16000W
+
+graph.node=ident=KK45A;region=K1;type=11;lat=29.8500;lon=-96.2000
+
+expect.route_token_kinds=KK45A:Point,55N130W:Coordinate,58N140W:Coordinate,6030N16000W:Coordinate
+expect.resolved_waypoints=ACFT,KK45A,55N130W,58N140W,6030N16000W,RCTP
+expect.resolved_tokens=KK45A,55N130W,58N140W,6030N16000W
+expect.expanded_tokens=
+expect.ignored_tokens=
+expect.unresolved_tokens=

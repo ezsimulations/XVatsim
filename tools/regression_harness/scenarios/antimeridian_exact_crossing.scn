@@ -1,0 +1,11 @@
+name=Anti-Meridian Exact Crossing
+traversal.mode=exact
+
+route.waypoint=ident=ACFT;lat=0.0000;lon=179.0000
+route.waypoint=ident=FIX1;lat=0.0000;lon=-179.0000
+
+feature.entry=label=DATELINE;tokens=DATELINE;controllerPrefixes=DTL;polygon=-5.0000,179.6000|5.0000,179.6000|5.0000,-179.6000|-5.0000,-179.6000
+
+expect.route_resolved=true
+expect.route_current_sectors=
+expect.route_next_sectors=DATELINE

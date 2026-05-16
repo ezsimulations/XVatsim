@@ -1,0 +1,28 @@
+name=Resolver Route Rejects Stale Network Plan
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+plan.departure_icao=KAAA
+plan.stale=true
+plan.departure_lat=0.0
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.0
+plan.destination_lon=20.0
+plan.has_destination_coordinates=true
+
+resolver.route_resolve=true
+resolver.center_feature=label=LIVE;polygon=-1,-1|-1,25|1,25|1,-1
+resolver.authority_catalog_fir=LIVE|Live Center|LIVE|LIVE
+
+expect.resolver_route_available=false
+expect.resolver_route_resolved=false
+expect.resolver_route_current_sectors=<none>
+expect.resolver_route_next_sectors=<none>
+expect.resolver_route_current_controller_prefixes=<none>
+expect.resolver_route_next_controller_prefixes=<none>

@@ -1,0 +1,45 @@
+XVatsim
+Version: 1.0.0
+Build date: 2026-05-15
+
+Release highlights:
+- Clean in-cockpit overlay designed to reduce VATSIM frequency clutter
+- Departure, Enroute, and Arrival logic separated into stable module ownership
+- xPilot connection-aware visibility with animated wake and sleep behavior
+- Departure module shows departure-airport local controllers plus CTAF or UNICOM fallback
+- Enroute module owns Center-controller logic and follows the filed VATSIM route only
+- Arrival module shows destination-airport local and airspace controllers plus CTAF or UNICOM fallback
+- COM1 and COM2 frequency display in the overlay
+- TX and RX status boxes mirror radio transmit and receive state
+- MODE C active status displayed in the overlay
+- Optional Standby Assist can preload COM1 standby with the recommended live controller
+- Standby Assist status is displayed compactly in the overlay as ASST ON / ASST OFF
+- Overlay position, scale, mode, and shell state persist across simulator restarts
+- Startup safety hardened for heavy aircraft so the overlay does not wake too early
+- Release settings are clamped and saved safely to prevent malformed preferences from affecting startup
+- Overlay restore, drag, and resize positions are clamped to the X-Plane screen
+- Guard frequency 121.500 and invalid login frequency 199.998 are filtered
+- Great-circle route handling added for route-sector resolution
+- Anti-meridian/date-line handling validated
+- Dense Europe sector fragments are collapsed into canonical controller authorities
+- Controller authority catalog support added for cases such as HNL/HCF authority coverage
+- Segmented European local callsigns are matched correctly
+- Duplicate waypoint resolution uses route context instead of blind global selection
+- Oceanic coordinate-token parsing added for better long-haul route fidelity
+- CTAF fallback resolves to NO CTAF / UNICOM 122.800 when no CTAF is published
+- Pilot-facing enroute board shows live controllers only while logs retain full diagnostics
+- Refresh path has been tuned to reduce unnecessary board rebuilds and log churn
+- Experimental private-message/PDC overlay UI is disabled for V1 release stability
+
+Current scope:
+- Windows only
+- X-Plane 12 only
+- xPilot required
+- IFR workflow supported
+
+Not included in V1:
+- Private-message, PDC, or AUTO_ATC card presentation
+- SimBrief import
+- Navigraph AIRAC import
+- Dedicated VFR workflow
+- Mac, Linux, or X-Plane 11 support

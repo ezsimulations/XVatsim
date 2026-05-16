@@ -1,0 +1,14 @@
+# Replays current token grammar classification without invoking the live resolver.
+name=Route Token Grammar
+flight.route_text=NUBLE4 NELIE Q75 MXE CLIPR3 58N140W DCT KK45A/N0489F300
+
+procedure.entry=type=SID;source=departure;name=NUBLE4;transition=NELIE
+procedure.entry=type=STAR;source=arrival;name=CLIPR3;transition=MXE
+
+graph.node=ident=NELIE;region=K1;type=11;lat=43.2000;lon=-70.5000
+graph.node=ident=GREKI;region=K1;type=11;lat=42.8000;lon=-70.7000
+graph.node=ident=MXE;region=K1;type=3;lat=39.9272;lon=-75.2411
+graph.node=ident=KK45A;region=K1;type=11;lat=29.8500;lon=-96.2000
+graph.edge=startIdent=NELIE;startRegion=K1;startType=11;endIdent=GREKI;endRegion=K1;endType=11;airway=Q75;direction=F
+
+expect.route_token_kinds=NUBLE4:Procedure,NELIE:Point,Q75:Airway,MXE:Point,CLIPR3:Procedure,58N140W:Coordinate,DCT:Control,KK45A:Point

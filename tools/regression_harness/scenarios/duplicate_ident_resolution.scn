@@ -1,0 +1,31 @@
+name=Duplicate Ident Resolution
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=51.4700
+aircraft.longitude_deg=-0.4543
+
+plan.matched=true
+plan.departure_icao=EGLL
+plan.departure_lat=51.4700
+plan.departure_lon=-0.4543
+plan.has_departure_coordinates=true
+plan.destination_icao=LTFM
+plan.destination_lat=41.2753
+plan.destination_lon=28.7519
+plan.has_destination_coordinates=true
+plan.route_text=DUPFX NEXTFX
+
+graph.node=ident=DUPFX;region=EG;type=11;lat=51.6000;lon=0.1000
+graph.node=ident=DUPFX;region=PA;type=11;lat=61.0000;lon=-149.0000
+graph.node=ident=NEXTFX;region=EG;type=11;lat=51.2000;lon=1.2000
+graph.node=ident=NEXTFX;region=PA;type=11;lat=60.5000;lon=-148.2000
+
+expect.route_token_kinds=DUPFX:Point,NEXTFX:Point
+expect.resolved_waypoints=ACFT,DUPFX,NEXTFX,LTFM
+expect.resolved_waypoint_points=ACFT@51.4700,-0.4543|DUPFX@51.6000,0.1000|NEXTFX@51.2000,1.2000|LTFM@41.2753,28.7519
+expect.resolved_tokens=DUPFX,NEXTFX
+expect.expanded_tokens=
+expect.ignored_tokens=
+expect.unresolved_tokens=
