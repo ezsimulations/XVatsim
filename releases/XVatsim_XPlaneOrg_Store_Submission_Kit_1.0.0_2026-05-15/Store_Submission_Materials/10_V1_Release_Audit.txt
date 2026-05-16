@@ -1,19 +1,29 @@
 XVatsim V1 Release Audit
-Updated: 2026-05-15
+Updated: 2026-05-16
 
 Current customer package payload:
 - Resources\plugins\XVatsim\win_x64\XVatsim.xpl
+  SHA256: 9CCC4E0430D48E43384AC424926DC08F45F62211B9BCA1FCBC34511597FD7956
 - Resources\plugins\XVatsim\win_x64\ui_transition.mp3
+  SHA256: C7BBE97DAD356C68FDFE40F9E8C1CF4EADEBCCD125463214F963F66356F8D9F1
 - README.txt
 - CHANGELOG.txt
 - QUICK_START.txt
+
+Final store-upload package:
+- XVatsim_1.0.0_Windows_XP12_store_upload_2026-05-16.zip
+- Size: 381033 bytes
+- SHA256: 0843DE043A9DF557DA5B9A7E9E96016DAEB12A1B5799E2196722C8EFC189FC88
+- Created after Milestones 1 through 9 completed.
+- Validated by tools\release_gate\Run-FinalReleaseValidation.ps1.
 
 Internal Milestone 5 checkpoint zip:
 - Store_Submission_Materials\Internal_Checkpoints\XVatsim_1.0.0_Windows_XP12_M5_checkpoint_do_not_upload.zip
 - Size: 377555 bytes
 - SHA256: F10EEEFC34662196EFAEE6EFE4DC2E92532F27F24CB41597D8677441B2B8D78B
 - Created: 2026-05-15 16:04:26
-- This is not the final store-upload package. Recreate the final package only after Milestones 6 through 9 are complete.
+- This is not the final store-upload package. It remains only as a historical
+  Milestone 5 checkpoint.
 
 Verified release behavior documented for V1:
 - Windows / X-Plane 12 / xPilot / IFR flight-plan workflow
@@ -44,19 +54,22 @@ Release-seam decisions:
 - The final package should contain no Debug, Release, RelWithDebInfo, tmp_*, desktop.ini, .pdb, .lib, .exp, .tmp, or .log files.
 
 Package smoke verification:
-- Clean temporary install from the regenerated checkpoint package Resources folder passed.
+- Final release validation gate passed after rebuilding release targets and
+  replaying all 94 saved regression scenarios.
+- Clean temporary install from the final store-upload zip Resources folder passed.
 - Expected smoke files were present:
   X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl
   X-Plane 12\Resources\plugins\XVatsim\win_x64\ui_transition.mp3
-- Customer package text scan found no rc1, beta, preview, PDF, debug, or test wording.
+- Customer package text scan found no beta, preview, release-candidate,
+  checkpoint, do_not_upload, or debug wording.
 - Package and zip forbidden-file scans found no Debug, Release, RelWithDebInfo, tmp_*, desktop.ini, .pdb, .lib, .exp, .tmp, .log, or .pdf files.
-- Packaged XVatsim.xpl SHA256 matched the validated build output.
-- Final Milestone 5 closeout scans found no active stale beta/preview/rc wording, dormant prototype modules, or forbidden package files.
+- Packaged and zipped XVatsim.xpl SHA256 matched the validated build output.
+- Installed X-Plane plugin artifact matched the validated build output.
+- Final release gate scenario replay log:
+  build\logs\final_release_scenarios_20260515_191521.log
 
 Still required before upload:
-- Completion of Milestones 6 through 9
 - Final screenshots
 - Final storefront/vendor display name
 - Final support email address
-- Final store-upload zip created after the full milestone map is complete
 - Optional final in-sim smoke test from the final zipped customer package

@@ -1,6 +1,6 @@
 XVatsim
 Version: 1.0.0
-Build date: 2026-05-15
+Build date: 2026-05-16
 Platform: Windows / X-Plane 12 / xPilot
 
 What XVatsim is:

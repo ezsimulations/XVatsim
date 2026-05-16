@@ -1,6 +1,6 @@
 XVatsim
 Version: 1.0.0
-Build date: 2026-05-15
+Build date: 2026-05-16
 
 Release highlights:
 - Clean in-cockpit overlay designed to reduce VATSIM frequency clutter

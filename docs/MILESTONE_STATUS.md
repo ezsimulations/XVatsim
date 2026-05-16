@@ -8,10 +8,11 @@ Milestones 1 through 9 are complete on the authoritative rebuild plan. The live
 plugin now uses the offline regression harness, fail-closed source handling,
 true route geometry, typed route grammar, deterministic nav-graph resolution,
 data-driven controller authority, proven workflow ownership, audited
-`XPLMFindNavAid` use, and post-rebuild cleanup. The package zip created during
-Milestone 5 remains an internal checkpoint only and must not be treated as the
-store-upload package; the next release step is a fresh final package validation
-pass.
+`XPLMFindNavAid` use, and post-rebuild cleanup. The final V1 customer package
+has been refreshed from the validated build output, zipped, smoke-tested, and
+validated by the final release gate. The package zip created during Milestone 5
+remains an internal checkpoint only and must not be treated as the store-upload
+package.
 
 ## Milestone 5 Cleanup Completed
 
@@ -383,5 +384,18 @@ pass.
 
 ## Release Rule
 
-Do not create or upload the final store package until Milestones 6 through 9 are
-complete and the final validation pass has been run from a fresh package.
+Milestones 6 through 9 are complete, and the final package validation pass has
+been run from a fresh store-upload zip. Before public upload, finish the
+non-code store assets: final screenshots, storefront/vendor display name, and
+support email address.
+
+## Final Package Validation
+
+- Final store-upload package created:
+  `releases\XVatsim_XPlaneOrg_Store_Submission_Kit_1.0.0_2026-05-15\XVatsim_1.0.0_Windows_XP12_store_upload_2026-05-16.zip`.
+- Final store-upload package SHA-256:
+  `0843DE043A9DF557DA5B9A7E9E96016DAEB12A1B5799E2196722C8EFC189FC88`.
+- Final release gate passed after rebuilding release targets, replaying all 94
+  saved regression scenarios, scanning active source and customer package text,
+  checking customer package contents, verifying build/package/installed hashes,
+  and smoke-testing a clean install from the final zip.

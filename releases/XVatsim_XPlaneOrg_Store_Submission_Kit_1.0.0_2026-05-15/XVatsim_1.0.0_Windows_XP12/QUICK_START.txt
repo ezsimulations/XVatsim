@@ -1,6 +1,6 @@
 XVatsim Quick Start
 Version: 1.0.0
-Updated: 2026-05-15
+Updated: 2026-05-16
 
 Install:
 1. Close X-Plane 12.
