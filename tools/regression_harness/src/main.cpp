@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -652,7 +653,9 @@ std::vector<std::string> ExtractSourceManifestValues(
         "commit:" + manifest.currentCommitHash,
         "dat:" + manifest.firBoundariesDatUrl,
         "geojson:" + manifest.firBoundariesGeoJsonUrl,
+        "simaware:" + manifest.simawareTraconGeoJsonUrl,
         "vatspy:" + manifest.vatspyDatUrl,
+        "vatglasses:" + manifest.vatglassesOwnershipUrl,
     };
 }
 
@@ -884,6 +887,26 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
             &scenario->authorityPositionRecords,
             xvatsim::core::authority::AuthoritySource::VatsimRadarExtension,
             value);
+    }
+    if (key == "authority_position_json.vatglasses") {
+        auto records = xvatsim::core::authority::ParseAuthorityPositionSourceRecordsJson(
+            xvatsim::core::authority::AuthoritySource::VatGlasses,
+            value);
+        scenario->authorityPositionRecords.insert(
+            scenario->authorityPositionRecords.end(),
+            std::make_move_iterator(records.begin()),
+            std::make_move_iterator(records.end()));
+        return true;
+    }
+    if (key == "authority_position_json.extension") {
+        auto records = xvatsim::core::authority::ParseAuthorityPositionSourceRecordsJson(
+            xvatsim::core::authority::AuthoritySource::VatsimRadarExtension,
+            value);
+        scenario->authorityPositionRecords.insert(
+            scenario->authorityPositionRecords.end(),
+            std::make_move_iterator(records.begin()),
+            std::make_move_iterator(records.end()));
+        return true;
     }
     if (key == "authority_polygon.vatspy") {
         return AddAuthorityPolygonSourceRecord(

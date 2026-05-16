@@ -10,6 +10,8 @@ struct MapDataManifest {
     std::string firBoundariesDatUrl;
     std::string firBoundariesGeoJsonUrl;
     std::string vatspyDatUrl;
+    std::string simawareTraconGeoJsonUrl;
+    std::string vatglassesOwnershipUrl;
 };
 
 MapDataManifest ParseMapDataManifestJson(const std::string& payload);

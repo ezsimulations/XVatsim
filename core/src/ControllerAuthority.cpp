@@ -177,6 +177,238 @@ std::string Trim(std::string value) {
     return value;
 }
 
+std::size_t SkipJsonWhitespace(const std::string& value, std::size_t index) {
+    while (index < value.size() &&
+           std::isspace(static_cast<unsigned char>(value[index])) != 0) {
+        ++index;
+    }
+    return index;
+}
+
+std::optional<std::string> DecodeJsonStringAt(
+    const std::string& value,
+    std::size_t quoteIndex,
+    std::size_t* outNextIndex) {
+    if (quoteIndex >= value.size() || value[quoteIndex] != '"') {
+        return std::nullopt;
+    }
+
+    std::string decoded;
+    for (std::size_t index = quoteIndex + 1; index < value.size(); ++index) {
+        const auto character = value[index];
+        if (character == '"') {
+            if (outNextIndex != nullptr) {
+                *outNextIndex = index + 1;
+            }
+            return decoded;
+        }
+
+        if (character != '\\') {
+            decoded.push_back(character);
+            continue;
+        }
+
+        if (index + 1 >= value.size()) {
+            return std::nullopt;
+        }
+        const auto escaped = value[++index];
+        switch (escaped) {
+            case '"':
+            case '\\':
+            case '/':
+                decoded.push_back(escaped);
+                break;
+            case 'b':
+                decoded.push_back('\b');
+                break;
+            case 'f':
+                decoded.push_back('\f');
+                break;
+            case 'n':
+                decoded.push_back('\n');
+                break;
+            case 'r':
+                decoded.push_back('\r');
+                break;
+            case 't':
+                decoded.push_back('\t');
+                break;
+            default:
+                return std::nullopt;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::string> ExtractJsonStringField(
+    const std::string& objectPayload,
+    const std::string& fieldName) {
+    std::size_t searchIndex = 0;
+    for (;;) {
+        const auto keyIndex = objectPayload.find('"' + fieldName + '"', searchIndex);
+        if (keyIndex == std::string::npos) {
+            return std::nullopt;
+        }
+
+        auto valueIndex = SkipJsonWhitespace(
+            objectPayload,
+            keyIndex + fieldName.size() + 2);
+        if (valueIndex >= objectPayload.size() || objectPayload[valueIndex] != ':') {
+            searchIndex = keyIndex + 1;
+            continue;
+        }
+
+        valueIndex = SkipJsonWhitespace(objectPayload, valueIndex + 1);
+        if (valueIndex >= objectPayload.size() || objectPayload[valueIndex] != '"') {
+            return std::nullopt;
+        }
+
+        return DecodeJsonStringAt(objectPayload, valueIndex, nullptr);
+    }
+}
+
+std::vector<std::string> ExtractJsonStringArrayField(
+    const std::string& objectPayload,
+    const std::string& fieldName) {
+    std::vector<std::string> values;
+    std::size_t searchIndex = 0;
+    for (;;) {
+        const auto keyIndex = objectPayload.find('"' + fieldName + '"', searchIndex);
+        if (keyIndex == std::string::npos) {
+            return values;
+        }
+
+        auto arrayIndex = SkipJsonWhitespace(
+            objectPayload,
+            keyIndex + fieldName.size() + 2);
+        if (arrayIndex >= objectPayload.size() || objectPayload[arrayIndex] != ':') {
+            searchIndex = keyIndex + 1;
+            continue;
+        }
+
+        arrayIndex = SkipJsonWhitespace(objectPayload, arrayIndex + 1);
+        if (arrayIndex >= objectPayload.size() || objectPayload[arrayIndex] != '[') {
+            return values;
+        }
+
+        for (std::size_t index = arrayIndex + 1; index < objectPayload.size();) {
+            index = SkipJsonWhitespace(objectPayload, index);
+            if (index >= objectPayload.size() || objectPayload[index] == ']') {
+                return values;
+            }
+            if (objectPayload[index] != '"') {
+                return values;
+            }
+
+            std::size_t nextIndex = index;
+            const auto decoded = DecodeJsonStringAt(objectPayload, index, &nextIndex);
+            if (!decoded.has_value()) {
+                return values;
+            }
+            values.push_back(*decoded);
+            index = SkipJsonWhitespace(objectPayload, nextIndex);
+            if (index < objectPayload.size() && objectPayload[index] == ',') {
+                ++index;
+            }
+        }
+
+        return values;
+    }
+}
+
+std::optional<std::string> ExtractJsonArrayPayload(
+    const std::string& payload,
+    const std::string& fieldName) {
+    const auto keyIndex = payload.find('"' + fieldName + '"');
+    if (keyIndex == std::string::npos) {
+        return std::nullopt;
+    }
+
+    auto arrayStart = SkipJsonWhitespace(payload, keyIndex + fieldName.size() + 2);
+    if (arrayStart >= payload.size() || payload[arrayStart] != ':') {
+        return std::nullopt;
+    }
+    arrayStart = SkipJsonWhitespace(payload, arrayStart + 1);
+    if (arrayStart >= payload.size() || payload[arrayStart] != '[') {
+        return std::nullopt;
+    }
+
+    bool inString = false;
+    bool escaped = false;
+    int depth = 0;
+    for (std::size_t index = arrayStart; index < payload.size(); ++index) {
+        const auto character = payload[index];
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (character == '\\') {
+                escaped = true;
+            } else if (character == '"') {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (character == '"') {
+            inString = true;
+            continue;
+        }
+        if (character == '[') {
+            ++depth;
+        } else if (character == ']') {
+            --depth;
+            if (depth == 0) {
+                return payload.substr(arrayStart + 1, index - arrayStart - 1);
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::vector<std::string> ExtractJsonObjectsFromArrayPayload(
+    const std::string& arrayPayload) {
+    std::vector<std::string> objects;
+    bool inString = false;
+    bool escaped = false;
+    int depth = 0;
+    std::size_t objectStart = std::string::npos;
+
+    for (std::size_t index = 0; index < arrayPayload.size(); ++index) {
+        const auto character = arrayPayload[index];
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (character == '\\') {
+                escaped = true;
+            } else if (character == '"') {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (character == '"') {
+            inString = true;
+            continue;
+        }
+        if (character == '{') {
+            if (depth == 0) {
+                objectStart = index;
+            }
+            ++depth;
+        } else if (character == '}') {
+            --depth;
+            if (depth == 0 && objectStart != std::string::npos) {
+                objects.push_back(arrayPayload.substr(objectStart, index - objectStart + 1));
+                objectStart = std::string::npos;
+            }
+        }
+    }
+
+    return objects;
+}
+
 std::vector<std::string> SplitPipeFields(const std::string& line) {
     std::vector<std::string> fields;
     std::size_t startIndex = 0;
@@ -302,6 +534,42 @@ std::string AuthorityIdFromPositionRecord(const AuthorityPositionSourceRecord& r
     }
 
     return sourcePrefix + ":" + baseId;
+}
+
+AuthorityKind ParseAuthorityKindOrDefault(const std::string& value) {
+    const auto normalized = NormalizeAuthorityToken(value);
+    if (normalized == "TERMINAL" || normalized == "TRACON" ||
+        normalized == "APP" || normalized == "APPROACH" || normalized == "DEP") {
+        return AuthorityKind::Terminal;
+    }
+    if (normalized == "EXTENSION") {
+        return AuthorityKind::Extension;
+    }
+    return AuthorityKind::Center;
+}
+
+std::string FirstJsonStringField(
+    const std::string& objectPayload,
+    const std::vector<std::string>& fieldNames) {
+    for (const auto& fieldName : fieldNames) {
+        const auto value = ExtractJsonStringField(objectPayload, fieldName);
+        if (value.has_value() && !Trim(*value).empty()) {
+            return *value;
+        }
+    }
+    return {};
+}
+
+std::vector<std::string> FirstJsonStringArrayField(
+    const std::string& objectPayload,
+    const std::vector<std::string>& fieldNames) {
+    for (const auto& fieldName : fieldNames) {
+        auto values = ExtractJsonStringArrayField(objectPayload, fieldName);
+        if (!values.empty()) {
+            return values;
+        }
+    }
+    return {};
 }
 
 void AddLookupKey(std::vector<std::string>* lookupKeys, const std::string& rawKey) {
@@ -868,6 +1136,50 @@ ControllerAuthorityCatalog CompileAuthorityPositionCatalog(
             return left.reason < right.reason;
         });
     return catalog;
+}
+
+std::vector<AuthorityPositionSourceRecord> ParseAuthorityPositionSourceRecordsJson(
+    AuthoritySource source,
+    const std::string& payload) {
+    std::vector<AuthorityPositionSourceRecord> records;
+    if (payload.empty()) {
+        return records;
+    }
+
+    auto arrayPayload = ExtractJsonArrayPayload(payload, "positions");
+    if (!arrayPayload.has_value()) {
+        arrayPayload = ExtractJsonArrayPayload(payload, "ownership");
+    }
+    if (!arrayPayload.has_value()) {
+        return records;
+    }
+
+    for (const auto& objectPayload : ExtractJsonObjectsFromArrayPayload(*arrayPayload)) {
+        AuthorityPositionSourceRecord record;
+        record.source = source;
+        record.sourceRecord = objectPayload;
+        record.id = FirstJsonStringField(
+            objectPayload,
+            {"id", "position_id", "positionId", "position"});
+        record.name = FirstJsonStringField(objectPayload, {"name", "title"});
+        record.polygonKey = FirstJsonStringField(
+            objectPayload,
+            {"polygon_key", "polygonKey", "polygon", "sector", "airspace_id", "airspaceId"});
+        record.kind = ParseAuthorityKindOrDefault(
+            FirstJsonStringField(objectPayload, {"kind", "type"}));
+        record.controllerCallsignPatterns = FirstJsonStringArrayField(
+            objectPayload,
+            {"callsign_patterns", "callsignPatterns", "patterns", "callsigns"});
+
+        const auto singleCallsign = FirstJsonStringField(objectPayload, {"callsign"});
+        if (!singleCallsign.empty()) {
+            record.controllerCallsignPatterns.push_back(singleCallsign);
+        }
+        SortUnique(&record.controllerCallsignPatterns);
+        records.push_back(std::move(record));
+    }
+
+    return records;
 }
 
 ControllerAuthorityCatalog MergeControllerAuthorityCatalogs(

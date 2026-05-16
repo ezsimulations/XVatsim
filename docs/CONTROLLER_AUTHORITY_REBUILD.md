@@ -114,13 +114,25 @@ Pass 7 starts the source-data ingestion layer:
 - The harness proves the manifest parser accepts complete HTTPS source records
   and rejects incomplete/untrusted URL sets.
 
+Pass 8 adds supplemental source ingestion:
+
+- SimAware TRACON is now carried in the same source manifest path as VATSpy
+  instead of using a separate hardcoded downloader.
+- The source manifest can carry an optional VATGlasses/ownership URL. It is not
+  required for baseline validity, but if supplied it must be HTTPS.
+- VATGlasses-style ownership JSON can now ingest explicit position records into
+  `AuthorityPositionSourceRecord` entries, so source-owned callsign patterns can
+  supplement VATSpy without being manually invented.
+- The harness proves supplemental-source defaults and VATGlasses-style position
+  ingestion.
+
 ## Not Done Yet
 
 - The live plugin has not started producing `AuthorityRelevanceSnapshot` yet;
   the ENROUTE handoff seam is harness-proven but not wired to the running
   plugin feed.
-- VATSpy live download is manifest-driven, but VATGlasses and
-  VATSIM-Radar-style ownership downloads/parsers are not implemented yet.
+- VATSpy and SimAware live downloads are manifest-driven, but live
+  VATGlasses/VATSIM-Radar-style ownership downloading is not wired yet.
 - TRACON terminal polygon records compile, but terminal controller activation
   rules are not implemented yet.
 - VATGlasses/VATSIM Radar-style extension rules are not implemented yet.

@@ -132,6 +132,10 @@ ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
 ControllerAuthorityCatalog CompileAuthorityPositionCatalog(
     const std::vector<AuthorityPositionSourceRecord>& sourceRecords);
 
+std::vector<AuthorityPositionSourceRecord> ParseAuthorityPositionSourceRecordsJson(
+    AuthoritySource source,
+    const std::string& payload);
+
 ControllerAuthorityCatalog MergeControllerAuthorityCatalogs(
     const ControllerAuthorityCatalog& left,
     const ControllerAuthorityCatalog& right);

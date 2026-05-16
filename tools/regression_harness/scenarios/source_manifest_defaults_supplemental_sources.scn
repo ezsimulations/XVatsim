@@ -1,0 +1,7 @@
+name=Source Manifest Defaults Supplemental Sources
+now_seconds=1000
+
+source_manifest.json={"current_commit_hash":"v2604.1","fir_boundaries_dat_url":"https://example.test/FIRBoundaries.dat","fir_boundaries_geojson_url":"https://example.test/Boundaries.geojson","vatspy_dat_url":"https://example.test/VATSpy.dat"}
+
+expect.source_manifest_valid=true
+expect.source_manifest_values=commit:v2604.1,dat:https://example.test/FIRBoundaries.dat,geojson:https://example.test/Boundaries.geojson,simaware:https://github.com/vatsimnetwork/simaware-tracon-project/releases/latest/download/TRACONBoundaries.geojson,vatspy:https://example.test/VATSpy.dat,vatglasses:

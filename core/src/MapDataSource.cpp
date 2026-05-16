@@ -15,6 +15,8 @@ constexpr const char* kFallbackFirBoundariesDatUrl =
     "https://raw.githubusercontent.com/vatsimnetwork/vatspy-data-project/master/FIRBoundaries.dat";
 constexpr const char* kFallbackVatspyDatUrl =
     "https://raw.githubusercontent.com/vatsimnetwork/vatspy-data-project/master/VATSpy.dat";
+constexpr const char* kFallbackSimAwareTraconGeoJsonUrl =
+    "https://github.com/vatsimnetwork/simaware-tracon-project/releases/latest/download/TRACONBoundaries.geojson";
 
 std::size_t SkipWhitespace(const std::string& value, std::size_t index) {
     while (index < value.size() &&
@@ -111,6 +113,10 @@ bool IsTrustedHttpsUrl(const std::string& value) {
     return value.rfind("https://", 0) == 0;
 }
 
+bool OptionalTrustedHttpsUrl(const std::string& value) {
+    return value.empty() || IsTrustedHttpsUrl(value);
+}
+
 }  // namespace
 
 MapDataManifest ParseMapDataManifestJson(const std::string& payload) {
@@ -127,12 +133,19 @@ MapDataManifest ParseMapDataManifestJson(const std::string& payload) {
         ExtractJsonStringField(payload, "fir_boundaries_geojson_url").value_or("");
     manifest.vatspyDatUrl =
         ExtractJsonStringField(payload, "vatspy_dat_url").value_or("");
+    manifest.simawareTraconGeoJsonUrl =
+        ExtractJsonStringField(payload, "simaware_tracon_geojson_url")
+            .value_or(kFallbackSimAwareTraconGeoJsonUrl);
+    manifest.vatglassesOwnershipUrl =
+        ExtractJsonStringField(payload, "vatglasses_ownership_url").value_or("");
 
     manifest.valid =
         !manifest.currentCommitHash.empty() &&
         IsTrustedHttpsUrl(manifest.firBoundariesDatUrl) &&
         IsTrustedHttpsUrl(manifest.firBoundariesGeoJsonUrl) &&
-        IsTrustedHttpsUrl(manifest.vatspyDatUrl);
+        IsTrustedHttpsUrl(manifest.vatspyDatUrl) &&
+        IsTrustedHttpsUrl(manifest.simawareTraconGeoJsonUrl) &&
+        OptionalTrustedHttpsUrl(manifest.vatglassesOwnershipUrl);
     return manifest;
 }
 
@@ -143,6 +156,7 @@ MapDataManifest BuildFallbackMapDataManifest() {
     manifest.firBoundariesDatUrl = kFallbackFirBoundariesDatUrl;
     manifest.firBoundariesGeoJsonUrl = kFallbackFirBoundariesGeoJsonUrl;
     manifest.vatspyDatUrl = kFallbackVatspyDatUrl;
+    manifest.simawareTraconGeoJsonUrl = kFallbackSimAwareTraconGeoJsonUrl;
     return manifest;
 }
 

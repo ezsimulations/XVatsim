@@ -35,8 +35,6 @@ namespace {
 constexpr wchar_t kUserAgent[] = L"XVatsim/1.0.0";
 constexpr wchar_t kVatsimMapDataManifestUrl[] =
     L"https://api.vatsim.net/api/map_data";
-constexpr wchar_t kTraconBoundaryUrl[] =
-    L"https://github.com/vatsimnetwork/simaware-tracon-project/releases/latest/download/TRACONBoundaries.geojson";
 constexpr long long kRefreshCadenceSeconds = 21600;
 constexpr long long kFailureBackoffSeconds = 600;
 constexpr long long kInProgressCacheGraceSeconds = 300;
@@ -410,8 +408,12 @@ std::string DownloadVatSpyDataPayload(
     return DownloadHttpsPayload(WidenUrl(manifest.vatspyDatUrl));
 }
 
-std::string DownloadTerminalBoundaryPayload() {
-    return DownloadHttpsPayload(kTraconBoundaryUrl);
+std::string DownloadTerminalBoundaryPayload(
+    const xvatsim::core::source_data::MapDataManifest& manifest) {
+    if (!manifest.valid || manifest.simawareTraconGeoJsonUrl.empty()) {
+        return {};
+    }
+    return DownloadHttpsPayload(WidenUrl(manifest.simawareTraconGeoJsonUrl));
 }
 
 void AddBoundaryIdentifierToken(
@@ -5513,7 +5515,7 @@ void RouteSectorResolver::StartAsyncBoundaryFetch(long long nowSeconds) const {
         const auto mapDataManifest = DownloadMapDataManifest();
         const auto payload = DownloadBoundaryPayload(mapDataManifest);
         const auto vatspyPayload = DownloadVatSpyDataPayload(mapDataManifest);
-        const auto terminalPayload = DownloadTerminalBoundaryPayload();
+        const auto terminalPayload = DownloadTerminalBoundaryPayload(mapDataManifest);
         std::vector<unsigned char> boundaryPayload(payload.begin(), payload.end());
         std::vector<unsigned char> authorityCatalogPayload(
             vatspyPayload.begin(),
