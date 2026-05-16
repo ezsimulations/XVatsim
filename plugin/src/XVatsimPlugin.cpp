@@ -471,6 +471,25 @@ std::size_t BuildEnrouteBoardSignature(
     return hash;
 }
 
+const xvatsim::brain::ModuleBoardSnapshot* FindCachedBoard(
+    const ModuleBoardCacheEntry& cache,
+    std::size_t signature) {
+    if (!cache.valid || cache.signature != signature) {
+        return nullptr;
+    }
+    return &cache.snapshot;
+}
+
+const xvatsim::brain::ModuleBoardSnapshot& StoreCachedBoard(
+    ModuleBoardCacheEntry& cache,
+    std::size_t signature,
+    xvatsim::brain::ModuleBoardSnapshot snapshot) {
+    cache.snapshot = std::move(snapshot);
+    cache.signature = signature;
+    cache.valid = true;
+    return cache.snapshot;
+}
+
 bool NeedsTransceiverResolution(
     xvatsim::brain::WorkflowStage workflowStage,
     const xvatsim::brain::XPilotSessionSnapshot& xPilotSessionSnapshot,
@@ -1459,20 +1478,20 @@ const xvatsim::brain::ModuleBoardSnapshot& CollectDepartureBoardCached(
         departureAirportIcao,
         airportSectorSnapshot,
         ctafLookupEntry);
-    if (gDepartureBoardCache.valid && gDepartureBoardCache.signature == signature) {
-        return gDepartureBoardCache.snapshot;
+    if (const auto* cachedBoard = FindCachedBoard(gDepartureBoardCache, signature)) {
+        return *cachedBoard;
     }
 
-    gDepartureBoardCache.snapshot = gDepartureModule.Collect(
-        xPilotSessionSnapshot,
-        controllerFeedSnapshot,
-        radioStateSnapshot,
-        departureAirportIcao,
-        airportSectorSnapshot,
-        &gCtafLookupService);
-    gDepartureBoardCache.signature = signature;
-    gDepartureBoardCache.valid = true;
-    return gDepartureBoardCache.snapshot;
+    return StoreCachedBoard(
+        gDepartureBoardCache,
+        signature,
+        gDepartureModule.Collect(
+            xPilotSessionSnapshot,
+            controllerFeedSnapshot,
+            radioStateSnapshot,
+            departureAirportIcao,
+            airportSectorSnapshot,
+            &gCtafLookupService));
 }
 
 const xvatsim::brain::ModuleBoardSnapshot& CollectArrivalBoardCached(
@@ -1489,20 +1508,20 @@ const xvatsim::brain::ModuleBoardSnapshot& CollectArrivalBoardCached(
         arrivalAirportIcao,
         airportSectorSnapshot,
         ctafLookupEntry);
-    if (gArrivalBoardCache.valid && gArrivalBoardCache.signature == signature) {
-        return gArrivalBoardCache.snapshot;
+    if (const auto* cachedBoard = FindCachedBoard(gArrivalBoardCache, signature)) {
+        return *cachedBoard;
     }
 
-    gArrivalBoardCache.snapshot = gArrivalModule.Collect(
-        xPilotSessionSnapshot,
-        controllerFeedSnapshot,
-        radioStateSnapshot,
-        arrivalAirportIcao,
-        airportSectorSnapshot,
-        &gCtafLookupService);
-    gArrivalBoardCache.signature = signature;
-    gArrivalBoardCache.valid = true;
-    return gArrivalBoardCache.snapshot;
+    return StoreCachedBoard(
+        gArrivalBoardCache,
+        signature,
+        gArrivalModule.Collect(
+            xPilotSessionSnapshot,
+            controllerFeedSnapshot,
+            radioStateSnapshot,
+            arrivalAirportIcao,
+            airportSectorSnapshot,
+            &gCtafLookupService));
 }
 
 const xvatsim::brain::ModuleBoardSnapshot& CollectEnrouteBoardCached(
@@ -1515,18 +1534,18 @@ const xvatsim::brain::ModuleBoardSnapshot& CollectEnrouteBoardCached(
         controllerFeedSnapshot,
         radioStateSnapshot,
         routeSectorSnapshot);
-    if (gEnrouteBoardCache.valid && gEnrouteBoardCache.signature == signature) {
-        return gEnrouteBoardCache.snapshot;
+    if (const auto* cachedBoard = FindCachedBoard(gEnrouteBoardCache, signature)) {
+        return *cachedBoard;
     }
 
-    gEnrouteBoardCache.snapshot = gEnrouteModule.Collect(
-        xPilotSessionSnapshot,
-        controllerFeedSnapshot,
-        radioStateSnapshot,
-        routeSectorSnapshot);
-    gEnrouteBoardCache.signature = signature;
-    gEnrouteBoardCache.valid = true;
-    return gEnrouteBoardCache.snapshot;
+    return StoreCachedBoard(
+        gEnrouteBoardCache,
+        signature,
+        gEnrouteModule.Collect(
+            xPilotSessionSnapshot,
+            controllerFeedSnapshot,
+            radioStateSnapshot,
+            routeSectorSnapshot));
 }
 
 void UpdateEnrouteInitialDisplayHold(xvatsim::brain::WorkflowStage workflowStage) {

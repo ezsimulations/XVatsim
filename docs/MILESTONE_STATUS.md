@@ -327,6 +327,14 @@ store-upload package.
   installed X-Plane plugin binary was refreshed from the validated build output
   and matches SHA-256
   `B6DE976FEC3014517023F6185F8343E479512C4E17CE47EAC4B035843D46C66B`.
+- Eighth Milestone 9 cleanup pass completed: audited cached board collection in
+  `XVatsimPlugin.cpp`. Centralized repeated cache signature lookup and snapshot
+  store mechanics while preserving each board signature, module collection call,
+  and board input set.
+- Release build passed and all 94 saved regression scenarios passed. The
+  installed X-Plane plugin binary was refreshed from the validated build output
+  and matches SHA-256
+  `43AE23DF10197768C34D7914EE250C9A5047AF3706C385033294272F109D96ED`.
 
 ## Release Rule
 
