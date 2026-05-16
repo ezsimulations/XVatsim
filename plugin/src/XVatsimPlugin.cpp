@@ -2493,6 +2493,32 @@ bool ShouldHandleCommandBegin(XPLMCommandPhase phase) {
     return phase == xplm_CommandBegin && gPluginRuntimeEnabled;
 }
 
+void RegisterPluginCommand(
+    XPLMCommandRef* commandRef,
+    const char* commandName,
+    const char* commandDescription,
+    XPLMCommandCallback_f handler) {
+    if (commandRef == nullptr || *commandRef != nullptr) {
+        return;
+    }
+
+    *commandRef = XPLMCreateCommand(commandName, commandDescription);
+    if (*commandRef != nullptr) {
+        XPLMRegisterCommandHandler(*commandRef, handler, 0, nullptr);
+    }
+}
+
+void UnregisterPluginCommand(
+    XPLMCommandRef* commandRef,
+    XPLMCommandCallback_f handler) {
+    if (commandRef == nullptr || *commandRef == nullptr) {
+        return;
+    }
+
+    XPLMUnregisterCommandHandler(*commandRef, handler, 0, nullptr);
+    *commandRef = nullptr;
+}
+
 int ManualCtafCommandHandler(
     XPLMCommandRef inCommand,
     XPLMCommandPhase inPhase,
@@ -2817,141 +2843,61 @@ void RegisterPluginCommands() {
         return;
     }
 
-    gManualCtafCommand = XPLMCreateCommand(
+    RegisterPluginCommand(
+        &gManualCtafCommand,
         kManualCtafCommandName,
-        kManualCtafCommandDesc);
-    if (gManualCtafCommand != nullptr) {
-        XPLMRegisterCommandHandler(
-            gManualCtafCommand,
-            ManualCtafCommandHandler,
-            0,
-            nullptr);
-    }
+        kManualCtafCommandDesc,
+        ManualCtafCommandHandler);
 
-    gDisplayOpenCommand = XPLMCreateCommand(
+    RegisterPluginCommand(
+        &gDisplayOpenCommand,
         kDisplayOpenCommandName,
-        kDisplayOpenCommandDesc);
-    if (gDisplayOpenCommand != nullptr) {
-        XPLMRegisterCommandHandler(
-            gDisplayOpenCommand,
-            DisplayOpenCommandHandler,
-            0,
-            nullptr);
-    }
+        kDisplayOpenCommandDesc,
+        DisplayOpenCommandHandler);
 
-    gDisplayCloseCommand = XPLMCreateCommand(
+    RegisterPluginCommand(
+        &gDisplayCloseCommand,
         kDisplayCloseCommandName,
-        kDisplayCloseCommandDesc);
-    if (gDisplayCloseCommand != nullptr) {
-        XPLMRegisterCommandHandler(
-            gDisplayCloseCommand,
-            DisplayCloseCommandHandler,
-            0,
-            nullptr);
-    }
+        kDisplayCloseCommandDesc,
+        DisplayCloseCommandHandler);
 
-    gDisplayAutoCommand = XPLMCreateCommand(
+    RegisterPluginCommand(
+        &gDisplayAutoCommand,
         kDisplayAutoCommandName,
-        kDisplayAutoCommandDesc);
-    if (gDisplayAutoCommand != nullptr) {
-        XPLMRegisterCommandHandler(
-            gDisplayAutoCommand,
-            DisplayAutoCommandHandler,
-            0,
-            nullptr);
-    }
+        kDisplayAutoCommandDesc,
+        DisplayAutoCommandHandler);
 
-    gCruiseTargetCurrentCommand = XPLMCreateCommand(
+    RegisterPluginCommand(
+        &gCruiseTargetCurrentCommand,
         kCruiseTargetCurrentCommandName,
-        kCruiseTargetCurrentCommandDesc);
-    if (gCruiseTargetCurrentCommand != nullptr) {
-        XPLMRegisterCommandHandler(
-            gCruiseTargetCurrentCommand,
-            CruiseTargetCurrentCommandHandler,
-            0,
-            nullptr);
-    }
+        kCruiseTargetCurrentCommandDesc,
+        CruiseTargetCurrentCommandHandler);
 
-    gCruiseTargetFiledCommand = XPLMCreateCommand(
+    RegisterPluginCommand(
+        &gCruiseTargetFiledCommand,
         kCruiseTargetFiledCommandName,
-        kCruiseTargetFiledCommandDesc);
-    if (gCruiseTargetFiledCommand != nullptr) {
-        XPLMRegisterCommandHandler(
-            gCruiseTargetFiledCommand,
-            CruiseTargetFiledCommandHandler,
-            0,
-            nullptr);
-    }
+        kCruiseTargetFiledCommandDesc,
+        CruiseTargetFiledCommandHandler);
 
-    gResetSessionCommand = XPLMCreateCommand(
+    RegisterPluginCommand(
+        &gResetSessionCommand,
         kResetSessionCommandName,
-        kResetSessionCommandDesc);
-    if (gResetSessionCommand != nullptr) {
-        XPLMRegisterCommandHandler(
-            gResetSessionCommand,
-            ResetSessionCommandHandler,
-            0,
-            nullptr);
-    }
+        kResetSessionCommandDesc,
+        ResetSessionCommandHandler);
 }
 
 void UnregisterPluginCommands() {
-    if (gManualCtafCommand != nullptr) {
-        XPLMUnregisterCommandHandler(
-            gManualCtafCommand,
-            ManualCtafCommandHandler,
-            0,
-            nullptr);
-        gManualCtafCommand = nullptr;
-    }
-    if (gDisplayOpenCommand != nullptr) {
-        XPLMUnregisterCommandHandler(
-            gDisplayOpenCommand,
-            DisplayOpenCommandHandler,
-            0,
-            nullptr);
-        gDisplayOpenCommand = nullptr;
-    }
-    if (gDisplayCloseCommand != nullptr) {
-        XPLMUnregisterCommandHandler(
-            gDisplayCloseCommand,
-            DisplayCloseCommandHandler,
-            0,
-            nullptr);
-        gDisplayCloseCommand = nullptr;
-    }
-    if (gDisplayAutoCommand != nullptr) {
-        XPLMUnregisterCommandHandler(
-            gDisplayAutoCommand,
-            DisplayAutoCommandHandler,
-            0,
-            nullptr);
-        gDisplayAutoCommand = nullptr;
-    }
-    if (gCruiseTargetCurrentCommand != nullptr) {
-        XPLMUnregisterCommandHandler(
-            gCruiseTargetCurrentCommand,
-            CruiseTargetCurrentCommandHandler,
-            0,
-            nullptr);
-        gCruiseTargetCurrentCommand = nullptr;
-    }
-    if (gCruiseTargetFiledCommand != nullptr) {
-        XPLMUnregisterCommandHandler(
-            gCruiseTargetFiledCommand,
-            CruiseTargetFiledCommandHandler,
-            0,
-            nullptr);
-        gCruiseTargetFiledCommand = nullptr;
-    }
-    if (gResetSessionCommand != nullptr) {
-        XPLMUnregisterCommandHandler(
-            gResetSessionCommand,
-            ResetSessionCommandHandler,
-            0,
-            nullptr);
-        gResetSessionCommand = nullptr;
-    }
+    UnregisterPluginCommand(&gManualCtafCommand, ManualCtafCommandHandler);
+    UnregisterPluginCommand(&gDisplayOpenCommand, DisplayOpenCommandHandler);
+    UnregisterPluginCommand(&gDisplayCloseCommand, DisplayCloseCommandHandler);
+    UnregisterPluginCommand(&gDisplayAutoCommand, DisplayAutoCommandHandler);
+    UnregisterPluginCommand(
+        &gCruiseTargetCurrentCommand,
+        CruiseTargetCurrentCommandHandler);
+    UnregisterPluginCommand(
+        &gCruiseTargetFiledCommand,
+        CruiseTargetFiledCommandHandler);
+    UnregisterPluginCommand(&gResetSessionCommand, ResetSessionCommandHandler);
 }
 
 void RefreshOverlayFromBrain() {

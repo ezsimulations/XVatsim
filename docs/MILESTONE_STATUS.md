@@ -309,6 +309,15 @@ store-upload package.
   installed X-Plane plugin binary was refreshed from the validated build output
   and matches SHA-256
   `1F1EBDC4F0A7A77683CF4F5D5248F5DCA7CF9C31B799F7BB595AED061CF8E38A`.
+- Sixth Milestone 9 cleanup pass completed: audited command registration and
+  unregistration in `XVatsimPlugin.cpp`. Centralized repeated
+  `XPLMCreateCommand`/register and unregister/null patterns while preserving
+  the existing command names, descriptions, handlers, and duplicate-registration
+  guard.
+- Release build passed and all 94 saved regression scenarios passed. The
+  installed X-Plane plugin binary was refreshed from the validated build output
+  and matches SHA-256
+  `812B48CBC92EA52142A3572E952A963F89307EC70661131D2ABBB424FB5547F2`.
 
 ## Release Rule
 
