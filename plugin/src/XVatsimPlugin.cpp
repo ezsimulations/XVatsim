@@ -172,8 +172,6 @@ float gAirborneSinceSeconds = -1.0f;
 bool gEnrouteInitialDisplayStarted = false;
 float gEnrouteInitialDisplayUntilSeconds = -1.0f;
 FlightContext gFlightContext;
-std::string gLastDisplayDecisionLog;
-std::string gLastBoardContentsLog;
 xvatsim::brain::AircraftStateSnapshot gLastAircraftStateSnapshot;
 xvatsim::brain::PilotIdentitySnapshot gLastPilotIdentitySnapshot;
 xvatsim::brain::FlightPlanSnapshot gLastFlightPlanSnapshot;
@@ -521,7 +519,6 @@ void ResetPluginRuntimeState(bool resetVatsimFeed, bool resetColdDarkLatch) {
     if (resetColdDarkLatch) {
         gColdDarkResetApplied = false;
     }
-    gLastDisplayDecisionLog.clear();
 }
 
 void ShowTransientStatusLine(const std::string& line) {
@@ -1261,10 +1258,8 @@ xvatsim::brain::NetworkPlanSnapshot BuildEffectiveNetworkPlanSnapshot(
 void InvalidateFlightContextPresentationCaches() {
     ResetBoardCaches();
     ResetStandbyAssistLatch();
-    gLastBoardContentsLog.clear();
     gHasLastBoardContentsHash = false;
     gLastBoardContentsHash = 0;
-    gLastDisplayDecisionLog.clear();
     gHasLastDisplayDecisionHash = false;
     gLastDisplayDecisionHash = 0;
 }
@@ -1753,7 +1748,6 @@ void LogDisplayDecisionIfChanged(
     const auto signature = stream.str();
     gLastDisplayDecisionHash = decisionHash;
     gHasLastDisplayDecisionHash = true;
-    gLastDisplayDecisionLog = signature;
     std::string line = "[XVatsim] Display: " + signature + "\n";
     XPLMDebugString(line.c_str());
 }
@@ -1825,7 +1819,6 @@ void LogBoardContentsIfChanged(
     const auto signature = stream.str();
     gLastBoardContentsHash = boardHash;
     gHasLastBoardContentsHash = true;
-    gLastBoardContentsLog = signature;
     std::string line = "[XVatsim] Boards: " + signature + "\n";
     XPLMDebugString(line.c_str());
 }
@@ -1842,7 +1835,6 @@ void ResetPresentationStateForColdDark() {
     gEnrouteInitialDisplayStarted = false;
     gEnrouteInitialDisplayUntilSeconds = -1.0f;
     gFlightContext = {};
-    gLastBoardContentsLog.clear();
     gHasLastBoardContentsHash = false;
     gLastBoardContentsHash = 0;
     gLastAircraftStateSnapshot = {};

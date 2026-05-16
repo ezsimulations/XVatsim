@@ -293,6 +293,14 @@ store-upload package.
   installed X-Plane plugin binary was refreshed from the validated build output
   and matches SHA-256
   `325AD662834F49E66C850643BDA3CC21A75AE8F27D6BB49839305CFB4E9DD366`.
+- Fourth Milestone 9 cleanup pass completed: audited the plugin lifecycle and
+  display diagnostic seam in `XVatsimPlugin.cpp`. Removed dead diagnostic string
+  mirrors that were written and cleared but never read; display and board log
+  suppression remains driven by the existing hashes.
+- Release build passed and all 94 saved regression scenarios passed. The
+  installed X-Plane plugin binary was refreshed from the validated build output
+  and matches SHA-256
+  `6158711A76D66C648D429860695EFC781BF5140BB8223A6FFCE6ACB0C016E46E`.
 
 ## Release Rule
 
