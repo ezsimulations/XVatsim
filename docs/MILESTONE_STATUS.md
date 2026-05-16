@@ -343,6 +343,15 @@ store-upload package.
   installed X-Plane plugin binary was refreshed from the validated build output
   and matches SHA-256
   `EF3DFD851849E8033B9FFE8EB83C91635293CECF6EF621030A7F010F0AA92477`.
+- Tenth Milestone 9 cleanup pass completed: audited the display wake/logging
+  seam in `XVatsimPlugin.cpp`. Centralized duplicate logged airport-sector
+  selection used by hidden and visible display-decision logging while
+  preserving all wake conditions, wake-reason ordering, and board logging
+  behavior.
+- Release build passed and all 94 saved regression scenarios passed. The
+  installed X-Plane plugin binary was refreshed from the validated build output
+  and matches SHA-256
+  `28E950E1305326182726727AE0093141D6E7289C5B33C810D408B15CCFE552D1`.
 
 ## Release Rule
 

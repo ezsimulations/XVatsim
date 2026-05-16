@@ -1469,6 +1469,15 @@ xvatsim::brain::ModuleBoardSnapshot BuildDisplayBoard(
         enrouteBoardSnapshot);
 }
 
+const xvatsim::brain::AirportSectorSnapshot& SelectDisplayLogAirportSectorSnapshot(
+    xvatsim::brain::WorkflowStage workflowStage,
+    const xvatsim::brain::AirportSectorSnapshot& departureAirportSectorSnapshot,
+    const xvatsim::brain::AirportSectorSnapshot& arrivalAirportSectorSnapshot) {
+    return workflowStage == xvatsim::brain::WorkflowStage::Departure
+               ? departureAirportSectorSnapshot
+               : arrivalAirportSectorSnapshot;
+}
+
 const xvatsim::brain::ModuleBoardSnapshot& CollectDepartureBoardCached(
     const xvatsim::brain::XPilotSessionSnapshot& xPilotSessionSnapshot,
     const xvatsim::brain::ControllerFeedSnapshot& controllerFeedSnapshot,
@@ -3154,10 +3163,10 @@ void RefreshOverlayFromBrain() {
         overlayModel = {};
         overlayModel.mode = xvatsim::brain::OverlayMode::Dormant;
         overlayModel.visible = false;
-        const auto& loggedAirportSectorSnapshot =
-            workflowStage == xvatsim::brain::WorkflowStage::Departure
-                ? departureAirportSectorSnapshot
-                : arrivalAirportSectorSnapshot;
+        const auto& loggedAirportSectorSnapshot = SelectDisplayLogAirportSectorSnapshot(
+            workflowStage,
+            departureAirportSectorSnapshot,
+            arrivalAirportSectorSnapshot);
         LogDisplayDecisionIfChanged(
             workflowStage,
             workflowDecision.reason.c_str(),
@@ -3219,10 +3228,10 @@ void RefreshOverlayFromBrain() {
         ApplyControllerMessageCard(gPendingControllerMessage, &overlayModel);
     }
 
-    const auto& loggedAirportSectorSnapshot =
-        workflowStage == xvatsim::brain::WorkflowStage::Departure
-            ? departureAirportSectorSnapshot
-            : arrivalAirportSectorSnapshot;
+    const auto& loggedAirportSectorSnapshot = SelectDisplayLogAirportSectorSnapshot(
+        workflowStage,
+        departureAirportSectorSnapshot,
+        arrivalAirportSectorSnapshot);
     LogDisplayDecisionIfChanged(
         workflowStage,
         workflowDecision.reason.c_str(),
