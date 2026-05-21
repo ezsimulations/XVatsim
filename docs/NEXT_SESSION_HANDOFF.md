@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`F81C86F85F836912CF5A7A441AFB0C5A446FC7C8C4E8DE4E8BF08FC472503762`
+`C00D070DE02ADD449A0881FE340D98DF6B67A6C43140EB3319FC80496C4B5CA4`
 
 Reason for this hash:
 
@@ -194,6 +194,8 @@ Reason for this hash:
   stores and consumes which command the submission belongs to.
 - Removed unused plugin-side hash/active-transceiver helper functions left over
   from the retired board and radio refresh paths.
+- `BrainOrchestrator::BuildOverlayViewModel` is now a stateless brain API, and
+  the plugin no longer carries a global `gBrain` object.
 
 Regression harness status for this code:
 
@@ -212,7 +214,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`F81C86F85F836912CF5A7A441AFB0C5A446FC7C8C4E8DE4E8BF08FC472503762`
+`C00D070DE02ADD449A0881FE340D98DF6B67A6C43140EB3319FC80496C4B5CA4`
 
 Rules:
 

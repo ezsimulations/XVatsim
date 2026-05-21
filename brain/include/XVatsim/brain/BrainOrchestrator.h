@@ -8,7 +8,7 @@ class BrainOrchestrator {
 public:
     BrainOrchestrator() = default;
 
-    OverlayViewModel BuildOverlayViewModel(
+    static OverlayViewModel BuildOverlayViewModel(
         WorkflowStage workflowStage,
         const AircraftStateSnapshot& aircraftState,
         const XPilotSessionSnapshot& xPilotSessionSnapshot,
@@ -17,7 +17,7 @@ public:
         const ControllerFeedSnapshot& controllerFeedSnapshot,
         const TransceiverResolutionSnapshot& transceiverResolutionSnapshot,
         const ModuleBoardSnapshot& activeBoardSnapshot,
-        const ManualQuerySnapshot& manualQuerySnapshot) const;
+        const ManualQuerySnapshot& manualQuerySnapshot);
 };
 
 }  // namespace xvatsim::brain

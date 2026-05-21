@@ -239,6 +239,7 @@ by installed hash
 - pending overlay text-entry mode from the plugin shell
 - unused plugin-side hash/active-transceiver helpers from the retired board and
   radio refresh paths
+- global stateless `gBrain` object from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -561,6 +562,11 @@ Follow-up update: Removed unused plugin-side `HashRadioBoardInputs`,
 retired board and radio refresh paths. Release build passed and full harness
 passed `234 / 234` for installed hash
 `F81C86F85F836912CF5A7A441AFB0C5A446FC7C8C4E8DE4E8BF08FC472503762`.
+
+Follow-up update: `BrainOrchestrator::BuildOverlayViewModel` is now a stateless
+brain API and the plugin no longer carries a global `gBrain` object. Release
+build passed and full harness passed `234 / 234` for installed hash
+`C00D070DE02ADD449A0881FE340D98DF6B67A6C43140EB3319FC80496C4B5CA4`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

@@ -193,7 +193,6 @@ struct RefreshDiagnosticsFrame {
     std::vector<DiagnosticJobRecord> jobs;
 };
 
-xvatsim::brain::BrainOrchestrator gBrain;
 xvatsim::modules::aircraft_state::AircraftStateSampler gAircraftStateSampler;
 xvatsim::modules::ctaf_lookup::CtafLookupService gCtafLookupService;
 xvatsim::modules::controller_feed::ControllerFeedClient gControllerFeedClient;
@@ -2318,7 +2317,7 @@ void RenderSessionBoundaryFrame(
         return;
     }
 
-    auto overlayModel = gBrain.BuildOverlayViewModel(
+    auto overlayModel = xvatsim::brain::BrainOrchestrator::BuildOverlayViewModel(
         xvatsim::brain::WorkflowStage::None,
         aircraftState,
         xPilotSessionSnapshot,
@@ -3391,7 +3390,7 @@ void RefreshOverlayFromBrainEngineer3() {
     }
 
     timingStarted = std::chrono::steady_clock::now();
-    auto overlayModel = gBrain.BuildOverlayViewModel(
+    auto overlayModel = xvatsim::brain::BrainOrchestrator::BuildOverlayViewModel(
         workflowStage,
         aircraftState,
         xPilotSessionSnapshot,
@@ -3526,16 +3525,17 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     RegisterPluginCommands();
     RegisterPluginMenu();
 
-    const auto overlayModel = gBrain.BuildOverlayViewModel(
-        xvatsim::brain::WorkflowStage::None,
-        xvatsim::brain::AircraftStateSnapshot{},
-        xvatsim::brain::XPilotSessionSnapshot{},
-        xvatsim::brain::RadioStateSnapshot{},
-        xvatsim::brain::NetworkPlanSnapshot{},
-        xvatsim::brain::ControllerFeedSnapshot{},
-        xvatsim::brain::TransceiverResolutionSnapshot{},
-        xvatsim::brain::ModuleBoardSnapshot{},
-        xvatsim::brain::ManualQuerySnapshot{});
+    const auto overlayModel =
+        xvatsim::brain::BrainOrchestrator::BuildOverlayViewModel(
+            xvatsim::brain::WorkflowStage::None,
+            xvatsim::brain::AircraftStateSnapshot{},
+            xvatsim::brain::XPilotSessionSnapshot{},
+            xvatsim::brain::RadioStateSnapshot{},
+            xvatsim::brain::NetworkPlanSnapshot{},
+            xvatsim::brain::ControllerFeedSnapshot{},
+            xvatsim::brain::TransceiverResolutionSnapshot{},
+            xvatsim::brain::ModuleBoardSnapshot{},
+            xvatsim::brain::ManualQuerySnapshot{});
     std::string readyMessage = "[XVatsim] Display ready: " + overlayModel.title + "\n";
     XPLMDebugString(readyMessage.c_str());
 

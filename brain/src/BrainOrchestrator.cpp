@@ -433,7 +433,7 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
     const ControllerFeedSnapshot& controllerFeedSnapshot,
     const TransceiverResolutionSnapshot& transceiverResolutionSnapshot,
     const ModuleBoardSnapshot& activeBoardSnapshot,
-    const ManualQuerySnapshot& manualQuerySnapshot) const {
+    const ManualQuerySnapshot& manualQuerySnapshot) {
     (void)controllerFeedSnapshot;
 
     OverlayViewModel model;

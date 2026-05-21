@@ -4767,19 +4767,19 @@ int main(int argc, char** argv) {
         scenario.radioStateSnapshot,
         scenario.routeSectorSnapshot,
         scenario.authorityEnrouteHandoff ? &authorityRelevanceSnapshot : nullptr);
-    xvatsim::brain::BrainOrchestrator brainOrchestrator;
     const auto overlayWorkflowStage =
         scenario.overlayWorkflowStage.value_or(handoffDecision.stage);
-    const auto overlayModel = brainOrchestrator.BuildOverlayViewModel(
-        overlayWorkflowStage,
-        scenario.aircraftState,
-        scenario.xPilotSessionSnapshot,
-        scenario.radioStateSnapshot,
-        scenario.networkPlanSnapshot,
-        controllerFeedSnapshot,
-        scenario.transceiverResolutionSnapshot,
-        displayBoard,
-        xvatsim::brain::ManualQuerySnapshot{});
+    const auto overlayModel =
+        xvatsim::brain::BrainOrchestrator::BuildOverlayViewModel(
+            overlayWorkflowStage,
+            scenario.aircraftState,
+            scenario.xPilotSessionSnapshot,
+            scenario.radioStateSnapshot,
+            scenario.networkPlanSnapshot,
+            controllerFeedSnapshot,
+            scenario.transceiverResolutionSnapshot,
+            displayBoard,
+            xvatsim::brain::ManualQuerySnapshot{});
     auto routePlanSnapshot = scenario.networkPlanSnapshot;
     if (routePlanSnapshot.routeText.empty()) {
         routePlanSnapshot.routeText = scenario.workflowState.flightContext.routeText;
