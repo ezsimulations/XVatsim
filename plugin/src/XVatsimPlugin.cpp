@@ -262,8 +262,6 @@ FlightContext gFlightContext;
 xvatsim::brain::AircraftStateSnapshot gLastAircraftStateSnapshot;
 xvatsim::brain::PilotIdentitySnapshot gLastPilotIdentitySnapshot;
 xvatsim::brain::FlightPlanSnapshot gLastFlightPlanSnapshot;
-bool gHasRuntimeFlightPlanSnapshot = false;
-long long gLastRuntimeFlightPlanSampleSeconds = 0;
 xvatsim::brain::NetworkPlanSnapshot gLastNetworkPlanSnapshot;
 xvatsim::brain::BrainOwnedRuntimeState gBrainOwnedRuntimeState;
 float gCruiseGateSatisfiedSinceSeconds = -1.0f;
@@ -519,8 +517,6 @@ void ResetSessionRuntimeCaches(bool resetVatsimFeed) {
     }
     gNetworkPlanLink.Reset();
     gFlightPlanSampler.Reset();
-    gHasRuntimeFlightPlanSnapshot = false;
-    gLastRuntimeFlightPlanSampleSeconds = 0;
     gRadioStateSampler.Reset();
     gRouteSectorResolver.ResetRuntimeState();
     gRouteSectorResolver.ClearPreflightRouteCache();
@@ -1753,25 +1749,28 @@ xvatsim::brain::FlightPlanSnapshot SampleFlightPlanForRuntime(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     RefreshDiagnosticsFrame* diagnostics) {
     const auto nowSeconds = CurrentTickSeconds();
-    const auto canReuseActiveFlightPlan =
-        gFlightContext.active &&
-        gHasRuntimeFlightPlanSnapshot &&
-        (nowSeconds - gLastRuntimeFlightPlanSampleSeconds) <
-            kActiveFlightPlanSampleCadenceSeconds;
-    if (canReuseActiveFlightPlan) {
+    xvatsim::brain::BrainOwnedFlightPlanSampleInput decisionInput;
+    decisionInput.flightContextActive = gFlightContext.active;
+    decisionInput.nowSeconds = nowSeconds;
+    decisionInput.sampleCadenceSeconds = kActiveFlightPlanSampleCadenceSeconds;
+    const auto decision =
+        xvatsim::brain::DecideBrainOwnedFlightPlanSample(
+            gBrainOwnedRuntimeState,
+            decisionInput);
+    if (!decision.shouldSample) {
         if (diagnostics != nullptr) {
             diagnostics->flightPlanUs = 0;
             diagnostics->flightPlanMs = 0;
         }
         RecordDiagnosticJob(
             "FlightPlanSampler",
-            "active-flight-context-cadence-hit",
+            decision.reason,
             0,
             "flight-plan-cache-hit",
             "sample=skipped",
             {},
             gFlightContext.departureIcao + "->" + gFlightContext.destinationIcao);
-        return gLastFlightPlanSnapshot;
+        return decision.cachedSnapshot;
     }
 
     const auto timingStarted = std::chrono::steady_clock::now();
@@ -1780,8 +1779,12 @@ xvatsim::brain::FlightPlanSnapshot SampleFlightPlanForRuntime(
         diagnostics->flightPlanUs = ElapsedMicrosecondsSince(timingStarted);
         diagnostics->flightPlanMs = diagnostics->flightPlanUs / 1000;
     }
-    gHasRuntimeFlightPlanSnapshot = true;
-    gLastRuntimeFlightPlanSampleSeconds = nowSeconds;
+    xvatsim::brain::BrainOwnedFlightPlanSampleCommitInput commitInput;
+    commitInput.nowSeconds = nowSeconds;
+    commitInput.snapshot = snapshot;
+    xvatsim::brain::CommitBrainOwnedFlightPlanSample(
+        &gBrainOwnedRuntimeState,
+        commitInput);
     return snapshot;
 }
 

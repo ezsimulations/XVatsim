@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`540BA95C15B3E85F703E2E2711CB548C2DB4BDCA3350FB2D4FFAA3FE361BE312`
+`AAB7203E2ED9AC9C03E79ED11B360B75E06AB6C9ED5B04CB804C54DC91072DA9`
 
 Reason for this hash:
 
@@ -140,6 +140,9 @@ Reason for this hash:
 - Brain-owned runtime now owns enroute initial display-hold state and timing.
   The plugin supplies current time/hold duration and passes the returned active
   flag into brain overlay wake.
+- Brain-owned runtime now owns active-flight flight-plan sampling cadence and
+  cached flight-plan snapshot state. The plugin runs `FlightPlanSampler` only
+  when the brain requests a fresh sample.
 
 Regression harness status for this code:
 
@@ -158,7 +161,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`540BA95C15B3E85F703E2E2711CB548C2DB4BDCA3350FB2D4FFAA3FE361BE312`
+`AAB7203E2ED9AC9C03E79ED11B360B75E06AB6C9ED5B04CB804C54DC91072DA9`
 
 Rules:
 

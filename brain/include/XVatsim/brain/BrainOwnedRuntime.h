@@ -71,6 +71,9 @@ struct BrainOwnedRuntimeState {
     ModuleBoardSnapshot finalDisplaySnapshot;
     PhaseSnapshotPublisherState phaseSnapshotPublisherState;
     std::uint64_t lastDisplayIntentHash = 0;
+    bool hasFlightPlanSnapshot = false;
+    FlightPlanSnapshot flightPlanSnapshot;
+    long long lastFlightPlanSampleSeconds = 0;
 
     WorkflowStage lastWorkflowStage = WorkflowStage::None;
     std::string lastPlanKey;
@@ -167,6 +170,23 @@ struct BrainOwnedEnrouteInitialHoldOutput {
     bool active = false;
     bool started = false;
     double holdUntilSeconds = -1.0;
+};
+
+struct BrainOwnedFlightPlanSampleInput {
+    bool flightContextActive = false;
+    long long nowSeconds = 0;
+    long long sampleCadenceSeconds = 0;
+};
+
+struct BrainOwnedFlightPlanSampleDecision {
+    bool shouldSample = true;
+    FlightPlanSnapshot cachedSnapshot;
+    std::string reason;
+};
+
+struct BrainOwnedFlightPlanSampleCommitInput {
+    long long nowSeconds = 0;
+    FlightPlanSnapshot snapshot;
 };
 
 struct BrainOwnedStandbyAssistPlanInput {
@@ -281,6 +301,14 @@ void ResetBrainOwnedEnrouteInitialHold(BrainOwnedRuntimeState* state);
 BrainOwnedEnrouteInitialHoldOutput UpdateBrainOwnedEnrouteInitialHold(
     BrainOwnedRuntimeState* state,
     const BrainOwnedEnrouteInitialHoldInput& input);
+
+BrainOwnedFlightPlanSampleDecision DecideBrainOwnedFlightPlanSample(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedFlightPlanSampleInput& input);
+
+void CommitBrainOwnedFlightPlanSample(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedFlightPlanSampleCommitInput& input);
 
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     const BrainOwnedStandbyAssistPlanInput& input);

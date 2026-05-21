@@ -111,6 +111,8 @@ brain-owned source files.
     the final standby-assisted display board.
   - Owns overlay wake/hide/reason decisions from shell-provided UI facts.
   - Owns enroute initial display-hold state and timing.
+  - Owns active-flight flight-plan sampling cadence and cached flight-plan
+    snapshot state.
 
 ### UI Renderer
 
@@ -174,6 +176,8 @@ by installed hash
 - manual diversion/revert flight-context retarget decisions from the plugin
   shell
 - enroute initial display-hold state and timing from the plugin shell
+- active-flight flight-plan sampling cadence and cached flight-plan snapshot
+  state from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -350,6 +354,13 @@ supplies current time/hold duration and passes the brain-returned active flag
 into overlay wake. Release build passed and full harness passed `234 / 234` for
 installed hash
 `540BA95C15B3E85F703E2E2711CB548C2DB4BDCA3350FB2D4FFAA3FE361BE312`.
+
+Follow-up update: Brain-owned runtime now owns active-flight flight-plan
+sampling cadence and cached flight-plan snapshot state through
+`DecideBrainOwnedFlightPlanSample` and `CommitBrainOwnedFlightPlanSample`. The
+plugin runs `FlightPlanSampler` only when the brain requests a fresh sample.
+Release build passed and full harness passed `234 / 234` for installed hash
+`AAB7203E2ED9AC9C03E79ED11B360B75E06AB6C9ED5B04CB804C54DC91072DA9`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

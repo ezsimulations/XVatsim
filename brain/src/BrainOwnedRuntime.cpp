@@ -577,6 +577,36 @@ BrainOwnedEnrouteInitialHoldOutput UpdateBrainOwnedEnrouteInitialHold(
     return output;
 }
 
+BrainOwnedFlightPlanSampleDecision DecideBrainOwnedFlightPlanSample(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedFlightPlanSampleInput& input) {
+    BrainOwnedFlightPlanSampleDecision decision;
+    decision.reason = "sample-required";
+
+    if (input.flightContextActive &&
+        state.hasFlightPlanSnapshot &&
+        (input.nowSeconds - state.lastFlightPlanSampleSeconds) <
+            input.sampleCadenceSeconds) {
+        decision.shouldSample = false;
+        decision.cachedSnapshot = state.flightPlanSnapshot;
+        decision.reason = "active-flight-context-cadence-hit";
+    }
+
+    return decision;
+}
+
+void CommitBrainOwnedFlightPlanSample(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedFlightPlanSampleCommitInput& input) {
+    if (state == nullptr) {
+        return;
+    }
+
+    state->hasFlightPlanSnapshot = true;
+    state->flightPlanSnapshot = input.snapshot;
+    state->lastFlightPlanSampleSeconds = input.nowSeconds;
+}
+
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     const BrainOwnedStandbyAssistPlanInput& input) {
     BrainOwnedStandbyAssistPlanOutput output;
