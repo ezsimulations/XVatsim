@@ -43,6 +43,20 @@ std::string NormalizeCallsign(std::string value) {
     return value;
 }
 
+std::string NormalizeIcao(std::string airportIcao) {
+    std::string normalized;
+    normalized.reserve(airportIcao.size());
+    for (const auto character : airportIcao) {
+        if (std::isalnum(static_cast<unsigned char>(character)) == 0) {
+            continue;
+        }
+
+        normalized.push_back(static_cast<char>(
+            std::toupper(static_cast<unsigned char>(character))));
+    }
+    return normalized;
+}
+
 std::string NormalizeFrequency(std::string frequency) {
     frequency.erase(
         std::remove_if(
@@ -381,6 +395,33 @@ void ClearBrainOwnedLastSampledFacts(BrainOwnedRuntimeState* state) {
     state->lastPilotIdentitySnapshot = {};
     state->lastFlightPlanSnapshot = {};
     state->lastNetworkPlanSnapshot = {};
+}
+
+std::string BuildBrainOwnedPlanIdentityKey(
+    std::string callsign,
+    std::string departureIcao,
+    std::string destinationIcao) {
+    callsign = NormalizeCallsign(std::move(callsign));
+    departureIcao = NormalizeIcao(std::move(departureIcao));
+    destinationIcao = NormalizeIcao(std::move(destinationIcao));
+
+    if (callsign.empty() || departureIcao.empty() || destinationIcao.empty()) {
+        return {};
+    }
+
+    return callsign + "|" + departureIcao + "|" + destinationIcao;
+}
+
+std::string BuildBrainOwnedNetworkPlanIdentityKey(
+    const NetworkPlanSnapshot& networkPlanSnapshot) {
+    if (networkPlanSnapshot.stale || !networkPlanSnapshot.matched) {
+        return {};
+    }
+
+    return BuildBrainOwnedPlanIdentityKey(
+        networkPlanSnapshot.matchedCallsign,
+        networkPlanSnapshot.departureIcao,
+        networkPlanSnapshot.destinationIcao);
 }
 
 void CommitBrainOwnedFlightContext(

@@ -150,6 +150,9 @@ Plugin diagnostics timing/log throttle state is grouped under one shell-owned
     fact snapshots for command-side brain decisions.
   - Owns pending overlay text-entry mode for manual CTAF and diversion command
     submissions.
+  - Owns network-plan identity-key construction used by flight-context,
+    diversion, preflight-route-cache, radio-route, standby-assist, and command
+    decisions.
   - Owns provisional relevance plus workflow phase selection through
     `ResolveBrainOwnedWorkflowSelection`.
   - Stores the final brain-approved UI board only as `finalDisplaySnapshot`;
@@ -266,6 +269,7 @@ by installed hash
   `BoardStationSnapshot`
 - raw module-board `annotation` display text from `BoardStationSnapshot`
 - raw module-board `displayRelation` state from `BoardStationSnapshot`
+- network-plan identity-key construction from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -718,6 +722,15 @@ airport, and fact rows; final-display availability belongs to
 `FinalDisplaySnapshot`. Release build passed and full harness passed
 `234 / 234` for installed hash
 `CEF8BFF73D2436F7B251CC1F15BB7ED44A76D33B3440AC05682AD2134A3C0C50`.
+
+Follow-up update: Brain-owned runtime now owns network-plan identity-key
+construction through `BuildBrainOwnedPlanIdentityKey` and
+`BuildBrainOwnedNetworkPlanIdentityKey`. The plugin shell no longer normalizes
+plan identity or keeps local matched-plan helper logic; it only consumes the
+brain-owned key for standby assist, route runtime keys, preflight cache,
+diversion, cruise commands, and publisher inputs. Release build passed and full
+harness passed `234 / 234` for installed hash
+`FD21EB32A49B734B9CF6F5A843FC3D6707405C2DC64358DFCE98A2EC480253DA`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

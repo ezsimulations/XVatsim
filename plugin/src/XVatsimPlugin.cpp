@@ -239,8 +239,6 @@ void RefreshOverlayFromBrainEngineer3();
 void ResetPresentationStateForColdDark();
 void ClearFlightRecoveryState();
 
-std::string BuildNetworkPlanIdentityKey(
-    const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot);
 std::string SummarizeRouteAuthorityPlan(
     const xvatsim::brain::RouteAuthorityPlan& plan);
 void ApplyPreflightRouteCacheForPlanIfNeeded(
@@ -591,7 +589,7 @@ void ApplyStandbyRecommendation(
 
     xvatsim::brain::BrainOwnedStandbyAssistPlanInput standbyInput;
     standbyInput.workflowStage = workflowStage;
-    standbyInput.planKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
+    standbyInput.planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(networkPlanSnapshot);
     standbyInput.radios = radioStateSnapshot;
     standbyInput.board = *boardSnapshot;
     const auto standbyPlan =
@@ -617,52 +615,6 @@ void ApplyStandbyRecommendation(
             standbyLoaded);
 }
 
-std::string NormalizeIcao(std::string airportIcao) {
-    std::string normalized;
-    normalized.reserve(airportIcao.size());
-    for (const auto character : airportIcao) {
-        if (std::isalnum(static_cast<unsigned char>(character)) == 0) {
-            continue;
-        }
-
-        normalized.push_back(static_cast<char>(
-            std::toupper(static_cast<unsigned char>(character))));
-    }
-    return normalized;
-}
-
-std::string BuildPlanIdentityKey(
-    std::string callsign,
-    std::string departureIcao,
-    std::string destinationIcao) {
-    callsign = NormalizeCallsign(std::move(callsign));
-    departureIcao = NormalizeIcao(std::move(departureIcao));
-    destinationIcao = NormalizeIcao(std::move(destinationIcao));
-
-    if (callsign.empty() || departureIcao.empty() || destinationIcao.empty()) {
-        return {};
-    }
-
-    return callsign + "|" + departureIcao + "|" + destinationIcao;
-}
-
-std::string BuildNetworkPlanIdentityKey(
-    const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
-    if (networkPlanSnapshot.stale || !networkPlanSnapshot.matched) {
-        return {};
-    }
-
-    return BuildPlanIdentityKey(
-        networkPlanSnapshot.matchedCallsign,
-        networkPlanSnapshot.departureIcao,
-        networkPlanSnapshot.destinationIcao);
-}
-
-bool HasFreshMatchedNetworkPlan(
-    const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
-    return !BuildNetworkPlanIdentityKey(networkPlanSnapshot).empty();
-}
-
 void ResetCruiseTargetState() {
     xvatsim::brain::ResetBrainOwnedCruiseTarget(
         &gBrainOwnedRuntimeState);
@@ -672,7 +624,7 @@ void SyncCruiseTargetFromNetworkPlan(
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
     xvatsim::brain::BrainOwnedCruiseTargetPlanInput input;
     input.flightContextActive = gBrainOwnedRuntimeState.flightContext.active;
-    input.planKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
+    input.planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(networkPlanSnapshot);
     input.networkPlan = networkPlanSnapshot;
 
     const auto output =
@@ -759,7 +711,7 @@ xvatsim::brain::NetworkPlanSnapshot BuildEffectiveNetworkPlanSnapshot(
         return networkPlanSnapshot;
     }
 
-    input.sourcePlanKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
+    input.sourcePlanKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(networkPlanSnapshot);
     const auto decision =
         xvatsim::brain::DecideBrainOwnedDiversionOverride(
             gBrainOwnedRuntimeState,
@@ -1418,7 +1370,7 @@ xvatsim::brain::RadioReachableControllerSnapshot BuildEngineer3RadioSnapshot(
 
 std::string BuildRadioBoardRouteRuntimeKey(
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
-    const auto planKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
+    const auto planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(networkPlanSnapshot);
     if (planKey.empty()) {
         return {};
     }
@@ -1454,7 +1406,7 @@ xvatsim::brain::BrainRoutePolygonWorkerOutput RefreshBrainRoutePolygonSnapshot(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot,
     RefreshDiagnosticsFrame* diagnostics) {
-    const auto planKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
+    const auto planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(networkPlanSnapshot);
     const auto routeRuntimeKey = BuildRadioBoardRouteRuntimeKey(networkPlanSnapshot);
 
     xvatsim::brain::BrainOwnedRoutePolygonRefreshInput refreshInput;
@@ -2104,7 +2056,7 @@ void LoadPreflightRouteCacheCandidate() {
 void ApplyPreflightRouteCacheForPlanIfNeeded(
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
     xvatsim::brain::BrainOwnedPreflightRouteCacheInput input;
-    input.planKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
+    input.planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(networkPlanSnapshot);
     input.hasCandidate = gPreflightRouteCacheCandidate.has_value();
     const auto decision =
         xvatsim::brain::BeginBrainOwnedPreflightRouteCacheApplication(
@@ -2341,7 +2293,7 @@ void ApplyCruiseTargetFromCurrentAltitude() {
     xvatsim::brain::BrainOwnedCruiseTargetCommandInput input;
     input.command = xvatsim::brain::BrainOwnedCruiseTargetCommand::CurrentAltitude;
     input.flightContextActive = gBrainOwnedRuntimeState.flightContext.active;
-    input.planKey = BuildNetworkPlanIdentityKey(lastNetworkPlan);
+    input.planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(lastNetworkPlan);
     input.aircraftState = lastAircraftState;
     input.networkPlan = lastNetworkPlan;
     input.nowSeconds = XPLMGetElapsedTime();
@@ -2365,7 +2317,7 @@ void ResetCruiseTargetToFiledAltitude() {
     xvatsim::brain::BrainOwnedCruiseTargetCommandInput input;
     input.command = xvatsim::brain::BrainOwnedCruiseTargetCommand::FiledAltitude;
     input.flightContextActive = gBrainOwnedRuntimeState.flightContext.active;
-    input.planKey = BuildNetworkPlanIdentityKey(lastNetworkPlan);
+    input.planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(lastNetworkPlan);
     input.aircraftState = lastAircraftState;
     input.networkPlan = lastNetworkPlan;
     input.nowSeconds = XPLMGetElapsedTime();
@@ -2391,7 +2343,8 @@ void BeginDiversionEntry() {
         return;
     }
 
-    if (!HasFreshMatchedNetworkPlan(lastNetworkPlan)) {
+    if (xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(lastNetworkPlan)
+            .empty()) {
         ShowTransientStatusLine("DIVERT unavailable until VATSIM plan matched");
         RefreshOverlayFromBrain();
         return;
@@ -2425,7 +2378,7 @@ void ApplyDiversionFromSubmittedText(const std::string& submittedText) {
         return;
     }
 
-    const auto sourcePlanKey = BuildNetworkPlanIdentityKey(lastNetworkPlan);
+    const auto sourcePlanKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(lastNetworkPlan);
     if (sourcePlanKey.empty()) {
         ClearDiversionOverrideState();
         ShowTransientStatusLine("DIVERT unavailable until VATSIM plan matched");
@@ -2484,7 +2437,8 @@ void RevertToVatsimFlightPlan() {
         return;
     }
 
-    if (!HasFreshMatchedNetworkPlan(lastNetworkPlan) ||
+    if (xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(lastNetworkPlan)
+            .empty() ||
         lastNetworkPlan.destinationIcao.empty()) {
         ShowTransientStatusLine("DIVERT revert unavailable");
         LogDiversionAction(
@@ -3166,7 +3120,7 @@ void RefreshOverlayFromBrainEngineer3() {
     xvatsim::brain::RadioReachableControllerSnapshot gatedRadioSnapshot;
     xvatsim::brain::BrainOwnedPublisherOutput publisherOutput;
     bool hasPublisherOutput = false;
-    const auto planKey = BuildNetworkPlanIdentityKey(effectiveNetworkPlanSnapshot);
+    const auto planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(effectiveNetworkPlanSnapshot);
 
     if (flightContext.active) {
         const auto routePolygonOutput =

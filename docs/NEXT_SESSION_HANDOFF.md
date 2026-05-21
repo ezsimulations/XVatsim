@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`CEF8BFF73D2436F7B251CC1F15BB7ED44A76D33B3440AC05682AD2134A3C0C50`
+`FD21EB32A49B734B9CF6F5A843FC3D6707405C2DC64358DFCE98A2EC480253DA`
 
 Reason for this hash:
 
@@ -240,6 +240,10 @@ Reason for this hash:
   from fact fields.
 - Raw `ModuleBoardSnapshot` no longer carries `displayStations`; board display
   ownership exists only in `FinalDisplaySnapshot`.
+- Brain-owned runtime now owns network-plan identity-key construction through
+  `BuildBrainOwnedPlanIdentityKey` and
+  `BuildBrainOwnedNetworkPlanIdentityKey`; the plugin shell only asks the brain
+  for the current key.
 
 Regression harness status for this code:
 
@@ -258,7 +262,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`CEF8BFF73D2436F7B251CC1F15BB7ED44A76D33B3440AC05682AD2134A3C0C50`
+`FD21EB32A49B734B9CF6F5A843FC3D6707405C2DC64358DFCE98A2EC480253DA`
 
 Rules:
 

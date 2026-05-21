@@ -415,6 +415,14 @@ void CommitBrainOwnedLastSampledFacts(
 
 void ClearBrainOwnedLastSampledFacts(BrainOwnedRuntimeState* state);
 
+std::string BuildBrainOwnedPlanIdentityKey(
+    std::string callsign,
+    std::string departureIcao,
+    std::string destinationIcao);
+
+std::string BuildBrainOwnedNetworkPlanIdentityKey(
+    const NetworkPlanSnapshot& networkPlanSnapshot);
+
 void CommitBrainOwnedFlightContext(
     BrainOwnedRuntimeState* state,
     const workflow::FlightContext& flightContext);
