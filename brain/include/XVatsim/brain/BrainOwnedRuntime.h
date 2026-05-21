@@ -87,6 +87,10 @@ struct BrainOwnedRuntimeState {
     ModuleBoardSnapshot finalDisplaySnapshot;
     PhaseSnapshotPublisherState phaseSnapshotPublisherState;
     std::uint64_t lastDisplayIntentHash = 0;
+    AircraftStateSnapshot lastAircraftStateSnapshot;
+    PilotIdentitySnapshot lastPilotIdentitySnapshot;
+    FlightPlanSnapshot lastFlightPlanSnapshot;
+    NetworkPlanSnapshot lastNetworkPlanSnapshot;
     bool hasFlightPlanSnapshot = false;
     FlightPlanSnapshot flightPlanSnapshot;
     long long lastFlightPlanSampleSeconds = 0;
@@ -377,6 +381,15 @@ void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state);
 void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     BrainOwnedRuntimeState* state);
 void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state);
+
+void CommitBrainOwnedLastSampledFacts(
+    BrainOwnedRuntimeState* state,
+    const AircraftStateSnapshot& aircraftState,
+    const PilotIdentitySnapshot& pilotIdentity,
+    const FlightPlanSnapshot& flightPlan,
+    const NetworkPlanSnapshot& networkPlan);
+
+void ClearBrainOwnedLastSampledFacts(BrainOwnedRuntimeState* state);
 
 void CommitBrainOwnedFlightContext(
     BrainOwnedRuntimeState* state,

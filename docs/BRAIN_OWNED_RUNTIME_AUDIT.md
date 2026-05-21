@@ -138,6 +138,8 @@ context storage have moved into brain-owned source files.
   - Owns manual query/transient status display state and expiry timing.
   - Owns controller-message display state, sequence tracking, cached recall,
     visibility, and clear/ack behavior.
+  - Owns latest sampled aircraft, pilot identity, flight-plan, and network-plan
+    fact snapshots for command-side brain decisions.
 
 ### UI Renderer
 
@@ -230,6 +232,8 @@ by installed hash
   visibility, and clear/ack behavior from the plugin shell
 - shadow brain scheduler diagnostics reconstructed from old plugin diagnostic
   job names
+- latest sampled aircraft, pilot identity, flight-plan, and network-plan fact
+  snapshot cache from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -531,6 +535,14 @@ timings, route status, authority status, and authority proof summary without a
 parallel scheduler model in the X-Plane shell. Release build passed and full
 harness passed `234 / 234` for installed hash
 `A50003DE3B7483597DE659E85EA422A54758D311CB0F82E9B405633774C606DC`.
+
+Follow-up update: Brain-owned runtime now owns the latest sampled aircraft,
+pilot identity, flight-plan, and network-plan fact snapshots. The plugin commits
+the current refresh facts through `CommitBrainOwnedLastSampledFacts`, command
+handlers read those facts from `BrainOwnedRuntimeState`, and the old
+`gLast*Snapshot` plugin globals are gone. Release build passed and full harness
+passed `234 / 234` for installed hash
+`8B5E7DA823D1DDCBA375D9BD39B61E9EC893CC86FD8C9FC2567881AE5690E6FE`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

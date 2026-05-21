@@ -227,10 +227,6 @@ XPLMMenuID gPluginMenu = nullptr;
 int gPluginMenuItemIndex = -1;
 bool gFlightLoopRegistered = false;
 bool gPluginRuntimeEnabled = false;
-xvatsim::brain::AircraftStateSnapshot gLastAircraftStateSnapshot;
-xvatsim::brain::PilotIdentitySnapshot gLastPilotIdentitySnapshot;
-xvatsim::brain::FlightPlanSnapshot gLastFlightPlanSnapshot;
-xvatsim::brain::NetworkPlanSnapshot gLastNetworkPlanSnapshot;
 xvatsim::brain::BrainOwnedRuntimeState gBrainOwnedRuntimeState;
 long long gLastFlightLoopPerfWarningSeconds = 0;
 long long gLastDiagnosticsSlowRefreshSeconds = 0;
@@ -1957,10 +1953,7 @@ void ResetPresentationStateForColdDark() {
     ResetFlightScopedManualPlanState();
     ResetFlightProgressStateForNewContext();
     xvatsim::brain::ClearBrainOwnedFlightContext(&gBrainOwnedRuntimeState);
-    gLastAircraftStateSnapshot = {};
-    gLastPilotIdentitySnapshot = {};
-    gLastFlightPlanSnapshot = {};
-    gLastNetworkPlanSnapshot = {};
+    xvatsim::brain::ClearBrainOwnedLastSampledFacts(&gBrainOwnedRuntimeState);
     ClearXPilotConnectionTracking();
     ClearFlightRecoveryState();
     xvatsim::brain::ClearBrainOwnedAircraftStateInvalidBoundary(
@@ -2399,12 +2392,16 @@ void RequestCurrentFlightRecovery() {
 }
 
 void ApplyCruiseTargetFromCurrentAltitude() {
+    const auto& lastAircraftState =
+        gBrainOwnedRuntimeState.lastAircraftStateSnapshot;
+    const auto& lastNetworkPlan =
+        gBrainOwnedRuntimeState.lastNetworkPlanSnapshot;
     xvatsim::brain::BrainOwnedCruiseTargetCommandInput input;
     input.command = xvatsim::brain::BrainOwnedCruiseTargetCommand::CurrentAltitude;
     input.flightContextActive = gBrainOwnedRuntimeState.flightContext.active;
-    input.planKey = BuildNetworkPlanIdentityKey(gLastNetworkPlanSnapshot);
-    input.aircraftState = gLastAircraftStateSnapshot;
-    input.networkPlan = gLastNetworkPlanSnapshot;
+    input.planKey = BuildNetworkPlanIdentityKey(lastNetworkPlan);
+    input.aircraftState = lastAircraftState;
+    input.networkPlan = lastNetworkPlan;
     input.nowSeconds = XPLMGetElapsedTime();
     input.tuning.gateToleranceFt = kCruiseGateToleranceFt;
     input.tuning.stableVerticalSpeedFpm = kCruiseGateStableVsFpm;
@@ -2419,12 +2416,16 @@ void ApplyCruiseTargetFromCurrentAltitude() {
 }
 
 void ResetCruiseTargetToFiledAltitude() {
+    const auto& lastAircraftState =
+        gBrainOwnedRuntimeState.lastAircraftStateSnapshot;
+    const auto& lastNetworkPlan =
+        gBrainOwnedRuntimeState.lastNetworkPlanSnapshot;
     xvatsim::brain::BrainOwnedCruiseTargetCommandInput input;
     input.command = xvatsim::brain::BrainOwnedCruiseTargetCommand::FiledAltitude;
     input.flightContextActive = gBrainOwnedRuntimeState.flightContext.active;
-    input.planKey = BuildNetworkPlanIdentityKey(gLastNetworkPlanSnapshot);
-    input.aircraftState = gLastAircraftStateSnapshot;
-    input.networkPlan = gLastNetworkPlanSnapshot;
+    input.planKey = BuildNetworkPlanIdentityKey(lastNetworkPlan);
+    input.aircraftState = lastAircraftState;
+    input.networkPlan = lastNetworkPlan;
     input.nowSeconds = XPLMGetElapsedTime();
     input.tuning.gateToleranceFt = kCruiseGateToleranceFt;
     input.tuning.stableVerticalSpeedFpm = kCruiseGateStableVsFpm;
@@ -2439,6 +2440,8 @@ void ResetCruiseTargetToFiledAltitude() {
 }
 
 void BeginDiversionEntry() {
+    const auto& lastNetworkPlan =
+        gBrainOwnedRuntimeState.lastNetworkPlanSnapshot;
     DiscardPendingTextEntryState();
     if (!gBrainOwnedRuntimeState.flightContext.active) {
         ShowTransientStatusLine("DIVERT unavailable without active flight");
@@ -2446,7 +2449,7 @@ void BeginDiversionEntry() {
         return;
     }
 
-    if (!HasFreshMatchedNetworkPlan(gLastNetworkPlanSnapshot)) {
+    if (!HasFreshMatchedNetworkPlan(lastNetworkPlan)) {
         ShowTransientStatusLine("DIVERT unavailable until VATSIM plan matched");
         RefreshOverlayFromBrain();
         return;
@@ -2459,7 +2462,15 @@ void BeginDiversionEntry() {
 }
 
 void ApplyDiversionFromSubmittedText(const std::string& submittedText) {
-    if (!gBrainOwnedRuntimeState.flightContext.active || !gLastAircraftStateSnapshot.valid) {
+    const auto& lastAircraftState =
+        gBrainOwnedRuntimeState.lastAircraftStateSnapshot;
+    const auto& lastPilotIdentity =
+        gBrainOwnedRuntimeState.lastPilotIdentitySnapshot;
+    const auto& lastFlightPlan =
+        gBrainOwnedRuntimeState.lastFlightPlanSnapshot;
+    const auto& lastNetworkPlan =
+        gBrainOwnedRuntimeState.lastNetworkPlanSnapshot;
+    if (!gBrainOwnedRuntimeState.flightContext.active || !lastAircraftState.valid) {
         ShowTransientStatusLine("DIVERT unavailable without active flight");
         return;
     }
@@ -2470,7 +2481,7 @@ void ApplyDiversionFromSubmittedText(const std::string& submittedText) {
         return;
     }
 
-    const auto sourcePlanKey = BuildNetworkPlanIdentityKey(gLastNetworkPlanSnapshot);
+    const auto sourcePlanKey = BuildNetworkPlanIdentityKey(lastNetworkPlan);
     if (sourcePlanKey.empty()) {
         ClearDiversionOverrideState();
         ShowTransientStatusLine("DIVERT unavailable until VATSIM plan matched");
@@ -2508,23 +2519,29 @@ void ApplyDiversionFromSubmittedText(const std::string& submittedText) {
     }
 
     const auto effectiveNetworkPlanSnapshot =
-        BuildEffectiveNetworkPlanSnapshot(gLastNetworkPlanSnapshot);
+        BuildEffectiveNetworkPlanSnapshot(lastNetworkPlan);
     RetargetFlightContextToPlan(
-        gLastPilotIdentitySnapshot,
-        gLastFlightPlanSnapshot,
+        lastPilotIdentity,
+        lastFlightPlan,
         effectiveNetworkPlanSnapshot);
     LogDiversionAction("Diversion override set: " + result.airportIcao);
 }
 
 void RevertToVatsimFlightPlan() {
+    const auto& lastPilotIdentity =
+        gBrainOwnedRuntimeState.lastPilotIdentitySnapshot;
+    const auto& lastFlightPlan =
+        gBrainOwnedRuntimeState.lastFlightPlanSnapshot;
+    const auto& lastNetworkPlan =
+        gBrainOwnedRuntimeState.lastNetworkPlanSnapshot;
     if (!gDiversionContextModule.HasOverride()) {
         ShowTransientStatusLine("DIVERT no override active");
         RefreshOverlayFromBrain();
         return;
     }
 
-    if (!HasFreshMatchedNetworkPlan(gLastNetworkPlanSnapshot) ||
-        gLastNetworkPlanSnapshot.destinationIcao.empty()) {
+    if (!HasFreshMatchedNetworkPlan(lastNetworkPlan) ||
+        lastNetworkPlan.destinationIcao.empty()) {
         ShowTransientStatusLine("DIVERT revert unavailable");
         LogDiversionAction(
             "Diversion revert requested but the VATSIM flight plan was stale, unmatched, or missing a destination.");
@@ -2535,14 +2552,14 @@ void RevertToVatsimFlightPlan() {
     ClearDiversionOverrideState();
 
     RetargetFlightContextToPlan(
-        gLastPilotIdentitySnapshot,
-        gLastFlightPlanSnapshot,
-        gLastNetworkPlanSnapshot);
+        lastPilotIdentity,
+        lastFlightPlan,
+        lastNetworkPlan);
     ShowTransientStatusLine(
-        "DIVERT reverted to " + gLastNetworkPlanSnapshot.destinationIcao);
+        "DIVERT reverted to " + lastNetworkPlan.destinationIcao);
     LogDiversionAction(
         "Diversion override cleared; reverted to VATSIM destination " +
-        gLastNetworkPlanSnapshot.destinationIcao);
+        lastNetworkPlan.destinationIcao);
     RefreshOverlayFromBrain();
 }
 
@@ -3126,10 +3143,12 @@ void RefreshOverlayFromBrainEngineer3() {
     diagnostics.networkPlanUs = ElapsedMicrosecondsSince(timingStarted);
     diagnostics.networkPlanMs = diagnostics.networkPlanUs / 1000;
 
-    gLastAircraftStateSnapshot = aircraftState;
-    gLastPilotIdentitySnapshot = pilotIdentitySnapshot;
-    gLastFlightPlanSnapshot = flightPlanSnapshot;
-    gLastNetworkPlanSnapshot = networkPlanSnapshot;
+    xvatsim::brain::CommitBrainOwnedLastSampledFacts(
+        &gBrainOwnedRuntimeState,
+        aircraftState,
+        pilotIdentitySnapshot,
+        flightPlanSnapshot,
+        networkPlanSnapshot);
     SyncCruiseTargetFromNetworkPlan(networkPlanSnapshot);
 
     timingStarted = std::chrono::steady_clock::now();

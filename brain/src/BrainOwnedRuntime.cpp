@@ -336,9 +336,17 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     }
     const auto flightContext = state->flightContext;
     const auto displayOverrideMode = state->displayOverrideMode;
+    const auto lastAircraftStateSnapshot = state->lastAircraftStateSnapshot;
+    const auto lastPilotIdentitySnapshot = state->lastPilotIdentitySnapshot;
+    const auto lastFlightPlanSnapshot = state->lastFlightPlanSnapshot;
+    const auto lastNetworkPlanSnapshot = state->lastNetworkPlanSnapshot;
     *state = {};
     state->flightContext = flightContext;
     state->displayOverrideMode = displayOverrideMode;
+    state->lastAircraftStateSnapshot = lastAircraftStateSnapshot;
+    state->lastPilotIdentitySnapshot = lastPilotIdentitySnapshot;
+    state->lastFlightPlanSnapshot = lastFlightPlanSnapshot;
+    state->lastNetworkPlanSnapshot = lastNetworkPlanSnapshot;
 }
 
 void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state) {
@@ -346,6 +354,31 @@ void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state) {
         return;
     }
     state->phaseSnapshotPublisherState.Reset();
+}
+
+void CommitBrainOwnedLastSampledFacts(
+    BrainOwnedRuntimeState* state,
+    const AircraftStateSnapshot& aircraftState,
+    const PilotIdentitySnapshot& pilotIdentity,
+    const FlightPlanSnapshot& flightPlan,
+    const NetworkPlanSnapshot& networkPlan) {
+    if (state == nullptr) {
+        return;
+    }
+    state->lastAircraftStateSnapshot = aircraftState;
+    state->lastPilotIdentitySnapshot = pilotIdentity;
+    state->lastFlightPlanSnapshot = flightPlan;
+    state->lastNetworkPlanSnapshot = networkPlan;
+}
+
+void ClearBrainOwnedLastSampledFacts(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->lastAircraftStateSnapshot = {};
+    state->lastPilotIdentitySnapshot = {};
+    state->lastFlightPlanSnapshot = {};
+    state->lastNetworkPlanSnapshot = {};
 }
 
 void CommitBrainOwnedFlightContext(
