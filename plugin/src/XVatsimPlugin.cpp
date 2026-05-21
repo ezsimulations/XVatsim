@@ -246,7 +246,6 @@ int gPluginMenuItemIndex = -1;
 bool gFlightLoopRegistered = false;
 bool gPluginRuntimeEnabled = false;
 DisplayOverrideMode gDisplayOverrideMode = DisplayOverrideMode::Auto;
-bool gSawXPilotConnectedThisFlight = false;
 FlightContext gFlightContext;
 xvatsim::brain::AircraftStateSnapshot gLastAircraftStateSnapshot;
 xvatsim::brain::PilotIdentitySnapshot gLastPilotIdentitySnapshot;
@@ -2284,7 +2283,6 @@ void ResetPresentationStateForColdDark() {
     gManualQuerySnapshot = {};
     gManualQueryVisibleUntilSeconds = 0;
     ResetFlightScopedManualPlanState();
-    gSawXPilotConnectedThisFlight = false;
     ResetFlightProgressStateForNewContext();
     gFlightContext = {};
     gLastAircraftStateSnapshot = {};
@@ -2330,7 +2328,9 @@ void ResetFlightScopedStateForSessionBoundary(
     bool preserveDisconnectedAlert) {
     ResetPluginRuntimeState(true, true);
     if (preserveDisconnectedAlert) {
-        gSawXPilotConnectedThisFlight = true;
+        xvatsim::brain::SetBrainOwnedXPilotConnectedSeen(
+            &gBrainOwnedRuntimeState,
+            true);
     }
 
     if (reason == nullptr || std::strlen(reason) == 0) {
@@ -2401,7 +2401,9 @@ SessionBoundaryResult HandleXPilotSessionBoundary(
         gPendingAutomaticFlightRecovery = true;
     }
     if (decision.sawXPilotConnectedThisFlight) {
-        gSawXPilotConnectedThisFlight = true;
+        xvatsim::brain::SetBrainOwnedXPilotConnectedSeen(
+            &gBrainOwnedRuntimeState,
+            true);
     }
     if (!decision.logLine.empty()) {
         XPLMDebugString(decision.logLine.c_str());
@@ -2914,9 +2916,9 @@ void RefreshManualQueryState() {
 void UpdateOverlayWakeTracking(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     const xvatsim::brain::XPilotSessionSnapshot& xPilotSessionSnapshot) {
-    if (xPilotSessionSnapshot.connected) {
-        gSawXPilotConnectedThisFlight = true;
-    }
+    xvatsim::brain::MarkBrainOwnedXPilotConnectedIfConnected(
+        &gBrainOwnedRuntimeState,
+        xPilotSessionSnapshot);
 
     xvatsim::brain::BrainOwnedCruiseTargetProgressInput input;
     input.aircraftState = aircraftState;
@@ -3661,7 +3663,8 @@ void RefreshOverlayFromBrainEngineer3() {
     wakeInput.manualQueryVisible = gManualQuerySnapshot.visible;
     wakeInput.textEntryActive = textEntryActive;
     wakeInput.controllerMessageVisible = controllerMessageVisible;
-    wakeInput.sawXPilotConnectedThisFlight = gSawXPilotConnectedThisFlight;
+    wakeInput.sawXPilotConnectedThisFlight =
+        gBrainOwnedRuntimeState.sawXPilotConnectedThisFlight;
     wakeInput.enrouteInitialHoldActive = enrouteInitialHoldActive;
     const auto wakeDecision =
         xvatsim::brain::DecideBrainOwnedOverlayWake(wakeInput);

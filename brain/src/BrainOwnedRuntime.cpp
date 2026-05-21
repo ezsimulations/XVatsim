@@ -908,6 +908,26 @@ void ApplyBrainOwnedWorkflowRecoveryStage(
     }
 }
 
+void SetBrainOwnedXPilotConnectedSeen(
+    BrainOwnedRuntimeState* state,
+    bool seen) {
+    if (state == nullptr) {
+        return;
+    }
+
+    state->sawXPilotConnectedThisFlight = seen;
+}
+
+void MarkBrainOwnedXPilotConnectedIfConnected(
+    BrainOwnedRuntimeState* state,
+    const XPilotSessionSnapshot& xPilotSession) {
+    if (state == nullptr || !xPilotSession.connected) {
+        return;
+    }
+
+    state->sawXPilotConnectedThisFlight = true;
+}
+
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     const BrainOwnedStandbyAssistPlanInput& input) {
     BrainOwnedStandbyAssistPlanOutput output;

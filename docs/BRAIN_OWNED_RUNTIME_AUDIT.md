@@ -120,6 +120,7 @@ brain-owned source files.
     text.
   - Owns workflow progress latches for departure release, arrival wake, and
     airborne-since timing.
+  - Owns the xPilot-seen latch used by overlay wake/disconnect behavior.
 
 ### UI Renderer
 
@@ -194,6 +195,8 @@ by installed hash
   plugin shell
 - workflow progress latches for departure release, arrival wake, and
   airborne-since timing from the plugin shell
+- xPilot-seen latch used by overlay wake/disconnect behavior from the plugin
+  shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -412,6 +415,12 @@ and commits workflow state through brain helpers instead of carrying those
 latches as plugin globals. Release build passed and full harness passed
 `234 / 234` for installed hash
 `D4AF05D53321D4A97B776138609FB0EAE24A2F8F1FCC00DF3733407851DC6143`.
+
+Follow-up update: Brain-owned runtime now owns the xPilot-seen latch used by
+overlay wake/disconnect behavior. The plugin marks the latch through brain
+helpers and feeds the brain-owned value into overlay wake. Release build passed
+and full harness passed `234 / 234` for installed hash
+`7B207FB40740A44D7B1CBDF441B68FC1080A087FCBC9EB713DB77A70735C5C80`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

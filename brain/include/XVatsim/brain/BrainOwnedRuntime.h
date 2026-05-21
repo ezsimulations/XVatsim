@@ -84,6 +84,7 @@ struct BrainOwnedRuntimeState {
     bool departureReleasedThisFlight = false;
     bool arrivalAwakeThisFlight = false;
     double airborneSinceSeconds = -1.0;
+    bool sawXPilotConnectedThisFlight = false;
 
     WorkflowStage lastWorkflowStage = WorkflowStage::None;
     std::string lastPlanKey;
@@ -398,6 +399,14 @@ void ApplyBrainOwnedWorkflowRecoveryStage(
     BrainOwnedRuntimeState* state,
     WorkflowStage stage,
     double nowSeconds);
+
+void SetBrainOwnedXPilotConnectedSeen(
+    BrainOwnedRuntimeState* state,
+    bool seen);
+
+void MarkBrainOwnedXPilotConnectedIfConnected(
+    BrainOwnedRuntimeState* state,
+    const XPilotSessionSnapshot& xPilotSession);
 
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     const BrainOwnedStandbyAssistPlanInput& input);

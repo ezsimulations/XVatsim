@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `D4AF05D53321D4A97B776138609FB0EAE24A2F8F1FCC00DF3733407851DC6143`
+  `7B207FB40740A44D7B1CBDF441B68FC1080A087FCBC9EB713DB77A70735C5C80`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -274,6 +274,8 @@ Only then may XVatsim be treated as store-release ready.
   command/status side effects; brain-owned runtime now owns workflow progress
   latches for departure release, arrival wake, and airborne-since timing while
   the plugin only builds/commits workflow state through brain helpers;
+  brain-owned runtime now owns the xPilot-seen latch used by overlay
+  wake/disconnect behavior;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.
