@@ -1,0 +1,6 @@
+name=Brain Route Authority Plan Rebuilds And Preserves Last Proven
+
+expect.brain_route_plan_rebuild_sequence=AAA,DDD
+expect.brain_route_plan_rebuild_lifecycle=available=1:stale=0:resolved=1:pending=0:lastProven=0:polygons=2:generation=2:cache=route-plan-rebuild:reason=route-plan-destination-changed
+expect.brain_route_plan_pending_sequence=AAA,BBB,CCC
+expect.brain_route_plan_pending_lifecycle=available=1:stale=1:resolved=1:pending=1:lastProven=1:polygons=3:generation=1:cache=route-plan-pending-last-proven:reason=route-sector-unresolved

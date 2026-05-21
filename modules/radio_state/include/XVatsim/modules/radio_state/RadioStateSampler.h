@@ -72,6 +72,7 @@ private:
     void* rotateMd11AtcModeRef_ = nullptr;
     bool didResolveDataRefs_ = false;
     bool didRegisterActivityPolling_ = false;
+    float lastDataRefResolveAttemptSeconds_ = -1000.0f;
     bool cachedCom1RxSignal_ = false;
     bool cachedCom2RxSignal_ = false;
     float lastCom1RxSeenSeconds_ = -1000.0f;

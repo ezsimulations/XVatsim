@@ -17,6 +17,7 @@ public:
         const brain::RadioStateSnapshot& radioStateSnapshot,
         const std::string& departureAirportIcao,
         const brain::AirportSectorSnapshot& airportSectorSnapshot,
+        const brain::AuthorityRelevanceSnapshot* authorityRelevanceSnapshot,
         xvatsim::modules::ctaf_lookup::CtafLookupService* ctafLookupService) const;
 };
 

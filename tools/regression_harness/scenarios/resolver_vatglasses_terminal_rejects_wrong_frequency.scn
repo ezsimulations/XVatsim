@@ -1,0 +1,40 @@
+name=Resolver VATGlasses Terminal Rejects Wrong Frequency
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.5
+aircraft.longitude_deg=0.5
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.5
+plan.departure_lon=-1.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.5
+plan.destination_lon=2.0
+plan.has_destination_coordinates=true
+
+radio.com1_active=118.000
+radio.com2_active=122.800
+
+controller.entry=callsign=PHX_A_APP;frequency=128.675;facility=5;actionable=true;atis=false
+
+resolver.route_resolve=true
+resolver.center_feature=label=P1A;tokens=P1A;polygon=0,-2|0,3|1,3|1,-2
+resolver.authority_catalog_fir=P1A|Test Center|TST|P1A
+resolver.ownership_json={"airspace":[{"id":"PHX_APP","group":"PHX_APP","owner":["P1A"],"sectors":[{"points":[["000000","000000"],["000000","0010000"],["010000","0010000"],["010000","000000"]]}]}],"positions":{"P1A":{"pre":["PHX"],"type":"APP","frequency":"128.650","callsign":"Phoenix Approach"}}}
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_authority_gaps=<none>
+expect.resolver_route_current_sectors=P1A
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_diagnostics=PHX_A_APP:frequency-mismatch:VATGLASSES:P1A:P1A:PHX_*_APP
+expect.resolver_authority_relevant_matches=<none>
+expect.resolver_authority_proof_sources=<none>
+expect.resolver_enroute_available=false
+expect.resolver_enroute_callsigns=<none>

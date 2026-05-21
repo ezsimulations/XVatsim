@@ -1,0 +1,44 @@
+name=Resolver Route Scoped Geometry Keeps Family Polygon For Transceiver
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.5
+aircraft.longitude_deg=0.5
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.5
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.5
+plan.destination_lon=1.0
+plan.has_destination_coordinates=true
+
+radio.com1_active=118.000
+radio.com2_active=122.800
+
+controller.entry=callsign=FAM_CTR;frequency=130.000;facility=6;actionable=true;atis=false
+
+transceiver.available=true
+transceiver.stale=false
+transceiver.candidate=callsign=FAM_CTR;frequency=130.000;lat=0.5;lon=0.5
+
+resolver.route_resolve=true
+resolver.center_feature=label=TEST;tokens=TEST;polygon=0,0|1,0|1,1|0,1
+resolver.authority_catalog_fir=TEST|Test Control||TEST
+resolver.ownership_json={"positions":{"FAM1":{"pre":["FAM"],"type":"CTR","frequency":"130.000","callsign":"Family Center"}},"airspace":{"TEST-A":{"id":"Test Family Child","group":"TEST-A","sectors":[{"points":[["000000","0000000"],["010000","0000000"],["010000","0010000"],["000000","0010000"]]}]}},"ownership":{"airspace":{"TEST-A":["FAM1"]}}}
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_current_sectors=TEST
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_status=AUTHORITY candidates=1 authorities=2 polygons=2 routeKeys=1 active=1 relevant=1 diagnostics=1 activationGaps=0
+expect.resolver_authority_diagnostics=FAM_CTR:active-not-relevant:VATGLASSES:FAM1:VATGLASSES:TEST-A_0:center
+expect.resolver_authority_relevant_matches=FAM_CTR:TRANSCEIVER:FAM_CTR:VATGLASSES:TEST-A_0:aircraft=1:route=1:entry=0
+expect.resolver_authority_proof_sources=FAM_CTR:TRANSCEIVER_GEO_ROUTE
+expect.resolver_enroute_available=true
+expect.resolver_enroute_callsigns=FAM_CTR

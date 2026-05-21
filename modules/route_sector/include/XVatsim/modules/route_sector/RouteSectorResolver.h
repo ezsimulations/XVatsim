@@ -3,12 +3,14 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
 #include "XVatsim/brain/BrainTypes.h"
+#include "XVatsim/core/PreflightRouteCache.h"
 
 namespace xvatsim::modules::route_sector {
 
@@ -20,6 +22,15 @@ public:
     brain::RouteSectorSnapshot Resolve(
         const brain::AircraftStateSnapshot& aircraftState,
         const brain::NetworkPlanSnapshot& networkPlanSnapshot) const;
+    brain::AuthorityRelevanceSnapshot ResolveAuthorityRelevance(
+        const brain::AircraftStateSnapshot& aircraftState,
+        const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+        const brain::RouteSectorSnapshot& routeSectorSnapshot,
+        const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot = nullptr) const;
+    brain::AuthorityRelevanceSnapshot RefreshAcceptedAuthorityProgress(
+        const brain::AircraftStateSnapshot& aircraftState,
+        const brain::RouteSectorSnapshot& routeSectorSnapshot,
+        const brain::AuthorityRelevanceSnapshot& authorityRelevanceSnapshot) const;
     brain::AirportSectorSnapshot ResolveAirportCoverage(
         const std::string& airportIcao,
         bool hasAirportCoordinates,
@@ -49,6 +60,10 @@ public:
         const std::string& terminalGeoJson,
         const std::string& authorityCatalogDat,
         const std::string& ownershipJson) const;
+    void SetPreflightRouteCache(
+        const core::preflight::PreflightRouteCache& cache,
+        const std::string& validationReason = {});
+    void ClearPreflightRouteCache();
     // Clears per-flight route/airport results while keeping downloaded source payloads.
     void ResetRuntimeState();
     // Clears downloaded sector/source payloads; use only for true data-source replacement.
@@ -86,6 +101,19 @@ private:
     mutable double lastSnapshotLongitudeDeg_ = 0.0;
     mutable std::string lastSnapshotRouteKey_;
     mutable brain::RouteSectorSnapshot cachedSnapshot_{};
+    mutable bool hasAuthorityRelevanceCache_ = false;
+    mutable long long lastAuthorityRelevanceBuildTickSeconds_ = 0;
+    mutable double lastAuthorityRelevanceLatitudeDeg_ = 0.0;
+    mutable double lastAuthorityRelevanceLongitudeDeg_ = 0.0;
+    mutable std::size_t lastAuthorityRelevanceSignature_ = 0;
+    mutable std::size_t lastAuthorityOperationalScopeSignature_ = 0;
+    mutable std::size_t lastAuthorityWatchInputSignature_ = 0;
+    mutable std::size_t lastAuthorityRelevanceProgressRouteSignature_ = 0;
+    mutable double lastAuthorityRelevanceProgressWindowNm_ = 0.0;
+    mutable brain::AuthorityRelevanceSnapshot cachedAuthorityRelevanceSnapshot_{};
+    mutable std::size_t authorityProgressRouteSignature_ = 0;
+    mutable double authorityProgressWindowNm_ = 0.0;
+    mutable long long lastAuthorityProgressTickSeconds_ = 0;
     mutable std::unordered_map<std::string, brain::AirportSectorSnapshot> airportCoverageCache_{};
     mutable std::atomic<bool> fetchInProgress_{false};
     mutable std::mutex fetchMutex_{};
@@ -103,6 +131,8 @@ private:
     mutable std::uint64_t centerBoundaryGeneration_ = 0;
     mutable std::uint64_t authorityCatalogGeneration_ = 0;
     mutable std::uint64_t terminalBoundaryGeneration_ = 0;
+    mutable std::optional<core::preflight::PreflightRouteCache> preflightRouteCache_;
+    mutable std::string preflightRouteCacheReason_;
 };
 
 }  // namespace xvatsim::modules::route_sector

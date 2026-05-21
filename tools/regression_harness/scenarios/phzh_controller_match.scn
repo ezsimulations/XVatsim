@@ -32,5 +32,5 @@ route.next_sector=identifier=PHZH;entryDistanceNm=1399;matchTokens=PHZH;controll
 
 controller.entry=callsign=HCF_CTR;frequency=127.650;facility=6;actionable=true;atis=false
 
-expect.enroute_available=true
-expect.enroute_callsigns=KZAK,HCF_CTR
+expect.enroute_available=false
+expect.enroute_callsigns=<none>

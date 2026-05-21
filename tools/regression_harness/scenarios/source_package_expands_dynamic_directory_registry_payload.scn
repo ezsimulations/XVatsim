@@ -1,0 +1,7 @@
+name=Source Package Expands Dynamic Directory Registry Payload
+
+source_package.registry_json={"authority_sources":[{"source":"VATGLASSES_DYNAMIC_DIRECTORY","positions_url":"https://example.test/zab/positions.json","airspace_url":"https://example.test/zab/airspace.json","ownership_url":"https://example.test/zab/ownership/default.json","regions":["ZAB"]}]}
+source_package.registry_payload=https://example.test/zab/positions.json|https://example.test/zab/airspace.json|https://example.test/zab/ownership/default.json=>{"positions":{"ABQ":{"pre":["ABQ"],"type":"CTR","frequency":"127.850","callsign":"Albuquerque Center"}},"airspace":{"ABQ-AIRSPACE":{"id":"Albuquerque Airspace","group":"ZAB","sectors":[{"points":[["330000","-1120000"],["340000","-1120000"],["340000","-1110000"],["330000","-1110000"]]}]}},"ownership":{"airspace":{"ABQ-AIRSPACE":["ABQ"]}}}
+
+expect.source_registry_values=VATGLASSES_DYNAMIC_DIRECTORY:https://example.test/zab/positions.json|https://example.test/zab/airspace.json|https://example.test/zab/ownership/default.json
+expect.source_package_payload={"positions":{"ABQ":{"pre":["ABQ"],"type":"CTR","frequency":"127.850","callsign":"Albuquerque Center"}},"airspace":{"ABQ-AIRSPACE":{"id":"Albuquerque Airspace","group":"ZAB","sectors":[{"points":[["330000","-1120000"],["340000","-1120000"],["340000","-1110000"],["330000","-1110000"]]}]}},"ownership":{"airspace":{"ABQ-AIRSPACE":["ABQ"]}}}

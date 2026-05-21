@@ -1,0 +1,18 @@
+name=Recovery Hard Reset Without Recovery Stays None
+now_seconds=5000
+
+state.flight_active=false
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.battery_on=true
+aircraft.latitude_deg=50.000000
+aircraft.longitude_deg=-140.000000
+
+plan.matched=true
+plan.stale=false
+plan.departure_icao=PANC
+plan.destination_icao=VHHH
+
+expect.stage=None
+expect.reason=no-flight-context

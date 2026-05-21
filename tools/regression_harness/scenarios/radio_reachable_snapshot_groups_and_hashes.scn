@@ -1,0 +1,4 @@
+name=radio_reachable_snapshot_groups_and_hashes
+expect.radio_reachable_candidates=PANC_DEL@118.600:DEL:TEST_HARNESS,PANC_GND@121.900:GND:TEST_HARNESS,PANC_TWR@118.300:TWR:TEST_HARNESS,ANC_APP@125.700:APP_DEP:TEST_HARNESS,LAX_25_CTR@126.525:CTR:TEST_HARNESS,PANC_ATIS@135.800:ATIS:TEST_HARNESS,DOG_POOP@199.999:OTHER:TEST_HARNESS
+expect.radio_reachable_counts=DEL=1,GND=1,TWR=1,APP_DEP=1,CTR=1,ATIS=1,OTHER=1
+expect.radio_reachable_hash_check=same=1,changed=1

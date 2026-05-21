@@ -1,0 +1,32 @@
+name=Preflight Cache Rejects Rewritten Different Route FMS
+
+plan.matched=true
+plan.callsign=UPS3502
+plan.stale=false
+plan.departure_icao=KONT
+plan.destination_icao=KPDX
+
+preflight.validate_against_plan=true
+preflight.verify_source_file=true
+preflight.fms_line=I
+preflight.fms_line=1100 Version
+preflight.fms_line=CYCLE 2605
+preflight.fms_line=ADEP KONT
+preflight.fms_line=ADES KPDX
+preflight.fms_line=NUMENR 3
+preflight.fms_line=1 KONT ADEP 944.000000 34.056014 -117.601189
+preflight.fms_line=11 OLDPT DRCT 36000.000000 37.500000 -120.000000
+preflight.fms_line=1 KPDX ADES 2500.000000 45.588708 -122.596869
+preflight.current_fms_line=I
+preflight.current_fms_line=1100 Version
+preflight.current_fms_line=CYCLE 2605
+preflight.current_fms_line=ADEP KONT
+preflight.current_fms_line=ADES KPDX
+preflight.current_fms_line=NUMENR 3
+preflight.current_fms_line=1 KONT ADEP 944.000000 34.056014 -117.601189
+preflight.current_fms_line=11 NEWPT DRCT 36000.000000 38.500000 -121.000000
+preflight.current_fms_line=1 KPDX ADES 2500.000000 45.588708 -122.596869
+
+expect.preflight_parse_ok=true
+expect.preflight_validation_accepted=false
+expect.preflight_validation_reason=selected FMS route identity changed after cache build

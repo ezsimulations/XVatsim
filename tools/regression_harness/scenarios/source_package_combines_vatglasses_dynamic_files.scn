@@ -1,0 +1,8 @@
+name=Source Package Combines VATGlasses Dynamic Files
+now_seconds=1000
+
+source_package.positions_json={"TRW":{"pre":["HKG"],"type":"CTR","frequency":"127.100","callsign":"Hong Kong Radar"}}
+source_package.airspace_json={"TRW-AIRSPACE":{"id":"Area Radar West","group":"VHHK","sectors":[{"points":[["000000","1120000"],["010000","1120000"],["010000","1130000"],["000000","1130000"]]}]}}
+source_package.ownership_json={"airspace":{"TRW-AIRSPACE":["TRW"]}}
+
+expect.source_package_payload={"positions":{"TRW":{"pre":["HKG"],"type":"CTR","frequency":"127.100","callsign":"Hong Kong Radar"}},"airspace":{"TRW-AIRSPACE":{"id":"Area Radar West","group":"VHHK","sectors":[{"points":[["000000","1120000"],["010000","1120000"],["010000","1130000"],["000000","1130000"]]}]}},"ownership":{"airspace":{"TRW-AIRSPACE":["TRW"]}}}

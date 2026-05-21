@@ -5,6 +5,13 @@ map-driven VATSIM tools: a live controller activates a known authority polygon,
 then the UI displays that controller only when aircraft or route geometry proves
 relevance.
 
+## Architecture Contract
+
+All future authority/controller work must follow
+`docs/AUTHORITY_EVIDENCE_CONTRACT.md`. That document is the checkpoint for
+preventing shortcut fixes, vague proof labels, one-off callsign patches, and
+logic that cannot be defended by source-backed evidence plus route geometry.
+
 ## Non-Negotiable Rule
 
 No displayed controller may come from guessed callsign logic, nearest-plausible
@@ -137,16 +144,137 @@ Pass 9 wires live ownership into the route-sector source cache:
 - The harness proves ownership JSON can fill a VATSpy blank-prefix authority
   gap for a route-sector snapshot.
 
+Pass 10 wires live ENROUTE to authority relevance:
+
+- The live plugin now builds a resolver-owned `AuthorityRelevanceSnapshot` from
+  compiled controller authority, compiled polygons, live controller feed truth,
+  aircraft position, and route geometry.
+- ENROUTE consumes that authority relevance snapshot instead of independently
+  interpreting route-sector controller prefixes in the live path.
+- If the authority relevance snapshot is present but stale or unavailable,
+  ENROUTE fails closed instead of falling back to legacy route-sector matching.
+- Departure APP/DEP display also fails closed without terminal-sector authority,
+  removing the old airport-prefix fallback for terminal airspace controllers.
+
+Pass 11 adds authority source-parity diagnostics:
+
+- Resolver-built authority relevance snapshots now carry a status line and
+  deterministic diagnostics for live controller authority coverage.
+- Unmapped live controllers, missing authority polygons, and active but
+  route-irrelevant polygons are exposed as explicit diagnostics instead of
+  requiring a flight to reveal the gap.
+- The harness can assert those diagnostics so real-world failures can become
+  saved source-parity tests.
+
+Pass 12 adds frequency-owned VATGlasses authority matching:
+
+- VATGlasses static `positions` objects now compile published position
+  prefixes, types, and frequencies into authority records.
+- VATGlasses static `airspace` objects now compile owner-linked polygons from
+  published DMS coordinate rings.
+- When a published position frequency exists, live controller activation must
+  match that frequency; arbitrary suffix text no longer decides the position.
+- Frequency-owned source matches take precedence over broad VATSpy wildcard
+  matches for the same live controller, so exact ownership wins over fallback
+  FIR coverage.
+- The harness proves `HKG_W_CTR` maps through the published `TRW` Hong Kong
+  Radar frequency and exact owner polygon, and rejects the same callsign on the
+  wrong frequency.
+
+Pass 13 adds dynamic VATGlasses ownership ingestion:
+
+- Combined dynamic VATGlasses payloads can now carry `positions`, `airspace`,
+  and `ownership` data in the same source package.
+- Dynamic `ownership.airspace` maps position IDs to the airspace sectors they
+  are allowed to own, so position frequencies activate published sector
+  polygons instead of broad FIR fallback polygons.
+- Dynamic `airspace` object records now compile published DMS coordinate rings
+  into exact authority polygons.
+- If a source frequency-owned position pattern matches a live callsign/facility
+  but the live frequency is wrong, broad VATSpy wildcard fallback is blocked and
+  the resolver fails closed with an explicit unmapped-controller diagnostic.
+- The harness proves a dynamic source-owned controller lights the exact
+  published polygon and proves the wrong frequency cannot be rescued by broad
+  fallback coverage.
+
+Pass 14 adds transceiver geography proof and production source packaging:
+
+- The transceiver resolver now exposes a non-UI authority-station snapshot with
+  live controller transceiver frequency and position data. This is separate
+  from the overlay's "currently receivable" range display.
+- Resolver-built authority relevance can now reject source-owned
+  frequency-matched polygons when fresh transceiver evidence proves the live
+  station is geographically incompatible with the claimed polygon.
+- This guard is intentionally conservative: stale or missing transceiver data
+  does not hide otherwise proven route/polygon/frequency matches, but fresh
+  contradictory geography fails closed.
+- The map-data manifest can now provide a VATGlasses dynamic directory or
+  explicit dynamic file URLs. The downloader combines `positions.json`,
+  `airspace.json`, and `ownership/*.json` into the parser-ready
+  `positions + airspace + ownership` payload automatically.
+- The harness proves far-away same-frequency transceiver evidence blocks a
+  source-owned authority match and proves dynamic VATGlasses source-package
+  combination without a live flight.
+
+Pass 15 adds the authority evidence decision layer:
+
+- Controller authority evaluation now builds typed `AuthorityEvidence` records
+  before producing accepted `ActiveControllerAuthority` matches.
+- `AuthorityDecision` owns the accept/reject result, preserving callsign,
+  facility, frequency, published ownership, proof source, proof detail, and
+  rejection reasons.
+- Live ENROUTE authority relevance now evaluates route-scoped rejected
+  decisions instead of silently skipping them when final activation fails.
+- Frequency mismatch, facility mismatch, and missing source ownership are now
+  explicit diagnostics for route-relevant controllers.
+- Broad VATSpy fallback remains blocked when stronger frequency-owned
+  ownership evidence exists but the live controller fails that source proof.
+- The harness now asserts both successful proof sources and false-positive
+  rejection diagnostics.
+
+Pass 16 adds a typed special-sector source lane:
+
+- `SPECIAL_SECTOR_DATA` is now a real `AuthoritySource` instead of being
+  hidden behind VATSpy, VATGlasses, or a generic extension label.
+- Special-sector payloads must explicitly declare their source before they are
+  parsed as special sector data, preventing accidental relabeling of normal
+  VATGlasses ownership.
+- Special-sector position, frequency, ownership, and polygon records compile
+  through the same evidence engine as other authority sources.
+- Special-sector source-owned polygons participate in route relevance and
+  transceiver-geometry compatibility checks.
+- The harness proves a special-sector source-owned controller can feed ENROUTE
+  with proof source `SPECIAL_SECTOR_DATA`, published frequency evidence, and
+  route relevance proof.
+
+Pass 17 adds duplicated ATIS-derived authority and stricter rejection proof:
+
+- Live controller `text_atis` is now part of the controller snapshot identity
+  used by the plugin and route authority resolver.
+- `DUPLICATED_ATIS_DERIVED` is now emitted only when ATIS text contains a
+  coverage/combined-position phrase naming an already source-owned authority
+  position whose polygon is route-relevant.
+- The duplicated-ATIS path records facility type, covered position text,
+  source-owned authority, and route-relevant polygon proof items.
+- Non-center/FSS duplicated-ATIS candidates are rejected with an explicit
+  `facility-mismatch` diagnostic.
+- Previously silent rejected authority candidates now produce contract
+  diagnostics: `unmapped-controller`, `active-not-relevant`, or
+  `transceiver-geo-mismatch` as appropriate.
+- The harness proves duplicated ATIS success, wrong-facility rejection,
+  unmapped-controller reporting, active-not-relevant reporting, and remote
+  transceiver geography rejection.
+
 ## Not Done Yet
 
-- The live plugin has not started producing `AuthorityRelevanceSnapshot` yet;
-  the ENROUTE handoff seam is harness-proven but not wired to the running
-  plugin feed.
-- VATSpy, SimAware, and optional ownership downloads are in the source cache,
-  but live ENROUTE still needs to consume the authority-polygon relevance
-  snapshot rather than the legacy route-sector handoff.
 - TRACON terminal polygon records compile, but terminal controller activation
   rules are not implemented yet.
-- VATGlasses/VATSIM Radar-style extension rules are not implemented yet.
+- VATSIM Radar-style extension rules beyond explicit/static ownership position
+  records are not implemented yet.
 - DEPARTURE/ARRIVAL modules do not consume relevant active polygons yet.
+- Automatic live download/compilation of full special-sector datasets, such as
+  vatSys AU/NZ, is not implemented yet.
 - Old live authority seams still exist and must be removed after replacement.
+- Source-data parity against VATSIM Radar/VATSpy/Navigraph-style coverage still
+  requires broader imported dynamic ownership/extension datasets and parity
+  reporting against known world/event controller splits.

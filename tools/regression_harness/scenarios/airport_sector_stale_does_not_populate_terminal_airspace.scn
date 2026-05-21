@@ -10,12 +10,12 @@ controller.feed_stale=false
 
 departure.coverage.available=true
 departure.coverage.has_terminal=true
-departure.coverage.sector=identifier=SCT;entryDistanceNm=0;matchTokens=SCT_APP>SCT_DEP;controllerPrefixes=SCT;terminalCoverage=true
+departure.coverage.sector=identifier=SCT;entryDistanceNm=0;matchTokens=SCT_APP,SCT_DEP;controllerPrefixes=SCT;controllerPatterns=SCT_APP,SCT_DEP;terminalCoverage=true
 departure.coverage.stale=true
 
 arrival.coverage.available=true
 arrival.coverage.has_terminal=true
-arrival.coverage.sector=identifier=PHL;entryDistanceNm=0;matchTokens=PHL_APP;controllerPrefixes=PHL;terminalCoverage=true
+arrival.coverage.sector=identifier=PHL;entryDistanceNm=0;matchTokens=PHL_APP;controllerPrefixes=PHL;controllerPatterns=PHL_APP;terminalCoverage=true
 arrival.coverage.stale=true
 
 controller.entry=callsign=SCT_APP;frequency=128.050;facility=5;actionable=true;atis=false

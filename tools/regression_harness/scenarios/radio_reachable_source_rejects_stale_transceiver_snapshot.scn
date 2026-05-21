@@ -1,0 +1,10 @@
+name=radio_reachable_source_rejects_stale_transceiver_snapshot
+controller.feed_available=true
+controller.feed_stale=false
+controller.entry=callsign=BOS_CTR;frequency=134.700;facility=6;actionable=true
+transceiver.available=true
+transceiver.stale=true
+transceiver.status=RX feed stale
+transceiver.candidate=callsign=BOS_CTR;frequency=134.700;distanceNm=90;score=20;lat=42.36;lon=-71.05
+expect.radio_reachable_source_candidates=
+expect.radio_reachable_source_counts=DEL=0,GND=0,TWR=0,APP_DEP=0,CTR=0,ATIS=0,OTHER=0

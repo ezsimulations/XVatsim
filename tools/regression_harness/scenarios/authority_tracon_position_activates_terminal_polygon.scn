@@ -1,0 +1,21 @@
+name=Authority TRACON Position Activates Terminal Polygon
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+route.waypoint=ident=ACFT;lat=0.0;lon=0.0
+route.waypoint=ident=DEST;lat=0.0;lon=2.0
+
+authority_position.tracon=id=SCT_APP;polygon=SCT_APP;patterns=SCT_APP;kind=terminal
+authority_polygon.tracon=id=SCT;suffix=APP;prefixes=SCT;polygon=-1,-1|-1,1|1,1|1,-1
+
+controller.entry=callsign=SCT_APP;frequency=128.050;facility=5;actionable=true;atis=false
+
+expect.authority_catalog_ids=SIMAWARE_TRACON:SCT_APP
+expect.authority_active_matches=SCT_APP:SIMAWARE_TRACON:SCT_APP:SCT_APP:SCT_APP
+expect.authority_polygon_ids=SIMAWARE_TRACON:SCT_APP
+expect.authority_polygon_lookup_keys=SIMAWARE_TRACON:SCT_APP:SCT>SCT_APP
+expect.authority_active_polygon_matches=SCT_APP:SIMAWARE_TRACON:SCT_APP:SIMAWARE_TRACON:SCT_APP:SCT:SCT_APP
+expect.authority_relevant_polygon_matches=SCT_APP:SIMAWARE_TRACON:SCT_APP:SIMAWARE_TRACON:SCT_APP:aircraft=1:route=1:entry=0

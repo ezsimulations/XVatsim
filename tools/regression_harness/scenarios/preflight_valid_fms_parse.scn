@@ -1,0 +1,22 @@
+name=Preflight Valid FMS Parse
+
+preflight.fms_line=I
+preflight.fms_line=1100 Version
+preflight.fms_line=CYCLE 2605
+preflight.fms_line=ADEP KSAN
+preflight.fms_line=DEPRWY RW27
+preflight.fms_line=SID ZZOOO4
+preflight.fms_line=SIDTRANS HOGGZ
+preflight.fms_line=ADES KPHX
+preflight.fms_line=DESRWY RW08
+preflight.fms_line=STAR HYDRR1
+preflight.fms_line=STARTRANS HOGGZ
+preflight.fms_line=NUMENR 3
+preflight.fms_line=1 KSAN ADEP 17.000000 32.733564 -117.189664
+preflight.fms_line=11 HOGGZ DRCT 33000.000000 32.774861 -114.069200
+preflight.fms_line=1 KPHX ADES 3600.000000 33.434278 -112.011583
+
+expect.preflight_parse_ok=true
+expect.preflight_departure_icao=KSAN
+expect.preflight_destination_icao=KPHX
+expect.preflight_waypoints=KSAN,HOGGZ,KPHX

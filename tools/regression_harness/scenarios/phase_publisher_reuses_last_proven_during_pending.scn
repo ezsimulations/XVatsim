@@ -1,0 +1,2 @@
+name = phase_publisher_reuses_last_proven_during_pending
+expect.phase_publisher_reuse_lifecycle = stored=1:reused=0:source=Enroute:stations=NY_CTR,stored=0:reused=1:source=Enroute:stations=NY_CTR

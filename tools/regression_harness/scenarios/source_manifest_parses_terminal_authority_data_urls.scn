@@ -1,0 +1,6 @@
+name=Source Manifest Parses Terminal Authority Data Urls
+
+source_manifest.json={"current_commit_hash":"v2604.1","fir_boundaries_dat_url":"https://example.test/FIRBoundaries.dat","fir_boundaries_geojson_url":"https://example.test/Boundaries.geojson","vatspy_dat_url":"https://example.test/VATSpy.dat","simaware_tracon_geojson_url":"https://example.test/TRACONBoundaries.geojson","terminal_authority_data_url":"https://example.test/terminal-authority.json","terminal_authority_data_urls":["https://example.test/us-terminal-authority.json","https://example.test/eu-terminal-authority.json"]}
+
+expect.source_manifest_valid=true
+expect.source_manifest_values=commit:v2604.1,dat:https://example.test/FIRBoundaries.dat,geojson:https://example.test/Boundaries.geojson,simaware:https://example.test/TRACONBoundaries.geojson,vatspy:https://example.test/VATSpy.dat,vatglasses:,terminal_authority_data:https://example.test/terminal-authority.json,terminal_authority_data_url:https://example.test/us-terminal-authority.json,terminal_authority_data_url:https://example.test/eu-terminal-authority.json

@@ -1,0 +1,13 @@
+name=Enroute Authority Snapshot Stale Blocks Legacy Route Sector
+now_seconds=1000
+
+xpilot.connected=true
+authority.enroute_handoff=true
+authority.enroute_snapshot_available=true
+authority.enroute_snapshot_stale=true
+
+route.current_sector=identifier=KZLA;entryDistanceNm=0;matchTokens=KZLA;controllerCallsignPatterns=LAX_CTR
+controller.entry=callsign=LAX_CTR;frequency=125.800;facility=6;actionable=true;atis=false
+
+expect.enroute_available=false
+expect.enroute_callsigns=<none>

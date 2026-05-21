@@ -1,0 +1,1160 @@
+{
+  "generated_from": "https://github.com/lennycolton/vatglasses-data",
+  "generated_from_commit": "a9fb0bb82d05e7bb12770fd90e6dca510754e0e5",
+  "generated_on": "2026-05-17",
+  "selection_rule": "All top-level data/*.json VATGlasses packages plus data/* directories containing positions.json, airspace.json, and ownership/default.json.",
+  "authority_sources": [
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ay.json",
+      "regions": [
+        "AY"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/bi-bg.json",
+      "regions": [
+        "BI",
+        "BG"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/bk-la-ld-lj-lq-lw-ly.json",
+      "regions": [
+        "BK",
+        "LA",
+        "LD",
+        "LJ",
+        "LQ",
+        "LW",
+        "LY"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/da.json",
+      "regions": [
+        "DA"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/db-dg-dx.json",
+      "regions": [
+        "DB",
+        "DG",
+        "DX"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/df-dr.json",
+      "regions": [
+        "DF",
+        "DR"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/di-ga-gb-gf-gg-gl-go-gq-gu.json",
+      "regions": [
+        "DI",
+        "GA",
+        "GB",
+        "GF",
+        "GG",
+        "GL",
+        "GO",
+        "GQ",
+        "GU"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/dn.json",
+      "regions": [
+        "DN"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/dt.json",
+      "regions": [
+        "DT"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/eb-el.json",
+      "regions": [
+        "EB",
+        "EL"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ed.json",
+      "regions": [
+        "ED"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ee.json",
+      "regions": [
+        "EE"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ef.json",
+      "regions": [
+        "EF"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/eg.json",
+      "regions": [
+        "EG"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/eh.json",
+      "regions": [
+        "EH"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ek.json",
+      "regions": [
+        "EK"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/en.json",
+      "regions": [
+        "EN"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ep.json",
+      "regions": [
+        "EP"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/es.json",
+      "regions": [
+        "ES"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ev.json",
+      "regions": [
+        "EV"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ey.json",
+      "regions": [
+        "EY"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fa-fd-fx.json",
+      "regions": [
+        "FA",
+        "FD",
+        "FX"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fb.json",
+      "regions": [
+        "FB"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fc-fe-fg-fk-fo-fp.json",
+      "regions": [
+        "FC",
+        "FE",
+        "FG",
+        "FK",
+        "FO",
+        "FP"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fi-fj.json",
+      "regions": [
+        "FI",
+        "FJ"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fl.json",
+      "regions": [
+        "FL"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fm.json",
+      "regions": [
+        "FM"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fn.json",
+      "regions": [
+        "FN"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fq.json",
+      "regions": [
+        "FQ"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fs.json",
+      "regions": [
+        "FS"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fss.json",
+      "regions": [
+        "FSS"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ft.json",
+      "regions": [
+        "FT"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fv.json",
+      "regions": [
+        "FV"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fw.json",
+      "regions": [
+        "FW"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fy.json",
+      "regions": [
+        "FY"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/fz.json",
+      "regions": [
+        "FZ"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/gc.json",
+      "regions": [
+        "GC"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/gm.json",
+      "regions": [
+        "GM"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/gv.json",
+      "regions": [
+        "GV"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ha-hd.json",
+      "regions": [
+        "HA",
+        "HD"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/hb-hr-ht.json",
+      "regions": [
+        "HB",
+        "HR",
+        "HT"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/hc.json",
+      "regions": [
+        "HC"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/he.json",
+      "regions": [
+        "HE"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/hh.json",
+      "regions": [
+        "HH"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/hj-hs.json",
+      "regions": [
+        "HJ",
+        "HS"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/hk.json",
+      "regions": [
+        "HK"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/hl.json",
+      "regions": [
+        "HL"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/hu.json",
+      "regions": [
+        "HU"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lb.json",
+      "regions": [
+        "LB"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lc.json",
+      "regions": [
+        "LC"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/le.json",
+      "regions": [
+        "LE"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lf.json",
+      "regions": [
+        "LF"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lg.json",
+      "regions": [
+        "LG"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lh.json",
+      "regions": [
+        "LH"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/li.json",
+      "regions": [
+        "LI"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lk.json",
+      "regions": [
+        "LK"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lm.json",
+      "regions": [
+        "LM"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lo.json",
+      "regions": [
+        "LO"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lppc.json",
+      "regions": [
+        "LPPC"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lppo.json",
+      "regions": [
+        "LPPO"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lr.json",
+      "regions": [
+        "LR"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ls.json",
+      "regions": [
+        "LS"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lt.json",
+      "regions": [
+        "LT"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lu.json",
+      "regions": [
+        "LU"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lx.json",
+      "regions": [
+        "LX"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/lz.json",
+      "regions": [
+        "LZ"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/md.json",
+      "regions": [
+        "MD"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/mg-mh-mn-mr-ms-mz.json",
+      "regions": [
+        "MG",
+        "MH",
+        "MN",
+        "MR",
+        "MS",
+        "MZ"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/mk.json",
+      "regions": [
+        "MK"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/mmfo.json",
+      "regions": [
+        "MMFO"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/mp.json",
+      "regions": [
+        "MP"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/mu.json",
+      "regions": [
+        "MU"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/nat.json",
+      "regions": [
+        "NAT"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/nc.json",
+      "regions": [
+        "NC"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/nf.json",
+      "regions": [
+        "NF"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/nodata.json",
+      "regions": [
+        "NODATA"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ns.json",
+      "regions": [
+        "NS"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/nt.json",
+      "regions": [
+        "NT"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/nv.json",
+      "regions": [
+        "NV"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/nw.json",
+      "regions": [
+        "NW"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/nz-ni.json",
+      "regions": [
+        "NZ",
+        "NI"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ob.json",
+      "regions": [
+        "OB"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/oe.json",
+      "regions": [
+        "OE"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/oi.json",
+      "regions": [
+        "OI"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ok.json",
+      "regions": [
+        "OK"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/om.json",
+      "regions": [
+        "OM"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/oo.json",
+      "regions": [
+        "OO"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ot.json",
+      "regions": [
+        "OT"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/rj.json",
+      "regions": [
+        "RJ"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/sa.json",
+      "regions": [
+        "SA"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/sbao.json",
+      "regions": [
+        "SBAO"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/sbaz.json",
+      "regions": [
+        "SBAZ"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/sbbs.json",
+      "regions": [
+        "SBBS"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/sbcw.json",
+      "regions": [
+        "SBCW"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/sbre.json",
+      "regions": [
+        "SBRE"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/sc.json",
+      "regions": [
+        "SC"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/se.json",
+      "regions": [
+        "SE"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/sf.json",
+      "regions": [
+        "SF"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/sg.json",
+      "regions": [
+        "SG"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/sip.json",
+      "regions": [
+        "SIP"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/sm.json",
+      "regions": [
+        "SM"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/so.json",
+      "regions": [
+        "SO"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/su.json",
+      "regions": [
+        "SU"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/sy.json",
+      "regions": [
+        "SY"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ta-tb-td-tf-tg-tk-tl-tr-tt-tv.json",
+      "regions": [
+        "TA",
+        "TB",
+        "TD",
+        "TF",
+        "TG",
+        "TK",
+        "TL",
+        "TR",
+        "TT",
+        "TV"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/tn.json",
+      "regions": [
+        "TN"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ub.json",
+      "regions": [
+        "UB"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/uc.json",
+      "regions": [
+        "UC"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ud.json",
+      "regions": [
+        "UD"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ug.json",
+      "regions": [
+        "UG"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/uhmm.json",
+      "regions": [
+        "UHMM"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/uiii.json",
+      "regions": [
+        "UIII"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/uk.json",
+      "regions": [
+        "UK"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ulll.json",
+      "regions": [
+        "ULLL"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/unkl.json",
+      "regions": [
+        "UNKL"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/unnt.json",
+      "regions": [
+        "UNNT"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/urrv.json",
+      "regions": [
+        "URRV"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/uta.json",
+      "regions": [
+        "UTA"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/utd.json",
+      "regions": [
+        "UTD"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/uz.json",
+      "regions": [
+        "UZ"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/v.json",
+      "regions": [
+        "V"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/vc-vr.json",
+      "regions": [
+        "VC",
+        "VR"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/vd-vl-vv.json",
+      "regions": [
+        "VD",
+        "VL",
+        "VV"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/vh-vm.json",
+      "regions": [
+        "VH",
+        "VM"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/vt.json",
+      "regions": [
+        "VT"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/vy.json",
+      "regions": [
+        "VY"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/wb.json",
+      "regions": [
+        "WB"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/wm.json",
+      "regions": [
+        "WM"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ws.json",
+      "regions": [
+        "WS"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/y-ag-an.json",
+      "regions": [
+        "Y",
+        "AG",
+        "AN"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/z.json",
+      "regions": [
+        "Z"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zeg.json",
+      "regions": [
+        "ZEG"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zm.json",
+      "regions": [
+        "ZM"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zny.json",
+      "regions": [
+        "ZNY"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zse.json",
+      "regions": [
+        "ZSE"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zsu.json",
+      "regions": [
+        "ZSU"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zua.json",
+      "regions": [
+        "ZUA"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zvr.json",
+      "regions": [
+        "ZVR"
+      ]
+    },
+    {
+      "source": "VATGLASSES",
+      "url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zwg.json",
+      "regions": [
+        "ZWG"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ei/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ei/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/ei/ownership/default.json",
+      "regions": [
+        "EI"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zab/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zab/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zab/ownership/default.json",
+      "regions": [
+        "ZAB"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zak/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zak/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zak/ownership/default.json",
+      "regions": [
+        "ZAK"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zau/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zau/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zau/ownership/default.json",
+      "regions": [
+        "ZAU"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zhn/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zhn/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zhn/ownership/default.json",
+      "regions": [
+        "ZHN"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zhu/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zhu/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zhu/ownership/default.json",
+      "regions": [
+        "ZHU"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zjx/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zjx/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zjx/ownership/default.json",
+      "regions": [
+        "ZJX"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zlc/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zlc/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zlc/ownership/default.json",
+      "regions": [
+        "ZLC"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zma/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zma/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zma/ownership/default.json",
+      "regions": [
+        "ZMA"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zoa/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zoa/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zoa/ownership/default.json",
+      "regions": [
+        "ZOA"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zob/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zob/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zob/ownership/default.json",
+      "regions": [
+        "ZOB"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zqm-zqx/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zqm-zqx/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zqm-zqx/ownership/default.json",
+      "regions": [
+        "ZQM",
+        "ZQX"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zul/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zul/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zul/ownership/default.json",
+      "regions": [
+        "ZUL"
+      ]
+    },
+    {
+      "source": "VATGLASSES_DYNAMIC_DIRECTORY",
+      "positions_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zyz/positions.json",
+      "airspace_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zyz/airspace.json",
+      "ownership_url": "https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zyz/ownership/default.json",
+      "regions": [
+        "ZYZ"
+      ]
+    }
+  ]
+}

@@ -15,7 +15,8 @@ public:
         const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
         const brain::RadioStateSnapshot& radioStateSnapshot,
         const std::string& arrivalAirportIcao,
-        const brain::AirportSectorSnapshot& airportSectorSnapshot) const;
+        const brain::AirportSectorSnapshot& airportSectorSnapshot,
+        const brain::AuthorityRelevanceSnapshot* authorityRelevanceSnapshot) const;
 };
 
 }  // namespace xvatsim::modules::arrival

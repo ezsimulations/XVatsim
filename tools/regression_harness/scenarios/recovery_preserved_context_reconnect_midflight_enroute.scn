@@ -1,0 +1,46 @@
+name=Recovery Preserved Context Reconnect Midflight Enroute
+now_seconds=5000
+
+recovery.requested=true
+recovery.mode=automatic
+
+state.flight_active=true
+state.departure_released=true
+state.arrival_awake=false
+state.airborne_since_seconds=1000
+
+flight.callsign=UPS2081
+flight.departure_icao=PANC
+flight.departure_lat=61.174086
+flight.departure_lon=-149.998139
+flight.has_departure_coordinates=true
+flight.destination_icao=VHHH
+flight.destination_lat=22.308889
+flight.destination_lon=113.914722
+flight.has_destination_coordinates=true
+flight.route_text=NODLE R220 NAYLD DCT HLG
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.battery_on=true
+aircraft.latitude_deg=50.000000
+aircraft.longitude_deg=-140.000000
+
+plan.matched=true
+plan.stale=false
+plan.departure_icao=PANC
+plan.departure_lat=61.174086
+plan.departure_lon=-149.998139
+plan.has_departure_coordinates=true
+plan.destination_icao=VHHH
+plan.destination_lat=22.308889
+plan.destination_lon=113.914722
+plan.has_destination_coordinates=true
+plan.route_text=NODLE R220 NAYLD DCT HLG
+
+expect.recovery_accepted=true
+expect.recovery_stage=Enroute
+expect.recovery_reason=recovery-enroute-airborne
+expect.recovery_used_preserved_context=true
+expect.recovery_used_fresh_network_plan=true
+expect.recovery_flight_context_active=true

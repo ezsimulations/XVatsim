@@ -1,0 +1,2 @@
+name=radio_reachable_verifier_feed_uses_gated_changed_candidates
+expect.radio_reachable_verifier_enroute_controllers=LAX_25_CTR@126.525:facility=6

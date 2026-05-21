@@ -13,7 +13,7 @@ public:
         const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
         const brain::RadioStateSnapshot& radioStateSnapshot,
         const brain::RouteSectorSnapshot& routeSectorSnapshot,
-        const brain::AuthorityRelevanceSnapshot* authorityRelevanceSnapshot = nullptr);
+        const brain::AuthorityRelevanceSnapshot* authorityRelevanceSnapshot);
     void Reset();
 };
 

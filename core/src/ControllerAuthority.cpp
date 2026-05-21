@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace xvatsim::core::authority {
@@ -367,6 +369,83 @@ std::optional<std::string> ExtractJsonArrayPayload(
     return std::nullopt;
 }
 
+std::vector<std::string> ExtractJsonObjectPayloads(
+    const std::string& payload,
+    const std::string& fieldName);
+
+std::optional<std::string> ExtractJsonObjectPayload(
+    const std::string& payload,
+    const std::string& fieldName) {
+    const auto payloads = ExtractJsonObjectPayloads(payload, fieldName);
+    if (payloads.empty()) {
+        return std::nullopt;
+    }
+    return payloads.front();
+}
+
+std::vector<std::string> ExtractJsonObjectPayloads(
+    const std::string& payload,
+    const std::string& fieldName) {
+    std::vector<std::string> payloads;
+    std::size_t searchIndex = 0;
+    for (;;) {
+        const auto keyIndex = payload.find('"' + fieldName + '"', searchIndex);
+        if (keyIndex == std::string::npos) {
+            return payloads;
+        }
+
+        auto objectStart = SkipJsonWhitespace(payload, keyIndex + fieldName.size() + 2);
+        if (objectStart >= payload.size() || payload[objectStart] != ':') {
+            searchIndex = keyIndex + 1;
+            continue;
+        }
+        objectStart = SkipJsonWhitespace(payload, objectStart + 1);
+        if (objectStart >= payload.size() || payload[objectStart] != '{') {
+            searchIndex = keyIndex + 1;
+            continue;
+        }
+
+        bool inString = false;
+        bool escaped = false;
+        int depth = 0;
+        bool foundObject = false;
+        for (std::size_t index = objectStart; index < payload.size(); ++index) {
+            const auto character = payload[index];
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (character == '\\') {
+                    escaped = true;
+                } else if (character == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+
+            if (character == '"') {
+                inString = true;
+                continue;
+            }
+            if (character == '{') {
+                ++depth;
+            } else if (character == '}') {
+                --depth;
+                if (depth == 0) {
+                    payloads.push_back(
+                        payload.substr(objectStart + 1, index - objectStart - 1));
+                    searchIndex = index + 1;
+                    foundObject = true;
+                    break;
+                }
+            }
+        }
+
+        if (!foundObject) {
+            return payloads;
+        }
+    }
+}
+
 std::vector<std::string> ExtractJsonObjectsFromArrayPayload(
     const std::string& arrayPayload) {
     std::vector<std::string> objects;
@@ -409,6 +488,152 @@ std::vector<std::string> ExtractJsonObjectsFromArrayPayload(
     return objects;
 }
 
+std::vector<std::pair<std::string, std::string>> ExtractJsonNamedObjectsFromObjectPayload(
+    const std::string& objectPayload) {
+    std::vector<std::pair<std::string, std::string>> objects;
+
+    for (std::size_t index = 0; index < objectPayload.size();) {
+        index = SkipJsonWhitespace(objectPayload, index);
+        if (index >= objectPayload.size()) {
+            break;
+        }
+        if (objectPayload[index] != '"') {
+            ++index;
+            continue;
+        }
+
+        std::size_t afterKeyIndex = index;
+        const auto key = DecodeJsonStringAt(objectPayload, index, &afterKeyIndex);
+        if (!key.has_value()) {
+            break;
+        }
+
+        auto valueIndex = SkipJsonWhitespace(objectPayload, afterKeyIndex);
+        if (valueIndex >= objectPayload.size() || objectPayload[valueIndex] != ':') {
+            index = afterKeyIndex;
+            continue;
+        }
+        valueIndex = SkipJsonWhitespace(objectPayload, valueIndex + 1);
+        if (valueIndex >= objectPayload.size() || objectPayload[valueIndex] != '{') {
+            index = afterKeyIndex;
+            continue;
+        }
+
+        bool inString = false;
+        bool escaped = false;
+        int depth = 0;
+        std::size_t objectEnd = std::string::npos;
+        for (std::size_t scanIndex = valueIndex; scanIndex < objectPayload.size(); ++scanIndex) {
+            const auto character = objectPayload[scanIndex];
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (character == '\\') {
+                    escaped = true;
+                } else if (character == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+
+            if (character == '"') {
+                inString = true;
+                continue;
+            }
+            if (character == '{') {
+                ++depth;
+            } else if (character == '}') {
+                --depth;
+                if (depth == 0) {
+                    objectEnd = scanIndex;
+                    break;
+                }
+            }
+        }
+
+        if (objectEnd == std::string::npos) {
+            break;
+        }
+
+        objects.push_back({
+            *key,
+            objectPayload.substr(valueIndex, objectEnd - valueIndex + 1),
+        });
+        index = objectEnd + 1;
+    }
+
+    return objects;
+}
+
+std::vector<std::pair<std::string, std::vector<std::string>>>
+ExtractJsonNamedStringArraysFromObjectPayload(const std::string& objectPayload) {
+    std::vector<std::pair<std::string, std::vector<std::string>>> arrays;
+
+    for (std::size_t index = 0; index < objectPayload.size();) {
+        index = SkipJsonWhitespace(objectPayload, index);
+        if (index >= objectPayload.size()) {
+            break;
+        }
+        if (objectPayload[index] != '"') {
+            ++index;
+            continue;
+        }
+
+        std::size_t afterKeyIndex = index;
+        const auto key = DecodeJsonStringAt(objectPayload, index, &afterKeyIndex);
+        if (!key.has_value()) {
+            break;
+        }
+
+        auto arrayStart = SkipJsonWhitespace(objectPayload, afterKeyIndex);
+        if (arrayStart >= objectPayload.size() || objectPayload[arrayStart] != ':') {
+            index = afterKeyIndex;
+            continue;
+        }
+        arrayStart = SkipJsonWhitespace(objectPayload, arrayStart + 1);
+        if (arrayStart >= objectPayload.size() || objectPayload[arrayStart] != '[') {
+            index = afterKeyIndex;
+            continue;
+        }
+
+        std::vector<std::string> values;
+        index = arrayStart + 1;
+        for (;;) {
+            index = SkipJsonWhitespace(objectPayload, index);
+            if (index >= objectPayload.size()) {
+                return arrays;
+            }
+            if (objectPayload[index] == ']') {
+                ++index;
+                break;
+            }
+            if (objectPayload[index] != '"') {
+                const auto closeIndex = objectPayload.find(']', index);
+                if (closeIndex == std::string::npos) {
+                    return arrays;
+                }
+                index = closeIndex + 1;
+                break;
+            }
+
+            std::size_t afterValueIndex = index;
+            const auto value = DecodeJsonStringAt(objectPayload, index, &afterValueIndex);
+            if (!value.has_value()) {
+                return arrays;
+            }
+            values.push_back(*value);
+            index = SkipJsonWhitespace(objectPayload, afterValueIndex);
+            if (index < objectPayload.size() && objectPayload[index] == ',') {
+                ++index;
+            }
+        }
+
+        arrays.push_back({*key, std::move(values)});
+    }
+
+    return arrays;
+}
+
 std::vector<std::string> SplitPipeFields(const std::string& line) {
     std::vector<std::string> fields;
     std::size_t startIndex = 0;
@@ -448,13 +673,55 @@ std::vector<std::string> BuildCenterActivationPatterns(const std::string& prefix
     return patterns;
 }
 
+std::string NormalizeAuthorityFrequency(std::string frequency) {
+    frequency.erase(
+        std::remove_if(
+            frequency.begin(),
+            frequency.end(),
+            [](unsigned char c) { return std::isspace(c) != 0; }),
+        frequency.end());
+
+    std::string digits;
+    bool sawDecimal = false;
+    int decimals = 0;
+    for (const auto character : frequency) {
+        if (std::isdigit(static_cast<unsigned char>(character)) != 0) {
+            digits.push_back(character);
+            if (sawDecimal && decimals < 3) {
+                ++decimals;
+            }
+            continue;
+        }
+
+        if (character == '.' && !sawDecimal) {
+            sawDecimal = true;
+        }
+    }
+
+    if (digits.empty()) {
+        return {};
+    }
+    if (sawDecimal) {
+        while (decimals < 3) {
+            digits.push_back('0');
+            ++decimals;
+        }
+    } else if (digits.size() == 5) {
+        digits.push_back('0');
+    }
+    return digits;
+}
+
 bool EndsWith(const std::string& value, const std::string& suffix) {
     return value.size() >= suffix.size() &&
            value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
 bool PatternFacilityMatches(const std::string& pattern, int vatsimFacility) {
-    if (EndsWith(pattern, "_DEL")) {
+    if (EndsWith(pattern, "_DEL") ||
+        EndsWith(pattern, "_CLR") ||
+        EndsWith(pattern, "_CLNC") ||
+        EndsWith(pattern, "_CD")) {
         return vatsimFacility == kVatsimDeliveryFacility;
     }
     if (EndsWith(pattern, "_GND")) {
@@ -475,6 +742,58 @@ bool PatternFacilityMatches(const std::string& pattern, int vatsimFacility) {
     return false;
 }
 
+bool SplitTerminalCallsignPattern(
+    const std::string& rawPattern,
+    std::string* outPrefix,
+    std::string* outSuffix) {
+    const auto pattern = NormalizeControllerCallsign(rawPattern);
+    if (pattern.find('*') != std::string::npos) {
+        return false;
+    }
+
+    const auto separatorIndex = pattern.rfind('_');
+    if (separatorIndex == std::string::npos ||
+        separatorIndex == 0 ||
+        separatorIndex >= pattern.size() - 1) {
+        return false;
+    }
+
+    const auto suffix = pattern.substr(separatorIndex + 1);
+    if (suffix != "APP" && suffix != "DEP") {
+        return false;
+    }
+
+    if (outPrefix != nullptr) {
+        *outPrefix = pattern.substr(0, separatorIndex);
+    }
+    if (outSuffix != nullptr) {
+        *outSuffix = suffix;
+    }
+    return true;
+}
+
+void AddSourceBackedTerminalSectorPattern(
+    AuthoritySource source,
+    const std::string& normalizedPattern,
+    std::vector<std::string>* patterns) {
+    if (patterns == nullptr || source != AuthoritySource::SimAwareTracon) {
+        return;
+    }
+
+    std::string prefix;
+    std::string suffix;
+    if (!SplitTerminalCallsignPattern(normalizedPattern, &prefix, &suffix)) {
+        return;
+    }
+
+    patterns->push_back(prefix + "_*_" + suffix);
+}
+
+bool BareCenterAuthorityFacilityMatches(int vatsimFacility) {
+    return vatsimFacility == kVatsimCenterFacility ||
+           vatsimFacility == kVatsimFlightServiceFacility;
+}
+
 std::string SourcePrefix(AuthoritySource source) {
     switch (source) {
         case AuthoritySource::VatSpyFir:
@@ -489,6 +808,32 @@ std::string SourcePrefix(AuthoritySource source) {
             return "VATGLASSES";
         case AuthoritySource::VatsimRadarExtension:
             return "VATSIM_RADAR_EXTENSION";
+        case AuthoritySource::SpecialSectorData:
+            return "SPECIAL_SECTOR_DATA";
+        case AuthoritySource::AirportLocal:
+            return "AIRPORT_LOCAL";
+    }
+    return "UNKNOWN";
+}
+
+std::string DefaultProofSourceForAuthoritySource(AuthoritySource source) {
+    switch (source) {
+        case AuthoritySource::VatSpyFir:
+            return "VATSPY_FIR";
+        case AuthoritySource::VatSpyUir:
+            return "VATSPY_UIR";
+        case AuthoritySource::VatSpyBoundary:
+            return "VATSPY_BOUNDARY";
+        case AuthoritySource::SimAwareTracon:
+            return "SIMAWARE_TRACON";
+        case AuthoritySource::VatGlasses:
+            return "VATGLASSES_STATIC_OWNER";
+        case AuthoritySource::VatsimRadarExtension:
+            return "SPECIAL_SECTOR_DATA";
+        case AuthoritySource::SpecialSectorData:
+            return "SPECIAL_SECTOR_DATA";
+        case AuthoritySource::AirportLocal:
+            return "AIRPORT_LOCAL_FACILITY";
     }
     return "UNKNOWN";
 }
@@ -496,6 +841,7 @@ std::string SourcePrefix(AuthoritySource source) {
 AuthorityKind SourceDefaultKind(AuthoritySource source) {
     switch (source) {
         case AuthoritySource::SimAwareTracon:
+        case AuthoritySource::AirportLocal:
             return AuthorityKind::Terminal;
         case AuthoritySource::VatsimRadarExtension:
             return AuthorityKind::Extension;
@@ -503,9 +849,188 @@ AuthorityKind SourceDefaultKind(AuthoritySource source) {
         case AuthoritySource::VatSpyUir:
         case AuthoritySource::VatSpyBoundary:
         case AuthoritySource::VatGlasses:
+        case AuthoritySource::SpecialSectorData:
             return AuthorityKind::Center;
     }
     return AuthorityKind::Center;
+}
+
+void AppendProofDetailField(
+    std::ostringstream* stream,
+    const std::string& key,
+    const std::string& value) {
+    if (stream == nullptr || key.empty() || value.empty()) {
+        return;
+    }
+    if (stream->tellp() > 0) {
+        *stream << ";";
+    }
+    *stream << key << "=" << value;
+}
+
+std::string BuildAuthorityProofDetail(
+    const ControllerAuthority& authority,
+    const std::string& matchedPattern,
+    const std::string& normalizedFrequency,
+    bool frequencyOwned) {
+    std::ostringstream stream;
+    AppendProofDetailField(&stream, "authoritySource", SourcePrefix(authority.source));
+    AppendProofDetailField(&stream, "authorityId", authority.id);
+    AppendProofDetailField(&stream, "polygonKey", authority.polygonKey);
+    AppendProofDetailField(&stream, "pattern", matchedPattern);
+    AppendProofDetailField(&stream, "source", authority.proofDetail);
+    if (frequencyOwned) {
+        AppendProofDetailField(&stream, "frequencyOwned", "1");
+        AppendProofDetailField(&stream, "frequency", normalizedFrequency);
+    }
+    return stream.str();
+}
+
+void AddUniqueString(std::vector<std::string>* values, const std::string& value) {
+    if (values == nullptr || value.empty()) {
+        return;
+    }
+    if (std::find(values->begin(), values->end(), value) == values->end()) {
+        values->push_back(value);
+    }
+}
+
+std::string JoinEvidenceItems(const std::vector<std::string>& values) {
+    std::ostringstream stream;
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index > 0) {
+            stream << ">";
+        }
+        stream << values[index];
+    }
+    return stream.str();
+}
+
+std::string BuildDecisionProofDetail(const AuthorityEvidence& evidence) {
+    std::ostringstream stream;
+    stream << evidence.proofDetail;
+    const auto proofItems = JoinEvidenceItems(evidence.proofItems);
+    if (!proofItems.empty()) {
+        if (stream.tellp() > 0) {
+            stream << ";";
+        }
+        stream << "proofItems=" << proofItems;
+    }
+    return stream.str();
+}
+
+AuthorityEvidence BuildAuthorityEvidence(
+    const ControllerAuthority& authority,
+    const std::string& normalizedCallsign,
+    const std::string& normalizedFrequency,
+    const std::string& matchedPattern,
+    int vatsimFacility,
+    bool callsignMatched,
+    bool facilityMatched,
+    bool frequencyRequired,
+    bool frequencyMatched) {
+    AuthorityEvidence evidence;
+    evidence.callsign = normalizedCallsign;
+    evidence.frequency = normalizedFrequency;
+    evidence.vatsimFacility = vatsimFacility;
+    evidence.authorityId = authority.id;
+    evidence.authoritySource = authority.source;
+    evidence.authorityKind = authority.kind;
+    evidence.polygonKey = authority.polygonKey;
+    evidence.matchedPattern = matchedPattern;
+    evidence.callsignMatched = callsignMatched;
+    evidence.facilityMatched = facilityMatched;
+    evidence.frequencyRequired = frequencyRequired;
+    evidence.frequencyMatched = frequencyMatched;
+    evidence.frequencyOwned = frequencyRequired && frequencyMatched;
+    evidence.proofSource = authority.proofSource.empty()
+                               ? DefaultProofSourceForAuthoritySource(authority.source)
+                               : authority.proofSource;
+    evidence.proofDetail = BuildAuthorityProofDetail(
+        authority,
+        matchedPattern,
+        normalizedFrequency,
+        frequencyRequired);
+
+    if (authority.source == AuthoritySource::AirportLocal) {
+        AddUniqueString(&evidence.proofItems, "airport-endpoint");
+    }
+    if (callsignMatched) {
+        AddUniqueString(&evidence.proofItems, "callsign-pattern");
+    }
+    if (facilityMatched) {
+        AddUniqueString(&evidence.proofItems, "facility-type");
+    }
+    if (frequencyRequired) {
+        if (frequencyMatched) {
+            AddUniqueString(&evidence.proofItems, "published-frequency");
+            AddUniqueString(&evidence.proofItems, "FREQUENCY_OWNED_MATCH");
+        } else {
+            AddUniqueString(&evidence.rejectionReasons, "frequency-mismatch");
+        }
+    }
+    if (!facilityMatched && callsignMatched) {
+        AddUniqueString(&evidence.rejectionReasons, "facility-mismatch");
+    }
+    if (!callsignMatched && frequencyRequired && frequencyMatched && facilityMatched) {
+        AddUniqueString(&evidence.rejectionReasons, "missing-source-ownership");
+    }
+    return evidence;
+}
+
+AuthorityDecision BuildAuthorityDecision(AuthorityEvidence evidence) {
+    AuthorityDecision decision;
+    decision.accepted =
+        evidence.callsignMatched &&
+        evidence.facilityMatched &&
+        (!evidence.frequencyRequired || evidence.frequencyMatched);
+    decision.evidence = std::move(evidence);
+    if (decision.accepted) {
+        decision.activeAuthority = {
+            decision.evidence.callsign,
+            decision.evidence.authorityId,
+            decision.evidence.polygonKey,
+            decision.evidence.matchedPattern,
+            decision.evidence.authorityKind,
+            decision.evidence.proofSource,
+            BuildDecisionProofDetail(decision.evidence),
+        };
+    }
+    return decision;
+}
+
+bool ShouldKeepRejectedDecision(const AuthorityEvidence& evidence) {
+    return !evidence.rejectionReasons.empty() &&
+           (evidence.callsignMatched || evidence.frequencyMatched);
+}
+
+bool AuthorityDecisionLess(
+    const AuthorityDecision& left,
+    const AuthorityDecision& right) {
+    if (left.evidence.callsign != right.evidence.callsign) {
+        return left.evidence.callsign < right.evidence.callsign;
+    }
+    if (left.accepted != right.accepted) {
+        return left.accepted && !right.accepted;
+    }
+    if (left.evidence.authorityId != right.evidence.authorityId) {
+        return left.evidence.authorityId < right.evidence.authorityId;
+    }
+    return left.evidence.matchedPattern < right.evidence.matchedPattern;
+}
+
+bool HasPrefix(const std::string& value, const std::string& prefix) {
+    return value.size() >= prefix.size() &&
+           value.compare(0, prefix.size(), prefix) == 0;
+}
+
+bool ActiveAuthorityCanUsePolygon(
+    const ActiveControllerAuthority& authorityMatch,
+    const AuthorityPolygon& polygon) {
+    if (HasPrefix(authorityMatch.authorityId, "AIRPORT_LOCAL:")) {
+        return polygon.source == AuthoritySource::AirportLocal;
+    }
+    return true;
 }
 
 std::string PolygonIdFromRecord(const AuthorityPolygonSourceRecord& record) {
@@ -539,7 +1064,12 @@ std::string AuthorityIdFromPositionRecord(const AuthorityPositionSourceRecord& r
 AuthorityKind ParseAuthorityKindOrDefault(const std::string& value) {
     const auto normalized = NormalizeAuthorityToken(value);
     if (normalized == "TERMINAL" || normalized == "TRACON" ||
-        normalized == "APP" || normalized == "APPROACH" || normalized == "DEP") {
+        normalized == "APP" || normalized == "APPROACH" ||
+        normalized == "DEP" || normalized == "DEPARTURE" ||
+        normalized == "TWR" || normalized == "TOWER" ||
+        normalized == "GND" || normalized == "GROUND" ||
+        normalized == "DEL" || normalized == "DELIVERY" ||
+        normalized == "CLR" || normalized == "CLNC" || normalized == "CD") {
         return AuthorityKind::Terminal;
     }
     if (normalized == "EXTENSION") {
@@ -570,6 +1100,453 @@ std::vector<std::string> FirstJsonStringArrayField(
         }
     }
     return {};
+}
+
+bool PayloadAllowsAuthoritySource(AuthoritySource source, const std::string& payload) {
+    const auto sourceField = NormalizeAuthorityToken(
+        FirstJsonStringField(payload, {"source", "source_type", "sourceType"}));
+    if (sourceField.empty()) {
+        return source != AuthoritySource::SpecialSectorData &&
+               source != AuthoritySource::SimAwareTracon;
+    }
+
+    const auto sourcePrefix = NormalizeAuthorityToken(SourcePrefix(source));
+    if (sourceField == sourcePrefix) {
+        return true;
+    }
+    if (source == AuthoritySource::VatGlasses && sourceField == "VATGLASSES") {
+        return true;
+    }
+    if (source == AuthoritySource::SimAwareTracon &&
+        (sourceField == "SIMAWARE" ||
+         sourceField == "TRACON" ||
+         sourceField == "TERMINAL" ||
+         sourceField == "TERMINAL_AUTHORITY" ||
+         sourceField == "TERMINAL_AUTHORITY_DATA")) {
+        return true;
+    }
+    if (source == AuthoritySource::VatsimRadarExtension &&
+        (sourceField == "VATSIM_RADAR" || sourceField == "EXTENSION")) {
+        return true;
+    }
+    if (source == AuthoritySource::SpecialSectorData &&
+        (sourceField == "SPECIAL" || sourceField == "SPECIAL_SECTOR" ||
+         sourceField == "SPECIAL_SECTORS" || sourceField == "SECTOR_DATA")) {
+        return true;
+    }
+    return false;
+}
+
+std::vector<std::string> BuildVatGlassesCallsignPatterns(
+    const std::vector<std::string>& rawPrefixes,
+    const std::string& rawType) {
+    const auto type = NormalizeAuthorityToken(rawType);
+    if (type.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> patterns;
+    for (const auto& rawPrefix : rawPrefixes) {
+        const auto prefix = NormalizeAuthorityToken(rawPrefix);
+        if (prefix.empty()) {
+            continue;
+        }
+
+        patterns.push_back(prefix + "_" + type);
+        patterns.push_back(prefix + "_*_" + type);
+    }
+    SortUnique(&patterns);
+    return patterns;
+}
+
+std::unordered_map<std::string, std::vector<std::string>>
+ExtractVatGlassesStaticOwnerGroups(const std::string& payload) {
+    std::unordered_map<std::string, std::vector<std::string>> groupsByOwner;
+    const auto airspaceArrayPayload = ExtractJsonArrayPayload(payload, "airspace");
+    if (!airspaceArrayPayload.has_value()) {
+        return groupsByOwner;
+    }
+
+    for (const auto& objectPayload : ExtractJsonObjectsFromArrayPayload(*airspaceArrayPayload)) {
+        const auto group = NormalizeAuthorityToken(
+            FirstJsonStringField(objectPayload, {"group"}));
+        if (group.empty()) {
+            continue;
+        }
+
+        for (const auto& owner : FirstJsonStringArrayField(objectPayload, {"owner"})) {
+            const auto normalizedOwner = NormalizeAuthorityToken(owner);
+            if (normalizedOwner.empty()) {
+                continue;
+            }
+            groupsByOwner[normalizedOwner].push_back(group);
+        }
+    }
+
+    for (auto& [_, groups] : groupsByOwner) {
+        SortUnique(&groups);
+    }
+    return groupsByOwner;
+}
+
+std::optional<std::string> ExtractVatGlassesDynamicAirspacePayload(
+    const std::string& payload) {
+    for (const auto& candidatePayload : ExtractJsonObjectPayloads(payload, "airspace")) {
+        for (const auto& [_, airspacePayload] :
+             ExtractJsonNamedObjectsFromObjectPayload(candidatePayload)) {
+            if (ExtractJsonArrayPayload(airspacePayload, "sectors").has_value()) {
+                return candidatePayload;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+std::unordered_map<std::string, std::vector<std::string>>
+ExtractVatGlassesDynamicOwnerAirspaces(const std::string& payload) {
+    std::unordered_map<std::string, std::vector<std::string>> airspacesByOwner;
+
+    for (const auto& ownershipPayload : ExtractJsonObjectPayloads(payload, "ownership")) {
+        const auto ownershipAirspacePayload =
+            ExtractJsonObjectPayload(ownershipPayload, "airspace");
+        if (!ownershipAirspacePayload.has_value()) {
+            continue;
+        }
+
+        for (const auto& [rawAirspaceId, rawOwners] :
+             ExtractJsonNamedStringArraysFromObjectPayload(*ownershipAirspacePayload)) {
+            const auto airspaceId = NormalizeAuthorityToken(rawAirspaceId);
+            if (airspaceId.empty()) {
+                continue;
+            }
+
+            for (const auto& rawOwner : rawOwners) {
+                const auto owner = NormalizeAuthorityToken(rawOwner);
+                if (owner.empty()) {
+                    continue;
+                }
+                airspacesByOwner[owner].push_back(airspaceId);
+            }
+        }
+    }
+
+    for (auto& [_, airspaces] : airspacesByOwner) {
+        SortUnique(&airspaces);
+    }
+    return airspacesByOwner;
+}
+
+std::vector<AuthorityPositionSourceRecord> ParseVatGlassesPositionObjectRecords(
+    AuthoritySource source,
+    const std::string& payload) {
+    std::vector<AuthorityPositionSourceRecord> records;
+    const auto positionsPayload = ExtractJsonObjectPayload(payload, "positions");
+    if (!positionsPayload.has_value()) {
+        return records;
+    }
+
+    const auto groupsByOwner = ExtractVatGlassesStaticOwnerGroups(payload);
+    const auto dynamicAirspacesByOwner =
+        ExtractVatGlassesDynamicOwnerAirspaces(payload);
+    for (const auto& [rawPositionId, objectPayload] :
+         ExtractJsonNamedObjectsFromObjectPayload(*positionsPayload)) {
+        AuthorityPositionSourceRecord baseRecord;
+        baseRecord.source = source;
+        baseRecord.sourceRecord = objectPayload;
+        baseRecord.id = rawPositionId;
+        baseRecord.name = FirstJsonStringField(objectPayload, {"callsign", "name", "title"});
+        baseRecord.frequency = FirstJsonStringField(objectPayload, {"frequency"});
+        baseRecord.proofSource = DefaultProofSourceForAuthoritySource(source);
+        baseRecord.proofDetail =
+            "position=" + NormalizeAuthorityToken(rawPositionId);
+        baseRecord.kind = ParseAuthorityKindOrDefault(
+            FirstJsonStringField(objectPayload, {"type"}));
+        baseRecord.controllerCallsignPatterns = FirstJsonStringArrayField(
+            objectPayload,
+            {"callsign_patterns", "callsignPatterns", "patterns", "callsigns"});
+
+        const auto singleCallsign = FirstJsonStringField(objectPayload, {"callsign_pattern"});
+        if (!singleCallsign.empty()) {
+            baseRecord.controllerCallsignPatterns.push_back(singleCallsign);
+        }
+
+        const auto prefixes = FirstJsonStringArrayField(objectPayload, {"pre", "prefixes"});
+        const auto type = FirstJsonStringField(objectPayload, {"type"});
+        const auto generatedPatterns = BuildVatGlassesCallsignPatterns(prefixes, type);
+        baseRecord.controllerCallsignPatterns.insert(
+            baseRecord.controllerCallsignPatterns.end(),
+            generatedPatterns.begin(),
+            generatedPatterns.end());
+        SortUnique(&baseRecord.controllerCallsignPatterns);
+
+        const auto ownerKey = NormalizeAuthorityToken(rawPositionId);
+        const auto dynamicAirspaces = dynamicAirspacesByOwner.find(ownerKey);
+        if (dynamicAirspaces != dynamicAirspacesByOwner.end() &&
+            !dynamicAirspaces->second.empty()) {
+            for (const auto& airspaceId : dynamicAirspaces->second) {
+                auto record = baseRecord;
+                record.polygonKey = airspaceId;
+                record.proofSource =
+                    source == AuthoritySource::VatGlasses
+                        ? std::string("VATGLASSES_DYNAMIC_OWNER")
+                        : DefaultProofSourceForAuthoritySource(source);
+                record.proofDetail =
+                    "position=" + ownerKey + ";dynamicAirspace=" + airspaceId;
+                records.push_back(std::move(record));
+            }
+            continue;
+        }
+
+        const auto ownerGroups = groupsByOwner.find(ownerKey);
+        if (ownerGroups == groupsByOwner.end() || ownerGroups->second.empty()) {
+            baseRecord.polygonKey = FirstJsonStringField(
+                objectPayload,
+                {"polygon_key", "polygonKey", "polygon", "sector", "airspace_id", "airspaceId"});
+            if (!baseRecord.polygonKey.empty()) {
+                baseRecord.proofDetail =
+                    "position=" + ownerKey +
+                    ";staticPolygon=" + NormalizeAuthorityToken(baseRecord.polygonKey);
+            }
+            records.push_back(std::move(baseRecord));
+            continue;
+        }
+
+        baseRecord.polygonKey = ownerKey;
+        baseRecord.proofDetail =
+            "position=" + ownerKey + ";staticOwnerGroup=" + ownerKey;
+        records.push_back(std::move(baseRecord));
+    }
+
+    return records;
+}
+
+std::optional<double> ParseVatGlassesDmsCoordinate(std::string value) {
+    value = Trim(std::move(value));
+    if (value.empty()) {
+        return std::nullopt;
+    }
+
+    double sign = 1.0;
+    if (value.front() == '-') {
+        sign = -1.0;
+        value.erase(value.begin());
+    } else if (value.front() == '+') {
+        value.erase(value.begin());
+    }
+
+    value.erase(
+        std::remove_if(
+            value.begin(),
+            value.end(),
+            [](unsigned char c) { return std::isspace(c) != 0; }),
+        value.end());
+
+    if (value.size() < 5 ||
+        std::any_of(
+            value.begin(),
+            value.end(),
+            [](unsigned char c) { return std::isdigit(c) == 0; })) {
+        return std::nullopt;
+    }
+
+    const auto degreeDigits = value.size() - 4;
+    try {
+        const auto degrees = std::stod(value.substr(0, degreeDigits));
+        const auto minutes = std::stod(value.substr(degreeDigits, 2));
+        const auto seconds = std::stod(value.substr(degreeDigits + 2, 2));
+        if (minutes >= 60.0 || seconds >= 60.0) {
+            return std::nullopt;
+        }
+        return sign * (degrees + minutes / 60.0 + seconds / 3600.0);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+AuthorityPolygonRing ExtractVatGlassesPointsRing(const std::string& sectorPayload) {
+    AuthorityPolygonRing ring;
+    const auto pointsPayload = ExtractJsonArrayPayload(sectorPayload, "points");
+    if (!pointsPayload.has_value()) {
+        return ring;
+    }
+
+    for (std::size_t index = 0; index < pointsPayload->size();) {
+        index = SkipJsonWhitespace(*pointsPayload, index);
+        if (index >= pointsPayload->size()) {
+            break;
+        }
+        if ((*pointsPayload)[index] != '[') {
+            ++index;
+            continue;
+        }
+
+        index = SkipJsonWhitespace(*pointsPayload, index + 1);
+        if (index >= pointsPayload->size() || (*pointsPayload)[index] != '"') {
+            continue;
+        }
+        std::size_t afterLatitudeIndex = index;
+        const auto rawLatitude =
+            DecodeJsonStringAt(*pointsPayload, index, &afterLatitudeIndex);
+        if (!rawLatitude.has_value()) {
+            continue;
+        }
+
+        index = SkipJsonWhitespace(*pointsPayload, afterLatitudeIndex);
+        if (index >= pointsPayload->size() || (*pointsPayload)[index] != ',') {
+            continue;
+        }
+        index = SkipJsonWhitespace(*pointsPayload, index + 1);
+        if (index >= pointsPayload->size() || (*pointsPayload)[index] != '"') {
+            continue;
+        }
+        std::size_t afterLongitudeIndex = index;
+        const auto rawLongitude =
+            DecodeJsonStringAt(*pointsPayload, index, &afterLongitudeIndex);
+        if (!rawLongitude.has_value()) {
+            continue;
+        }
+
+        const auto latitude = ParseVatGlassesDmsCoordinate(*rawLatitude);
+        const auto longitude = ParseVatGlassesDmsCoordinate(*rawLongitude);
+        if (latitude.has_value() && longitude.has_value()) {
+            ring.points.push_back({*latitude, *longitude});
+        }
+
+        const auto closeIndex = pointsPayload->find(']', afterLongitudeIndex);
+        if (closeIndex == std::string::npos) {
+            break;
+        }
+        index = closeIndex + 1;
+    }
+
+    return ring;
+}
+
+std::vector<AuthorityPolygonSourceRecord> ParseVatGlassesStaticAirspacePolygons(
+    AuthoritySource source,
+    const std::string& payload) {
+    std::vector<AuthorityPolygonSourceRecord> records;
+    const auto airspaceArrayPayload = ExtractJsonArrayPayload(payload, "airspace");
+    if (!airspaceArrayPayload.has_value()) {
+        return records;
+    }
+
+    std::size_t airspaceIndex = 0;
+    for (const auto& objectPayload : ExtractJsonObjectsFromArrayPayload(*airspaceArrayPayload)) {
+        const auto airspaceName = FirstJsonStringField(objectPayload, {"id", "name"});
+        const auto airspaceKey = NormalizeAuthorityToken(airspaceName);
+        const auto groupKey = NormalizeAuthorityToken(
+            FirstJsonStringField(objectPayload, {"group"}));
+        auto owners = FirstJsonStringArrayField(objectPayload, {"owner"});
+        if (owners.empty() && !groupKey.empty()) {
+            owners.push_back(groupKey);
+        }
+
+        const auto sectorsPayload = ExtractJsonArrayPayload(objectPayload, "sectors");
+        if (!sectorsPayload.has_value()) {
+            ++airspaceIndex;
+            continue;
+        }
+
+        std::size_t sectorIndex = 0;
+        for (const auto& sectorPayload : ExtractJsonObjectsFromArrayPayload(*sectorsPayload)) {
+            const auto ring = ExtractVatGlassesPointsRing(sectorPayload);
+            if (ring.points.size() < 3) {
+                ++sectorIndex;
+                continue;
+            }
+
+            for (const auto& owner : owners) {
+                const auto ownerKey = NormalizeAuthorityToken(owner);
+                if (ownerKey.empty()) {
+                    continue;
+                }
+
+                AuthorityPolygonSourceRecord record;
+                record.source = source;
+                record.id = ownerKey + "_" +
+                            (!airspaceKey.empty()
+                                 ? airspaceKey
+                                 : ("AIRSPACE_" + std::to_string(airspaceIndex))) +
+                            "_" + std::to_string(sectorIndex);
+                record.name = airspaceName;
+                record.lookupTokens.push_back(ownerKey);
+                if (!groupKey.empty()) {
+                    record.lookupTokens.push_back(groupKey);
+                }
+                if (!airspaceKey.empty()) {
+                    record.lookupTokens.push_back(airspaceKey);
+                }
+                SortUnique(&record.lookupTokens);
+                record.rings.push_back(ring);
+                record.sourceRecord = airspaceName;
+                records.push_back(std::move(record));
+            }
+
+            ++sectorIndex;
+        }
+
+        ++airspaceIndex;
+    }
+
+    return records;
+}
+
+std::vector<AuthorityPolygonSourceRecord> ParseVatGlassesDynamicAirspacePolygons(
+    AuthoritySource source,
+    const std::string& payload) {
+    std::vector<AuthorityPolygonSourceRecord> records;
+    const auto airspaceObjectPayload =
+        ExtractVatGlassesDynamicAirspacePayload(payload);
+    if (!airspaceObjectPayload.has_value()) {
+        return records;
+    }
+
+    for (const auto& [rawAirspaceId, objectPayload] :
+         ExtractJsonNamedObjectsFromObjectPayload(*airspaceObjectPayload)) {
+        const auto airspaceId = NormalizeAuthorityToken(rawAirspaceId);
+        if (airspaceId.empty()) {
+            continue;
+        }
+
+        const auto airspaceName = FirstJsonStringField(objectPayload, {"id", "name"});
+        const auto airspaceNameKey = NormalizeAuthorityToken(airspaceName);
+        const auto groupKey = NormalizeAuthorityToken(
+            FirstJsonStringField(objectPayload, {"group"}));
+
+        const auto sectorsPayload = ExtractJsonArrayPayload(objectPayload, "sectors");
+        if (!sectorsPayload.has_value()) {
+            continue;
+        }
+
+        std::size_t sectorIndex = 0;
+        for (const auto& sectorPayload : ExtractJsonObjectsFromArrayPayload(*sectorsPayload)) {
+            const auto ring = ExtractVatGlassesPointsRing(sectorPayload);
+            if (ring.points.size() < 3) {
+                ++sectorIndex;
+                continue;
+            }
+
+            AuthorityPolygonSourceRecord record;
+            record.source = source;
+            record.id = airspaceId + "_" + std::to_string(sectorIndex);
+            record.name = airspaceName;
+            record.lookupTokens.push_back(airspaceId);
+            if (!airspaceNameKey.empty()) {
+                record.lookupTokens.push_back(airspaceNameKey);
+            }
+            if (!groupKey.empty()) {
+                record.lookupTokens.push_back(groupKey);
+            }
+            SortUnique(&record.lookupTokens);
+            record.rings.push_back(ring);
+            record.sourceRecord = airspaceName.empty() ? rawAirspaceId : airspaceName;
+            records.push_back(std::move(record));
+            ++sectorIndex;
+        }
+    }
+
+    return records;
 }
 
 void AddLookupKey(std::vector<std::string>* lookupKeys, const std::string& rawKey) {
@@ -1022,6 +1999,11 @@ ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
         authority.id = SourcePrefix(source) + ":" +
                        (!sectorIdentifier.empty() ? sectorIdentifier : boundaryIdentifier);
         authority.sourceRecord = trimmedLine;
+        authority.proofSource = DefaultProofSourceForAuthoritySource(source);
+        authority.proofDetail =
+            "vatspyRecord=" + sectorIdentifier +
+            ";boundary=" + boundaryIdentifier +
+            ";prefix=" + callsignPrefix;
         AddLookupKey(&authority.lookupKeys, sectorIdentifier);
         AddLookupKey(&authority.lookupKeys, boundaryIdentifier);
         SortUnique(&authority.lookupKeys);
@@ -1085,6 +2067,10 @@ ControllerAuthorityCatalog CompileAuthorityPositionCatalog(
         authority.name = Trim(record.name);
         authority.polygonKey = polygonKey;
         authority.sourceRecord = record.sourceRecord;
+        authority.proofSource = record.proofSource.empty()
+                                    ? DefaultProofSourceForAuthoritySource(record.source)
+                                    : record.proofSource;
+        authority.proofDetail = record.proofDetail;
         AddLookupKey(&authority.lookupKeys, record.id);
         AddLookupKey(&authority.lookupKeys, record.polygonKey);
 
@@ -1092,10 +2078,19 @@ ControllerAuthorityCatalog CompileAuthorityPositionCatalog(
             const auto normalizedPattern = NormalizeControllerCallsign(pattern);
             if (!normalizedPattern.empty()) {
                 authority.controllerCallsignPatterns.push_back(normalizedPattern);
+                AddSourceBackedTerminalSectorPattern(
+                    record.source,
+                    normalizedPattern,
+                    &authority.controllerCallsignPatterns);
             }
+        }
+        const auto normalizedFrequency = NormalizeAuthorityFrequency(record.frequency);
+        if (!normalizedFrequency.empty()) {
+            authority.controllerFrequencies.push_back(normalizedFrequency);
         }
         SortUnique(&authority.lookupKeys);
         SortUnique(&authority.controllerCallsignPatterns);
+        SortUnique(&authority.controllerFrequencies);
 
         if (authority.polygonKey.empty()) {
             catalog.dataGaps.push_back({
@@ -1146,6 +2141,30 @@ std::vector<AuthorityPositionSourceRecord> ParseAuthorityPositionSourceRecordsJs
         return records;
     }
 
+    if (auto sourcePackages = ExtractJsonArrayPayload(payload, "source_packages");
+        sourcePackages.has_value()) {
+        for (const auto& packagePayload :
+             ExtractJsonObjectsFromArrayPayload(*sourcePackages)) {
+            auto packageRecords =
+                ParseAuthorityPositionSourceRecordsJson(source, packagePayload);
+            records.insert(
+                records.end(),
+                std::make_move_iterator(packageRecords.begin()),
+                std::make_move_iterator(packageRecords.end()));
+        }
+        return records;
+    }
+
+    if (!PayloadAllowsAuthoritySource(source, payload)) {
+        return records;
+    }
+
+    auto positionObjectRecords = ParseVatGlassesPositionObjectRecords(source, payload);
+    records.insert(
+        records.end(),
+        std::make_move_iterator(positionObjectRecords.begin()),
+        std::make_move_iterator(positionObjectRecords.end()));
+
     auto arrayPayload = ExtractJsonArrayPayload(payload, "positions");
     if (!arrayPayload.has_value()) {
         arrayPayload = ExtractJsonArrayPayload(payload, "ownership");
@@ -1165,8 +2184,13 @@ std::vector<AuthorityPositionSourceRecord> ParseAuthorityPositionSourceRecordsJs
         record.polygonKey = FirstJsonStringField(
             objectPayload,
             {"polygon_key", "polygonKey", "polygon", "sector", "airspace_id", "airspaceId"});
+        record.frequency = FirstJsonStringField(objectPayload, {"frequency"});
         record.kind = ParseAuthorityKindOrDefault(
             FirstJsonStringField(objectPayload, {"kind", "type"}));
+        record.proofSource = DefaultProofSourceForAuthoritySource(source);
+        record.proofDetail =
+            "position=" + NormalizeAuthorityToken(record.id) +
+            ";polygon=" + NormalizeAuthorityToken(record.polygonKey);
         record.controllerCallsignPatterns = FirstJsonStringArrayField(
             objectPayload,
             {"callsign_patterns", "callsignPatterns", "patterns", "callsigns"});
@@ -1179,6 +2203,45 @@ std::vector<AuthorityPositionSourceRecord> ParseAuthorityPositionSourceRecordsJs
         records.push_back(std::move(record));
     }
 
+    return records;
+}
+
+std::vector<AuthorityPolygonSourceRecord> ParseAuthorityPolygonSourceRecordsJson(
+    AuthoritySource source,
+    const std::string& payload) {
+    std::vector<AuthorityPolygonSourceRecord> records;
+    if (payload.empty()) {
+        return records;
+    }
+
+    if (auto sourcePackages = ExtractJsonArrayPayload(payload, "source_packages");
+        sourcePackages.has_value()) {
+        for (const auto& packagePayload :
+             ExtractJsonObjectsFromArrayPayload(*sourcePackages)) {
+            auto packageRecords =
+                ParseAuthorityPolygonSourceRecordsJson(source, packagePayload);
+            records.insert(
+                records.end(),
+                std::make_move_iterator(packageRecords.begin()),
+                std::make_move_iterator(packageRecords.end()));
+        }
+        return records;
+    }
+
+    if (!PayloadAllowsAuthoritySource(source, payload)) {
+        return records;
+    }
+
+    auto staticRecords = ParseVatGlassesStaticAirspacePolygons(source, payload);
+    records.insert(
+        records.end(),
+        std::make_move_iterator(staticRecords.begin()),
+        std::make_move_iterator(staticRecords.end()));
+    auto dynamicRecords = ParseVatGlassesDynamicAirspacePolygons(source, payload);
+    records.insert(
+        records.end(),
+        std::make_move_iterator(dynamicRecords.begin()),
+        std::make_move_iterator(dynamicRecords.end()));
     return records;
 }
 
@@ -1289,28 +2352,155 @@ std::vector<ActiveControllerAuthority> ResolveControllerAuthority(
     const ControllerAuthorityCatalog& catalog,
     const std::string& callsign,
     int vatsimFacility) {
-    std::vector<ActiveControllerAuthority> matches;
-    std::unordered_set<std::string> insertedKeys;
+    return ResolveControllerAuthority(catalog, callsign, std::string{}, vatsimFacility);
+}
+
+std::vector<AuthorityDecision> EvaluateControllerAuthority(
+    const ControllerAuthorityCatalog& catalog,
+    const std::string& callsign,
+    const std::string& frequency,
+    int vatsimFacility) {
+    std::vector<AuthorityDecision> decisions;
+    std::unordered_set<std::string> insertedDecisionKeys;
+    std::unordered_set<std::string> frequencySpecificAuthorityIds;
+    const auto normalizedFrequency = NormalizeAuthorityFrequency(frequency);
+    const auto normalizedCallsign = NormalizeControllerCallsign(callsign);
+    bool sawFrequencySpecificPatternCandidate = false;
 
     for (const auto& authority : catalog.authorities) {
+        const auto requiresFrequency = !authority.controllerFrequencies.empty();
+        auto appendDecision = [&](AuthorityDecision decision) {
+            const auto key = normalizedCallsign + "|" +
+                             authority.id + "|" +
+                             decision.evidence.matchedPattern + "|" +
+                             (decision.accepted ? "accepted" : "rejected");
+            if (!insertedDecisionKeys.insert(key).second) {
+                return;
+            }
+
+            if (decision.accepted && requiresFrequency) {
+                frequencySpecificAuthorityIds.insert(authority.id);
+            }
+            decisions.push_back(std::move(decision));
+        };
+
         for (const auto& pattern : authority.controllerCallsignPatterns) {
-            if (!PatternFacilityMatches(pattern, vatsimFacility) ||
-                !CallsignMatchesPattern(pattern, callsign)) {
-                continue;
+            const auto callsignMatched = CallsignMatchesPattern(pattern, callsign);
+            const auto facilityMatched = PatternFacilityMatches(pattern, vatsimFacility);
+            const auto frequencyMatched =
+                !requiresFrequency ||
+                (!normalizedFrequency.empty() &&
+                 std::find(
+                     authority.controllerFrequencies.begin(),
+                     authority.controllerFrequencies.end(),
+                     normalizedFrequency) != authority.controllerFrequencies.end());
+
+            if (requiresFrequency && callsignMatched && facilityMatched) {
+                sawFrequencySpecificPatternCandidate = true;
             }
 
-            const auto key = NormalizeControllerCallsign(callsign) + "|" +
-                             authority.id + "|" + pattern;
-            if (!insertedKeys.insert(key).second) {
-                continue;
-            }
-
-            matches.push_back({
-                NormalizeControllerCallsign(callsign),
-                authority.id,
-                authority.polygonKey,
+            auto evidence = BuildAuthorityEvidence(
+                authority,
+                normalizedCallsign,
+                normalizedFrequency,
                 pattern,
-            });
+                vatsimFacility,
+                callsignMatched,
+                facilityMatched,
+                requiresFrequency,
+                frequencyMatched);
+            auto decision = BuildAuthorityDecision(std::move(evidence));
+            if (!decision.accepted &&
+                !ShouldKeepRejectedDecision(decision.evidence)) {
+                continue;
+            }
+            appendDecision(std::move(decision));
+        }
+
+        if (authority.kind != AuthorityKind::Center ||
+            authority.controllerPrefixes.empty()) {
+            continue;
+        }
+        for (const auto& rawPrefix : authority.controllerPrefixes) {
+            const auto prefix = NormalizeControllerCallsign(rawPrefix);
+            if (prefix.empty()) {
+                continue;
+            }
+
+            const auto callsignMatched = prefix == normalizedCallsign;
+            const auto facilityMatched =
+                BareCenterAuthorityFacilityMatches(vatsimFacility);
+            const auto frequencyMatched =
+                !requiresFrequency ||
+                (!normalizedFrequency.empty() &&
+                 std::find(
+                     authority.controllerFrequencies.begin(),
+                     authority.controllerFrequencies.end(),
+                     normalizedFrequency) != authority.controllerFrequencies.end());
+
+            if (requiresFrequency && callsignMatched && facilityMatched) {
+                sawFrequencySpecificPatternCandidate = true;
+            }
+
+            auto evidence = BuildAuthorityEvidence(
+                authority,
+                normalizedCallsign,
+                normalizedFrequency,
+                prefix,
+                vatsimFacility,
+                callsignMatched,
+                facilityMatched,
+                requiresFrequency,
+                frequencyMatched);
+            auto decision = BuildAuthorityDecision(std::move(evidence));
+            if (!decision.accepted &&
+                !ShouldKeepRejectedDecision(decision.evidence)) {
+                continue;
+            }
+            appendDecision(std::move(decision));
+        }
+    }
+
+    if (sawFrequencySpecificPatternCandidate &&
+        frequencySpecificAuthorityIds.empty()) {
+        decisions.erase(
+            std::remove_if(
+                decisions.begin(),
+                decisions.end(),
+                [](const auto& decision) { return decision.accepted; }),
+            decisions.end());
+    }
+
+    if (!frequencySpecificAuthorityIds.empty()) {
+        decisions.erase(
+            std::remove_if(
+                decisions.begin(),
+                decisions.end(),
+                [&](const auto& decision) {
+                    return decision.accepted &&
+                           frequencySpecificAuthorityIds.find(
+                               decision.evidence.authorityId) ==
+                               frequencySpecificAuthorityIds.end();
+                }),
+            decisions.end());
+    }
+
+    std::sort(decisions.begin(), decisions.end(), AuthorityDecisionLess);
+    return decisions;
+}
+
+std::vector<ActiveControllerAuthority> ResolveControllerAuthority(
+    const ControllerAuthorityCatalog& catalog,
+    const std::string& callsign,
+    const std::string& frequency,
+    int vatsimFacility) {
+    std::vector<ActiveControllerAuthority> matches;
+    const auto decisions =
+        EvaluateControllerAuthority(catalog, callsign, frequency, vatsimFacility);
+    matches.reserve(decisions.size());
+    for (const auto& decision : decisions) {
+        if (decision.accepted) {
+            matches.push_back(decision.activeAuthority);
         }
     }
 
@@ -1334,15 +2524,36 @@ AuthorityActivationResult ActivateAuthorityPolygons(
     const AuthorityPolygonCatalog& polygonCatalog,
     const std::string& callsign,
     int vatsimFacility) {
+    return ActivateAuthorityPolygons(
+        controllerCatalog,
+        polygonCatalog,
+        callsign,
+        std::string{},
+        vatsimFacility);
+}
+
+AuthorityActivationResult ActivateAuthorityPolygons(
+    const ControllerAuthorityCatalog& controllerCatalog,
+    const AuthorityPolygonCatalog& polygonCatalog,
+    const std::string& callsign,
+    const std::string& frequency,
+    int vatsimFacility) {
     AuthorityActivationResult result;
     std::unordered_set<std::string> insertedActiveKeys;
     std::unordered_set<std::string> insertedGapKeys;
 
-    const auto authorityMatches =
-        ResolveControllerAuthority(controllerCatalog, callsign, vatsimFacility);
-    for (const auto& authorityMatch : authorityMatches) {
+    result.decisions =
+        EvaluateControllerAuthority(controllerCatalog, callsign, frequency, vatsimFacility);
+    for (const auto& decision : result.decisions) {
+        if (!decision.accepted) {
+            continue;
+        }
+        const auto& authorityMatch = decision.activeAuthority;
         bool matchedPolygon = false;
         for (const auto& polygon : polygonCatalog.polygons) {
+            if (!ActiveAuthorityCanUsePolygon(authorityMatch, polygon)) {
+                continue;
+            }
             if (!PolygonMatchesAuthorityKey(polygon, authorityMatch.polygonKey)) {
                 continue;
             }
@@ -1363,7 +2574,9 @@ AuthorityActivationResult ActivateAuthorityPolygons(
                 polygon.polygonKey,
                 authorityMatch.matchedPattern,
                 polygon.source,
-                polygon.kind,
+                authorityMatch.kind,
+                authorityMatch.proofSource,
+                authorityMatch.proofDetail,
             });
         }
 

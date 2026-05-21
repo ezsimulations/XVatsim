@@ -1,0 +1,38 @@
+name=Resolver Authority Reports Active Not Relevant
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.0
+plan.destination_lon=20.0
+plan.has_destination_coordinates=true
+
+controller.entry=callsign=HKG_W_CTR;frequency=125.320;facility=6;actionable=true;atis=false
+
+resolver.route_resolve=true
+resolver.center_feature=label=VHHK;tokens=VHHK;polygon=10,30|10,35|15,35|15,30
+resolver.authority_catalog_fir=VHHK|Hong Kong||VHHK
+resolver.ownership_json={"positions":[{"id":"HKG_W_CTR","polygon_key":"VHHK","kind":"center","callsign_patterns":["HKG_W_CTR"]}]}
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_authority_gaps=<none>
+expect.resolver_route_current_sectors=<none>
+expect.resolver_route_next_sectors=<none>
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_status=AUTHORITY candidates=1 authorities=0 polygons=0 routeKeys=0 active=0 relevant=0 diagnostics=1 activationGaps=0
+expect.resolver_authority_diagnostics=HKG_W_CTR:unmapped-controller
+expect.resolver_authority_relevant_matches=<none>
+expect.resolver_enroute_available=false
+expect.resolver_enroute_callsigns=<none>

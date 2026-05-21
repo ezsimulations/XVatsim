@@ -11,10 +11,6 @@ namespace xvatsim::modules::departure {
 namespace {
 
 constexpr char kUnicomFallbackFrequency[] = "122.800";
-constexpr int kVatsimDeliveryFacility = 2;
-constexpr int kVatsimGroundFacility = 3;
-constexpr int kVatsimTowerFacility = 4;
-constexpr int kVatsimApproachFacility = 5;
 
 std::string NormalizeFrequency(std::string frequency) {
     frequency.erase(
@@ -201,135 +197,188 @@ brain::StationRole ParseAirspaceRole(const std::string& suffix) {
     return brain::StationRole::Other;
 }
 
-bool IsActionableTerminalAirspaceController(
-    const brain::ControllerSnapshot& controller) {
-    return controller.actionable &&
-           !controller.atis &&
-           controller.facility == kVatsimApproachFacility;
+std::string NormalizeAuthorityKey(std::string value) {
+    std::string normalized;
+    normalized.reserve(value.size());
+    for (const auto character : value) {
+        if (std::isalnum(static_cast<unsigned char>(character)) != 0 ||
+            character == '_' || character == '-') {
+            normalized.push_back(static_cast<char>(
+                std::toupper(static_cast<unsigned char>(character))));
+        }
+    }
+    return normalized;
 }
 
-bool IsActionableLocalController(
-    const brain::ControllerSnapshot& controller,
-    brain::StationRole role) {
-    if (!controller.actionable || controller.atis) {
+bool AuthorityValueMatchesAny(
+    const std::string& rawAuthorityValue,
+    const std::vector<std::string>& rawValues) {
+    const auto authorityValue = NormalizeAuthorityKey(rawAuthorityValue);
+    if (authorityValue.empty()) {
         return false;
     }
 
-    switch (role) {
-        case brain::StationRole::Delivery:
-            return controller.facility == kVatsimDeliveryFacility;
-        case brain::StationRole::Ground:
-            return controller.facility == kVatsimGroundFacility;
-        case brain::StationRole::Tower:
-            return controller.facility == kVatsimTowerFacility;
-        default:
-            return false;
-    }
+    return std::any_of(
+        rawValues.begin(),
+        rawValues.end(),
+        [&](const auto& rawValue) {
+            return NormalizeAuthorityKey(rawValue) == authorityValue;
+        });
 }
 
-std::string ControllerRegionKey(const std::string& callsign) {
-    std::string prefix;
-    if (!SplitControllerCallsign(callsign, &prefix, nullptr) || prefix.empty()) {
-        return {};
+bool TerminalAuthorityMatchesSector(
+    const brain::RelevantAuthoritySnapshot& authority,
+    const brain::RouteSectorMatchSnapshot& sector) {
+    if (!sector.terminalCoverage) {
+        return false;
     }
 
-    const auto separator = prefix.find('_');
-    if (separator == std::string::npos) {
-        return prefix;
+    const auto sectorIdentifier = NormalizeAuthorityKey(sector.identifier);
+    const auto authorityPolygonKey = NormalizeAuthorityKey(authority.polygonKey);
+    if (!sectorIdentifier.empty() && sectorIdentifier == authorityPolygonKey) {
+        return true;
     }
 
-    return prefix.substr(0, separator);
-}
-
-std::string RoleSuffix(brain::StationRole role) {
-    switch (role) {
-        case brain::StationRole::Approach:
-            return "APP";
-        case brain::StationRole::Departure:
-            return "DEP";
-        default:
-            return {};
+    if (AuthorityValueMatchesAny(authority.matchedPattern, sector.controllerCallsignPatterns) ||
+        AuthorityValueMatchesAny(authority.matchedPattern, sector.matchTokens) ||
+        AuthorityValueMatchesAny(authority.polygonKey, sector.matchTokens)) {
+        return true;
     }
+
+    return false;
 }
 
-bool EndsWith(const std::string& value, const std::string& suffix) {
-    return value.size() >= suffix.size() &&
-           value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
-bool HasRoleSpecificAirspaceData(
+bool TerminalAuthorityMatchesAirportCoverage(
+    const brain::RelevantAuthoritySnapshot& authority,
     const brain::AirportSectorSnapshot& airportSectorSnapshot,
     brain::StationRole role) {
     if (!airportSectorSnapshot.available ||
         airportSectorSnapshot.stale ||
-        airportSectorSnapshot.coveringSectors.empty()) {
+        !airportSectorSnapshot.hasTerminalCoverageData) {
+        return false;
+    }
+    if (authority.kind != brain::AuthorityRelevanceKind::Terminal) {
         return false;
     }
 
-    if (!airportSectorSnapshot.hasTerminalCoverageData) {
-        return false;
-    }
-
-    const auto roleSuffix = RoleSuffix(role);
-    if (roleSuffix.empty()) {
-        return false;
-    }
-
-    const auto tokenSuffix = "_" + roleSuffix;
-    for (const auto& sector : airportSectorSnapshot.coveringSectors) {
-        if (!sector.terminalCoverage) {
-            continue;
-        }
-        for (const auto& token : sector.matchTokens) {
-            if (EndsWith(token, tokenSuffix)) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-bool HasFreshAirportSectorCoverage(
-    const brain::AirportSectorSnapshot& airportSectorSnapshot) {
-    return airportSectorSnapshot.available &&
-           !airportSectorSnapshot.stale &&
-           !airportSectorSnapshot.coveringSectors.empty();
-}
-
-bool SectorSetMatchesController(
-    const std::vector<brain::RouteSectorMatchSnapshot>& sectors,
-    const std::string& callsign,
-    brain::StationRole role) {
     std::string prefix;
-    if (!SplitControllerCallsign(callsign, &prefix, nullptr) || prefix.empty()) {
+    std::string suffix;
+    if (!SplitControllerCallsign(authority.callsign, &prefix, &suffix)) {
+        return false;
+    }
+    if (ParseAirspaceRole(suffix) != role) {
         return false;
     }
 
-    const auto regionKey = ControllerRegionKey(callsign);
-    const auto roleSuffix = RoleSuffix(role);
-    const auto prefixRoleKey =
-        roleSuffix.empty() ? std::string{} : prefix + "_" + roleSuffix;
-    const auto regionRoleKey =
-        roleSuffix.empty() || regionKey.empty()
-            ? std::string{}
-            : regionKey + "_" + roleSuffix;
-
-    for (const auto& sector : sectors) {
-        if (!sector.terminalCoverage) {
-            continue;
-        }
-        for (const auto& token : sector.matchTokens) {
-            if (!prefixRoleKey.empty() && token == prefixRoleKey) {
-                return true;
-            }
-            if (!regionRoleKey.empty() && token == regionRoleKey) {
-                return true;
-            }
+    for (const auto& sector : airportSectorSnapshot.coveringSectors) {
+        if (TerminalAuthorityMatchesSector(authority, sector)) {
+            return true;
         }
     }
 
     return false;
+}
+
+bool CanUseCentralTerminalAuthority(
+    const brain::AuthorityRelevanceSnapshot* authorityRelevanceSnapshot) {
+    return authorityRelevanceSnapshot != nullptr &&
+           authorityRelevanceSnapshot->available &&
+           !authorityRelevanceSnapshot->stale;
+}
+
+void CollectAuthorityTerminalAirspaceControllers(
+    const brain::AuthorityRelevanceSnapshot& authorityRelevanceSnapshot,
+    const brain::RadioStateSnapshot& radioStateSnapshot,
+    const brain::AirportSectorSnapshot& airportSectorSnapshot,
+    std::vector<brain::BoardStationSnapshot>* stations,
+    std::unordered_set<std::string>* insertedKeys) {
+    for (const auto& authority : authorityRelevanceSnapshot.relevantAuthorities) {
+        std::string prefix;
+        std::string suffix;
+        if (!SplitControllerCallsign(authority.callsign, &prefix, &suffix)) {
+            continue;
+        }
+
+        const auto role = ParseAirspaceRole(suffix);
+        if (role == brain::StationRole::Other) {
+            continue;
+        }
+        if (!TerminalAuthorityMatchesAirportCoverage(
+                authority,
+                airportSectorSnapshot,
+                role)) {
+            continue;
+        }
+
+        AppendStation(
+            {
+                role,
+                authority.callsign,
+                authority.frequency,
+                {},
+                IsFrequencyTuned(authority.frequency, radioStateSnapshot),
+                false,
+            },
+            stations,
+            insertedKeys);
+    }
+}
+
+bool LocalAuthorityMatchesAirport(
+    const brain::RelevantAuthoritySnapshot& authority,
+    const std::vector<std::string>& airportTokens,
+    brain::StationRole role) {
+    if (authority.kind != brain::AuthorityRelevanceKind::Terminal ||
+        authority.proofSource != "AIRPORT_LOCAL_FACILITY") {
+        return false;
+    }
+
+    if (!AuthorityValueMatchesAny(authority.polygonKey, airportTokens)) {
+        return false;
+    }
+
+    std::string prefix;
+    std::string suffix;
+    if (!SplitControllerCallsign(authority.callsign, &prefix, &suffix)) {
+        return false;
+    }
+    if (!TokenMatchesControllerPrefix(airportTokens, prefix)) {
+        return false;
+    }
+
+    return ParseLocalRole(suffix) == role;
+}
+
+void CollectAuthorityLocalControllers(
+    const brain::AuthorityRelevanceSnapshot& authorityRelevanceSnapshot,
+    const brain::RadioStateSnapshot& radioStateSnapshot,
+    const std::vector<std::string>& airportTokens,
+    std::vector<brain::BoardStationSnapshot>* stations,
+    std::unordered_set<std::string>* insertedKeys) {
+    for (const auto& authority : authorityRelevanceSnapshot.relevantAuthorities) {
+        for (const auto role : {
+                 brain::StationRole::Delivery,
+                 brain::StationRole::Ground,
+                 brain::StationRole::Tower,
+             }) {
+            if (!LocalAuthorityMatchesAirport(authority, airportTokens, role)) {
+                continue;
+            }
+
+            AppendStation(
+                {
+                    role,
+                    authority.callsign,
+                    authority.frequency,
+                    {},
+                    IsFrequencyTuned(authority.frequency, radioStateSnapshot),
+                    false,
+                },
+                stations,
+                insertedKeys);
+            break;
+        }
+    }
 }
 
 }  // namespace
@@ -337,10 +386,13 @@ bool SectorSetMatchesController(
 brain::ModuleBoardSnapshot DepartureModule::Collect(
     const brain::XPilotSessionSnapshot& xPilotSessionSnapshot,
     const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
-    const brain::RadioStateSnapshot& radioStateSnapshot,
-    const std::string& departureAirportIcao,
-    const brain::AirportSectorSnapshot& airportSectorSnapshot,
-    xvatsim::modules::ctaf_lookup::CtafLookupService* ctafLookupService) const {
+        const brain::RadioStateSnapshot& radioStateSnapshot,
+        const std::string& departureAirportIcao,
+        const brain::AirportSectorSnapshot& airportSectorSnapshot,
+        const brain::AuthorityRelevanceSnapshot* authorityRelevanceSnapshot,
+        xvatsim::modules::ctaf_lookup::CtafLookupService* ctafLookupService) const {
+    (void)controllerFeedSnapshot;
+
     brain::ModuleBoardSnapshot snapshot;
     snapshot.source = brain::BoardSource::Departure;
 
@@ -353,84 +405,20 @@ brain::ModuleBoardSnapshot DepartureModule::Collect(
     const auto airportTokens = BuildAirportTokens(departureAirportIcao);
     std::unordered_set<std::string> insertedKeys;
 
-    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
-        std::string prefix;
-        std::string suffix;
-        if (!SplitControllerCallsign(controller.callsign, &prefix, &suffix)) {
-            continue;
-        }
-
-        if (!TokenMatchesControllerPrefix(airportTokens, prefix)) {
-            continue;
-        }
-
-        const auto role = ParseLocalRole(suffix);
-        if (role == brain::StationRole::Other) {
-            continue;
-        }
-        if (!IsActionableLocalController(controller, role)) {
-            continue;
-        }
-
-        AppendStation(
-            {
-                role,
-                controller.callsign,
-                controller.frequency,
-                {},
-                IsFrequencyTuned(controller.frequency, radioStateSnapshot),
-                false,
-            },
+    if (CanUseCentralTerminalAuthority(authorityRelevanceSnapshot)) {
+        CollectAuthorityLocalControllers(
+            *authorityRelevanceSnapshot,
+            radioStateSnapshot,
+            airportTokens,
             &snapshot.stations,
             &insertedKeys);
     }
 
-    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
-        if (!IsActionableTerminalAirspaceController(controller)) {
-            continue;
-        }
-
-        std::string prefix;
-        std::string suffix;
-        if (!SplitControllerCallsign(controller.callsign, &prefix, &suffix)) {
-            continue;
-        }
-
-        const auto role = ParseAirspaceRole(suffix);
-        if (role == brain::StationRole::Other) {
-            continue;
-        }
-
-        const auto airportTokenMatch =
-            TokenMatchesControllerPrefix(airportTokens, prefix);
-        const auto sectorCoverageMatch =
-            HasFreshAirportSectorCoverage(airportSectorSnapshot) &&
-            SectorSetMatchesController(
-                airportSectorSnapshot.coveringSectors,
-                controller.callsign,
-                role);
-
-        const auto hasRoleSpecificAirspaceData =
-            HasRoleSpecificAirspaceData(airportSectorSnapshot, role);
-        if (hasRoleSpecificAirspaceData) {
-            if (!sectorCoverageMatch) {
-                continue;
-            }
-        } else if (airportSectorSnapshot.hasTerminalCoverageData) {
-            continue;
-        } else if (!airportTokenMatch && !sectorCoverageMatch) {
-            continue;
-        }
-
-        AppendStation(
-            {
-                role,
-                controller.callsign,
-                controller.frequency,
-                {},
-                IsFrequencyTuned(controller.frequency, radioStateSnapshot),
-                false,
-            },
+    if (CanUseCentralTerminalAuthority(authorityRelevanceSnapshot)) {
+        CollectAuthorityTerminalAirspaceControllers(
+            *authorityRelevanceSnapshot,
+            radioStateSnapshot,
+            airportSectorSnapshot,
             &snapshot.stations,
             &insertedKeys);
     }

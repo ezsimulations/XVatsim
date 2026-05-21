@@ -1,0 +1,7 @@
+name=Source Package Expands Authority Source Registry Payload
+
+source_package.registry_json={"authority_sources":[{"source":"VATGLASSES","url":"https://example.test/hkg-vatglasses.json","regions":["VHHK"]},{"source":"SPECIAL_SECTOR_DATA","url":"http://example.test/untrusted-special.json","regions":["BAD"]}]}
+source_package.registry_payload=https://example.test/hkg-vatglasses.json=>{"positions":{"TRW":{"pre":["HKG"],"type":"CTR","frequency":"127.100","callsign":"Hong Kong Radar"}},"airspace":{"TRW-AIRSPACE":{"id":"Area Radar West","group":"VHHK","sectors":[{"points":[["000000","1120000"],["010000","1120000"],["010000","1130000"],["000000","1130000"]]}]}},"ownership":{"airspace":{"TRW-AIRSPACE":["TRW"]}}}
+
+expect.source_registry_values=VATGLASSES:https://example.test/hkg-vatglasses.json
+expect.source_package_payload={"positions":{"TRW":{"pre":["HKG"],"type":"CTR","frequency":"127.100","callsign":"Hong Kong Radar"}},"airspace":{"TRW-AIRSPACE":{"id":"Area Radar West","group":"VHHK","sectors":[{"points":[["000000","1120000"],["010000","1120000"],["010000","1130000"],["000000","1130000"]]}]}},"ownership":{"airspace":{"TRW-AIRSPACE":["TRW"]}}}

@@ -122,6 +122,10 @@ graph.node=ident=ABBEY;region=USER;type=11;lat=22.269722;lon=114.923867
 
 route.current_sector=identifier=VHHK;entryDistanceNm=0;matchTokens=VHHK;controllerPatterns=HKG_CTR,HKG_*_CTR,HKG_FSS,HKG_*_FSS;controllerPrefixes=HKG
 
+authority.board_handoff=true
+authority_position.vatglasses=id=HKG_W_CTR;name=Hong Kong West Center;polygon=VHHK;patterns=HKG_W_CTR;kind=center
+authority_polygon.vatglasses=key=VHHK;name=Hong Kong;tokens=VHHK,HKG;polygon=21.5,114.0|24.0,114.0|24.0,119.0|21.5,119.0
+
 controller.entry=callsign=HKG_W_CTR;frequency=125.320;facility=6;actionable=true;atis=false
 enroute.station=role=Center;callsign=HKG_W_CTR;frequency=125.320;online=true;offline=false;sectorActive=true;routeEntryDistanceNm=0
 

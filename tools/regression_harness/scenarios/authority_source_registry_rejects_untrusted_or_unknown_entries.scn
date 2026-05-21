@@ -1,0 +1,5 @@
+name=Authority Source Registry Rejects Untrusted Or Unknown Entries
+
+source_registry.json={"authority_sources":[{"source":"VATGLASSES","url":"http://example.test/untrusted.json","regions":["BAD"]},{"source":"RANDOM_ALIAS_PATCH","url":"https://example.test/random.json","regions":["BAD"]},{"source":"SPECIAL_SECTOR_DATA","url":"https://example.test/valid-special-sector.json","regions":["AUS"]}]}
+
+expect.source_registry_values=SPECIAL_SECTOR_DATA:https://example.test/valid-special-sector.json

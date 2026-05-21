@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cctype>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <mutex>
 #include <optional>
@@ -36,20 +37,34 @@ namespace {
 constexpr wchar_t kUserAgent[] = L"XVatsim/1.0.0";
 constexpr wchar_t kVatsimMapDataManifestUrl[] =
     L"https://api.vatsim.net/api/map_data";
+constexpr const char* kPackagedAuthoritySourceRegistryFile =
+    "authority_source_registry.json";
 constexpr long long kRefreshCadenceSeconds = 21600;
 constexpr long long kFailureBackoffSeconds = 600;
 constexpr long long kInProgressCacheGraceSeconds = 300;
-constexpr long long kAirborneSnapshotCadenceSeconds = 10;
-constexpr long long kGroundSnapshotCadenceSeconds = 60;
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kEarthRadiusNm = 3440.065;
-constexpr double kSnapshotMovementThresholdNm = 2.0;
+constexpr double kGroundSnapshotMovementThresholdNm = 2.0;
+constexpr double kAirborneSnapshotMovementThresholdNm = 10.0;
 constexpr std::size_t kAirportCoverageCacheLimit = 32;
 constexpr std::size_t kRouteSectorSanityLimit = 30;
 constexpr std::size_t kDiagnosticListLimit = 12;
 constexpr std::size_t kDiagnosticTextLimit = 96;
 constexpr std::size_t kDiagnosticRouteTextLimit = 512;
 constexpr std::size_t kDiagnosticLogLineLimit = 4096;
+constexpr double kAuthorityCenterTransceiverToleranceNm = 350.0;
+constexpr double kAuthorityTerminalTransceiverToleranceNm = 120.0;
+constexpr double kAuthorityUnownedTransceiverInsideToleranceNm = 5.0;
+constexpr double kAuthorityNearRouteWindowNm = 200.0;
+constexpr double kAuthorityArrivalPrepDistanceNm = 200.0;
+constexpr long long kAuthorityEmptyWindowWatchCadenceSeconds = 15;
+constexpr long long kAuthorityControlledWindowWatchCadenceSeconds = 60;
+constexpr int kVatsimFlightServiceFacility = 1;
+constexpr int kVatsimDeliveryFacility = 2;
+constexpr int kVatsimGroundFacility = 3;
+constexpr int kVatsimTowerFacility = 4;
+constexpr int kVatsimApproachFacility = 5;
+constexpr int kVatsimCenterFacility = 6;
 
 struct WinHttpHandle {
     WinHttpHandle() = default;
@@ -99,6 +114,27 @@ struct ControllerAuthorityCatalog {
     std::unordered_map<std::string, std::vector<std::string>> callsignPatternsByKey;
 };
 
+bool IsAuthorityControllerCandidate(const brain::ControllerSnapshot& controller);
+double GreatCircleDistanceNm(
+    double latitude1Deg,
+    double longitude1Deg,
+    double latitude2Deg,
+    double longitude2Deg);
+double RouteDistanceNm(const std::vector<brain::RouteWaypointSnapshot>& waypoints);
+const xvatsim::core::authority::AuthorityPolygon* FindAuthorityPolygonById(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog,
+    const std::string& polygonId);
+double NormalizeLongitudeDeg(double longitudeDeg);
+double UnwrapLongitudeRelativeDeg(double referenceLongitudeDeg, double longitudeDeg);
+double DistanceFromPointToAuthorityPolygonNm(
+    const xvatsim::core::authority::GeoPoint& point,
+    const xvatsim::core::authority::AuthorityPolygon& polygon);
+Vector3 AddVector(const Vector3& a, const Vector3& b);
+Vector3 ScaleVector(const Vector3& vector, double scale);
+Vector3 ToUnitVector(const GeoPoint& point);
+GeoPoint ToGeoPoint(const Vector3& vector);
+double AngularDistanceRad(const Vector3& a, const Vector3& b);
+
 struct RouteResolveDiagnostics {
     std::vector<std::string> rawTokens;
     std::vector<std::string> resolvedTokens;
@@ -129,6 +165,11 @@ struct RouteResolveDiagnostics {
 
 bool TokenCanActAsPoint(const xvatsim::core::route::ParsedRouteToken& token);
 bool TokenCanActAsAirway(const xvatsim::core::route::ParsedRouteToken& token);
+void SafeXPlaneDebugString(const std::string& message);
+std::string GetXPlaneRootPath();
+std::string AuthorityFamilyKey(std::string key);
+std::string SanitizeDiagnosticText(std::string_view value, std::size_t maxChars);
+std::string SummarizeStrings(const std::vector<std::string>& values);
 std::optional<std::size_t> FindNextMeaningfulTokenIndex(
     const std::vector<xvatsim::core::route::ParsedRouteToken>& parsedTokens,
     std::size_t startIndex);
@@ -163,6 +204,56 @@ struct ResolvedRoutePoint {
     double latitudeDeg = 0.0;
     double longitudeDeg = 0.0;
     std::optional<std::size_t> graphNodeIndex;
+};
+
+struct RouteScopedAuthorityPolygon {
+    const xvatsim::core::authority::AuthorityPolygon* polygon = nullptr;
+    bool aircraftInside = false;
+    bool routeIntersects = false;
+    double routeEntryDistanceNm = 0.0;
+};
+
+struct AuthorityRelevanceWorkScope {
+    brain::RouteSectorSnapshot routeSectorSnapshot;
+    std::vector<xvatsim::core::authority::GeoPoint> routePoints;
+    bool includeDepartureEndpoint = false;
+    bool includeDestinationEndpoint = false;
+    std::size_t deferredSectorCount = 0;
+    double windowNm = kAuthorityNearRouteWindowNm;
+    std::string stage = "LOCAL_BOOTSTRAP";
+};
+
+struct TransceiverRouteAuthorityProof {
+    const xvatsim::core::authority::AuthorityPolygon* polygon = nullptr;
+    brain::ReceivableControllerSnapshot station;
+    double stationDistanceNm = std::numeric_limits<double>::max();
+    double routeEntryDistanceNm = 0.0;
+    int sourcePriority = 100;
+    int sourceOwnershipPriority = 100;
+    int callsignKeyPriority = 100;
+};
+
+using SourceOwnedAuthorityPolygonsByController =
+    std::unordered_map<
+        std::string,
+        std::vector<const xvatsim::core::authority::AuthorityPolygon*>>;
+using AuthorityStationCandidateIndex =
+    std::unordered_map<std::string, std::vector<brain::ReceivableControllerSnapshot>>;
+
+struct AuthorityRelevanceScopeArtifacts {
+    bool valid = false;
+    std::size_t signature = 0;
+    xvatsim::core::authority::ControllerAuthorityCatalog controllerAuthorityCatalog;
+    xvatsim::core::authority::AuthorityPolygonCatalog authorityPolygonCatalog;
+    std::unordered_map<std::string, std::vector<std::size_t>>
+        authorityPolygonExactIndexesByKey;
+    std::unordered_map<std::string, std::vector<std::size_t>>
+        authorityPolygonFamilyIndexesByKey;
+    std::unordered_set<std::string> routeAuthorityPolygonKeys;
+    std::unordered_set<std::string> routeAuthorityMatchKeys;
+    xvatsim::core::authority::ControllerAuthorityCatalog routeScopedControllerAuthorityCatalog;
+    xvatsim::core::authority::AuthorityPolygonCatalog routeScopedAuthorityPolygonCatalog;
+    std::vector<RouteScopedAuthorityPolygon> routeScopedAuthorityPolygons;
 };
 
 bool ResolveRoutePointTokenWithRouteContext(
@@ -382,6 +473,222 @@ std::wstring WidenUrl(const std::string& url) {
     return std::wstring(url.begin(), url.end());
 }
 
+std::string ReadLocalTextFile(const std::string& path) {
+    std::ifstream stream(path, std::ios::in | std::ios::binary);
+    if (!stream.is_open()) {
+        return {};
+    }
+
+    std::ostringstream buffer;
+    buffer << stream.rdbuf();
+    return buffer.str();
+}
+
+std::string ParentDirectory(std::string path) {
+    const auto separator = path.find_last_of("\\/");
+    if (separator == std::string::npos) {
+        return {};
+    }
+    return path.substr(0, separator + 1);
+}
+
+std::string GetCurrentModuleDirectoryPath() {
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCSTR>(&GetCurrentModuleDirectoryPath),
+            &module) ||
+        module == nullptr) {
+        return {};
+    }
+
+    std::vector<char> path(MAX_PATH);
+    DWORD size = 0;
+    for (;;) {
+        size = GetModuleFileNameA(
+            module,
+            path.data(),
+            static_cast<DWORD>(path.size()));
+        if (size == 0) {
+            return {};
+        }
+        if (size < path.size() - 1) {
+            break;
+        }
+        path.resize(path.size() * 2);
+    }
+
+    return ParentDirectory(std::string(path.data(), size));
+}
+
+std::vector<std::string> ResolvePackagedAuthoritySourceRegistryPaths() {
+    std::vector<std::string> paths;
+    const auto moduleDirectory = GetCurrentModuleDirectoryPath();
+    if (!moduleDirectory.empty()) {
+        paths.push_back(moduleDirectory + kPackagedAuthoritySourceRegistryFile);
+        paths.push_back(
+            moduleDirectory +
+            std::string("source_data\\") +
+            kPackagedAuthoritySourceRegistryFile);
+    }
+
+    const auto xplaneRoot = GetXPlaneRootPath();
+    if (!xplaneRoot.empty()) {
+        paths.push_back(
+            xplaneRoot +
+            std::string("Resources\\plugins\\XVatsim\\win_x64\\") +
+            kPackagedAuthoritySourceRegistryFile);
+        paths.push_back(
+            xplaneRoot +
+            std::string("Resources\\plugins\\XVatsim\\win_x64\\source_data\\") +
+            kPackagedAuthoritySourceRegistryFile);
+    }
+
+    paths.push_back(
+        std::string("assets\\source_data\\") +
+        kPackagedAuthoritySourceRegistryFile);
+    return paths;
+}
+
+std::string LoadPackagedAuthoritySourceRegistryPayload() {
+    for (const auto& path : ResolvePackagedAuthoritySourceRegistryPaths()) {
+        const auto payload = ReadLocalTextFile(path);
+        if (!payload.empty()) {
+            return payload;
+        }
+    }
+    return {};
+}
+
+std::string JoinUrlPath(std::string baseUrl, const std::string& relativePath) {
+    while (!baseUrl.empty() && baseUrl.back() == '/') {
+        baseUrl.pop_back();
+    }
+    std::string path = relativePath;
+    while (!path.empty() && path.front() == '/') {
+        path.erase(path.begin());
+    }
+    if (baseUrl.empty() || path.empty()) {
+        return {};
+    }
+    return baseUrl + "/" + path;
+}
+
+std::string ResolveVatGlassesPositionsUrl(
+    const xvatsim::core::source_data::MapDataManifest& manifest) {
+    if (!manifest.vatglassesPositionsUrl.empty()) {
+        return manifest.vatglassesPositionsUrl;
+    }
+    if (manifest.vatglassesDynamicBaseUrl.empty()) {
+        return {};
+    }
+    return JoinUrlPath(manifest.vatglassesDynamicBaseUrl, "positions.json");
+}
+
+std::string ResolveVatGlassesAirspaceUrl(
+    const xvatsim::core::source_data::MapDataManifest& manifest) {
+    if (!manifest.vatglassesAirspaceUrl.empty()) {
+        return manifest.vatglassesAirspaceUrl;
+    }
+    if (manifest.vatglassesDynamicBaseUrl.empty()) {
+        return {};
+    }
+    return JoinUrlPath(manifest.vatglassesDynamicBaseUrl, "airspace.json");
+}
+
+std::string ResolveVatGlassesDynamicOwnershipUrl(
+    const xvatsim::core::source_data::MapDataManifest& manifest) {
+    if (!manifest.vatglassesDynamicOwnershipUrl.empty()) {
+        return manifest.vatglassesDynamicOwnershipUrl;
+    }
+    if (manifest.vatglassesDynamicBaseUrl.empty()) {
+        return {};
+    }
+    const auto ownershipFile =
+        manifest.vatglassesDynamicOwnershipFile.empty()
+            ? std::string("default.json")
+            : manifest.vatglassesDynamicOwnershipFile;
+    return JoinUrlPath(
+        manifest.vatglassesDynamicBaseUrl,
+        JoinUrlPath("ownership", ownershipFile));
+}
+
+std::vector<std::string> ResolveSpecialSectorDataUrls(
+    const xvatsim::core::source_data::MapDataManifest& manifest) {
+    std::vector<std::string> urls;
+    auto addUrl = [&urls](const std::string& url) {
+        if (url.empty() ||
+            std::find(urls.begin(), urls.end(), url) != urls.end()) {
+            return;
+        }
+        urls.push_back(url);
+    };
+
+    addUrl(manifest.specialSectorDataUrl);
+    for (const auto& url : manifest.specialSectorDataUrls) {
+        addUrl(url);
+    }
+    return urls;
+}
+
+std::vector<std::string> ResolveTerminalAuthorityDataUrls(
+    const xvatsim::core::source_data::MapDataManifest& manifest) {
+    std::vector<std::string> urls;
+    auto addUrl = [&urls](const std::string& url) {
+        if (url.empty() ||
+            std::find(urls.begin(), urls.end(), url) != urls.end()) {
+            return;
+        }
+        urls.push_back(url);
+    };
+
+    addUrl(manifest.terminalAuthorityDataUrl);
+    for (const auto& url : manifest.terminalAuthorityDataUrls) {
+        addUrl(url);
+    }
+    return urls;
+}
+
+std::vector<std::string> ResolveAuthoritySourceRegistryUrls(
+    const xvatsim::core::source_data::MapDataManifest& manifest) {
+    std::vector<std::string> urls;
+    auto addUrl = [&urls](const std::string& url) {
+        if (url.empty() ||
+            std::find(urls.begin(), urls.end(), url) != urls.end()) {
+            return;
+        }
+        urls.push_back(url);
+    };
+
+    addUrl(manifest.authoritySourceRegistryUrl);
+    for (const auto& url : manifest.authoritySourceRegistryUrls) {
+        addUrl(url);
+    }
+    return urls;
+}
+
+std::vector<std::string> ResolveAuthoritySourceRegistryPayloads(
+    const xvatsim::core::source_data::MapDataManifest& manifest) {
+    std::vector<std::string> payloads;
+    for (const auto& registryUrl : ResolveAuthoritySourceRegistryUrls(manifest)) {
+        const auto registryPayload = DownloadHttpsPayload(WidenUrl(registryUrl));
+        if (!registryPayload.empty()) {
+            payloads.push_back(registryPayload);
+        }
+    }
+
+    // The packaged registry is the global activation fallback. It is read once
+    // by the async source fetcher, then expanded and cache-warmed off-thread.
+    if (payloads.empty()) {
+        const auto packagedPayload = LoadPackagedAuthoritySourceRegistryPayload();
+        if (!packagedPayload.empty()) {
+            payloads.push_back(packagedPayload);
+        }
+    }
+    return payloads;
+}
+
 xvatsim::core::source_data::MapDataManifest DownloadMapDataManifest() {
     const auto payload = DownloadHttpsPayload(kVatsimMapDataManifestUrl);
     const auto manifest =
@@ -419,10 +726,77 @@ std::string DownloadTerminalBoundaryPayload(
 
 std::string DownloadOwnershipPayload(
     const xvatsim::core::source_data::MapDataManifest& manifest) {
-    if (!manifest.valid || manifest.vatglassesOwnershipUrl.empty()) {
+    if (!manifest.valid) {
         return {};
     }
-    return DownloadHttpsPayload(WidenUrl(manifest.vatglassesOwnershipUrl));
+
+    std::string primaryPayload;
+    const auto positionsUrl = ResolveVatGlassesPositionsUrl(manifest);
+    const auto airspaceUrl = ResolveVatGlassesAirspaceUrl(manifest);
+    const auto dynamicOwnershipUrl = ResolveVatGlassesDynamicOwnershipUrl(manifest);
+    if (!positionsUrl.empty() &&
+        !airspaceUrl.empty() &&
+        !dynamicOwnershipUrl.empty()) {
+        const auto positionsPayload = DownloadHttpsPayload(WidenUrl(positionsUrl));
+        const auto airspacePayload = DownloadHttpsPayload(WidenUrl(airspaceUrl));
+        const auto ownershipPayload = DownloadHttpsPayload(WidenUrl(dynamicOwnershipUrl));
+        primaryPayload =
+            xvatsim::core::source_data::BuildVatGlassesDynamicSourcePayload(
+                positionsPayload,
+                airspacePayload,
+                ownershipPayload);
+    }
+
+    if (primaryPayload.empty() && !manifest.vatglassesOwnershipUrl.empty()) {
+        primaryPayload = DownloadHttpsPayload(WidenUrl(manifest.vatglassesOwnershipUrl));
+    }
+
+    std::vector<std::string> supplementalPayloads;
+    std::unordered_set<std::string> downloadedSupplementalUrls;
+    auto downloadSupplementalPayload = [&](const std::string& url) {
+        if (url.empty() || !downloadedSupplementalUrls.insert(url).second) {
+            return;
+        }
+        const auto payload = DownloadHttpsPayload(WidenUrl(url));
+        if (!payload.empty()) {
+            supplementalPayloads.push_back(payload);
+        }
+    };
+
+    for (const auto& registryPayload : ResolveAuthoritySourceRegistryPayloads(manifest)) {
+        for (const auto& entry :
+             xvatsim::core::source_data::ParseAuthoritySourceRegistryJson(
+                 registryPayload)) {
+            if (entry.source == "VATGLASSES_DYNAMIC_DIRECTORY") {
+                const auto positionsPayload =
+                    DownloadHttpsPayload(WidenUrl(entry.positionsUrl));
+                const auto airspacePayload =
+                    DownloadHttpsPayload(WidenUrl(entry.airspaceUrl));
+                const auto ownershipPayload =
+                    DownloadHttpsPayload(WidenUrl(entry.ownershipUrl));
+                const auto packagePayload =
+                    xvatsim::core::source_data::BuildVatGlassesDynamicSourcePayload(
+                        positionsPayload,
+                        airspacePayload,
+                        ownershipPayload);
+                if (!packagePayload.empty()) {
+                    supplementalPayloads.push_back(packagePayload);
+                }
+                continue;
+            }
+            downloadSupplementalPayload(entry.url);
+        }
+    }
+    for (const auto& url : ResolveSpecialSectorDataUrls(manifest)) {
+        downloadSupplementalPayload(url);
+    }
+    for (const auto& url : ResolveTerminalAuthorityDataUrls(manifest)) {
+        downloadSupplementalPayload(url);
+    }
+
+    return xvatsim::core::source_data::BuildAuthoritySourcePackagePayload(
+        primaryPayload,
+        supplementalPayloads);
 }
 
 void AddBoundaryIdentifierToken(
@@ -823,6 +1197,7 @@ void AddCenterActivationPatterns(
         return;
     }
 
+    patterns->insert(normalizedBase);
     patterns->insert(normalizedBase + "_CTR");
     patterns->insert(normalizedBase + "_*_CTR");
     patterns->insert(normalizedBase + "_FSS");
@@ -908,6 +1283,95 @@ void MergeOwnershipAuthorityRecords(
         xvatsim::core::authority::ParseAuthorityPositionSourceRecordsJson(
             xvatsim::core::authority::AuthoritySource::VatsimRadarExtension,
             ownershipPayload));
+    mergeRecords(
+        xvatsim::core::authority::ParseAuthorityPositionSourceRecordsJson(
+            xvatsim::core::authority::AuthoritySource::SpecialSectorData,
+            ownershipPayload));
+}
+
+bool SplitTerminalAuthorityToken(
+    const std::string& rawToken,
+    std::string* outPrefix,
+    std::string* outSuffix) {
+    const auto token = NormalizeAuthorityCatalogKey(rawToken);
+    const auto separatorIndex = token.rfind('_');
+    if (separatorIndex == std::string::npos ||
+        separatorIndex == 0 ||
+        separatorIndex >= token.size() - 1) {
+        return false;
+    }
+
+    const auto suffix = token.substr(separatorIndex + 1);
+    if (suffix != "APP" && suffix != "DEP") {
+        return false;
+    }
+
+    if (outPrefix != nullptr) {
+        *outPrefix = token.substr(0, separatorIndex);
+    }
+    if (outSuffix != nullptr) {
+        *outSuffix = suffix;
+    }
+    return true;
+}
+
+std::vector<std::string> TerminalAuthorityTokens(const SectorFeature& feature) {
+    std::vector<std::string> tokens;
+    for (const auto& rawToken : feature.tokens) {
+        std::string prefix;
+        std::string suffix;
+        if (!SplitTerminalAuthorityToken(rawToken, &prefix, &suffix)) {
+            continue;
+        }
+        tokens.push_back(prefix + "_" + suffix);
+    }
+    std::sort(tokens.begin(), tokens.end());
+    tokens.erase(std::unique(tokens.begin(), tokens.end()), tokens.end());
+    return tokens;
+}
+
+std::vector<std::string> TerminalAuthorityCallsignPatterns(const std::string& token) {
+    std::string prefix;
+    std::string suffix;
+    if (!SplitTerminalAuthorityToken(token, &prefix, &suffix)) {
+        return {};
+    }
+
+    return {
+        prefix + "_" + suffix,
+        prefix + "_*_" + suffix,
+    };
+}
+
+void MergeTerminalAuthorityFeatures(
+    std::unordered_map<std::string, std::unordered_set<std::string>>* prefixesByKey,
+    std::unordered_map<std::string, std::unordered_set<std::string>>* patternsByKey,
+    const std::vector<SectorFeature>& terminalFeatures) {
+    if (prefixesByKey == nullptr || patternsByKey == nullptr) {
+        return;
+    }
+
+    for (const auto& feature : terminalFeatures) {
+        const auto featureKey = NormalizeAuthorityCatalogKey(feature.label);
+        for (const auto& token : TerminalAuthorityTokens(feature)) {
+            std::string prefix;
+            std::string suffix;
+            if (!SplitTerminalAuthorityToken(token, &prefix, &suffix)) {
+                continue;
+            }
+
+            const std::vector<std::string> keys = featureKey.empty()
+                                                     ? std::vector<std::string>{token}
+                                                     : std::vector<std::string>{featureKey, token};
+            for (const auto& key : keys) {
+                MergeControllerAuthorityPrefixes(prefixesByKey, key, {prefix});
+                MergeExplicitAuthorityPatterns(
+                    patternsByKey,
+                    key,
+                    TerminalAuthorityCallsignPatterns(token));
+            }
+        }
+    }
 }
 
 ControllerAuthorityCatalog ParseControllerAuthorityCatalog(const std::string& payload) {
@@ -1020,8 +1484,15 @@ ControllerAuthorityCatalog ParseControllerAuthorityCatalog(const std::string& pa
 
 ControllerAuthorityCatalog ParseControllerAuthorityCatalog(
     const std::string& vatspyPayload,
-    const std::string& ownershipPayload) {
+    const std::string& ownershipPayload,
+    const std::vector<SectorFeature>& terminalFeatures = {}) {
     auto catalog = ParseControllerAuthorityCatalog(vatspyPayload);
+
+    std::unordered_map<std::string, std::unordered_set<std::string>> prefixesByKey;
+    for (const auto& [key, prefixes] : catalog.prefixesByKey) {
+        auto& mergedPrefixes = prefixesByKey[key];
+        mergedPrefixes.insert(prefixes.begin(), prefixes.end());
+    }
 
     std::unordered_map<std::string, std::unordered_set<std::string>> patternsByKey;
     for (const auto& [key, patterns] : catalog.callsignPatternsByKey) {
@@ -1029,7 +1500,15 @@ ControllerAuthorityCatalog ParseControllerAuthorityCatalog(
         mergedPatterns.insert(patterns.begin(), patterns.end());
     }
 
+    MergeTerminalAuthorityFeatures(&prefixesByKey, &patternsByKey, terminalFeatures);
     MergeOwnershipAuthorityRecords(&patternsByKey, ownershipPayload);
+
+    catalog.prefixesByKey.clear();
+    for (auto& [key, prefixes] : prefixesByKey) {
+        std::vector<std::string> normalizedPrefixes(prefixes.begin(), prefixes.end());
+        std::sort(normalizedPrefixes.begin(), normalizedPrefixes.end());
+        catalog.prefixesByKey.emplace(std::move(key), std::move(normalizedPrefixes));
+    }
 
     catalog.callsignPatternsByKey.clear();
     for (auto& [key, patterns] : patternsByKey) {
@@ -1068,6 +1547,131 @@ std::size_t HashPayloads(
         appendByte(byte);
     }
     return hash;
+}
+
+std::size_t HashPayloads(
+    const std::vector<unsigned char>& left,
+    const std::vector<unsigned char>& middle,
+    const std::vector<unsigned char>& right) {
+    std::size_t hash = 1469598103934665603ull;
+    auto appendByte = [&](unsigned char byte) {
+        hash ^= static_cast<std::size_t>(byte);
+        hash *= 1099511628211ull;
+    };
+
+    for (const auto byte : left) {
+        appendByte(byte);
+    }
+    appendByte(0xff);
+    appendByte(0x00);
+    for (const auto byte : middle) {
+        appendByte(byte);
+    }
+    appendByte(0xfe);
+    appendByte(0x00);
+    for (const auto byte : right) {
+        appendByte(byte);
+    }
+    return hash;
+}
+
+void HashCombine(std::size_t* hash, std::size_t value) {
+    if (hash == nullptr) {
+        return;
+    }
+    *hash ^= value + 0x9e3779b97f4a7c15ull + (*hash << 6) + (*hash >> 2);
+}
+
+void HashCombineString(std::size_t* hash, const std::string& value) {
+    if (hash == nullptr) {
+        return;
+    }
+    for (const auto character : value) {
+        *hash ^= static_cast<std::size_t>(static_cast<unsigned char>(character));
+        *hash *= 1099511628211ull;
+    }
+}
+
+void HashCombineDouble(std::size_t* hash, double value) {
+    if (hash == nullptr) {
+        return;
+    }
+    const auto rounded = static_cast<long long>(std::llround(value * 1000000.0));
+    HashCombine(hash, static_cast<std::size_t>(rounded));
+}
+
+std::size_t BuildAuthorityRelevanceSignature(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot) {
+    std::size_t hash = 1469598103934665603ull;
+
+    HashCombine(&hash, static_cast<std::size_t>(controllerFeedSnapshot.available ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(controllerFeedSnapshot.stale ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(controllerFeedSnapshot.generation));
+    HashCombine(&hash, static_cast<std::size_t>(controllerFeedSnapshot.connectedControllers));
+    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
+        if (!IsAuthorityControllerCandidate(controller)) {
+            continue;
+        }
+        HashCombineString(&hash, controller.callsign);
+        HashCombineString(&hash, controller.frequency);
+        HashCombine(&hash, static_cast<std::size_t>(controller.facility));
+        HashCombine(&hash, static_cast<std::size_t>(controller.actionable ? 1 : 0));
+        HashCombine(&hash, static_cast<std::size_t>(controller.atis ? 1 : 0));
+        HashCombineString(&hash, controller.textAtis);
+    }
+
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.available ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.stale ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.routeResolved ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.centerBoundaryGeneration));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.authorityCatalogGeneration));
+    HashCombineString(&hash, routeSectorSnapshot.departureIcao);
+    HashCombineString(&hash, routeSectorSnapshot.destinationIcao);
+    for (const auto& waypoint : routeSectorSnapshot.waypoints) {
+        HashCombineString(&hash, waypoint.ident);
+        HashCombineDouble(&hash, waypoint.latitudeDeg);
+        HashCombineDouble(&hash, waypoint.longitudeDeg);
+    }
+
+    if (authorityTransceiverSnapshot == nullptr) {
+        HashCombineString(&hash, "no-authority-transceivers");
+        return hash;
+    }
+
+    HashCombine(&hash, static_cast<std::size_t>(authorityTransceiverSnapshot->available ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(authorityTransceiverSnapshot->stale ? 1 : 0));
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(authorityTransceiverSnapshot->receivableControllers));
+    for (const auto& candidate : authorityTransceiverSnapshot->candidates) {
+        HashCombineString(&hash, candidate.callsign);
+        HashCombineString(&hash, candidate.frequency);
+        HashCombineDouble(&hash, candidate.latitudeDeg);
+        HashCombineDouble(&hash, candidate.longitudeDeg);
+    }
+
+    return hash;
+}
+
+void AddAuthorityWorkScopeSignature(
+    std::size_t* hash,
+    const brain::AircraftStateSnapshot& aircraftState,
+    const AuthorityRelevanceWorkScope& workScope,
+    std::uint64_t terminalBoundaryGeneration) {
+    if (hash == nullptr) {
+        return;
+    }
+
+    HashCombine(hash, static_cast<std::size_t>(aircraftState.valid ? 1 : 0));
+    HashCombine(hash, static_cast<std::size_t>(aircraftState.onGround ? 1 : 0));
+    HashCombine(hash, static_cast<std::size_t>(terminalBoundaryGeneration));
+    HashCombine(hash, static_cast<std::size_t>(workScope.includeDepartureEndpoint ? 1 : 0));
+    HashCombine(hash, static_cast<std::size_t>(workScope.includeDestinationEndpoint ? 1 : 0));
+    HashCombine(hash, static_cast<std::size_t>(workScope.deferredSectorCount));
+    HashCombineDouble(hash, workScope.windowNm);
+    HashCombineString(hash, workScope.stage);
 }
 
 std::string PayloadToString(const std::vector<unsigned char>& payload) {
@@ -1126,28 +1730,1673 @@ const std::vector<SectorFeature>& GetCachedTerminalSectorFeatures(
 
 const ControllerAuthorityCatalog& GetCachedControllerAuthorityCatalog(
     const std::vector<unsigned char>& vatspyPayload,
+    const std::vector<unsigned char>& terminalPayload,
     const std::vector<unsigned char>& ownershipPayload) {
     static std::mutex cacheMutex;
     static std::size_t cachedHash = 0;
     static std::size_t cachedVatspySize = 0;
+    static std::size_t cachedTerminalSize = 0;
     static std::size_t cachedOwnershipSize = 0;
     static ControllerAuthorityCatalog cachedCatalog;
 
-    const auto payloadHash = HashPayloads(vatspyPayload, ownershipPayload);
+    const auto payloadHash = HashPayloads(vatspyPayload, terminalPayload, ownershipPayload);
     std::lock_guard<std::mutex> lock(cacheMutex);
     if (payloadHash == cachedHash &&
         vatspyPayload.size() == cachedVatspySize &&
+        terminalPayload.size() == cachedTerminalSize &&
         ownershipPayload.size() == cachedOwnershipSize) {
         return cachedCatalog;
     }
 
     cachedHash = payloadHash;
     cachedVatspySize = vatspyPayload.size();
+    cachedTerminalSize = terminalPayload.size();
     cachedOwnershipSize = ownershipPayload.size();
     cachedCatalog = ParseControllerAuthorityCatalog(
         PayloadToString(vatspyPayload),
-        PayloadToString(ownershipPayload));
+        PayloadToString(ownershipPayload),
+        GetCachedTerminalSectorFeatures(terminalPayload));
     return cachedCatalog;
+}
+
+const ControllerAuthorityCatalog& GetCachedControllerAuthorityCatalog(
+    const std::vector<unsigned char>& vatspyPayload,
+    const std::vector<unsigned char>& ownershipPayload) {
+    static const std::vector<unsigned char> kEmptyTerminalPayload;
+    return GetCachedControllerAuthorityCatalog(
+        vatspyPayload,
+        kEmptyTerminalPayload,
+        ownershipPayload);
+}
+
+std::vector<xvatsim::core::authority::AuthorityPositionSourceRecord>
+ParseOwnershipAuthoritySourceRecords(const std::string& ownershipPayload) {
+    if (ownershipPayload.empty()) {
+        return {};
+    }
+
+    auto records = xvatsim::core::authority::ParseAuthorityPositionSourceRecordsJson(
+        xvatsim::core::authority::AuthoritySource::VatGlasses,
+        ownershipPayload);
+    auto terminalRecords =
+        xvatsim::core::authority::ParseAuthorityPositionSourceRecordsJson(
+            xvatsim::core::authority::AuthoritySource::SimAwareTracon,
+            ownershipPayload);
+    records.insert(
+        records.end(),
+        std::make_move_iterator(terminalRecords.begin()),
+        std::make_move_iterator(terminalRecords.end()));
+    auto specialRecords =
+        xvatsim::core::authority::ParseAuthorityPositionSourceRecordsJson(
+            xvatsim::core::authority::AuthoritySource::SpecialSectorData,
+            ownershipPayload);
+    records.insert(
+        records.end(),
+        std::make_move_iterator(specialRecords.begin()),
+        std::make_move_iterator(specialRecords.end()));
+    return records;
+}
+
+std::vector<xvatsim::core::authority::AuthorityPositionSourceRecord>
+BuildTerminalAuthorityPositionRecords(const std::vector<SectorFeature>& terminalFeatures) {
+    std::vector<xvatsim::core::authority::AuthorityPositionSourceRecord> records;
+    std::unordered_set<std::string> insertedIds;
+
+    for (const auto& feature : terminalFeatures) {
+        const auto featureKey =
+            xvatsim::core::authority::NormalizeAuthorityToken(feature.label);
+        for (const auto& token : TerminalAuthorityTokens(feature)) {
+            if (!insertedIds.insert(token).second) {
+                continue;
+            }
+
+            xvatsim::core::authority::AuthorityPositionSourceRecord record;
+            record.source = xvatsim::core::authority::AuthoritySource::SimAwareTracon;
+            record.kind = xvatsim::core::authority::AuthorityKind::Terminal;
+            record.id = token;
+            record.name = feature.label;
+            record.polygonKey = token;
+            record.controllerCallsignPatterns =
+                TerminalAuthorityCallsignPatterns(token);
+            record.proofSource = "SIMAWARE_TRACON";
+            record.proofDetail =
+                "terminalBoundary=" + featureKey + ";position=" + token;
+            record.sourceRecord = feature.label;
+            records.push_back(std::move(record));
+        }
+    }
+
+    return records;
+}
+
+std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord>
+BuildTerminalAuthorityPolygonRecords(const std::vector<SectorFeature>& terminalFeatures) {
+    std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord> records;
+    std::unordered_set<std::string> insertedKeys;
+
+    for (const auto& feature : terminalFeatures) {
+        for (const auto& token : TerminalAuthorityTokens(feature)) {
+            std::string prefix;
+            std::string suffix;
+            if (!SplitTerminalAuthorityToken(token, &prefix, &suffix)) {
+                continue;
+            }
+            const auto uniqueKey = prefix + "_" + suffix;
+            if (!insertedKeys.insert(uniqueKey).second) {
+                continue;
+            }
+
+            xvatsim::core::authority::AuthorityPolygonSourceRecord record;
+            record.source = xvatsim::core::authority::AuthoritySource::SimAwareTracon;
+            record.id = prefix;
+            record.name = feature.label;
+            record.suffix = suffix;
+            record.prefixes.push_back(prefix);
+            record.sourceRecord = feature.label;
+
+            record.rings.reserve(feature.polygons.size());
+            for (const auto& polygon : feature.polygons) {
+                xvatsim::core::authority::AuthorityPolygonRing ring;
+                ring.points.reserve(polygon.ring.size());
+                for (const auto& point : polygon.ring) {
+                    ring.points.push_back({
+                        point.latitudeDeg,
+                        point.longitudeDeg,
+                    });
+                }
+                record.rings.push_back(std::move(ring));
+            }
+
+            records.push_back(std::move(record));
+        }
+    }
+
+    return records;
+}
+
+const xvatsim::core::authority::ControllerAuthorityCatalog&
+GetCachedCoreControllerAuthorityCatalog(
+    const std::vector<unsigned char>& vatspyPayload,
+    const std::vector<unsigned char>& terminalPayload,
+    const std::vector<unsigned char>& ownershipPayload) {
+    static std::mutex cacheMutex;
+    static std::size_t cachedHash = 0;
+    static std::size_t cachedVatspySize = 0;
+    static std::size_t cachedTerminalSize = 0;
+    static std::size_t cachedOwnershipSize = 0;
+    static xvatsim::core::authority::ControllerAuthorityCatalog cachedCatalog;
+
+    const auto payloadHash = HashPayloads(vatspyPayload, terminalPayload, ownershipPayload);
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    if (payloadHash == cachedHash &&
+        vatspyPayload.size() == cachedVatspySize &&
+        terminalPayload.size() == cachedTerminalSize &&
+        ownershipPayload.size() == cachedOwnershipSize) {
+        return cachedCatalog;
+    }
+
+    const auto vatspyCatalog =
+        xvatsim::core::authority::CompileVatSpyAuthorityCatalog(
+            PayloadToString(vatspyPayload));
+    const auto terminalCatalog =
+        xvatsim::core::authority::CompileAuthorityPositionCatalog(
+            BuildTerminalAuthorityPositionRecords(
+                GetCachedTerminalSectorFeatures(terminalPayload)));
+    const auto ownershipCatalog =
+        xvatsim::core::authority::CompileAuthorityPositionCatalog(
+            ParseOwnershipAuthoritySourceRecords(PayloadToString(ownershipPayload)));
+
+    cachedHash = payloadHash;
+    cachedVatspySize = vatspyPayload.size();
+    cachedTerminalSize = terminalPayload.size();
+    cachedOwnershipSize = ownershipPayload.size();
+    cachedCatalog =
+        xvatsim::core::authority::MergeControllerAuthorityCatalogs(
+            xvatsim::core::authority::MergeControllerAuthorityCatalogs(
+                vatspyCatalog,
+                terminalCatalog),
+            ownershipCatalog);
+    return cachedCatalog;
+}
+
+std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord>
+BuildCoreAuthorityPolygonRecords(const std::vector<SectorFeature>& features) {
+    std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord> records;
+    records.reserve(features.size());
+
+    for (const auto& feature : features) {
+        xvatsim::core::authority::AuthorityPolygonSourceRecord record;
+        record.source = xvatsim::core::authority::AuthoritySource::VatSpyBoundary;
+        record.id = feature.label;
+        record.name = feature.label;
+        record.lookupTokens.assign(feature.tokens.begin(), feature.tokens.end());
+        std::sort(record.lookupTokens.begin(), record.lookupTokens.end());
+        record.sourceRecord = feature.label;
+
+        record.rings.reserve(feature.polygons.size());
+        for (const auto& polygon : feature.polygons) {
+            xvatsim::core::authority::AuthorityPolygonRing ring;
+            ring.points.reserve(polygon.ring.size());
+            for (const auto& point : polygon.ring) {
+                ring.points.push_back({
+                    point.latitudeDeg,
+                    point.longitudeDeg,
+                });
+            }
+            record.rings.push_back(std::move(ring));
+        }
+
+        records.push_back(std::move(record));
+    }
+
+    return records;
+}
+
+const xvatsim::core::authority::AuthorityPolygonCatalog& GetCachedCoreAuthorityPolygonCatalog(
+    const std::vector<unsigned char>& boundaryPayload,
+    const std::vector<unsigned char>& terminalPayload,
+    const std::vector<unsigned char>& ownershipPayload) {
+    static std::mutex cacheMutex;
+    static std::size_t cachedHash = 0;
+    static std::size_t cachedBoundarySize = 0;
+    static std::size_t cachedTerminalSize = 0;
+    static std::size_t cachedOwnershipSize = 0;
+    static xvatsim::core::authority::AuthorityPolygonCatalog cachedCatalog;
+
+    const auto payloadHash = HashPayloads(boundaryPayload, terminalPayload, ownershipPayload);
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    if (payloadHash == cachedHash &&
+        boundaryPayload.size() == cachedBoundarySize &&
+        terminalPayload.size() == cachedTerminalSize &&
+        ownershipPayload.size() == cachedOwnershipSize) {
+        return cachedCatalog;
+    }
+
+    auto records = BuildCoreAuthorityPolygonRecords(
+        GetCachedSectorFeatures(boundaryPayload));
+    auto terminalRecords =
+        BuildTerminalAuthorityPolygonRecords(
+            GetCachedTerminalSectorFeatures(terminalPayload));
+    records.insert(
+        records.end(),
+        std::make_move_iterator(terminalRecords.begin()),
+        std::make_move_iterator(terminalRecords.end()));
+    auto ownershipRecords =
+        xvatsim::core::authority::ParseAuthorityPolygonSourceRecordsJson(
+            xvatsim::core::authority::AuthoritySource::VatGlasses,
+            PayloadToString(ownershipPayload));
+    auto terminalOwnershipRecords =
+        xvatsim::core::authority::ParseAuthorityPolygonSourceRecordsJson(
+            xvatsim::core::authority::AuthoritySource::SimAwareTracon,
+            PayloadToString(ownershipPayload));
+    ownershipRecords.insert(
+        ownershipRecords.end(),
+        std::make_move_iterator(terminalOwnershipRecords.begin()),
+        std::make_move_iterator(terminalOwnershipRecords.end()));
+    auto specialOwnershipRecords =
+        xvatsim::core::authority::ParseAuthorityPolygonSourceRecordsJson(
+            xvatsim::core::authority::AuthoritySource::SpecialSectorData,
+            PayloadToString(ownershipPayload));
+    ownershipRecords.insert(
+        ownershipRecords.end(),
+        std::make_move_iterator(specialOwnershipRecords.begin()),
+        std::make_move_iterator(specialOwnershipRecords.end()));
+    records.insert(
+        records.end(),
+        std::make_move_iterator(ownershipRecords.begin()),
+        std::make_move_iterator(ownershipRecords.end()));
+
+    cachedHash = payloadHash;
+    cachedBoundarySize = boundaryPayload.size();
+    cachedTerminalSize = terminalPayload.size();
+    cachedOwnershipSize = ownershipPayload.size();
+    cachedCatalog =
+        xvatsim::core::authority::CompileAuthorityPolygons(records);
+    return cachedCatalog;
+}
+
+std::string NormalizeFrequency(std::string frequency) {
+    frequency.erase(
+        std::remove_if(
+            frequency.begin(),
+            frequency.end(),
+            [](unsigned char c) { return std::isspace(c) != 0; }),
+        frequency.end());
+
+    std::string digits;
+    bool sawDecimal = false;
+    int decimals = 0;
+    for (const auto character : frequency) {
+        if (std::isdigit(static_cast<unsigned char>(character)) != 0) {
+            digits.push_back(character);
+            if (sawDecimal && decimals < 3) {
+                ++decimals;
+            }
+            continue;
+        }
+
+        if (character == '.' && !sawDecimal) {
+            sawDecimal = true;
+        }
+    }
+
+    if (digits.empty()) {
+        return {};
+    }
+
+    if (sawDecimal) {
+        while (decimals < 3) {
+            digits.push_back('0');
+            ++decimals;
+        }
+    } else if (digits.size() == 5) {
+        digits.push_back('0');
+    }
+
+    return digits;
+}
+
+bool IsGuardFrequency(const std::string& frequency) {
+    const auto normalizedFrequency = NormalizeFrequency(frequency);
+    return normalizedFrequency == "121500" || normalizedFrequency == "199998";
+}
+
+bool IsAuthorityControllerCandidate(const brain::ControllerSnapshot& controller) {
+    const auto canOwnAirspace =
+        controller.facility == kVatsimFlightServiceFacility ||
+        controller.facility == kVatsimApproachFacility ||
+        controller.facility == kVatsimCenterFacility;
+    return controller.actionable &&
+           !controller.atis &&
+           canOwnAirspace &&
+           !controller.callsign.empty() &&
+           !IsGuardFrequency(controller.frequency);
+}
+
+std::string NormalizeAirportIcao(std::string airportIcao) {
+    std::string normalized;
+    normalized.reserve(airportIcao.size());
+    for (const auto character : airportIcao) {
+        if (std::isalnum(static_cast<unsigned char>(character)) == 0) {
+            continue;
+        }
+        normalized.push_back(static_cast<char>(
+            std::toupper(static_cast<unsigned char>(character))));
+    }
+    return normalized;
+}
+
+std::vector<std::string> BuildAirportLocalTokens(const std::string& airportIcao) {
+    std::vector<std::string> tokens;
+    const auto normalized = NormalizeAirportIcao(airportIcao);
+    if (normalized.empty()) {
+        return tokens;
+    }
+
+    tokens.push_back(normalized);
+    if (normalized.size() == 4) {
+        tokens.push_back(normalized.substr(1));
+    }
+    if (normalized.size() >= 3) {
+        tokens.push_back(normalized.substr(normalized.size() - 3));
+    }
+
+    std::sort(tokens.begin(), tokens.end());
+    tokens.erase(std::unique(tokens.begin(), tokens.end()), tokens.end());
+    return tokens;
+}
+
+bool SplitLocalControllerCallsign(
+    const std::string& callsign,
+    std::string* outPrefix,
+    std::string* outSuffix) {
+    const auto normalized =
+        xvatsim::core::authority::NormalizeControllerCallsign(callsign);
+    const auto separatorIndex = normalized.rfind('_');
+    if (separatorIndex == std::string::npos ||
+        separatorIndex == 0 ||
+        separatorIndex >= normalized.size() - 1) {
+        return false;
+    }
+
+    if (outPrefix != nullptr) {
+        *outPrefix = normalized.substr(0, separatorIndex);
+    }
+    if (outSuffix != nullptr) {
+        *outSuffix = normalized.substr(separatorIndex + 1);
+    }
+    return true;
+}
+
+bool AirportLocalTokenMatchesPrefix(
+    const std::vector<std::string>& airportTokens,
+    const std::string& controllerPrefix) {
+    return std::any_of(
+        airportTokens.begin(),
+        airportTokens.end(),
+        [&](const auto& airportToken) {
+            return controllerPrefix == airportToken ||
+                   (controllerPrefix.size() > airportToken.size() &&
+                    controllerPrefix.compare(0, airportToken.size(), airportToken) == 0 &&
+                    controllerPrefix[airportToken.size()] == '_');
+        });
+}
+
+std::string CanonicalLocalCallsignSuffix(const std::string& suffix) {
+    if (suffix == "DEL" || suffix == "CLR" || suffix == "CLNC" || suffix == "CD") {
+        return "DEL";
+    }
+    if (suffix == "GND") {
+        return "GND";
+    }
+    if (suffix == "TWR") {
+        return "TWR";
+    }
+    return {};
+}
+
+bool IsAirportLocalControllerCandidate(
+    const brain::ControllerSnapshot& controller) {
+    return controller.actionable &&
+           !controller.atis &&
+           !controller.callsign.empty() &&
+           !IsGuardFrequency(controller.frequency) &&
+           (controller.facility == kVatsimDeliveryFacility ||
+            controller.facility == kVatsimGroundFacility ||
+            controller.facility == kVatsimTowerFacility);
+}
+
+std::vector<std::string> AirportLocalCallsignSuffixes(
+    const std::string& canonicalSuffix) {
+    if (canonicalSuffix == "DEL") {
+        return {"CD", "CLNC", "CLR", "DEL"};
+    }
+    if (canonicalSuffix == "GND") {
+        return {"GND"};
+    }
+    if (canonicalSuffix == "TWR") {
+        return {"TWR"};
+    }
+    return {};
+}
+
+void AddAirportLocalCallsignPatterns(
+    const std::vector<std::string>& airportTokens,
+    const std::string& canonicalSuffix,
+    std::vector<std::string>* patterns) {
+    if (patterns == nullptr) {
+        return;
+    }
+
+    for (const auto& airportToken : airportTokens) {
+        for (const auto& suffix : AirportLocalCallsignSuffixes(canonicalSuffix)) {
+            patterns->push_back(airportToken + "_" + suffix);
+            patterns->push_back(airportToken + "_*_" + suffix);
+        }
+    }
+    std::sort(patterns->begin(), patterns->end());
+    patterns->erase(std::unique(patterns->begin(), patterns->end()), patterns->end());
+}
+
+xvatsim::core::authority::AuthorityPolygonRing BuildAirportLocalEndpointRing(
+    double latitudeDeg,
+    double longitudeDeg) {
+    constexpr double kAirportLocalHalfSizeDeg = 0.08;
+    const auto south = std::max(-89.9, latitudeDeg - kAirportLocalHalfSizeDeg);
+    const auto north = std::min(89.9, latitudeDeg + kAirportLocalHalfSizeDeg);
+    const auto west = longitudeDeg - kAirportLocalHalfSizeDeg;
+    const auto east = longitudeDeg + kAirportLocalHalfSizeDeg;
+
+    xvatsim::core::authority::AuthorityPolygonRing ring;
+    ring.points.push_back({south, west});
+    ring.points.push_back({south, east});
+    ring.points.push_back({north, east});
+    ring.points.push_back({north, west});
+    return ring;
+}
+
+void AppendAirportLocalAuthorityRecordsForEndpoint(
+    const std::string& airportIcao,
+    const std::string& endpointLabel,
+    double airportLatitudeDeg,
+    double airportLongitudeDeg,
+    const std::unordered_set<std::string>& canonicalSuffixes,
+    std::unordered_set<std::string>* insertedAirports,
+    std::vector<xvatsim::core::authority::AuthorityPositionSourceRecord>*
+        positionRecords,
+    std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord>*
+        polygonRecords) {
+    if (insertedAirports == nullptr ||
+        positionRecords == nullptr ||
+        polygonRecords == nullptr) {
+        return;
+    }
+
+    const auto normalizedAirport = NormalizeAirportIcao(airportIcao);
+    const auto airportTokens = BuildAirportLocalTokens(normalizedAirport);
+    if (normalizedAirport.empty() || airportTokens.empty() || canonicalSuffixes.empty()) {
+        return;
+    }
+
+    if (insertedAirports->insert(normalizedAirport).second) {
+        xvatsim::core::authority::AuthorityPolygonSourceRecord polygonRecord;
+        polygonRecord.source =
+            xvatsim::core::authority::AuthoritySource::AirportLocal;
+        polygonRecord.id = normalizedAirport;
+        polygonRecord.name = normalizedAirport + " Local";
+        polygonRecord.lookupTokens = airportTokens;
+        polygonRecord.rings.push_back(
+            BuildAirportLocalEndpointRing(airportLatitudeDeg, airportLongitudeDeg));
+        polygonRecord.sourceRecord =
+            "airport=" + normalizedAirport + ";endpoint=" + endpointLabel;
+        polygonRecords->push_back(std::move(polygonRecord));
+    }
+
+    for (const auto& canonicalSuffix : canonicalSuffixes) {
+        xvatsim::core::authority::AuthorityPositionSourceRecord positionRecord;
+        positionRecord.source =
+            xvatsim::core::authority::AuthoritySource::AirportLocal;
+        positionRecord.kind =
+            xvatsim::core::authority::AuthorityKind::Terminal;
+        positionRecord.id = normalizedAirport + "_" + canonicalSuffix;
+        positionRecord.name = normalizedAirport + " " + canonicalSuffix;
+        positionRecord.polygonKey = normalizedAirport;
+        positionRecord.proofSource = "AIRPORT_LOCAL_FACILITY";
+        positionRecord.proofDetail =
+            "airport=" + normalizedAirport +
+            ";endpoint=" + endpointLabel +
+            ";position=" + positionRecord.id +
+            ";source=route-endpoint";
+        positionRecord.sourceRecord = positionRecord.proofDetail;
+        AddAirportLocalCallsignPatterns(
+            airportTokens,
+            canonicalSuffix,
+            &positionRecord.controllerCallsignPatterns);
+        positionRecords->push_back(std::move(positionRecord));
+    }
+}
+
+std::unordered_map<std::string, std::unordered_set<std::string>>
+CollectRouteEndpointAirportLocalSuffixes(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    bool includeDepartureEndpoint,
+    bool includeDestinationEndpoint) {
+    std::unordered_map<std::string, std::unordered_set<std::string>> suffixesByAirport;
+    std::vector<std::string> endpointAirports;
+    if (includeDepartureEndpoint) {
+        endpointAirports.push_back(NormalizeAirportIcao(routeSectorSnapshot.departureIcao));
+    }
+    if (includeDestinationEndpoint) {
+        endpointAirports.push_back(NormalizeAirportIcao(routeSectorSnapshot.destinationIcao));
+    }
+    endpointAirports.erase(
+        std::remove(endpointAirports.begin(), endpointAirports.end(), std::string{}),
+        endpointAirports.end());
+    std::sort(endpointAirports.begin(), endpointAirports.end());
+    endpointAirports.erase(
+        std::unique(endpointAirports.begin(), endpointAirports.end()),
+        endpointAirports.end());
+
+    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
+        if (!IsAirportLocalControllerCandidate(controller)) {
+            continue;
+        }
+
+        std::string prefix;
+        std::string suffix;
+        if (!SplitLocalControllerCallsign(controller.callsign, &prefix, &suffix)) {
+            continue;
+        }
+        const auto canonicalSuffix = CanonicalLocalCallsignSuffix(suffix);
+        if (canonicalSuffix.empty()) {
+            continue;
+        }
+
+        for (const auto& airport : endpointAirports) {
+            if (AirportLocalTokenMatchesPrefix(BuildAirportLocalTokens(airport), prefix)) {
+                suffixesByAirport[airport].insert(canonicalSuffix);
+            }
+        }
+    }
+    return suffixesByAirport;
+}
+
+std::vector<xvatsim::core::authority::AuthorityPositionSourceRecord>
+BuildRouteEndpointAirportLocalAuthorityPositionRecords(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    bool includeDepartureEndpoint,
+    bool includeDestinationEndpoint) {
+    std::vector<xvatsim::core::authority::AuthorityPositionSourceRecord> records;
+    std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord>
+        unusedPolygonRecords;
+    std::unordered_set<std::string> insertedAirports;
+    if (routeSectorSnapshot.waypoints.empty()) {
+        return records;
+    }
+
+    const auto suffixesByAirport =
+        CollectRouteEndpointAirportLocalSuffixes(
+            controllerFeedSnapshot,
+            routeSectorSnapshot,
+            includeDepartureEndpoint,
+            includeDestinationEndpoint);
+    if (includeDepartureEndpoint) {
+        const auto& departure = routeSectorSnapshot.waypoints.front();
+        const auto departureAirport = NormalizeAirportIcao(routeSectorSnapshot.departureIcao);
+        AppendAirportLocalAuthorityRecordsForEndpoint(
+            routeSectorSnapshot.departureIcao,
+            "departure",
+            departure.latitudeDeg,
+            departure.longitudeDeg,
+            suffixesByAirport.count(departureAirport) != 0
+                ? suffixesByAirport.at(departureAirport)
+                : std::unordered_set<std::string>{},
+            &insertedAirports,
+            &records,
+            &unusedPolygonRecords);
+    }
+
+    if (includeDestinationEndpoint) {
+        const auto& destination = routeSectorSnapshot.waypoints.back();
+        const auto destinationAirport = NormalizeAirportIcao(routeSectorSnapshot.destinationIcao);
+        AppendAirportLocalAuthorityRecordsForEndpoint(
+            routeSectorSnapshot.destinationIcao,
+            "arrival",
+            destination.latitudeDeg,
+            destination.longitudeDeg,
+            suffixesByAirport.count(destinationAirport) != 0
+                ? suffixesByAirport.at(destinationAirport)
+                : std::unordered_set<std::string>{},
+            &insertedAirports,
+            &records,
+            &unusedPolygonRecords);
+    }
+    return records;
+}
+
+std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord>
+BuildRouteEndpointAirportLocalAuthorityPolygonRecords(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    bool includeDepartureEndpoint,
+    bool includeDestinationEndpoint) {
+    std::vector<xvatsim::core::authority::AuthorityPositionSourceRecord>
+        unusedPositionRecords;
+    std::vector<xvatsim::core::authority::AuthorityPolygonSourceRecord> records;
+    std::unordered_set<std::string> insertedAirports;
+    if (routeSectorSnapshot.waypoints.empty()) {
+        return records;
+    }
+
+    const auto suffixesByAirport =
+        CollectRouteEndpointAirportLocalSuffixes(
+            controllerFeedSnapshot,
+            routeSectorSnapshot,
+            includeDepartureEndpoint,
+            includeDestinationEndpoint);
+    if (includeDepartureEndpoint) {
+        const auto& departure = routeSectorSnapshot.waypoints.front();
+        const auto departureAirport = NormalizeAirportIcao(routeSectorSnapshot.departureIcao);
+        AppendAirportLocalAuthorityRecordsForEndpoint(
+            routeSectorSnapshot.departureIcao,
+            "departure",
+            departure.latitudeDeg,
+            departure.longitudeDeg,
+            suffixesByAirport.count(departureAirport) != 0
+                ? suffixesByAirport.at(departureAirport)
+                : std::unordered_set<std::string>{},
+            &insertedAirports,
+            &unusedPositionRecords,
+            &records);
+    }
+
+    if (includeDestinationEndpoint) {
+        const auto& destination = routeSectorSnapshot.waypoints.back();
+        const auto destinationAirport = NormalizeAirportIcao(routeSectorSnapshot.destinationIcao);
+        AppendAirportLocalAuthorityRecordsForEndpoint(
+            routeSectorSnapshot.destinationIcao,
+            "arrival",
+            destination.latitudeDeg,
+            destination.longitudeDeg,
+            suffixesByAirport.count(destinationAirport) != 0
+                ? suffixesByAirport.at(destinationAirport)
+                : std::unordered_set<std::string>{},
+            &insertedAirports,
+            &unusedPositionRecords,
+            &records);
+    }
+    return records;
+}
+
+xvatsim::core::authority::AuthorityPolygonCatalog MergeAuthorityPolygonCatalogs(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& left,
+    const xvatsim::core::authority::AuthorityPolygonCatalog& right) {
+    auto merged = left;
+    merged.polygons.insert(
+        merged.polygons.end(),
+        right.polygons.begin(),
+        right.polygons.end());
+    merged.dataGaps.insert(
+        merged.dataGaps.end(),
+        right.dataGaps.begin(),
+        right.dataGaps.end());
+    std::sort(
+        merged.polygons.begin(),
+        merged.polygons.end(),
+        [](const auto& leftPolygon, const auto& rightPolygon) {
+            return leftPolygon.id < rightPolygon.id;
+        });
+    std::sort(
+        merged.dataGaps.begin(),
+        merged.dataGaps.end(),
+        [](const auto& leftGap, const auto& rightGap) {
+            if (leftGap.authorityId != rightGap.authorityId) {
+                return leftGap.authorityId < rightGap.authorityId;
+            }
+            if (leftGap.polygonKey != rightGap.polygonKey) {
+                return leftGap.polygonKey < rightGap.polygonKey;
+            }
+            return leftGap.reason < rightGap.reason;
+        });
+    return merged;
+}
+
+std::string AuthorityKindLabel(xvatsim::core::authority::AuthorityKind kind) {
+    switch (kind) {
+        case xvatsim::core::authority::AuthorityKind::Terminal:
+            return "terminal";
+        case xvatsim::core::authority::AuthorityKind::Extension:
+            return "extension";
+        case xvatsim::core::authority::AuthorityKind::Center:
+            return "center";
+    }
+    return "center";
+}
+
+xvatsim::brain::AuthorityRelevanceKind ToBrainAuthorityRelevanceKind(
+    xvatsim::core::authority::AuthorityKind kind) {
+    switch (kind) {
+        case xvatsim::core::authority::AuthorityKind::Terminal:
+            return xvatsim::brain::AuthorityRelevanceKind::Terminal;
+        case xvatsim::core::authority::AuthorityKind::Extension:
+            return xvatsim::brain::AuthorityRelevanceKind::Extension;
+        case xvatsim::core::authority::AuthorityKind::Center:
+            return xvatsim::brain::AuthorityRelevanceKind::Center;
+    }
+    return xvatsim::brain::AuthorityRelevanceKind::Center;
+}
+
+xvatsim::core::authority::AuthorityKind ToCoreAuthorityKind(
+    xvatsim::brain::AuthorityRelevanceKind kind) {
+    switch (kind) {
+        case xvatsim::brain::AuthorityRelevanceKind::Terminal:
+            return xvatsim::core::authority::AuthorityKind::Terminal;
+        case xvatsim::brain::AuthorityRelevanceKind::Extension:
+            return xvatsim::core::authority::AuthorityKind::Extension;
+        case xvatsim::brain::AuthorityRelevanceKind::Center:
+            return xvatsim::core::authority::AuthorityKind::Center;
+    }
+    return xvatsim::core::authority::AuthorityKind::Center;
+}
+
+void AppendAuthorityDiagnostic(
+    std::vector<std::string>* diagnostics,
+    std::string diagnostic) {
+    if (diagnostics == nullptr || diagnostic.empty()) {
+        return;
+    }
+    diagnostics->push_back(std::move(diagnostic));
+}
+
+void SortUniqueStrings(std::vector<std::string>* values) {
+    if (values == nullptr) {
+        return;
+    }
+    std::sort(values->begin(), values->end());
+    values->erase(std::unique(values->begin(), values->end()), values->end());
+}
+
+std::string ActiveAuthorityKey(
+    const xvatsim::core::authority::ActiveAuthorityPolygon& activePolygon) {
+    return activePolygon.callsign + "|" +
+           activePolygon.authorityId + "|" +
+           activePolygon.polygonId + "|" +
+           activePolygon.matchedPattern;
+}
+
+void AddRouteAuthorityPolygonKey(
+    const brain::RouteSectorMatchSnapshot& sector,
+    std::unordered_set<std::string>* routeAuthorityPolygonKeys) {
+    if (routeAuthorityPolygonKeys == nullptr) {
+        return;
+    }
+
+    auto addToken = [&](const std::string& value) {
+        const auto normalized =
+            xvatsim::core::authority::NormalizeAuthorityToken(value);
+        if (!normalized.empty()) {
+            routeAuthorityPolygonKeys->insert(normalized);
+        }
+    };
+
+    addToken(sector.identifier);
+    for (const auto& token : sector.matchTokens) {
+        addToken(token);
+    }
+}
+
+std::unordered_set<std::string> BuildRouteAuthorityPolygonKeys(
+    const brain::RouteSectorSnapshot& routeSectorSnapshot) {
+    std::unordered_set<std::string> routeAuthorityPolygonKeys;
+    for (const auto& sector : routeSectorSnapshot.currentSectors) {
+        AddRouteAuthorityPolygonKey(sector, &routeAuthorityPolygonKeys);
+    }
+    for (const auto& sector : routeSectorSnapshot.nextSectors) {
+        AddRouteAuthorityPolygonKey(sector, &routeAuthorityPolygonKeys);
+    }
+    return routeAuthorityPolygonKeys;
+}
+
+xvatsim::core::authority::GeoPoint InterpolateAuthorityGeoPoint(
+    const xvatsim::core::authority::GeoPoint& start,
+    const xvatsim::core::authority::GeoPoint& end,
+    double fraction) {
+    fraction = std::clamp(fraction, 0.0, 1.0);
+    const GeoPoint localStart{start.latitudeDeg, start.longitudeDeg};
+    const GeoPoint localEnd{end.latitudeDeg, end.longitudeDeg};
+    const auto startVector = ToUnitVector(localStart);
+    const auto endVector = ToUnitVector(localEnd);
+    const auto angularDistanceRad = AngularDistanceRad(startVector, endVector);
+    const auto sinAngularDistance = std::sin(angularDistanceRad);
+    if (angularDistanceRad <= 1e-10 || std::fabs(sinAngularDistance) <= 1e-12) {
+        return fraction < 0.5 ? start : end;
+    }
+
+    const auto startScale =
+        std::sin((1.0 - fraction) * angularDistanceRad) / sinAngularDistance;
+    const auto endScale =
+        std::sin(fraction * angularDistanceRad) / sinAngularDistance;
+    const auto interpolated = ToGeoPoint(AddVector(
+        ScaleVector(startVector, startScale),
+        ScaleVector(endVector, endScale)));
+    return {interpolated.latitudeDeg, interpolated.longitudeDeg};
+}
+
+std::vector<xvatsim::core::authority::GeoPoint> ClipRoutePointsForAuthorityWindow(
+    const std::vector<brain::RouteWaypointSnapshot>& waypoints,
+    double windowNm) {
+    std::vector<xvatsim::core::authority::GeoPoint> routePoints;
+    if (waypoints.empty()) {
+        return routePoints;
+    }
+
+    routePoints.reserve(waypoints.size());
+    routePoints.push_back({waypoints.front().latitudeDeg, waypoints.front().longitudeDeg});
+    if (waypoints.size() == 1 || windowNm <= 0.0) {
+        return routePoints;
+    }
+
+    double accumulatedDistanceNm = 0.0;
+    for (std::size_t waypointIndex = 1; waypointIndex < waypoints.size(); ++waypointIndex) {
+        const xvatsim::core::authority::GeoPoint start{
+            waypoints[waypointIndex - 1].latitudeDeg,
+            waypoints[waypointIndex - 1].longitudeDeg,
+        };
+        const xvatsim::core::authority::GeoPoint end{
+            waypoints[waypointIndex].latitudeDeg,
+            waypoints[waypointIndex].longitudeDeg,
+        };
+        const auto segmentDistanceNm = GreatCircleDistanceNm(
+            start.latitudeDeg,
+            start.longitudeDeg,
+            end.latitudeDeg,
+            end.longitudeDeg);
+        if (segmentDistanceNm <= 1e-6) {
+            continue;
+        }
+
+        if (accumulatedDistanceNm + segmentDistanceNm <= windowNm) {
+            routePoints.push_back(end);
+            accumulatedDistanceNm += segmentDistanceNm;
+            continue;
+        }
+
+        const auto remainingDistanceNm =
+            std::max(0.0, windowNm - accumulatedDistanceNm);
+        const auto fraction =
+            std::clamp(remainingDistanceNm / segmentDistanceNm, 0.0, 1.0);
+        if (fraction > 1e-6) {
+            routePoints.push_back(InterpolateAuthorityGeoPoint(start, end, fraction));
+        }
+        break;
+    }
+
+    return routePoints;
+}
+
+std::vector<xvatsim::core::authority::GeoPoint> BuildAuthorityProgressRoutePoints(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::RouteSectorSnapshot& routeSectorSnapshot) {
+    std::vector<xvatsim::core::authority::GeoPoint> routePoints;
+    if (aircraftState.valid) {
+        routePoints.push_back({
+            aircraftState.latitudeDeg,
+            aircraftState.longitudeDeg,
+        });
+    }
+
+    routePoints.reserve(routePoints.size() + routeSectorSnapshot.waypoints.size());
+    for (std::size_t index = 0; index < routeSectorSnapshot.waypoints.size(); ++index) {
+        const auto& waypoint = routeSectorSnapshot.waypoints[index];
+        if (index == 0 && waypoint.ident == "ACFT") {
+            continue;
+        }
+
+        const xvatsim::core::authority::GeoPoint point{
+            waypoint.latitudeDeg,
+            waypoint.longitudeDeg,
+        };
+        if (!routePoints.empty() &&
+            GreatCircleDistanceNm(
+                routePoints.back().latitudeDeg,
+                routePoints.back().longitudeDeg,
+                point.latitudeDeg,
+                point.longitudeDeg) <= 0.05) {
+            continue;
+        }
+        routePoints.push_back(point);
+    }
+    return routePoints;
+}
+
+std::string AuthorityProgressKey(
+    const std::string& callsign,
+    const std::string& authorityId,
+    const std::string& polygonId,
+    const std::string& matchedPattern) {
+    return xvatsim::core::authority::NormalizeControllerCallsign(callsign) + "|" +
+           xvatsim::core::authority::NormalizeAuthorityToken(authorityId) + "|" +
+           xvatsim::core::authority::NormalizeAuthorityToken(polygonId) + "|" +
+           xvatsim::core::authority::NormalizeAuthorityToken(matchedPattern);
+}
+
+std::vector<brain::RouteWaypointSnapshot> ToRouteWaypointSnapshots(
+    const std::vector<xvatsim::core::authority::GeoPoint>& routePoints,
+    const std::vector<brain::RouteWaypointSnapshot>& originalWaypoints) {
+    std::vector<brain::RouteWaypointSnapshot> waypoints;
+    waypoints.reserve(routePoints.size());
+    for (std::size_t index = 0; index < routePoints.size(); ++index) {
+        brain::RouteWaypointSnapshot waypoint;
+        if (index < originalWaypoints.size()) {
+            waypoint.ident = originalWaypoints[index].ident;
+        } else {
+            waypoint.ident = "WINDOW";
+        }
+        waypoint.latitudeDeg = routePoints[index].latitudeDeg;
+        waypoint.longitudeDeg = routePoints[index].longitudeDeg;
+        waypoints.push_back(std::move(waypoint));
+    }
+    return waypoints;
+}
+
+std::vector<brain::RouteSectorMatchSnapshot> FilterNextSectorsForAuthorityWindow(
+    const std::vector<brain::RouteSectorMatchSnapshot>& nextSectors,
+    double windowNm,
+    std::size_t* outDeferredSectorCount) {
+    std::vector<brain::RouteSectorMatchSnapshot> filtered;
+    filtered.reserve(nextSectors.size());
+    for (const auto& sector : nextSectors) {
+        if (sector.entryDistanceNm <= windowNm) {
+            filtered.push_back(sector);
+        }
+    }
+
+    if (outDeferredSectorCount != nullptr) {
+        *outDeferredSectorCount =
+            nextSectors.size() > filtered.size() ? nextSectors.size() - filtered.size() : 0;
+    }
+    return filtered;
+}
+
+std::size_t BuildAuthorityProgressRouteSignature(
+    const brain::RouteSectorSnapshot& routeSectorSnapshot) {
+    std::size_t hash = 1469598103934665603ull;
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.available ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.routeResolved ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.centerBoundaryGeneration));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.authorityCatalogGeneration));
+    HashCombineString(&hash, routeSectorSnapshot.departureIcao);
+    HashCombineString(&hash, routeSectorSnapshot.destinationIcao);
+
+    auto hashSectorIdentity = [&](const brain::RouteSectorMatchSnapshot& sector) {
+        HashCombineString(&hash, sector.identifier);
+        for (const auto& token : sector.matchTokens) {
+            HashCombineString(&hash, token);
+        }
+        for (const auto& pattern : sector.controllerCallsignPatterns) {
+            HashCombineString(&hash, pattern);
+        }
+    };
+    HashCombine(&hash, 0x5150);
+    for (const auto& sector : routeSectorSnapshot.currentSectors) {
+        hashSectorIdentity(sector);
+    }
+    HashCombine(&hash, 0x5151);
+    for (const auto& sector : routeSectorSnapshot.nextSectors) {
+        hashSectorIdentity(sector);
+    }
+    return hash;
+}
+
+std::size_t BuildAuthorityStructuralScopeRouteSignature(
+    const brain::RouteSectorSnapshot& routeSectorSnapshot) {
+    std::size_t hash = 1469598103934665603ull;
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.available ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.routeResolved ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.centerBoundaryGeneration));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.authorityCatalogGeneration));
+    HashCombineString(&hash, routeSectorSnapshot.departureIcao);
+    HashCombineString(&hash, routeSectorSnapshot.destinationIcao);
+
+    auto hashSectorIdentity = [&](const brain::RouteSectorMatchSnapshot& sector) {
+        HashCombineString(&hash, sector.identifier);
+        for (const auto& token : sector.matchTokens) {
+            HashCombineString(&hash, token);
+        }
+        for (const auto& pattern : sector.controllerCallsignPatterns) {
+            HashCombineString(&hash, pattern);
+        }
+    };
+    HashCombine(&hash, 0x5150);
+    for (const auto& sector : routeSectorSnapshot.currentSectors) {
+        hashSectorIdentity(sector);
+    }
+    HashCombine(&hash, 0x5151);
+    for (const auto& sector : routeSectorSnapshot.nextSectors) {
+        hashSectorIdentity(sector);
+    }
+    return hash;
+}
+
+std::size_t BuildAuthorityOperationalScopeSignature(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot,
+    const AuthorityRelevanceWorkScope& workScope,
+    std::uint64_t terminalBoundaryGeneration) {
+    std::size_t hash = 1469598103934665603ull;
+    HashCombine(&hash, static_cast<std::size_t>(aircraftState.valid ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(aircraftState.onGround ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(controllerFeedSnapshot.available ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(controllerFeedSnapshot.stale ? 1 : 0));
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(
+            authorityTransceiverSnapshot != nullptr &&
+            authorityTransceiverSnapshot->available &&
+            !authorityTransceiverSnapshot->stale
+                ? 1
+                : 0));
+    HashCombine(&hash, static_cast<std::size_t>(terminalBoundaryGeneration));
+    HashCombineString(&hash, workScope.stage);
+    HashCombineDouble(&hash, workScope.windowNm);
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(workScope.includeDepartureEndpoint ? 1 : 0));
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(workScope.includeDestinationEndpoint ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(workScope.deferredSectorCount));
+
+    const auto& routeSectorSnapshot = workScope.routeSectorSnapshot;
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.available ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.stale ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.routeResolved ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.centerBoundaryGeneration));
+    HashCombine(&hash, static_cast<std::size_t>(routeSectorSnapshot.authorityCatalogGeneration));
+    HashCombineString(&hash, routeSectorSnapshot.departureIcao);
+    HashCombineString(&hash, routeSectorSnapshot.destinationIcao);
+
+    auto hashSector = [&](const brain::RouteSectorMatchSnapshot& sector) {
+        HashCombineString(&hash, sector.identifier);
+        for (const auto& token : sector.matchTokens) {
+            HashCombineString(&hash, token);
+        }
+    };
+    HashCombine(&hash, 0x1111);
+    for (const auto& sector : routeSectorSnapshot.currentSectors) {
+        hashSector(sector);
+    }
+    HashCombine(&hash, 0x2222);
+    for (const auto& sector : routeSectorSnapshot.nextSectors) {
+        hashSector(sector);
+    }
+    return hash;
+}
+
+bool HasRelevantCenterAuthority(
+    const brain::AuthorityRelevanceSnapshot& snapshot) {
+    return std::any_of(
+        snapshot.relevantAuthorities.begin(),
+        snapshot.relevantAuthorities.end(),
+        [](const auto& authority) {
+            return authority.kind == brain::AuthorityRelevanceKind::Center;
+        });
+}
+
+AuthorityRelevanceWorkScope BuildAuthorityRelevanceWorkScope(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    double windowNm) {
+    AuthorityRelevanceWorkScope scope;
+    scope.routeSectorSnapshot = routeSectorSnapshot;
+    const auto remainingRouteDistanceNm = RouteDistanceNm(routeSectorSnapshot.waypoints);
+    scope.includeDepartureEndpoint = aircraftState.onGround;
+    scope.includeDestinationEndpoint =
+        remainingRouteDistanceNm <= kAuthorityArrivalPrepDistanceNm;
+    scope.windowNm = scope.includeDestinationEndpoint
+                         ? std::max(kAuthorityNearRouteWindowNm, remainingRouteDistanceNm)
+                         : std::max(kAuthorityNearRouteWindowNm, windowNm);
+    scope.routePoints =
+        ClipRoutePointsForAuthorityWindow(routeSectorSnapshot.waypoints, scope.windowNm);
+    scope.routeSectorSnapshot.waypoints =
+        ToRouteWaypointSnapshots(scope.routePoints, routeSectorSnapshot.waypoints);
+    scope.routeSectorSnapshot.nextSectors =
+        FilterNextSectorsForAuthorityWindow(
+            routeSectorSnapshot.nextSectors,
+            scope.windowNm,
+            &scope.deferredSectorCount);
+    if (scope.includeDestinationEndpoint) {
+        scope.stage = "ARRIVAL_PREP";
+    } else if (aircraftState.onGround) {
+        scope.stage = "LOCAL_BOOTSTRAP";
+    } else {
+        scope.stage = "NEAR_ROUTE_WINDOW";
+    }
+    return scope;
+}
+
+bool AuthorityPolygonMatchesRouteKeys(
+    const xvatsim::core::authority::AuthorityPolygon& polygon,
+    const std::unordered_set<std::string>& routeAuthorityPolygonKeys) {
+    if (routeAuthorityPolygonKeys.empty()) {
+        return false;
+    }
+
+    const auto normalizedPolygonKey =
+        xvatsim::core::authority::NormalizeAuthorityToken(polygon.polygonKey);
+    if (!normalizedPolygonKey.empty() &&
+        routeAuthorityPolygonKeys.find(normalizedPolygonKey) !=
+            routeAuthorityPolygonKeys.end()) {
+        return true;
+    }
+    for (const auto& lookupKey : polygon.lookupKeys) {
+        const auto normalizedLookupKey =
+            xvatsim::core::authority::NormalizeAuthorityToken(lookupKey);
+        if (!normalizedLookupKey.empty() &&
+            routeAuthorityPolygonKeys.find(normalizedLookupKey) !=
+                routeAuthorityPolygonKeys.end()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AuthorityPolygonFamilyMatchesRouteKeys(
+    const xvatsim::core::authority::AuthorityPolygon& polygon,
+    const std::unordered_set<std::string>& routeAuthorityPolygonKeys) {
+    if (AuthorityPolygonMatchesRouteKeys(polygon, routeAuthorityPolygonKeys)) {
+        return true;
+    }
+
+    auto familyMatchesRoute = [&](const std::string& value) {
+        const auto familyKey = AuthorityFamilyKey(value);
+        return !familyKey.empty() &&
+               routeAuthorityPolygonKeys.find(familyKey) !=
+                   routeAuthorityPolygonKeys.end();
+    };
+
+    if (familyMatchesRoute(polygon.polygonKey) ||
+        familyMatchesRoute(polygon.id)) {
+        return true;
+    }
+    for (const auto& lookupKey : polygon.lookupKeys) {
+        if (familyMatchesRoute(lookupKey)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void AddNormalizedAuthorityMatchKey(
+    const std::string& value,
+    std::unordered_set<std::string>* routeAuthorityMatchKeys) {
+    if (routeAuthorityMatchKeys == nullptr) {
+        return;
+    }
+    const auto normalized =
+        xvatsim::core::authority::NormalizeAuthorityToken(value);
+    if (!normalized.empty()) {
+        routeAuthorityMatchKeys->insert(normalized);
+    }
+}
+
+void AddAuthorityScopeKeys(
+    const xvatsim::core::authority::AuthorityPolygon& polygon,
+    std::unordered_set<std::string>* scopeKeys) {
+    if (scopeKeys == nullptr) {
+        return;
+    }
+    AddNormalizedAuthorityMatchKey(polygon.id, scopeKeys);
+    AddNormalizedAuthorityMatchKey(polygon.polygonKey, scopeKeys);
+    AddNormalizedAuthorityMatchKey(AuthorityFamilyKey(polygon.id), scopeKeys);
+    AddNormalizedAuthorityMatchKey(AuthorityFamilyKey(polygon.polygonKey), scopeKeys);
+    for (const auto& lookupKey : polygon.lookupKeys) {
+        AddNormalizedAuthorityMatchKey(lookupKey, scopeKeys);
+        AddNormalizedAuthorityMatchKey(AuthorityFamilyKey(lookupKey), scopeKeys);
+    }
+}
+
+void AddRouteEndpointAuthorityKeys(
+    const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    bool includeDepartureEndpoint,
+    bool includeDestinationEndpoint,
+    std::unordered_set<std::string>* scopeKeys) {
+    if (scopeKeys == nullptr) {
+        return;
+    }
+    std::vector<std::string> airports;
+    if (includeDepartureEndpoint) {
+        airports.push_back(routeSectorSnapshot.departureIcao);
+    }
+    if (includeDestinationEndpoint) {
+        airports.push_back(routeSectorSnapshot.destinationIcao);
+    }
+    for (const auto& airport : airports) {
+        for (const auto& token : BuildAirportLocalTokens(airport)) {
+            AddNormalizedAuthorityMatchKey(token, scopeKeys);
+        }
+    }
+}
+
+bool AuthorityPolygonMayContainRoutePoint(
+    const xvatsim::core::authority::AuthorityPolygon& polygon,
+    const xvatsim::core::authority::GeoPoint& routePoint,
+    double paddingDeg) {
+    const auto referenceLongitudeDeg = NormalizeLongitudeDeg(routePoint.longitudeDeg);
+    for (const auto& ring : polygon.rings) {
+        if (ring.points.empty()) {
+            continue;
+        }
+
+        double minLatitudeDeg = std::numeric_limits<double>::max();
+        double maxLatitudeDeg = std::numeric_limits<double>::lowest();
+        double minLongitudeDeg = std::numeric_limits<double>::max();
+        double maxLongitudeDeg = std::numeric_limits<double>::lowest();
+        for (const auto& point : ring.points) {
+            minLatitudeDeg = std::min(minLatitudeDeg, point.latitudeDeg);
+            maxLatitudeDeg = std::max(maxLatitudeDeg, point.latitudeDeg);
+            const auto unwrappedLongitudeDeg =
+                UnwrapLongitudeRelativeDeg(referenceLongitudeDeg, point.longitudeDeg);
+            minLongitudeDeg = std::min(minLongitudeDeg, unwrappedLongitudeDeg);
+            maxLongitudeDeg = std::max(maxLongitudeDeg, unwrappedLongitudeDeg);
+        }
+
+        if (routePoint.latitudeDeg >= minLatitudeDeg - paddingDeg &&
+            routePoint.latitudeDeg <= maxLatitudeDeg + paddingDeg &&
+            referenceLongitudeDeg >= minLongitudeDeg - paddingDeg &&
+            referenceLongitudeDeg <= maxLongitudeDeg + paddingDeg) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TerminalAuthorityPolygonTouchesRoute(
+    const xvatsim::core::authority::AuthorityPolygon& polygon,
+    bool hasAircraftPosition,
+    const xvatsim::core::authority::GeoPoint& aircraftPosition,
+    const std::vector<xvatsim::core::authority::GeoPoint>& routePoints) {
+    constexpr double kTerminalRouteScopePaddingDeg = 2.5;
+    if (hasAircraftPosition &&
+        AuthorityPolygonMayContainRoutePoint(
+            polygon,
+            aircraftPosition,
+            kTerminalRouteScopePaddingDeg) &&
+        DistanceFromPointToAuthorityPolygonNm(aircraftPosition, polygon) <=
+            kAuthorityTerminalTransceiverToleranceNm) {
+        return true;
+    }
+
+    for (const auto& routePoint : routePoints) {
+        if (!AuthorityPolygonMayContainRoutePoint(
+                polygon,
+                routePoint,
+                kTerminalRouteScopePaddingDeg)) {
+            continue;
+        }
+        if (DistanceFromPointToAuthorityPolygonNm(routePoint, polygon) <=
+            kAuthorityTerminalTransceiverToleranceNm) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TerminalAuthorityPolygonTouchesAircraft(
+    const xvatsim::core::authority::AuthorityPolygon& polygon,
+    const xvatsim::core::authority::GeoPoint& aircraftPosition) {
+    constexpr double kTerminalRouteScopePaddingDeg = 2.5;
+    return AuthorityPolygonMayContainRoutePoint(
+               polygon,
+               aircraftPosition,
+               kTerminalRouteScopePaddingDeg) &&
+           DistanceFromPointToAuthorityPolygonNm(aircraftPosition, polygon) <=
+               kAuthorityTerminalTransceiverToleranceNm;
+}
+
+std::unordered_set<std::string> BuildRouteAuthorityScopeKeys(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    const std::unordered_set<std::string>& routeAuthorityPolygonKeys,
+    const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    bool includeDepartureEndpoint,
+    bool includeDestinationEndpoint,
+    bool hasAircraftPosition,
+    const xvatsim::core::authority::GeoPoint& aircraftPosition,
+    const std::vector<xvatsim::core::authority::GeoPoint>& routePoints) {
+    (void)routePoints;
+
+    auto scopeKeys = routeAuthorityPolygonKeys;
+    if (scopeKeys.empty()) {
+        return scopeKeys;
+    }
+    std::unordered_set<std::string> endpointKeys;
+    AddRouteEndpointAuthorityKeys(
+        routeSectorSnapshot,
+        includeDepartureEndpoint,
+        includeDestinationEndpoint,
+        &endpointKeys);
+    for (const auto& endpointKey : endpointKeys) {
+        AddNormalizedAuthorityMatchKey(endpointKey, &scopeKeys);
+    }
+
+    for (const auto& polygon : authorityPolygonCatalog.polygons) {
+        if (AuthorityPolygonFamilyMatchesRouteKeys(polygon, routeAuthorityPolygonKeys) ||
+            AuthorityPolygonMatchesRouteKeys(polygon, endpointKeys)) {
+            AddAuthorityScopeKeys(polygon, &scopeKeys);
+            continue;
+        }
+        if (polygon.kind == xvatsim::core::authority::AuthorityKind::Terminal &&
+            hasAircraftPosition &&
+            TerminalAuthorityPolygonTouchesAircraft(polygon, aircraftPosition)) {
+            AddAuthorityScopeKeys(polygon, &scopeKeys);
+        }
+    }
+
+    return scopeKeys;
+}
+
+std::unordered_set<std::string> BuildRouteAuthorityMatchKeys(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    const std::unordered_set<std::string>& routeAuthorityPolygonKeys) {
+    std::unordered_set<std::string> routeAuthorityMatchKeys;
+    if (routeAuthorityPolygonKeys.empty()) {
+        return routeAuthorityMatchKeys;
+    }
+
+    routeAuthorityMatchKeys = routeAuthorityPolygonKeys;
+    for (const auto& polygon : authorityPolygonCatalog.polygons) {
+        AddAuthorityScopeKeys(polygon, &routeAuthorityMatchKeys);
+    }
+    return routeAuthorityMatchKeys;
+}
+
+xvatsim::core::authority::AuthorityPolygonCatalog
+FilterAuthorityPolygonCatalogToRouteKeys(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog,
+    const std::unordered_set<std::string>& routeAuthorityPolygonKeys) {
+    if (routeAuthorityPolygonKeys.empty()) {
+        return catalog;
+    }
+
+    xvatsim::core::authority::AuthorityPolygonCatalog filtered;
+    for (const auto& polygon : catalog.polygons) {
+        if (AuthorityPolygonFamilyMatchesRouteKeys(polygon, routeAuthorityPolygonKeys)) {
+            filtered.polygons.push_back(polygon);
+        }
+    }
+    for (const auto& gap : catalog.dataGaps) {
+        const auto normalizedPolygonKey =
+            xvatsim::core::authority::NormalizeAuthorityToken(gap.polygonKey);
+        if (!normalizedPolygonKey.empty() &&
+            routeAuthorityPolygonKeys.find(normalizedPolygonKey) !=
+                routeAuthorityPolygonKeys.end()) {
+            filtered.dataGaps.push_back(gap);
+        }
+    }
+    return filtered;
+}
+
+bool ControllerAuthorityMatchesScopeKeys(
+    const xvatsim::core::authority::ControllerAuthority& authority,
+    const std::unordered_set<std::string>& scopeKeys) {
+    if (scopeKeys.empty()) {
+        return true;
+    }
+
+    auto keyMatches = [&](const std::string& rawKey) {
+        const auto key = xvatsim::core::authority::NormalizeAuthorityToken(rawKey);
+        if (!key.empty() && scopeKeys.find(key) != scopeKeys.end()) {
+            return true;
+        }
+        const auto familyKey = AuthorityFamilyKey(key);
+        return !familyKey.empty() && scopeKeys.find(familyKey) != scopeKeys.end();
+    };
+
+    if (keyMatches(authority.id) || keyMatches(authority.polygonKey)) {
+        return true;
+    }
+    for (const auto& lookupKey : authority.lookupKeys) {
+        if (keyMatches(lookupKey)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+xvatsim::core::authority::ControllerAuthorityCatalog
+FilterControllerAuthorityCatalogToScopeKeys(
+    const xvatsim::core::authority::ControllerAuthorityCatalog& catalog,
+    const std::unordered_set<std::string>& scopeKeys) {
+    if (scopeKeys.empty()) {
+        return catalog;
+    }
+
+    xvatsim::core::authority::ControllerAuthorityCatalog filtered;
+    for (const auto& authority : catalog.authorities) {
+        if (ControllerAuthorityMatchesScopeKeys(authority, scopeKeys)) {
+            filtered.authorities.push_back(authority);
+        }
+    }
+    for (const auto& gap : catalog.dataGaps) {
+        const auto polygonKey =
+            xvatsim::core::authority::NormalizeAuthorityToken(gap.polygonKey);
+        const auto authorityId =
+            xvatsim::core::authority::NormalizeAuthorityToken(gap.authorityId);
+        const auto polygonFamilyKey = AuthorityFamilyKey(polygonKey);
+        const auto authorityFamilyKey = AuthorityFamilyKey(authorityId);
+        if ((!polygonKey.empty() && scopeKeys.find(polygonKey) != scopeKeys.end()) ||
+            (!authorityId.empty() && scopeKeys.find(authorityId) != scopeKeys.end()) ||
+            (!polygonFamilyKey.empty() &&
+             scopeKeys.find(polygonFamilyKey) != scopeKeys.end()) ||
+            (!authorityFamilyKey.empty() &&
+             scopeKeys.find(authorityFamilyKey) != scopeKeys.end())) {
+            filtered.dataGaps.push_back(gap);
+        }
+    }
+    return filtered;
+}
+
+bool ControllerCanOwnRouteAuthority(
+    const xvatsim::core::authority::ControllerAuthorityCatalog& controllerAuthorityCatalog,
+    const std::unordered_set<std::string>& routeAuthorityMatchKeys,
+    const brain::ControllerSnapshot& controller) {
+    if (routeAuthorityMatchKeys.empty()) {
+        return false;
+    }
+
+    const auto matches =
+        xvatsim::core::authority::ResolveControllerAuthority(
+            controllerAuthorityCatalog,
+            controller.callsign,
+            controller.frequency,
+            controller.facility);
+    for (const auto& match : matches) {
+        const auto normalizedPolygonKey =
+            xvatsim::core::authority::NormalizeAuthorityToken(match.polygonKey);
+        if (!normalizedPolygonKey.empty() &&
+            routeAuthorityMatchKeys.find(normalizedPolygonKey) !=
+                routeAuthorityMatchKeys.end()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AuthorityEvidenceBelongsToRouteAuthorityKeys(
+    const xvatsim::core::authority::AuthorityEvidence& evidence,
+    const std::unordered_set<std::string>& routeAuthorityMatchKeys) {
+    if (routeAuthorityMatchKeys.empty()) {
+        return false;
+    }
+
+    const auto normalizedPolygonKey =
+        xvatsim::core::authority::NormalizeAuthorityToken(evidence.polygonKey);
+    return !normalizedPolygonKey.empty() &&
+           routeAuthorityMatchKeys.find(normalizedPolygonKey) !=
+               routeAuthorityMatchKeys.end();
+}
+
+std::vector<xvatsim::core::authority::AuthorityDecision>
+FilterAuthorityDecisionsToRouteKeys(
+    const std::vector<xvatsim::core::authority::AuthorityDecision>& decisions,
+    const std::unordered_set<std::string>& routeAuthorityMatchKeys) {
+    std::vector<xvatsim::core::authority::AuthorityDecision> filtered;
+    filtered.reserve(decisions.size());
+    for (const auto& decision : decisions) {
+        if (AuthorityEvidenceBelongsToRouteAuthorityKeys(
+                decision.evidence,
+                routeAuthorityMatchKeys)) {
+            filtered.push_back(decision);
+        }
+    }
+    return filtered;
+}
+
+std::vector<xvatsim::core::authority::AuthorityDecision>
+FilterTerminalAuthorityRejectionDecisions(
+    const std::vector<xvatsim::core::authority::AuthorityDecision>& decisions) {
+    std::vector<xvatsim::core::authority::AuthorityDecision> filtered;
+    filtered.reserve(decisions.size());
+    for (const auto& decision : decisions) {
+        if (decision.accepted ||
+            decision.evidence.authorityKind !=
+                xvatsim::core::authority::AuthorityKind::Terminal ||
+            decision.evidence.rejectionReasons.empty()) {
+            continue;
+        }
+        filtered.push_back(decision);
+    }
+    return filtered;
+}
+
+void AppendAuthorityDecisionDiagnostics(
+    std::vector<std::string>* diagnostics,
+    const std::string& normalizedCallsign,
+    const std::vector<xvatsim::core::authority::AuthorityDecision>& routeScopedDecisions) {
+    if (diagnostics == nullptr || normalizedCallsign.empty()) {
+        return;
+    }
+
+    bool appended = false;
+    for (const auto& decision : routeScopedDecisions) {
+        if (decision.accepted) {
+            continue;
+        }
+        for (const auto& reason : decision.evidence.rejectionReasons) {
+            AppendAuthorityDiagnostic(
+                diagnostics,
+                normalizedCallsign + ":" + reason + ":" +
+                    decision.evidence.authorityId + ":" +
+                    decision.evidence.polygonKey + ":" +
+                    decision.evidence.matchedPattern);
+            appended = true;
+        }
+    }
+
+    if (!appended) {
+        AppendAuthorityDiagnostic(
+            diagnostics,
+            normalizedCallsign + ":unmapped-controller");
+    }
+}
+
+bool ActivePolygonBelongsToRouteAuthorityKeys(
+    const xvatsim::core::authority::ActiveAuthorityPolygon& activePolygon,
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    const std::unordered_set<std::string>& routeAuthorityPolygonKeys) {
+    const auto normalizedActiveKey =
+        xvatsim::core::authority::NormalizeAuthorityToken(activePolygon.polygonKey);
+    if (!normalizedActiveKey.empty() &&
+        routeAuthorityPolygonKeys.find(normalizedActiveKey) !=
+        routeAuthorityPolygonKeys.end()) {
+        return true;
+    }
+
+    const auto* polygon = FindAuthorityPolygonById(
+        authorityPolygonCatalog,
+        activePolygon.polygonId);
+    if (polygon == nullptr) {
+        return false;
+    }
+
+    return AuthorityPolygonMatchesRouteKeys(*polygon, routeAuthorityPolygonKeys);
+}
+
+std::vector<xvatsim::core::authority::ActiveAuthorityPolygon>
+FilterActivePolygonsToRouteAuthorityKeys(
+    const std::vector<xvatsim::core::authority::ActiveAuthorityPolygon>& activePolygons,
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    const std::unordered_set<std::string>& routeAuthorityPolygonKeys,
+    std::vector<std::string>* diagnostics) {
+    if (routeAuthorityPolygonKeys.empty()) {
+        return activePolygons;
+    }
+
+    std::vector<xvatsim::core::authority::ActiveAuthorityPolygon> filtered;
+    filtered.reserve(activePolygons.size());
+    for (const auto& activePolygon : activePolygons) {
+        if (activePolygon.kind == xvatsim::core::authority::AuthorityKind::Terminal) {
+            filtered.push_back(activePolygon);
+            continue;
+        }
+        if (!ActivePolygonBelongsToRouteAuthorityKeys(
+                activePolygon,
+                authorityPolygonCatalog,
+                routeAuthorityPolygonKeys)) {
+            AppendAuthorityDiagnostic(
+                diagnostics,
+                activePolygon.callsign + ":active-not-relevant:" +
+                    activePolygon.authorityId + ":" +
+                    activePolygon.polygonId + ":" +
+                    AuthorityKindLabel(activePolygon.kind));
+            continue;
+        }
+        filtered.push_back(activePolygon);
+    }
+    return filtered;
+}
+
+std::string SummarizeAuthorityDiagnostics(
+    const std::vector<std::string>& diagnostics) {
+    return SummarizeStrings(diagnostics);
+}
+
+void LogAuthorityDiagnosticsIfChanged(
+    const brain::AuthorityRelevanceSnapshot& snapshot) {
+    static std::mutex logMutex;
+    static std::string lastSignature;
+
+    std::ostringstream signatureStream;
+    signatureStream << snapshot.available << "|"
+                    << snapshot.stale << "|"
+                    << snapshot.statusLine << "|"
+                    << snapshot.relevantAuthorities.size() << "|"
+                    << SummarizeAuthorityDiagnostics(snapshot.diagnostics);
+    const auto signature = signatureStream.str();
+
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        if (signature == lastSignature) {
+            return;
+        }
+        lastSignature = signature;
+    }
+
+    std::ostringstream stream;
+    stream << "[XVatsim] Authority diagnostic: "
+           << SanitizeDiagnosticText(snapshot.statusLine, 192)
+           << " relevant=" << snapshot.relevantAuthorities.size()
+           << " diagnostics=" << SummarizeAuthorityDiagnostics(snapshot.diagnostics)
+           << "\n";
+    auto line = stream.str();
+    if (line.size() > kDiagnosticLogLineLimit) {
+        line.resize(kDiagnosticLogLineLimit - 4);
+        line += "...\n";
+    }
+    SafeXPlaneDebugString(line);
 }
 
 double ToRadians(double degrees) {
@@ -3068,6 +5317,2318 @@ double DistanceFromPointToRouteSegmentNm(
         endPoint.latitudeDeg,
         endPoint.longitudeDeg);
     return std::min(startDistanceNm, endDistanceNm);
+}
+
+bool AuthorityRingCrossesAntiMeridian(
+    const xvatsim::core::authority::AuthorityPolygonRing& ring) {
+    double minLongitudeDeg = std::numeric_limits<double>::max();
+    double maxLongitudeDeg = std::numeric_limits<double>::lowest();
+    for (std::size_t index = 0; index < ring.points.size(); ++index) {
+        const auto longitudeDeg = NormalizeLongitudeDeg(ring.points[index].longitudeDeg);
+        minLongitudeDeg = std::min(minLongitudeDeg, longitudeDeg);
+        maxLongitudeDeg = std::max(maxLongitudeDeg, longitudeDeg);
+        if (index > 0 &&
+            CrossesAntiMeridian(
+                ring.points[index - 1].longitudeDeg,
+                ring.points[index].longitudeDeg)) {
+            return true;
+        }
+    }
+
+    return (maxLongitudeDeg - minLongitudeDeg) > 180.0;
+}
+
+bool AuthorityPointInRing(
+    const xvatsim::core::authority::GeoPoint& point,
+    const xvatsim::core::authority::AuthorityPolygonRing& ring) {
+    bool inside = false;
+    const auto count = ring.points.size();
+    if (count < 3) {
+        return false;
+    }
+
+    const auto crossesAntiMeridian = AuthorityRingCrossesAntiMeridian(ring);
+    const auto pointLongitudeDeg = NormalizeLongitudeDeg(point.longitudeDeg);
+
+    for (std::size_t i = 0, j = count - 1; i < count; j = i++) {
+        const auto& pi = ring.points[i];
+        const auto& pj = ring.points[j];
+        const auto piLongitudeDeg =
+            crossesAntiMeridian
+                ? UnwrapLongitudeRelativeDeg(pointLongitudeDeg, pi.longitudeDeg)
+                : pi.longitudeDeg;
+        const auto pjLongitudeDeg =
+            crossesAntiMeridian
+                ? UnwrapLongitudeRelativeDeg(pointLongitudeDeg, pj.longitudeDeg)
+                : pj.longitudeDeg;
+        const auto intersects =
+            ((pi.latitudeDeg > point.latitudeDeg) != (pj.latitudeDeg > point.latitudeDeg)) &&
+            (pointLongitudeDeg <
+             (pjLongitudeDeg - piLongitudeDeg) * (point.latitudeDeg - pi.latitudeDeg) /
+                     ((pj.latitudeDeg - pi.latitudeDeg) == 0.0
+                          ? 1e-12
+                          : (pj.latitudeDeg - pi.latitudeDeg)) +
+                 piLongitudeDeg);
+        if (intersects) {
+            inside = !inside;
+        }
+    }
+
+    return inside;
+}
+
+bool AuthorityPointInPolygon(
+    const xvatsim::core::authority::GeoPoint& point,
+    const xvatsim::core::authority::AuthorityPolygon& polygon) {
+    for (const auto& ring : polygon.rings) {
+        if (AuthorityPointInRing(point, ring)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+double DistanceFromPointToAuthoritySegmentNm(
+    const xvatsim::core::authority::GeoPoint& point,
+    const xvatsim::core::authority::GeoPoint& segmentStart,
+    const xvatsim::core::authority::GeoPoint& segmentEnd) {
+    const GeoPoint localPoint{point.latitudeDeg, point.longitudeDeg};
+    const brain::RouteWaypointSnapshot localStart{
+        {},
+        segmentStart.latitudeDeg,
+        segmentStart.longitudeDeg,
+    };
+    const brain::RouteWaypointSnapshot localEnd{
+        {},
+        segmentEnd.latitudeDeg,
+        segmentEnd.longitudeDeg,
+    };
+    return DistanceFromPointToRouteSegmentNm(localPoint, localStart, localEnd);
+}
+
+double DistanceFromPointToAuthorityPolygonNm(
+    const xvatsim::core::authority::GeoPoint& point,
+    const xvatsim::core::authority::AuthorityPolygon& polygon) {
+    if (AuthorityPointInPolygon(point, polygon)) {
+        return 0.0;
+    }
+
+    double bestDistanceNm = std::numeric_limits<double>::max();
+    for (const auto& ring : polygon.rings) {
+        if (ring.points.size() < 2) {
+            continue;
+        }
+
+        for (std::size_t index = 0; index < ring.points.size(); ++index) {
+            const auto& start = ring.points[index];
+            const auto& end = ring.points[(index + 1) % ring.points.size()];
+            bestDistanceNm = std::min(
+                bestDistanceNm,
+                DistanceFromPointToAuthoritySegmentNm(point, start, end));
+        }
+    }
+
+    return bestDistanceNm;
+}
+
+const xvatsim::core::authority::AuthorityPolygon* FindAuthorityPolygonById(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog,
+    const std::string& polygonId) {
+    for (const auto& polygon : catalog.polygons) {
+        if (polygon.id == polygonId) {
+            return &polygon;
+        }
+    }
+    return nullptr;
+}
+
+bool AuthorityPolygonMatchesAuthorityKey(
+    const xvatsim::core::authority::AuthorityPolygon& polygon,
+    const std::string& rawAuthorityKey) {
+    const auto authorityKey =
+        xvatsim::core::authority::NormalizeAuthorityToken(rawAuthorityKey);
+    if (authorityKey.empty()) {
+        return false;
+    }
+    if (xvatsim::core::authority::NormalizeAuthorityToken(polygon.polygonKey) ==
+        authorityKey) {
+        return true;
+    }
+    if (xvatsim::core::authority::NormalizeAuthorityToken(polygon.id) ==
+        authorityKey) {
+        return true;
+    }
+    for (const auto& lookupKey : polygon.lookupKeys) {
+        if (xvatsim::core::authority::NormalizeAuthorityToken(lookupKey) ==
+            authorityKey) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<const xvatsim::core::authority::AuthorityPolygon*>
+FindAuthorityPolygonsByAuthorityKey(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog,
+    const std::string& rawAuthorityKey) {
+    std::vector<const xvatsim::core::authority::AuthorityPolygon*> polygons;
+    for (const auto& polygon : catalog.polygons) {
+        if (AuthorityPolygonMatchesAuthorityKey(polygon, rawAuthorityKey)) {
+            polygons.push_back(&polygon);
+        }
+    }
+    return polygons;
+}
+
+void AddAuthorityPolygonIndexEntry(
+    std::unordered_map<std::string, std::vector<std::size_t>>* index,
+    std::string key,
+    std::size_t polygonIndex) {
+    if (index == nullptr) {
+        return;
+    }
+    key = xvatsim::core::authority::NormalizeAuthorityToken(std::move(key));
+    if (key.empty()) {
+        return;
+    }
+    auto& entries = (*index)[key];
+    if (std::find(entries.begin(), entries.end(), polygonIndex) == entries.end()) {
+        entries.push_back(polygonIndex);
+    }
+}
+
+std::unordered_map<std::string, std::vector<std::size_t>>
+BuildAuthorityPolygonExactIndex(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog) {
+    std::unordered_map<std::string, std::vector<std::size_t>> index;
+    for (std::size_t i = 0; i < catalog.polygons.size(); ++i) {
+        const auto& polygon = catalog.polygons[i];
+        AddAuthorityPolygonIndexEntry(&index, polygon.polygonKey, i);
+        AddAuthorityPolygonIndexEntry(&index, polygon.id, i);
+        for (const auto& lookupKey : polygon.lookupKeys) {
+            AddAuthorityPolygonIndexEntry(&index, lookupKey, i);
+        }
+    }
+    return index;
+}
+
+std::vector<const xvatsim::core::authority::AuthorityPolygon*>
+FindAuthorityPolygonsByAuthorityKeyIndexed(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog,
+    const std::unordered_map<std::string, std::vector<std::size_t>>& index,
+    const std::string& rawAuthorityKey) {
+    const auto authorityKey =
+        xvatsim::core::authority::NormalizeAuthorityToken(rawAuthorityKey);
+    if (authorityKey.empty()) {
+        return {};
+    }
+    const auto it = index.find(authorityKey);
+    if (it == index.end()) {
+        return {};
+    }
+
+    std::vector<const xvatsim::core::authority::AuthorityPolygon*> polygons;
+    polygons.reserve(it->second.size());
+    std::unordered_set<std::string> seenPolygonIds;
+    for (const auto polygonIndex : it->second) {
+        if (polygonIndex >= catalog.polygons.size()) {
+            continue;
+        }
+        const auto& polygon = catalog.polygons[polygonIndex];
+        if (seenPolygonIds.insert(polygon.id).second) {
+            polygons.push_back(&polygon);
+        }
+    }
+    return polygons;
+}
+
+xvatsim::core::authority::ControllerAuthorityCatalog
+FilterControllerAuthorityCatalogToAvailablePolygons(
+    const xvatsim::core::authority::ControllerAuthorityCatalog& controllerCatalog,
+    const xvatsim::core::authority::AuthorityPolygonCatalog& polygonCatalog) {
+    xvatsim::core::authority::ControllerAuthorityCatalog filtered;
+    for (const auto& authority : controllerCatalog.authorities) {
+        if (!FindAuthorityPolygonsByAuthorityKey(
+                 polygonCatalog,
+                 authority.polygonKey).empty()) {
+            filtered.authorities.push_back(authority);
+        }
+    }
+    for (const auto& gap : controllerCatalog.dataGaps) {
+        if (!FindAuthorityPolygonsByAuthorityKey(
+                 polygonCatalog,
+                 gap.polygonKey).empty()) {
+            filtered.dataGaps.push_back(gap);
+        }
+    }
+    return filtered;
+}
+
+std::string AuthorityPolygonPrimaryKey(
+    const xvatsim::core::authority::AuthorityPolygon& polygon) {
+    const auto polygonKey =
+        xvatsim::core::authority::NormalizeAuthorityToken(polygon.polygonKey);
+    if (!polygonKey.empty()) {
+        return polygonKey;
+    }
+    return xvatsim::core::authority::NormalizeAuthorityToken(polygon.id);
+}
+
+std::string AuthorityFamilyKey(std::string key) {
+    key = xvatsim::core::authority::NormalizeAuthorityToken(std::move(key));
+    const auto separator = key.find('-');
+    if (separator == std::string::npos || separator == 0) {
+        return key;
+    }
+    return key.substr(0, separator);
+}
+
+std::unordered_map<std::string, std::vector<std::size_t>>
+BuildAuthorityPolygonFamilyIndex(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog) {
+    std::unordered_map<std::string, std::vector<std::size_t>> index;
+    for (std::size_t i = 0; i < catalog.polygons.size(); ++i) {
+        const auto& polygon = catalog.polygons[i];
+        const auto primaryKey = AuthorityPolygonPrimaryKey(polygon);
+        AddAuthorityPolygonIndexEntry(&index, primaryKey, i);
+        AddAuthorityPolygonIndexEntry(&index, AuthorityFamilyKey(primaryKey), i);
+    }
+    return index;
+}
+
+std::optional<xvatsim::core::authority::GeoPoint>
+AuthorityPolygonRepresentativePoint(
+    const xvatsim::core::authority::AuthorityPolygon& polygon) {
+    const xvatsim::core::authority::AuthorityPolygonRing* bestRing = nullptr;
+    for (const auto& ring : polygon.rings) {
+        if (ring.points.empty()) {
+            continue;
+        }
+        if (bestRing == nullptr || ring.points.size() > bestRing->points.size()) {
+            bestRing = &ring;
+        }
+    }
+    if (bestRing == nullptr || bestRing->points.empty()) {
+        return std::nullopt;
+    }
+
+    const auto referenceLongitudeDeg = bestRing->points.front().longitudeDeg;
+    double latitudeSum = 0.0;
+    double longitudeSum = 0.0;
+    for (const auto& point : bestRing->points) {
+        latitudeSum += point.latitudeDeg;
+        longitudeSum +=
+            UnwrapLongitudeRelativeDeg(referenceLongitudeDeg, point.longitudeDeg);
+    }
+
+    const auto pointCount = static_cast<double>(bestRing->points.size());
+    return xvatsim::core::authority::GeoPoint{
+        latitudeSum / pointCount,
+        NormalizeLongitudeDeg(longitudeSum / pointCount),
+    };
+}
+
+int AuthorityPolygonSourceCompatibilityPriority(
+    const xvatsim::core::authority::AuthorityPolygon& sourcePolygon,
+    const xvatsim::core::authority::AuthorityPolygon& candidatePolygon) {
+    const auto sourceKey = AuthorityPolygonPrimaryKey(sourcePolygon);
+    const auto candidateKey = AuthorityPolygonPrimaryKey(candidatePolygon);
+    if (!sourceKey.empty() && sourceKey == candidateKey) {
+        return 0;
+    }
+    const auto sourceFamily = AuthorityFamilyKey(sourceKey);
+    const auto candidateFamily = AuthorityFamilyKey(candidateKey);
+    if (!sourceFamily.empty() && sourceFamily == candidateFamily) {
+        return 0;
+    }
+
+    return 100;
+}
+
+int TransceiverRouteProofSourceOwnershipPriority(
+    const xvatsim::core::authority::AuthorityPolygon& candidatePolygon,
+    const std::vector<const xvatsim::core::authority::AuthorityPolygon*>*
+        sourceOwnedPolygons) {
+    if (sourceOwnedPolygons == nullptr || sourceOwnedPolygons->empty()) {
+        return 0;
+    }
+    int bestPriority = 100;
+    for (const auto* sourcePolygon : *sourceOwnedPolygons) {
+        if (sourcePolygon == nullptr) {
+            continue;
+        }
+        bestPriority = std::min(
+            bestPriority,
+            AuthorityPolygonSourceCompatibilityPriority(
+                *sourcePolygon,
+                candidatePolygon));
+    }
+    return bestPriority;
+}
+
+std::string SummarizeSourceOwnedAuthorityPolygons(
+    const std::vector<const xvatsim::core::authority::AuthorityPolygon*>*
+        sourceOwnedPolygons) {
+    if (sourceOwnedPolygons == nullptr || sourceOwnedPolygons->empty()) {
+        return {};
+    }
+
+    std::vector<std::string> keys;
+    keys.reserve(sourceOwnedPolygons->size());
+    for (const auto* polygon : *sourceOwnedPolygons) {
+        if (polygon == nullptr) {
+            continue;
+        }
+        const auto key = AuthorityPolygonPrimaryKey(*polygon);
+        if (!key.empty()) {
+            keys.push_back(key);
+        }
+    }
+    SortUniqueStrings(&keys);
+    return SummarizeStrings(keys);
+}
+
+std::string AuthorityControllerCallsignBaseKey(const std::string& normalizedCallsign) {
+    auto base = xvatsim::core::authority::NormalizeAuthorityToken(normalizedCallsign);
+    for (const std::string_view suffix : {"_CTR", "_FSS", "_APP", "_DEP"}) {
+        if (base.size() >= suffix.size() &&
+            base.compare(base.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            base.erase(base.size() - suffix.size());
+            break;
+        }
+    }
+    return base;
+}
+
+int TransceiverRouteProofCallsignKeyPriority(
+    const xvatsim::core::authority::AuthorityPolygon& candidatePolygon,
+    const std::string& normalizedCallsign) {
+    const auto candidateKey = AuthorityPolygonPrimaryKey(candidatePolygon);
+    const auto candidateFamily = AuthorityFamilyKey(candidateKey);
+    const auto callsignBase = AuthorityControllerCallsignBaseKey(normalizedCallsign);
+    if (callsignBase.empty()) {
+        return 10;
+    }
+    if (!candidateKey.empty() && callsignBase == candidateKey) {
+        return 0;
+    }
+    if (!candidateFamily.empty() && callsignBase == candidateFamily) {
+        return 0;
+    }
+    const auto startsWith = [](const std::string& value, const std::string& prefix) {
+        return value.size() >= prefix.size() &&
+               value.compare(0, prefix.size(), prefix) == 0;
+    };
+    if (!candidateKey.empty() &&
+        (startsWith(callsignBase, candidateKey + "_") ||
+         startsWith(callsignBase, candidateKey + "-"))) {
+        return 1;
+    }
+    if (!candidateFamily.empty() &&
+        (startsWith(callsignBase, candidateFamily + "_") ||
+         startsWith(callsignBase, candidateFamily + "-"))) {
+        return 1;
+    }
+    return 10;
+}
+
+std::vector<const xvatsim::core::authority::AuthorityPolygon*>
+FindKnownAuthorityPolygonsByControllerCallsignBase(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog,
+    const std::string& normalizedCallsign) {
+    const auto callsignBase = AuthorityControllerCallsignBaseKey(normalizedCallsign);
+    if (callsignBase.empty()) {
+        return {};
+    }
+
+    std::unordered_set<std::string> candidateKeys;
+    auto addKey = [&](std::string key) {
+        key = xvatsim::core::authority::NormalizeAuthorityToken(key);
+        if (!key.empty()) {
+            candidateKeys.insert(std::move(key));
+        }
+    };
+
+    addKey(callsignBase);
+    auto hyphenatedBase = callsignBase;
+    std::replace(hyphenatedBase.begin(), hyphenatedBase.end(), '_', '-');
+    addKey(hyphenatedBase);
+
+    const auto separator = callsignBase.find_first_of("_-");
+    if (separator != std::string::npos && separator > 0) {
+        addKey(callsignBase.substr(0, separator));
+    }
+
+    std::vector<const xvatsim::core::authority::AuthorityPolygon*> matches;
+    std::unordered_set<std::string> matchedPolygonIds;
+    for (const auto& polygon : catalog.polygons) {
+        const auto polygonKey = AuthorityPolygonPrimaryKey(polygon);
+        const auto familyKey = AuthorityFamilyKey(polygonKey);
+        if ((!polygonKey.empty() && candidateKeys.find(polygonKey) != candidateKeys.end()) ||
+            (!familyKey.empty() && candidateKeys.find(familyKey) != candidateKeys.end())) {
+            if (matchedPolygonIds.insert(polygon.id).second) {
+                matches.push_back(&polygon);
+            }
+        }
+    }
+
+    return matches;
+}
+
+std::vector<const xvatsim::core::authority::AuthorityPolygon*>
+FindKnownAuthorityPolygonsByControllerCallsignBaseIndexed(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& catalog,
+    const std::unordered_map<std::string, std::vector<std::size_t>>& index,
+    const std::string& normalizedCallsign) {
+    const auto callsignBase = AuthorityControllerCallsignBaseKey(normalizedCallsign);
+    if (callsignBase.empty()) {
+        return {};
+    }
+
+    std::unordered_set<std::string> candidateKeys;
+    auto addKey = [&](std::string key) {
+        key = xvatsim::core::authority::NormalizeAuthorityToken(std::move(key));
+        if (!key.empty()) {
+            candidateKeys.insert(std::move(key));
+        }
+    };
+
+    addKey(callsignBase);
+    auto hyphenatedBase = callsignBase;
+    std::replace(hyphenatedBase.begin(), hyphenatedBase.end(), '_', '-');
+    addKey(hyphenatedBase);
+
+    const auto separator = callsignBase.find_first_of("_-");
+    if (separator != std::string::npos && separator > 0) {
+        addKey(callsignBase.substr(0, separator));
+    }
+
+    std::vector<const xvatsim::core::authority::AuthorityPolygon*> matches;
+    std::unordered_set<std::string> matchedPolygonIds;
+    for (const auto& candidateKey : candidateKeys) {
+        const auto it = index.find(candidateKey);
+        if (it == index.end()) {
+            continue;
+        }
+        for (const auto polygonIndex : it->second) {
+            if (polygonIndex >= catalog.polygons.size()) {
+                continue;
+            }
+            const auto& polygon = catalog.polygons[polygonIndex];
+            if (matchedPolygonIds.insert(polygon.id).second) {
+                matches.push_back(&polygon);
+            }
+        }
+    }
+
+    return matches;
+}
+
+bool AuthoritySourceNeedsTransceiverGeometry(
+    xvatsim::core::authority::AuthoritySource source) {
+    return source == xvatsim::core::authority::AuthoritySource::VatGlasses ||
+           source == xvatsim::core::authority::AuthoritySource::VatsimRadarExtension ||
+           source == xvatsim::core::authority::AuthoritySource::SpecialSectorData;
+}
+
+double AuthorityTransceiverGeometryToleranceNm(
+    xvatsim::core::authority::AuthorityKind kind) {
+    if (kind == xvatsim::core::authority::AuthorityKind::Terminal) {
+        return kAuthorityTerminalTransceiverToleranceNm;
+    }
+    return kAuthorityCenterTransceiverToleranceNm;
+}
+
+bool AuthorityKindCanUseCenterTransceiverProof(
+    xvatsim::core::authority::AuthorityKind kind) {
+    return kind == xvatsim::core::authority::AuthorityKind::Center ||
+           kind == xvatsim::core::authority::AuthorityKind::Extension;
+}
+
+bool AuthoritySourceCanUseDuplicatedAtisProof(
+    xvatsim::core::authority::AuthoritySource source) {
+    return source == xvatsim::core::authority::AuthoritySource::VatGlasses ||
+           source == xvatsim::core::authority::AuthoritySource::VatsimRadarExtension ||
+           source == xvatsim::core::authority::AuthoritySource::SpecialSectorData;
+}
+
+bool AuthorityKindCanUseDuplicatedAtisProof(
+    xvatsim::core::authority::AuthorityKind kind) {
+    return kind == xvatsim::core::authority::AuthorityKind::Center ||
+           kind == xvatsim::core::authority::AuthorityKind::Extension;
+}
+
+bool ControllerCanUseCenterTransceiverProof(
+    const brain::ControllerSnapshot& controller) {
+    return controller.facility == kVatsimCenterFacility ||
+           controller.facility == kVatsimFlightServiceFacility;
+}
+
+bool TextEndsWith(std::string_view value, std::string_view suffix) {
+    return value.size() >= suffix.size() &&
+           value.substr(value.size() - suffix.size()) == suffix;
+}
+
+bool TextAtisHasCoveragePhrase(const std::string& textAtis) {
+    const auto normalizedText =
+        xvatsim::core::authority::NormalizeAuthorityToken(textAtis);
+    return normalizedText.find("COVER") != std::string::npos ||
+           normalizedText.find("COMBIN") != std::string::npos ||
+           normalizedText.find("CONSOLIDAT") != std::string::npos ||
+           normalizedText.find("DELEGAT") != std::string::npos;
+}
+
+std::vector<std::string> ExtractDuplicatedAtisPositionTokens(
+    const std::string& textAtis) {
+    std::vector<std::string> tokens;
+    if (!TextAtisHasCoveragePhrase(textAtis)) {
+        return tokens;
+    }
+
+    std::string normalizedText;
+    normalizedText.reserve(textAtis.size());
+    for (const auto character : textAtis) {
+        if (std::isalnum(static_cast<unsigned char>(character)) != 0 ||
+            character == '_' || character == '-') {
+            normalizedText.push_back(static_cast<char>(
+                std::toupper(static_cast<unsigned char>(character))));
+        } else {
+            normalizedText.push_back(' ');
+        }
+    }
+
+    std::istringstream stream(normalizedText);
+    std::string token;
+    while (stream >> token) {
+        const auto normalizedToken =
+            xvatsim::core::authority::NormalizeAuthorityToken(token);
+        if (normalizedToken.size() < 3 || normalizedToken.size() > 32) {
+            continue;
+        }
+        tokens.push_back(normalizedToken);
+    }
+
+    SortUniqueStrings(&tokens);
+    return tokens;
+}
+
+void AddDuplicatedAtisAuthorityAlias(
+    std::unordered_set<std::string>* aliases,
+    const std::string& value,
+    bool allowPattern) {
+    if (aliases == nullptr || value.empty()) {
+        return;
+    }
+    if (!allowPattern && value.find('*') != std::string::npos) {
+        return;
+    }
+    const auto normalized =
+        xvatsim::core::authority::NormalizeAuthorityToken(value);
+    if (!normalized.empty()) {
+        aliases->insert(normalized);
+    }
+}
+
+std::unordered_set<std::string> BuildDuplicatedAtisAuthorityAliases(
+    const xvatsim::core::authority::ControllerAuthority& authority) {
+    std::unordered_set<std::string> aliases;
+    AddDuplicatedAtisAuthorityAlias(&aliases, authority.id, true);
+    AddDuplicatedAtisAuthorityAlias(&aliases, authority.polygonKey, true);
+    for (const auto& lookupKey : authority.lookupKeys) {
+        AddDuplicatedAtisAuthorityAlias(&aliases, lookupKey, true);
+    }
+    for (const auto& pattern : authority.controllerCallsignPatterns) {
+        AddDuplicatedAtisAuthorityAlias(&aliases, pattern, false);
+    }
+    return aliases;
+}
+
+bool AuthorityPolygonCanRepresentAuthority(
+    const xvatsim::core::authority::AuthorityPolygon& polygon,
+    const xvatsim::core::authority::ControllerAuthority& authority) {
+    const auto authorityPolygonKey =
+        xvatsim::core::authority::NormalizeAuthorityToken(authority.polygonKey);
+    if (authorityPolygonKey.empty()) {
+        return false;
+    }
+    if (xvatsim::core::authority::NormalizeAuthorityToken(polygon.polygonKey) ==
+        authorityPolygonKey) {
+        return true;
+    }
+    if (xvatsim::core::authority::NormalizeAuthorityToken(polygon.id) ==
+        authorityPolygonKey) {
+        return true;
+    }
+    for (const auto& lookupKey : polygon.lookupKeys) {
+        if (xvatsim::core::authority::NormalizeAuthorityToken(lookupKey) ==
+            authorityPolygonKey) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const xvatsim::core::authority::AuthorityPolygon*
+FindDuplicatedAtisRouteAuthorityPolygon(
+    const xvatsim::core::authority::ControllerAuthority& authority,
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    const std::unordered_set<std::string>& routeAuthorityPolygonKeys) {
+    for (const auto& polygon : authorityPolygonCatalog.polygons) {
+        if (!AuthorityPolygonCanRepresentAuthority(polygon, authority)) {
+            continue;
+        }
+        if (!AuthorityPolygonMatchesRouteKeys(polygon, routeAuthorityPolygonKeys)) {
+            continue;
+        }
+        return &polygon;
+    }
+    return nullptr;
+}
+
+int AuthoritySourceConfidencePriority(
+    xvatsim::core::authority::AuthoritySource source) {
+    switch (source) {
+        case xvatsim::core::authority::AuthoritySource::VatGlasses:
+            return 0;
+        case xvatsim::core::authority::AuthoritySource::AirportLocal:
+            return 0;
+        case xvatsim::core::authority::AuthoritySource::SpecialSectorData:
+            return 1;
+        case xvatsim::core::authority::AuthoritySource::VatsimRadarExtension:
+            return 2;
+        case xvatsim::core::authority::AuthoritySource::VatSpyBoundary:
+            return 3;
+        case xvatsim::core::authority::AuthoritySource::VatSpyFir:
+            return 4;
+        case xvatsim::core::authority::AuthoritySource::VatSpyUir:
+            return 5;
+        case xvatsim::core::authority::AuthoritySource::SimAwareTracon:
+            return 6;
+    }
+    return 100;
+}
+
+std::string FormatAuthorityDistanceNm(double distanceNm) {
+    if (!std::isfinite(distanceNm)) {
+        return "unknown";
+    }
+    return std::to_string(static_cast<int>(std::round(std::max(0.0, distanceNm)))) + "nm";
+}
+
+bool IsUsableAuthorityStationCandidate(
+    const brain::ReceivableControllerSnapshot& candidate) {
+    return std::isfinite(candidate.latitudeDeg) &&
+           std::isfinite(candidate.longitudeDeg) &&
+           candidate.latitudeDeg >= -90.0 &&
+           candidate.latitudeDeg <= 90.0 &&
+           candidate.longitudeDeg >= -180.0 &&
+           candidate.longitudeDeg <= 180.0 &&
+           (std::fabs(candidate.latitudeDeg) > 1e-9 ||
+            std::fabs(candidate.longitudeDeg) > 1e-9);
+}
+
+std::vector<brain::ReceivableControllerSnapshot> FindAuthorityStationCandidates(
+    const brain::TransceiverResolutionSnapshot& authorityTransceiverSnapshot,
+    const std::string& callsign,
+    const std::string& frequency) {
+    std::vector<brain::ReceivableControllerSnapshot> candidates;
+    const auto normalizedCallsign =
+        xvatsim::core::authority::NormalizeControllerCallsign(callsign);
+    const auto normalizedFrequency = NormalizeFrequency(frequency);
+
+    for (const auto& candidate : authorityTransceiverSnapshot.candidates) {
+        if (!IsUsableAuthorityStationCandidate(candidate)) {
+            continue;
+        }
+        if (xvatsim::core::authority::NormalizeControllerCallsign(candidate.callsign) !=
+            normalizedCallsign) {
+            continue;
+        }
+        if (!normalizedFrequency.empty() &&
+            NormalizeFrequency(candidate.frequency) != normalizedFrequency) {
+            continue;
+        }
+        candidates.push_back(candidate);
+    }
+
+    return candidates;
+}
+
+AuthorityStationCandidateIndex BuildAuthorityStationCandidateIndex(
+    const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot) {
+    AuthorityStationCandidateIndex index;
+    if (authorityTransceiverSnapshot == nullptr ||
+        !authorityTransceiverSnapshot->available ||
+        authorityTransceiverSnapshot->stale) {
+        return index;
+    }
+
+    for (const auto& candidate : authorityTransceiverSnapshot->candidates) {
+        if (!IsUsableAuthorityStationCandidate(candidate)) {
+            continue;
+        }
+        const auto normalizedCallsign =
+            xvatsim::core::authority::NormalizeControllerCallsign(candidate.callsign);
+        if (normalizedCallsign.empty()) {
+            continue;
+        }
+        index[normalizedCallsign].push_back(candidate);
+    }
+    return index;
+}
+
+std::vector<brain::ReceivableControllerSnapshot> FindAuthorityStationCandidatesIndexed(
+    const AuthorityStationCandidateIndex& stationCandidateIndex,
+    const std::string& callsign,
+    const std::string& frequency) {
+    std::vector<brain::ReceivableControllerSnapshot> candidates;
+    const auto normalizedCallsign =
+        xvatsim::core::authority::NormalizeControllerCallsign(callsign);
+    const auto normalizedFrequency = NormalizeFrequency(frequency);
+    const auto stationIt = stationCandidateIndex.find(normalizedCallsign);
+    if (stationIt == stationCandidateIndex.end()) {
+        return candidates;
+    }
+
+    for (const auto& candidate : stationIt->second) {
+        if (!normalizedFrequency.empty() &&
+            NormalizeFrequency(candidate.frequency) != normalizedFrequency) {
+            continue;
+        }
+        candidates.push_back(candidate);
+    }
+    return candidates;
+}
+
+bool HasTransceiverStationCandidateNearRouteAuthorityScope(
+    const std::vector<RouteScopedAuthorityPolygon>& routeScopedPolygons,
+    const std::vector<brain::ReceivableControllerSnapshot>& stationCandidates) {
+    if (routeScopedPolygons.empty() || stationCandidates.empty()) {
+        return false;
+    }
+
+    for (const auto& scopedPolygon : routeScopedPolygons) {
+        if (scopedPolygon.polygon == nullptr ||
+            !AuthorityKindCanUseCenterTransceiverProof(scopedPolygon.polygon->kind)) {
+            continue;
+        }
+        const auto toleranceNm =
+            AuthorityTransceiverGeometryToleranceNm(scopedPolygon.polygon->kind);
+        for (const auto& stationCandidate : stationCandidates) {
+            const xvatsim::core::authority::GeoPoint stationPoint{
+                stationCandidate.latitudeDeg,
+                stationCandidate.longitudeDeg,
+            };
+            if (DistanceFromPointToAuthorityPolygonNm(
+                    stationPoint,
+                    *scopedPolygon.polygon) <= toleranceNm) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+std::vector<RouteScopedAuthorityPolygon> BuildRouteScopedAuthorityPolygons(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    bool hasAircraftPosition,
+    const xvatsim::core::authority::GeoPoint& aircraftPosition,
+    const std::vector<xvatsim::core::authority::GeoPoint>& routePoints) {
+    std::vector<xvatsim::core::authority::ActiveAuthorityPolygon> routeScopeCandidates;
+    routeScopeCandidates.reserve(authorityPolygonCatalog.polygons.size());
+    for (const auto& polygon : authorityPolygonCatalog.polygons) {
+        if (!AuthorityKindCanUseCenterTransceiverProof(polygon.kind)) {
+            continue;
+        }
+
+        routeScopeCandidates.push_back({
+            "ROUTE_SCOPE",
+            "ROUTE_SCOPE",
+            polygon.id,
+            polygon.polygonKey,
+            "ROUTE_SCOPE",
+            polygon.source,
+            polygon.kind,
+        });
+    }
+
+    const auto relevantPolygons =
+        xvatsim::core::authority::ResolveRelevantAuthorityPolygons(
+            routeScopeCandidates,
+            authorityPolygonCatalog,
+            hasAircraftPosition,
+            aircraftPosition,
+            routePoints);
+
+    std::vector<RouteScopedAuthorityPolygon> scopedPolygons;
+    scopedPolygons.reserve(relevantPolygons.size());
+    for (const auto& relevantPolygon : relevantPolygons) {
+        const auto* polygon = FindAuthorityPolygonById(
+            authorityPolygonCatalog,
+            relevantPolygon.activePolygon.polygonId);
+        if (polygon == nullptr ||
+            !AuthorityKindCanUseCenterTransceiverProof(polygon->kind)) {
+            continue;
+        }
+
+        scopedPolygons.push_back({
+            polygon,
+            relevantPolygon.aircraftInside,
+            relevantPolygon.routeIntersects,
+            relevantPolygon.routeEntryDistanceNm,
+        });
+    }
+
+    std::sort(
+        scopedPolygons.begin(),
+        scopedPolygons.end(),
+        [](const auto& left, const auto& right) {
+            if (left.routeIntersects != right.routeIntersects) {
+                return left.routeIntersects && !right.routeIntersects;
+            }
+            if (left.routeEntryDistanceNm != right.routeEntryDistanceNm) {
+                return left.routeEntryDistanceNm < right.routeEntryDistanceNm;
+            }
+            const auto leftPriority =
+                AuthoritySourceConfidencePriority(left.polygon->source);
+            const auto rightPriority =
+                AuthoritySourceConfidencePriority(right.polygon->source);
+            if (leftPriority != rightPriority) {
+                return leftPriority < rightPriority;
+            }
+            return left.polygon->id < right.polygon->id;
+        });
+    return scopedPolygons;
+}
+
+xvatsim::core::authority::AuthorityPolygonCatalog
+FilterAuthorityPolygonCatalogToRouteGeometry(
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    bool hasAircraftPosition,
+    const xvatsim::core::authority::GeoPoint& aircraftPosition,
+    const std::vector<xvatsim::core::authority::GeoPoint>& routePoints) {
+    if (authorityPolygonCatalog.polygons.empty()) {
+        return authorityPolygonCatalog;
+    }
+
+    std::vector<xvatsim::core::authority::ActiveAuthorityPolygon> routeScopeCandidates;
+    routeScopeCandidates.reserve(authorityPolygonCatalog.polygons.size());
+    for (const auto& polygon : authorityPolygonCatalog.polygons) {
+        routeScopeCandidates.push_back({
+            "ROUTE_SCOPE",
+            "ROUTE_SCOPE",
+            polygon.id,
+            polygon.polygonKey,
+            "ROUTE_SCOPE",
+            polygon.source,
+            polygon.kind,
+        });
+    }
+
+    const auto relevantPolygons =
+        xvatsim::core::authority::ResolveRelevantAuthorityPolygons(
+            routeScopeCandidates,
+            authorityPolygonCatalog,
+            hasAircraftPosition,
+            aircraftPosition,
+            routePoints);
+
+    std::unordered_set<std::string> relevantPolygonIds;
+    std::unordered_set<std::string> relevantPolygonKeys;
+    for (const auto& relevantPolygon : relevantPolygons) {
+        const auto polygonId = xvatsim::core::authority::NormalizeAuthorityToken(
+            relevantPolygon.activePolygon.polygonId);
+        const auto polygonKey = xvatsim::core::authority::NormalizeAuthorityToken(
+            relevantPolygon.activePolygon.polygonKey);
+        if (!polygonId.empty()) {
+            relevantPolygonIds.insert(polygonId);
+        }
+        if (!polygonKey.empty()) {
+            relevantPolygonKeys.insert(polygonKey);
+        }
+    }
+
+    xvatsim::core::authority::AuthorityPolygonCatalog filtered;
+    for (const auto& polygon : authorityPolygonCatalog.polygons) {
+        const auto polygonId =
+            xvatsim::core::authority::NormalizeAuthorityToken(polygon.id);
+        if (!polygonId.empty() &&
+            relevantPolygonIds.find(polygonId) != relevantPolygonIds.end()) {
+            filtered.polygons.push_back(polygon);
+        }
+    }
+    for (const auto& gap : authorityPolygonCatalog.dataGaps) {
+        const auto polygonKey =
+            xvatsim::core::authority::NormalizeAuthorityToken(gap.polygonKey);
+        if (!polygonKey.empty() &&
+            relevantPolygonKeys.find(polygonKey) != relevantPolygonKeys.end()) {
+            filtered.dataGaps.push_back(gap);
+        }
+    }
+    return filtered;
+}
+
+std::size_t BuildEndpointLocalAuthoritySignature(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const AuthorityRelevanceWorkScope& workScope) {
+    std::size_t hash = 1469598103934665603ull;
+    const auto suffixesByAirport =
+        CollectRouteEndpointAirportLocalSuffixes(
+            controllerFeedSnapshot,
+            workScope.routeSectorSnapshot,
+            workScope.includeDepartureEndpoint,
+            workScope.includeDestinationEndpoint);
+
+    std::vector<std::string> airports;
+    airports.reserve(suffixesByAirport.size());
+    for (const auto& [airport, _] : suffixesByAirport) {
+        airports.push_back(airport);
+    }
+    std::sort(airports.begin(), airports.end());
+
+    for (const auto& airport : airports) {
+        HashCombineString(&hash, airport);
+        const auto suffixIt = suffixesByAirport.find(airport);
+        if (suffixIt == suffixesByAirport.end()) {
+            continue;
+        }
+        std::vector<std::string> suffixes(
+            suffixIt->second.begin(),
+            suffixIt->second.end());
+        std::sort(suffixes.begin(), suffixes.end());
+        for (const auto& suffix : suffixes) {
+            HashCombineString(&hash, suffix);
+        }
+    }
+    return hash;
+}
+
+std::size_t BuildAuthorityScopeCacheSignature(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const AuthorityRelevanceWorkScope& workScope,
+    std::uint64_t terminalBoundaryGeneration) {
+    std::size_t hash = 1469598103934665603ull;
+    // Source payload changes are already represented by the route/terminal
+    // generation counters, so avoid re-hashing large payload byte arrays in
+    // the live authority cadence path.
+    HashCombine(&hash, BuildAuthorityStructuralScopeRouteSignature(workScope.routeSectorSnapshot));
+    HashCombine(&hash, BuildEndpointLocalAuthoritySignature(controllerFeedSnapshot, workScope));
+    // Scope artifacts are route/source structures. Aircraft movement alone
+    // should not rebuild them; the live relevance pass handles current
+    // position when the route window or authority evidence actually changes.
+    HashCombine(&hash, static_cast<std::size_t>(aircraftState.valid ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(aircraftState.onGround ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(terminalBoundaryGeneration));
+    HashCombine(&hash, static_cast<std::size_t>(workScope.includeDepartureEndpoint ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(workScope.includeDestinationEndpoint ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(workScope.deferredSectorCount));
+    HashCombineDouble(&hash, workScope.windowNm);
+    HashCombineString(&hash, workScope.stage);
+    return hash;
+}
+
+const AuthorityRelevanceScopeArtifacts& GetCachedAuthorityRelevanceScopeArtifacts(
+    const std::vector<unsigned char>& vatspyPayload,
+    const std::vector<unsigned char>& boundaryPayload,
+    const std::vector<unsigned char>& terminalBoundaryPayload,
+    const std::vector<unsigned char>& ownershipPayload,
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const AuthorityRelevanceWorkScope& workScope,
+    std::uint64_t terminalBoundaryGeneration) {
+    static std::mutex cacheMutex;
+    static AuthorityRelevanceScopeArtifacts cachedArtifacts;
+
+    const auto scopeSignature =
+        BuildAuthorityScopeCacheSignature(
+            aircraftState,
+            controllerFeedSnapshot,
+            workScope,
+            terminalBoundaryGeneration);
+
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    if (cachedArtifacts.valid && cachedArtifacts.signature == scopeSignature) {
+        return cachedArtifacts;
+    }
+
+    AuthorityRelevanceScopeArtifacts rebuilt;
+    rebuilt.signature = scopeSignature;
+    rebuilt.routeAuthorityPolygonKeys =
+        BuildRouteAuthorityPolygonKeys(workScope.routeSectorSnapshot);
+
+    rebuilt.controllerAuthorityCatalog =
+        GetCachedCoreControllerAuthorityCatalog(
+            vatspyPayload,
+            terminalBoundaryPayload,
+            ownershipPayload);
+    rebuilt.controllerAuthorityCatalog =
+        xvatsim::core::authority::MergeControllerAuthorityCatalogs(
+            rebuilt.controllerAuthorityCatalog,
+            xvatsim::core::authority::CompileAuthorityPositionCatalog(
+                BuildRouteEndpointAirportLocalAuthorityPositionRecords(
+                    controllerFeedSnapshot,
+                    workScope.routeSectorSnapshot,
+                    workScope.includeDepartureEndpoint,
+                    workScope.includeDestinationEndpoint)));
+
+    rebuilt.authorityPolygonCatalog =
+        GetCachedCoreAuthorityPolygonCatalog(
+            boundaryPayload,
+            terminalBoundaryPayload,
+            ownershipPayload);
+    rebuilt.authorityPolygonCatalog = MergeAuthorityPolygonCatalogs(
+        rebuilt.authorityPolygonCatalog,
+        xvatsim::core::authority::CompileAuthorityPolygons(
+            BuildRouteEndpointAirportLocalAuthorityPolygonRecords(
+                controllerFeedSnapshot,
+                workScope.routeSectorSnapshot,
+                workScope.includeDepartureEndpoint,
+                workScope.includeDestinationEndpoint)));
+    rebuilt.authorityPolygonExactIndexesByKey =
+        BuildAuthorityPolygonExactIndex(rebuilt.authorityPolygonCatalog);
+    rebuilt.authorityPolygonFamilyIndexesByKey =
+        BuildAuthorityPolygonFamilyIndex(rebuilt.authorityPolygonCatalog);
+
+    const auto routePoints = workScope.routePoints;
+    const xvatsim::core::authority::GeoPoint aircraftPosition{
+        aircraftState.latitudeDeg,
+        aircraftState.longitudeDeg,
+    };
+    const auto routeAuthorityScopeKeys =
+        BuildRouteAuthorityScopeKeys(
+            rebuilt.authorityPolygonCatalog,
+            rebuilt.routeAuthorityPolygonKeys,
+            workScope.routeSectorSnapshot,
+            workScope.includeDepartureEndpoint,
+            workScope.includeDestinationEndpoint,
+            aircraftState.valid,
+            aircraftPosition,
+            routePoints);
+    const auto routeBroadAuthorityPolygonCatalog =
+        FilterAuthorityPolygonCatalogToRouteKeys(
+            rebuilt.authorityPolygonCatalog,
+            routeAuthorityScopeKeys);
+    rebuilt.routeScopedAuthorityPolygonCatalog =
+        FilterAuthorityPolygonCatalogToRouteGeometry(
+            routeBroadAuthorityPolygonCatalog,
+            aircraftState.valid,
+            aircraftPosition,
+            routePoints);
+    rebuilt.routeAuthorityMatchKeys =
+        BuildRouteAuthorityMatchKeys(
+            rebuilt.routeScopedAuthorityPolygonCatalog,
+            rebuilt.routeAuthorityPolygonKeys);
+    rebuilt.routeScopedControllerAuthorityCatalog =
+        FilterControllerAuthorityCatalogToScopeKeys(
+            rebuilt.controllerAuthorityCatalog,
+            rebuilt.routeAuthorityMatchKeys);
+    rebuilt.routeScopedControllerAuthorityCatalog =
+        FilterControllerAuthorityCatalogToAvailablePolygons(
+            rebuilt.routeScopedControllerAuthorityCatalog,
+            rebuilt.routeScopedAuthorityPolygonCatalog);
+    rebuilt.routeScopedAuthorityPolygons =
+        BuildRouteScopedAuthorityPolygons(
+            rebuilt.routeScopedAuthorityPolygonCatalog,
+            aircraftState.valid,
+            aircraftPosition,
+            routePoints);
+    rebuilt.valid = true;
+
+    cachedArtifacts = std::move(rebuilt);
+    return cachedArtifacts;
+}
+
+bool IsBetterTransceiverAuthorityProof(
+    const TransceiverRouteAuthorityProof& candidate,
+    const TransceiverRouteAuthorityProof& current) {
+    if (current.polygon == nullptr) {
+        return true;
+    }
+    if (candidate.sourcePriority != current.sourcePriority) {
+        return candidate.sourcePriority < current.sourcePriority;
+    }
+    if (candidate.sourceOwnershipPriority != current.sourceOwnershipPriority) {
+        return candidate.sourceOwnershipPriority < current.sourceOwnershipPriority;
+    }
+    if (candidate.callsignKeyPriority != current.callsignKeyPriority) {
+        return candidate.callsignKeyPriority < current.callsignKeyPriority;
+    }
+    if (candidate.stationDistanceNm != current.stationDistanceNm) {
+        return candidate.stationDistanceNm < current.stationDistanceNm;
+    }
+    if (candidate.routeEntryDistanceNm != current.routeEntryDistanceNm) {
+        return candidate.routeEntryDistanceNm < current.routeEntryDistanceNm;
+    }
+    return candidate.polygon->id < current.polygon->id;
+}
+
+std::optional<TransceiverRouteAuthorityProof> FindBestTransceiverRouteAuthorityProof(
+    const std::vector<RouteScopedAuthorityPolygon>& routeScopedPolygons,
+    const std::vector<brain::ReceivableControllerSnapshot>& stationCandidates,
+    const std::string& normalizedCallsign,
+    const std::vector<const xvatsim::core::authority::AuthorityPolygon*>*
+        sourceOwnedPolygons = nullptr,
+    bool enforceUnownedInsideGuard = true) {
+    TransceiverRouteAuthorityProof bestProof;
+    const auto hasSourceOwnership =
+        sourceOwnedPolygons != nullptr && !sourceOwnedPolygons->empty();
+    for (const auto& scopedPolygon : routeScopedPolygons) {
+        if (scopedPolygon.polygon == nullptr ||
+            !AuthorityKindCanUseCenterTransceiverProof(scopedPolygon.polygon->kind)) {
+            continue;
+        }
+        const auto sourceOwnershipPriority =
+            TransceiverRouteProofSourceOwnershipPriority(
+                *scopedPolygon.polygon,
+                sourceOwnedPolygons);
+        if (sourceOwnershipPriority >= 100) {
+            continue;
+        }
+
+        const auto toleranceNm =
+            AuthorityTransceiverGeometryToleranceNm(scopedPolygon.polygon->kind);
+        for (const auto& stationCandidate : stationCandidates) {
+            const xvatsim::core::authority::GeoPoint stationPoint{
+                stationCandidate.latitudeDeg,
+                stationCandidate.longitudeDeg,
+            };
+            const auto distanceNm = DistanceFromPointToAuthorityPolygonNm(
+                stationPoint,
+                *scopedPolygon.polygon);
+            if (distanceNm > toleranceNm) {
+                continue;
+            }
+
+            TransceiverRouteAuthorityProof proof;
+            proof.polygon = scopedPolygon.polygon;
+            proof.station = stationCandidate;
+            proof.stationDistanceNm = distanceNm;
+            proof.routeEntryDistanceNm = scopedPolygon.routeEntryDistanceNm;
+            proof.sourcePriority =
+                AuthoritySourceConfidencePriority(scopedPolygon.polygon->source);
+            proof.sourceOwnershipPriority = sourceOwnershipPriority;
+            proof.callsignKeyPriority =
+                TransceiverRouteProofCallsignKeyPriority(
+                    *scopedPolygon.polygon,
+                    normalizedCallsign);
+            if (enforceUnownedInsideGuard &&
+                !hasSourceOwnership &&
+                proof.callsignKeyPriority >= 10 &&
+                distanceNm > kAuthorityUnownedTransceiverInsideToleranceNm) {
+                continue;
+            }
+            if (IsBetterTransceiverAuthorityProof(proof, bestProof)) {
+                bestProof = std::move(proof);
+            }
+        }
+    }
+
+    if (bestProof.polygon == nullptr) {
+        return std::nullopt;
+    }
+    return bestProof;
+}
+
+const xvatsim::core::authority::AuthorityPolygon*
+FindNearestUnownedTransceiverRouteAuthorityBorderMismatch(
+    const std::vector<RouteScopedAuthorityPolygon>& routeScopedPolygons,
+    const std::vector<brain::ReceivableControllerSnapshot>& stationCandidates,
+    const std::string& normalizedCallsign,
+    double* bestDistanceNm) {
+    const xvatsim::core::authority::AuthorityPolygon* bestPolygon = nullptr;
+    double nearestDistanceNm = std::numeric_limits<double>::max();
+    for (const auto& scopedPolygon : routeScopedPolygons) {
+        if (scopedPolygon.polygon == nullptr ||
+            !AuthorityKindCanUseCenterTransceiverProof(scopedPolygon.polygon->kind)) {
+            continue;
+        }
+        if (TransceiverRouteProofCallsignKeyPriority(
+                *scopedPolygon.polygon,
+                normalizedCallsign) < 10) {
+            continue;
+        }
+
+        const auto toleranceNm =
+            AuthorityTransceiverGeometryToleranceNm(scopedPolygon.polygon->kind);
+        for (const auto& stationCandidate : stationCandidates) {
+            const xvatsim::core::authority::GeoPoint stationPoint{
+                stationCandidate.latitudeDeg,
+                stationCandidate.longitudeDeg,
+            };
+            const auto distanceNm = DistanceFromPointToAuthorityPolygonNm(
+                stationPoint,
+                *scopedPolygon.polygon);
+            if (distanceNm <= kAuthorityUnownedTransceiverInsideToleranceNm ||
+                distanceNm > toleranceNm) {
+                continue;
+            }
+            if (distanceNm < nearestDistanceNm) {
+                nearestDistanceNm = distanceNm;
+                bestPolygon = scopedPolygon.polygon;
+            }
+        }
+    }
+
+    if (bestDistanceNm != nullptr) {
+        *bestDistanceNm = nearestDistanceNm;
+    }
+    return bestPolygon;
+}
+
+double FindNearestTransceiverRouteAuthorityDistanceNm(
+    const std::vector<RouteScopedAuthorityPolygon>& routeScopedPolygons,
+    const std::vector<brain::ReceivableControllerSnapshot>& stationCandidates) {
+    double bestDistanceNm = std::numeric_limits<double>::max();
+    for (const auto& scopedPolygon : routeScopedPolygons) {
+        if (scopedPolygon.polygon == nullptr ||
+            !AuthorityKindCanUseCenterTransceiverProof(scopedPolygon.polygon->kind)) {
+            continue;
+        }
+
+        for (const auto& stationCandidate : stationCandidates) {
+            const xvatsim::core::authority::GeoPoint stationPoint{
+                stationCandidate.latitudeDeg,
+                stationCandidate.longitudeDeg,
+            };
+            bestDistanceNm = std::min(
+                bestDistanceNm,
+                DistanceFromPointToAuthorityPolygonNm(
+                    stationPoint,
+                    *scopedPolygon.polygon));
+        }
+    }
+    return bestDistanceNm;
+}
+
+std::string ResolveTransceiverProofFrequency(
+    const brain::ControllerSnapshot& controller,
+    const brain::ReceivableControllerSnapshot& station) {
+    if (!NormalizeFrequency(controller.frequency).empty()) {
+        return controller.frequency;
+    }
+    return station.frequency;
+}
+
+std::string JoinAuthorityEvidenceItems(const std::vector<std::string>& values) {
+    std::ostringstream stream;
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index > 0) {
+            stream << ">";
+        }
+        stream << values[index];
+    }
+    return stream.str();
+}
+
+xvatsim::core::authority::AuthorityDecision BuildTransceiverRouteAuthorityDecision(
+    const brain::ControllerSnapshot& controller,
+    const TransceiverRouteAuthorityProof& proof,
+    const std::string& frequency) {
+    xvatsim::core::authority::AuthorityDecision decision;
+    decision.accepted = true;
+    decision.evidence.callsign =
+        xvatsim::core::authority::NormalizeControllerCallsign(controller.callsign);
+    decision.evidence.frequency = NormalizeFrequency(frequency);
+    decision.evidence.vatsimFacility = controller.facility;
+    decision.evidence.authorityId = "TRANSCEIVER:" + decision.evidence.callsign;
+    decision.evidence.authoritySource =
+        proof.polygon == nullptr
+            ? xvatsim::core::authority::AuthoritySource::VatSpyBoundary
+            : proof.polygon->source;
+    decision.evidence.authorityKind =
+        proof.polygon == nullptr
+            ? xvatsim::core::authority::AuthorityKind::Center
+            : proof.polygon->kind;
+    decision.evidence.polygonKey =
+        proof.polygon == nullptr ? std::string{} : proof.polygon->polygonKey;
+    decision.evidence.matchedPattern =
+        "TRANSCEIVER_GEO:" +
+        NormalizeFrequency(frequency) + ":" +
+        FormatAuthorityDistanceNm(proof.stationDistanceNm);
+    decision.evidence.callsignMatched = true;
+    decision.evidence.facilityMatched = true;
+    decision.evidence.frequencyRequired = true;
+    decision.evidence.frequencyMatched = true;
+    decision.evidence.frequencyOwned = true;
+    decision.evidence.proofSource = "TRANSCEIVER_GEO_ROUTE";
+    decision.evidence.proofItems = {
+        "facility-type",
+        "transceiver-frequency",
+        "transceiver-geometry",
+        "route-relevant-polygon",
+    };
+    decision.evidence.proofDetail =
+        "frequency=" + NormalizeFrequency(frequency) +
+        ";stationDistance=" +
+        FormatAuthorityDistanceNm(proof.stationDistanceNm) +
+        ";routeEntry=" +
+        FormatAuthorityDistanceNm(proof.routeEntryDistanceNm) +
+        ";polygonSource=" +
+        (proof.polygon == nullptr
+             ? std::string("UNKNOWN")
+             : xvatsim::core::authority::AuthoritySourceLabel(
+                   proof.polygon->source)) +
+        ";proofItems=" +
+        JoinAuthorityEvidenceItems(decision.evidence.proofItems);
+    decision.activeAuthority = {
+        controller.callsign,
+        decision.evidence.authorityId,
+        decision.evidence.polygonKey,
+        decision.evidence.matchedPattern,
+        decision.evidence.authorityKind,
+        decision.evidence.proofSource,
+        decision.evidence.proofDetail,
+    };
+    return decision;
+}
+
+bool LooksLikeControllerPositionToken(const std::string& token) {
+    return token.find('_') != std::string::npos &&
+           (TextEndsWith(token, "_CTR") || TextEndsWith(token, "_FSS"));
+}
+
+xvatsim::core::authority::AuthorityDecision BuildDuplicatedAtisAuthorityDecision(
+    const brain::ControllerSnapshot& controller,
+    const xvatsim::core::authority::ControllerAuthority& authority,
+    const xvatsim::core::authority::AuthorityPolygon& polygon,
+    const std::string& coveredToken) {
+    xvatsim::core::authority::AuthorityDecision decision;
+    decision.accepted = true;
+    decision.evidence.callsign =
+        xvatsim::core::authority::NormalizeControllerCallsign(controller.callsign);
+    decision.evidence.frequency = NormalizeFrequency(controller.frequency);
+    decision.evidence.vatsimFacility = controller.facility;
+    decision.evidence.authorityId = authority.id;
+    decision.evidence.authoritySource = authority.source;
+    decision.evidence.authorityKind = authority.kind;
+    decision.evidence.polygonKey = polygon.polygonKey;
+    decision.evidence.matchedPattern = "ATIS_COVERED:" + coveredToken;
+    decision.evidence.facilityMatched = true;
+    decision.evidence.proofSource = "DUPLICATED_ATIS_DERIVED";
+    decision.evidence.proofItems = {
+        "facility-type",
+        "atis-covered-position",
+        "source-owned-position",
+        "route-relevant-polygon",
+    };
+    decision.evidence.proofDetail =
+        "authoritySource=" +
+        xvatsim::core::authority::AuthoritySourceLabel(authority.source) +
+        ";authorityId=" + authority.id +
+        ";polygonKey=" + polygon.polygonKey +
+        ";coveredPosition=" + coveredToken +
+        ";controllerFrequency=" + NormalizeFrequency(controller.frequency) +
+        ";polygonSource=" +
+        xvatsim::core::authority::AuthoritySourceLabel(polygon.source) +
+        ";proofItems=" +
+        JoinAuthorityEvidenceItems(decision.evidence.proofItems);
+    decision.activeAuthority = {
+        controller.callsign,
+        decision.evidence.authorityId,
+        decision.evidence.polygonKey,
+        decision.evidence.matchedPattern,
+        decision.evidence.authorityKind,
+        decision.evidence.proofSource,
+        decision.evidence.proofDetail,
+    };
+    return decision;
+}
+
+std::vector<xvatsim::core::authority::ActiveAuthorityPolygon>
+ActivateAuthorityPolygonsByDuplicatedAtisProof(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const xvatsim::core::authority::ControllerAuthorityCatalog& controllerAuthorityCatalog,
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    const std::unordered_set<std::string>& routeAuthorityPolygonKeys,
+    std::unordered_map<std::string, std::string>* controllerFrequenciesByCallsign,
+    std::unordered_set<std::string>* countedCandidateControllerKeys,
+    int* candidateControllers,
+    std::vector<std::string>* diagnostics) {
+    if (routeAuthorityPolygonKeys.empty()) {
+        return {};
+    }
+
+    std::vector<xvatsim::core::authority::ActiveAuthorityPolygon> activePolygons;
+    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
+        if (!controller.actionable || controller.atis || controller.callsign.empty() ||
+            controller.textAtis.empty()) {
+            continue;
+        }
+
+        const auto coveredTokens =
+            ExtractDuplicatedAtisPositionTokens(controller.textAtis);
+        if (coveredTokens.empty()) {
+            continue;
+        }
+
+        const auto normalizedCallsign =
+            xvatsim::core::authority::NormalizeControllerCallsign(controller.callsign);
+        for (const auto& coveredToken : coveredTokens) {
+            bool matchedSourceAuthority = false;
+            for (const auto& authority : controllerAuthorityCatalog.authorities) {
+                if (!AuthoritySourceCanUseDuplicatedAtisProof(authority.source) ||
+                    !AuthorityKindCanUseDuplicatedAtisProof(authority.kind)) {
+                    continue;
+                }
+
+                const auto aliases =
+                    BuildDuplicatedAtisAuthorityAliases(authority);
+                if (aliases.find(coveredToken) == aliases.end()) {
+                    continue;
+                }
+                matchedSourceAuthority = true;
+
+                const auto* polygon = FindDuplicatedAtisRouteAuthorityPolygon(
+                    authority,
+                    authorityPolygonCatalog,
+                    routeAuthorityPolygonKeys);
+                if (polygon == nullptr) {
+                    AppendAuthorityDiagnostic(
+                        diagnostics,
+                        normalizedCallsign +
+                            ":active-not-relevant:DUPLICATED_ATIS_DERIVED:" +
+                            authority.id + ":" + authority.polygonKey +
+                            ":ATIS_COVERED:" + coveredToken);
+                    continue;
+                }
+
+                if (!ControllerCanUseCenterTransceiverProof(controller)) {
+                    AppendAuthorityDiagnostic(
+                        diagnostics,
+                        normalizedCallsign +
+                            ":facility-mismatch:DUPLICATED_ATIS_DERIVED:" +
+                            authority.id + ":" + authority.polygonKey +
+                            ":ATIS_COVERED:" + coveredToken);
+                    continue;
+                }
+
+                if (controllerFrequenciesByCallsign != nullptr) {
+                    (*controllerFrequenciesByCallsign)[normalizedCallsign] =
+                        controller.frequency;
+                }
+                if (countedCandidateControllerKeys != nullptr &&
+                    candidateControllers != nullptr &&
+                    countedCandidateControllerKeys->insert(normalizedCallsign).second) {
+                    ++(*candidateControllers);
+                }
+
+                const auto decision = BuildDuplicatedAtisAuthorityDecision(
+                    controller,
+                    authority,
+                    *polygon,
+                    coveredToken);
+                activePolygons.push_back({
+                    controller.callsign,
+                    decision.evidence.authorityId,
+                    polygon->id,
+                    polygon->polygonKey,
+                    decision.evidence.matchedPattern,
+                    polygon->source,
+                    polygon->kind,
+                    decision.evidence.proofSource,
+                    decision.evidence.proofDetail,
+                });
+            }
+
+            if (!matchedSourceAuthority && LooksLikeControllerPositionToken(coveredToken)) {
+                AppendAuthorityDiagnostic(
+                    diagnostics,
+                    normalizedCallsign +
+                        ":missing-source-ownership:DUPLICATED_ATIS_DERIVED:" +
+                        coveredToken);
+            }
+        }
+    }
+
+    std::sort(
+        activePolygons.begin(),
+        activePolygons.end(),
+        [](const auto& left, const auto& right) {
+            if (left.callsign != right.callsign) {
+                return left.callsign < right.callsign;
+            }
+            if (left.polygonId != right.polygonId) {
+                return left.polygonId < right.polygonId;
+            }
+            return left.matchedPattern < right.matchedPattern;
+        });
+    return activePolygons;
+}
+
+bool StartsWith(std::string_view value, std::string_view prefix) {
+    return value.size() >= prefix.size() &&
+           value.substr(0, prefix.size()) == prefix;
+}
+
+std::string AuthorityProofSourceLabel(
+    const xvatsim::core::authority::ActiveAuthorityPolygon& activePolygon) {
+    if (!activePolygon.proofSource.empty()) {
+        return activePolygon.proofSource;
+    }
+
+    if (StartsWith(activePolygon.authorityId, "TRANSCEIVER:") ||
+        StartsWith(activePolygon.matchedPattern, "TRANSCEIVER_GEO:")) {
+        return "TRANSCEIVER_GEO_ROUTE";
+    }
+
+    if (activePolygon.matchedPattern.find('*') != std::string::npos) {
+        return "CATALOG_PATTERN";
+    }
+
+    return "CATALOG_EXACT";
+}
+
+std::string AuthorityProofDetail(
+    const xvatsim::core::authority::ActiveAuthorityPolygon& activePolygon) {
+    std::ostringstream stream;
+    if (!activePolygon.proofDetail.empty()) {
+        stream << activePolygon.proofDetail << ";";
+    }
+    stream << "pattern=" << activePolygon.matchedPattern
+           << ";polygonSource="
+           << xvatsim::core::authority::AuthoritySourceLabel(
+                  activePolygon.polygonSource)
+           << ";polygonId=" << activePolygon.polygonId;
+    return stream.str();
+}
+
+std::string AuthorityRelevanceProofDetail(
+    const xvatsim::core::authority::RelevantAuthorityPolygon& relevantAuthorityPolygon) {
+    std::ostringstream stream;
+    stream << AuthorityProofDetail(relevantAuthorityPolygon.activePolygon)
+           << ";routeRelevance=";
+    if (relevantAuthorityPolygon.aircraftInside &&
+        relevantAuthorityPolygon.routeIntersects) {
+        stream << "aircraft-inside+route-intersects";
+    } else if (relevantAuthorityPolygon.aircraftInside) {
+        stream << "aircraft-inside";
+    } else if (relevantAuthorityPolygon.routeIntersects) {
+        stream << "route-intersects";
+    } else {
+        stream << "not-relevant";
+    }
+    stream << ";routeEntry="
+           << FormatAuthorityDistanceNm(
+                  relevantAuthorityPolygon.routeEntryDistanceNm);
+    return stream.str();
+}
+
+std::vector<xvatsim::core::authority::ActiveAuthorityPolygon>
+ActivateAuthorityPolygonsByTransceiverRouteProof(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const std::vector<RouteScopedAuthorityPolygon>& routeScopedPolygons,
+    const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot,
+    const AuthorityStationCandidateIndex& stationCandidateIndex,
+    std::unordered_map<std::string, std::string>* controllerFrequenciesByCallsign,
+    const SourceOwnedAuthorityPolygonsByController& sourceOwnedPolygonsByController,
+    const std::unordered_set<std::string>* blockedControllerKeys,
+    std::unordered_set<std::string>* countedCandidateControllerKeys,
+    int* candidateControllers,
+    std::vector<std::string>* diagnostics) {
+    if (authorityTransceiverSnapshot == nullptr ||
+        !authorityTransceiverSnapshot->available ||
+        authorityTransceiverSnapshot->stale ||
+        routeScopedPolygons.empty()) {
+        return {};
+    }
+
+    std::vector<xvatsim::core::authority::ActiveAuthorityPolygon> activePolygons;
+    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
+        if (!IsAuthorityControllerCandidate(controller) ||
+            !ControllerCanUseCenterTransceiverProof(controller)) {
+            continue;
+        }
+
+        const auto normalizedCallsign =
+            xvatsim::core::authority::NormalizeControllerCallsign(controller.callsign);
+        if (blockedControllerKeys != nullptr &&
+            blockedControllerKeys->find(normalizedCallsign) !=
+                blockedControllerKeys->end()) {
+            continue;
+        }
+
+        const auto stationCandidates = FindAuthorityStationCandidatesIndexed(
+            stationCandidateIndex,
+            controller.callsign,
+            controller.frequency);
+        if (stationCandidates.empty()) {
+            continue;
+        }
+
+        const std::vector<const xvatsim::core::authority::AuthorityPolygon*>*
+            sourceOwnedPolygons = nullptr;
+        const auto sourceOwnedIt =
+            sourceOwnedPolygonsByController.find(normalizedCallsign);
+        if (sourceOwnedIt != sourceOwnedPolygonsByController.end() &&
+            !sourceOwnedIt->second.empty()) {
+            sourceOwnedPolygons = &sourceOwnedIt->second;
+        }
+
+        const auto proof = FindBestTransceiverRouteAuthorityProof(
+            routeScopedPolygons,
+            stationCandidates,
+            normalizedCallsign,
+            sourceOwnedPolygons);
+        if (!proof.has_value() || proof->polygon == nullptr) {
+            const auto unguardedProof = FindBestTransceiverRouteAuthorityProof(
+                routeScopedPolygons,
+                stationCandidates,
+                normalizedCallsign,
+                nullptr,
+                false);
+            if (sourceOwnedPolygons != nullptr &&
+                unguardedProof.has_value() &&
+                unguardedProof->polygon != nullptr) {
+                AppendAuthorityDiagnostic(
+                    diagnostics,
+                    normalizedCallsign +
+                        ":missing-source-ownership:TRANSCEIVER_GEO_ROUTE:" +
+                        unguardedProof->polygon->polygonKey + ":source=" +
+                        SummarizeSourceOwnedAuthorityPolygons(sourceOwnedPolygons));
+                continue;
+            }
+            if (sourceOwnedPolygons == nullptr) {
+                double borderDistanceNm = std::numeric_limits<double>::max();
+                const auto* borderMismatchPolygon =
+                    FindNearestUnownedTransceiverRouteAuthorityBorderMismatch(
+                        routeScopedPolygons,
+                        stationCandidates,
+                        normalizedCallsign,
+                        &borderDistanceNm);
+                if (borderMismatchPolygon != nullptr) {
+                    AppendAuthorityDiagnostic(
+                        diagnostics,
+                        normalizedCallsign +
+                            ":unowned-transceiver-border-mismatch:" +
+                            "TRANSCEIVER_GEO_ROUTE:" +
+                            borderMismatchPolygon->polygonKey + ":distance=" +
+                            FormatAuthorityDistanceNm(borderDistanceNm));
+                    continue;
+                }
+            }
+            const auto bestDistanceNm =
+                FindNearestTransceiverRouteAuthorityDistanceNm(
+                    routeScopedPolygons,
+                    stationCandidates);
+            AppendAuthorityDiagnostic(
+                diagnostics,
+                xvatsim::core::authority::NormalizeControllerCallsign(
+                    controller.callsign) +
+                    ":transceiver-geo-mismatch:TRANSCEIVER_GEO_ROUTE:route-scope:distance=" +
+                    FormatAuthorityDistanceNm(bestDistanceNm));
+            continue;
+        }
+
+        const auto frequency =
+            ResolveTransceiverProofFrequency(controller, proof->station);
+        if (controllerFrequenciesByCallsign != nullptr) {
+            (*controllerFrequenciesByCallsign)[normalizedCallsign] = frequency;
+        }
+        if (countedCandidateControllerKeys != nullptr &&
+            candidateControllers != nullptr &&
+            countedCandidateControllerKeys->insert(normalizedCallsign).second) {
+            ++(*candidateControllers);
+        }
+        const auto decision =
+            BuildTransceiverRouteAuthorityDecision(controller, *proof, frequency);
+
+        activePolygons.push_back({
+            controller.callsign,
+            decision.evidence.authorityId,
+            proof->polygon->id,
+            proof->polygon->polygonKey,
+            decision.evidence.matchedPattern,
+            proof->polygon->source,
+            proof->polygon->kind,
+            decision.evidence.proofSource,
+            decision.evidence.proofDetail,
+        });
+    }
+
+    std::sort(
+        activePolygons.begin(),
+        activePolygons.end(),
+        [](const auto& left, const auto& right) {
+            if (left.callsign != right.callsign) {
+                return left.callsign < right.callsign;
+            }
+            if (left.polygonId != right.polygonId) {
+                return left.polygonId < right.polygonId;
+            }
+            return left.matchedPattern < right.matchedPattern;
+        });
+    return activePolygons;
+}
+
+bool AuthorityStationGeometryCompatible(
+    const xvatsim::core::authority::ActiveAuthorityPolygon& activePolygon,
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    const std::vector<brain::ReceivableControllerSnapshot>& stationCandidates,
+    double* outBestDistanceNm) {
+    if (outBestDistanceNm != nullptr) {
+        *outBestDistanceNm = std::numeric_limits<double>::max();
+    }
+
+    const auto* polygon = FindAuthorityPolygonById(
+        authorityPolygonCatalog,
+        activePolygon.polygonId);
+    if (polygon == nullptr) {
+        return true;
+    }
+
+    const auto toleranceNm = AuthorityTransceiverGeometryToleranceNm(activePolygon.kind);
+    for (const auto& candidate : stationCandidates) {
+        const xvatsim::core::authority::GeoPoint stationPoint{
+            candidate.latitudeDeg,
+            candidate.longitudeDeg,
+        };
+        const auto distanceNm = DistanceFromPointToAuthorityPolygonNm(
+            stationPoint,
+            *polygon);
+        if (outBestDistanceNm != nullptr) {
+            *outBestDistanceNm = std::min(*outBestDistanceNm, distanceNm);
+        }
+        if (distanceNm <= toleranceNm) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+std::vector<xvatsim::core::authority::ActiveAuthorityPolygon>
+FilterActiveAuthorityPolygonsByTransceiverGeometry(
+    const std::vector<xvatsim::core::authority::ActiveAuthorityPolygon>& activePolygons,
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    const std::unordered_map<std::string, std::string>& controllerFrequenciesByCallsign,
+    const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot,
+    const AuthorityStationCandidateIndex& stationCandidateIndex,
+    std::vector<std::string>* diagnostics) {
+    if (authorityTransceiverSnapshot == nullptr ||
+        !authorityTransceiverSnapshot->available ||
+        authorityTransceiverSnapshot->stale) {
+        return activePolygons;
+    }
+
+    std::vector<xvatsim::core::authority::ActiveAuthorityPolygon> filtered;
+    filtered.reserve(activePolygons.size());
+    for (const auto& activePolygon : activePolygons) {
+        if (!AuthoritySourceNeedsTransceiverGeometry(activePolygon.polygonSource)) {
+            filtered.push_back(activePolygon);
+            continue;
+        }
+
+        const auto callsignKey =
+            xvatsim::core::authority::NormalizeControllerCallsign(activePolygon.callsign);
+        const auto frequencyIt = controllerFrequenciesByCallsign.find(callsignKey);
+        const auto frequency =
+            frequencyIt == controllerFrequenciesByCallsign.end() ? std::string{} : frequencyIt->second;
+        const auto stationCandidates = FindAuthorityStationCandidatesIndexed(
+            stationCandidateIndex,
+            activePolygon.callsign,
+            frequency);
+        if (stationCandidates.empty()) {
+            filtered.push_back(activePolygon);
+            continue;
+        }
+
+        double bestDistanceNm = std::numeric_limits<double>::max();
+        if (AuthorityStationGeometryCompatible(
+                activePolygon,
+                authorityPolygonCatalog,
+                stationCandidates,
+                &bestDistanceNm)) {
+            filtered.push_back(activePolygon);
+            continue;
+        }
+
+        AppendAuthorityDiagnostic(
+            diagnostics,
+            activePolygon.callsign + ":transceiver-geo-mismatch:" +
+                activePolygon.authorityId + ":" +
+                activePolygon.polygonId + ":distance=" +
+                FormatAuthorityDistanceNm(bestDistanceNm));
+    }
+
+    return filtered;
+}
+
+bool ControllerHasRouteTransceiverSignatureProof(
+    const brain::ControllerSnapshot& controller,
+    const std::vector<RouteScopedAuthorityPolygon>& routeScopedPolygons,
+    const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot) {
+    if (authorityTransceiverSnapshot == nullptr ||
+        !authorityTransceiverSnapshot->available ||
+        authorityTransceiverSnapshot->stale ||
+        routeScopedPolygons.empty() ||
+        !ControllerCanUseCenterTransceiverProof(controller)) {
+        return false;
+    }
+
+    const auto stationCandidates = FindAuthorityStationCandidates(
+        *authorityTransceiverSnapshot,
+        controller.callsign,
+        controller.frequency);
+    if (stationCandidates.empty()) {
+        return false;
+    }
+
+    const auto nearestDistanceNm =
+        FindNearestTransceiverRouteAuthorityDistanceNm(
+            routeScopedPolygons,
+            stationCandidates);
+    return nearestDistanceNm <= kAuthorityCenterTransceiverToleranceNm;
+}
+
+bool DuplicatedAtisCoversRouteAuthority(
+    const brain::ControllerSnapshot& controller,
+    const xvatsim::core::authority::ControllerAuthorityCatalog& controllerAuthorityCatalog,
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    const std::unordered_set<std::string>& routeAuthorityMatchKeys) {
+    const auto coveredTokens =
+        ExtractDuplicatedAtisPositionTokens(controller.textAtis);
+    if (coveredTokens.empty()) {
+        return false;
+    }
+
+    for (const auto& coveredToken : coveredTokens) {
+        for (const auto& authority : controllerAuthorityCatalog.authorities) {
+            if (!AuthoritySourceCanUseDuplicatedAtisProof(authority.source) ||
+                !AuthorityKindCanUseDuplicatedAtisProof(authority.kind)) {
+                continue;
+            }
+
+            const auto aliases = BuildDuplicatedAtisAuthorityAliases(authority);
+            if (aliases.find(coveredToken) == aliases.end()) {
+                continue;
+            }
+            if (FindDuplicatedAtisRouteAuthorityPolygon(
+                    authority,
+                    authorityPolygonCatalog,
+                    routeAuthorityMatchKeys) != nullptr) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool IsUsefulAuthorityWatchToken(const std::string& token) {
+    if (token.size() < 3) {
+        return false;
+    }
+    static const std::unordered_set<std::string> kGenericTokens{
+        "APP",
+        "ARR",
+        "ATIS",
+        "CTR",
+        "DEL",
+        "DEP",
+        "FSS",
+        "GND",
+        "TWR",
+    };
+    return kGenericTokens.find(token) == kGenericTokens.end();
+}
+
+void AddAuthorityWatchToken(
+    std::unordered_set<std::string>* tokens,
+    const std::string& rawToken) {
+    if (tokens == nullptr) {
+        return;
+    }
+    auto normalized =
+        xvatsim::core::authority::NormalizeAuthorityToken(rawToken);
+    if (normalized.empty()) {
+        return;
+    }
+
+    std::replace(normalized.begin(), normalized.end(), '-', '_');
+    if (IsUsefulAuthorityWatchToken(normalized)) {
+        tokens->insert(normalized);
+    }
+
+    std::size_t startIndex = 0;
+    while (startIndex <= normalized.size()) {
+        const auto separatorIndex = normalized.find('_', startIndex);
+        const auto part =
+            separatorIndex == std::string::npos
+                ? normalized.substr(startIndex)
+                : normalized.substr(startIndex, separatorIndex - startIndex);
+        if (IsUsefulAuthorityWatchToken(part)) {
+            tokens->insert(part);
+        }
+        if (separatorIndex == std::string::npos) {
+            break;
+        }
+        startIndex = separatorIndex + 1;
+    }
+}
+
+std::unordered_set<std::string> BuildAuthorityWatchTokens(
+    const xvatsim::core::authority::ControllerAuthorityCatalog& controllerAuthorityCatalog,
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    const std::unordered_set<std::string>& routeAuthorityMatchKeys) {
+    std::unordered_set<std::string> tokens;
+    for (const auto& routeKey : routeAuthorityMatchKeys) {
+        AddAuthorityWatchToken(&tokens, routeKey);
+    }
+    for (const auto& authority : controllerAuthorityCatalog.authorities) {
+        AddAuthorityWatchToken(&tokens, authority.id);
+        AddAuthorityWatchToken(&tokens, authority.name);
+        AddAuthorityWatchToken(&tokens, authority.polygonKey);
+        for (const auto& lookupKey : authority.lookupKeys) {
+            AddAuthorityWatchToken(&tokens, lookupKey);
+        }
+        for (const auto& prefix : authority.controllerPrefixes) {
+            AddAuthorityWatchToken(&tokens, prefix);
+        }
+        for (const auto& pattern : authority.controllerCallsignPatterns) {
+            AddAuthorityWatchToken(&tokens, pattern);
+        }
+    }
+    for (const auto& polygon : authorityPolygonCatalog.polygons) {
+        AddAuthorityWatchToken(&tokens, polygon.id);
+        AddAuthorityWatchToken(&tokens, polygon.name);
+        AddAuthorityWatchToken(&tokens, polygon.polygonKey);
+        for (const auto& lookupKey : polygon.lookupKeys) {
+            AddAuthorityWatchToken(&tokens, lookupKey);
+        }
+    }
+    return tokens;
+}
+
+std::unordered_set<std::string> BuildAuthorityWatchFrequencies(
+    const xvatsim::core::authority::ControllerAuthorityCatalog& controllerAuthorityCatalog) {
+    std::unordered_set<std::string> frequencies;
+    for (const auto& authority : controllerAuthorityCatalog.authorities) {
+        for (const auto& frequency : authority.controllerFrequencies) {
+            const auto normalizedFrequency = NormalizeFrequency(frequency);
+            if (!normalizedFrequency.empty()) {
+                frequencies.insert(normalizedFrequency);
+            }
+        }
+    }
+    return frequencies;
+}
+
+bool CallsignTouchesAuthorityWatchTokens(
+    const std::string& normalizedCallsign,
+    const std::unordered_set<std::string>& authorityWatchTokens) {
+    if (normalizedCallsign.empty()) {
+        return false;
+    }
+    for (const auto& token : authorityWatchTokens) {
+        if (normalizedCallsign.find(token) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CallsignMatchesRouteScopedAuthorityPattern(
+    const std::string& callsign,
+    const xvatsim::core::authority::ControllerAuthorityCatalog& controllerAuthorityCatalog) {
+    const auto normalizedCallsign =
+        xvatsim::core::authority::NormalizeControllerCallsign(callsign);
+    if (normalizedCallsign.empty()) {
+        return false;
+    }
+    for (const auto& authority : controllerAuthorityCatalog.authorities) {
+        for (const auto& pattern : authority.controllerCallsignPatterns) {
+            if (xvatsim::core::authority::CallsignMatchesPattern(
+                    pattern,
+                    normalizedCallsign)) {
+                return true;
+            }
+        }
+        for (const auto& prefix : authority.controllerPrefixes) {
+            const auto normalizedPrefix =
+                xvatsim::core::authority::NormalizeControllerCallsign(prefix);
+            if (!normalizedPrefix.empty() &&
+                normalizedCallsign.find(normalizedPrefix) != std::string::npos) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool ControllerMatchesEndpointLocalWatch(
+    const brain::ControllerSnapshot& controller,
+    const AuthorityRelevanceWorkScope& workScope) {
+    if (!IsAirportLocalControllerCandidate(controller)) {
+        return false;
+    }
+    std::string prefix;
+    std::string suffix;
+    if (!SplitLocalControllerCallsign(controller.callsign, &prefix, &suffix) ||
+        CanonicalLocalCallsignSuffix(suffix).empty()) {
+        return false;
+    }
+
+    std::vector<std::string> endpointAirports;
+    if (workScope.includeDepartureEndpoint) {
+        endpointAirports.push_back(
+            NormalizeAirportIcao(workScope.routeSectorSnapshot.departureIcao));
+    }
+    if (workScope.includeDestinationEndpoint) {
+        endpointAirports.push_back(
+            NormalizeAirportIcao(workScope.routeSectorSnapshot.destinationIcao));
+    }
+    endpointAirports.erase(
+        std::remove(endpointAirports.begin(), endpointAirports.end(), std::string{}),
+        endpointAirports.end());
+    for (const auto& airport : endpointAirports) {
+        if (AirportLocalTokenMatchesPrefix(BuildAirportLocalTokens(airport), prefix)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ControllerAtisMentionsAuthorityWatchToken(
+    const brain::ControllerSnapshot& controller,
+    const std::unordered_set<std::string>& authorityWatchTokens) {
+    if (controller.textAtis.empty() || authorityWatchTokens.empty()) {
+        return false;
+    }
+    const auto normalizedAtis =
+        xvatsim::core::authority::NormalizeAuthorityToken(controller.textAtis);
+    if (normalizedAtis.empty()) {
+        return false;
+    }
+    for (const auto& token : authorityWatchTokens) {
+        if (normalizedAtis.find(token) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::size_t BuildAuthorityWatchInputSignature(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot,
+    const AuthorityStationCandidateIndex& stationCandidateIndex,
+    const AuthorityRelevanceWorkScope& workScope,
+    const AuthorityRelevanceScopeArtifacts& scopeArtifacts) {
+    std::size_t hash = 1469598103934665603ull;
+    HashCombine(&hash, static_cast<std::size_t>(controllerFeedSnapshot.available ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(controllerFeedSnapshot.stale ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(scopeArtifacts.signature));
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(
+            authorityTransceiverSnapshot != nullptr &&
+            authorityTransceiverSnapshot->available &&
+            !authorityTransceiverSnapshot->stale
+                ? 1
+                : 0));
+
+    const auto authorityWatchTokens =
+        BuildAuthorityWatchTokens(
+            scopeArtifacts.routeScopedControllerAuthorityCatalog,
+            scopeArtifacts.routeScopedAuthorityPolygonCatalog,
+            scopeArtifacts.routeAuthorityMatchKeys);
+    const auto authorityWatchFrequencies =
+        BuildAuthorityWatchFrequencies(
+            scopeArtifacts.routeScopedControllerAuthorityCatalog);
+
+    std::vector<std::string> candidateEntries;
+    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
+        const auto isAirportLocalCandidate =
+            IsAirportLocalControllerCandidate(controller);
+        const auto isAirspaceAuthorityCandidate =
+            IsAuthorityControllerCandidate(controller);
+        if (!isAirportLocalCandidate && !isAirspaceAuthorityCandidate) {
+            continue;
+        }
+
+        const auto normalizedCallsign =
+            xvatsim::core::authority::NormalizeControllerCallsign(controller.callsign);
+        const auto normalizedFrequency = NormalizeFrequency(controller.frequency);
+        const auto frequencyTouchesRouteScope =
+            !normalizedFrequency.empty() &&
+            authorityWatchFrequencies.find(normalizedFrequency) !=
+                authorityWatchFrequencies.end();
+        const auto routePatternTouchesCallsign =
+            CallsignMatchesRouteScopedAuthorityPattern(
+                controller.callsign,
+                scopeArtifacts.routeScopedControllerAuthorityCatalog);
+        const auto routeTokenTouchesCallsign =
+            CallsignTouchesAuthorityWatchTokens(
+                normalizedCallsign,
+                authorityWatchTokens);
+        const auto endpointLocal =
+            ControllerMatchesEndpointLocalWatch(controller, workScope);
+        const auto stationCandidates =
+            isAirspaceAuthorityCandidate &&
+            authorityTransceiverSnapshot != nullptr &&
+            authorityTransceiverSnapshot->available &&
+            !authorityTransceiverSnapshot->stale &&
+            ControllerCanUseCenterTransceiverProof(controller)
+                ? FindAuthorityStationCandidatesIndexed(
+                      stationCandidateIndex,
+                      controller.callsign,
+                      controller.frequency)
+                : std::vector<brain::ReceivableControllerSnapshot>{};
+        const auto routeProximateTransceiver =
+            !stationCandidates.empty() &&
+            HasTransceiverStationCandidateNearRouteAuthorityScope(
+                scopeArtifacts.routeScopedAuthorityPolygons,
+                stationCandidates);
+        const auto duplicatedAtisRouteClue =
+            ControllerAtisMentionsAuthorityWatchToken(controller, authorityWatchTokens);
+
+        if (!frequencyTouchesRouteScope &&
+            !routePatternTouchesCallsign &&
+            !routeTokenTouchesCallsign &&
+            !endpointLocal &&
+            !routeProximateTransceiver &&
+            !duplicatedAtisRouteClue) {
+            continue;
+        }
+
+        std::ostringstream entry;
+        entry << normalizedCallsign << '|'
+              << normalizedFrequency << '|'
+              << controller.facility << '|'
+              << (controller.actionable ? 1 : 0) << '|'
+              << (controller.atis ? 1 : 0);
+        if (duplicatedAtisRouteClue) {
+            entry << "|ATIS:" << controller.textAtis;
+        }
+        if (routeProximateTransceiver) {
+            std::vector<std::string> stationEntries;
+            for (const auto& station : stationCandidates) {
+                std::ostringstream stationEntry;
+                stationEntry
+                    << xvatsim::core::authority::NormalizeControllerCallsign(
+                           station.callsign)
+                    << ':'
+                    << NormalizeFrequency(station.frequency)
+                    << ':'
+                    << std::llround(station.latitudeDeg * 10000.0)
+                    << ':'
+                    << std::llround(station.longitudeDeg * 10000.0);
+                stationEntries.push_back(stationEntry.str());
+            }
+            std::sort(stationEntries.begin(), stationEntries.end());
+            for (const auto& stationEntry : stationEntries) {
+                entry << "|STN:" << stationEntry;
+            }
+        }
+        candidateEntries.push_back(entry.str());
+    }
+
+    std::sort(candidateEntries.begin(), candidateEntries.end());
+    for (const auto& entry : candidateEntries) {
+        HashCombineString(&hash, entry);
+    }
+    return hash;
+}
+
+std::size_t BuildScopedAuthorityRelevanceSignature(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot,
+    const AuthorityStationCandidateIndex& stationCandidateIndex,
+    const xvatsim::core::authority::ControllerAuthorityCatalog& controllerAuthorityCatalog,
+    const xvatsim::core::authority::AuthorityPolygonCatalog& authorityPolygonCatalog,
+    const std::unordered_set<std::string>& routeAuthorityMatchKeys,
+    const std::vector<RouteScopedAuthorityPolygon>& routeScopedPolygons) {
+    std::size_t hash = 1469598103934665603ull;
+
+    HashCombine(&hash, static_cast<std::size_t>(controllerFeedSnapshot.available ? 1 : 0));
+    HashCombine(&hash, static_cast<std::size_t>(controllerFeedSnapshot.stale ? 1 : 0));
+    HashCombine(&hash, BuildAuthorityStructuralScopeRouteSignature(routeSectorSnapshot));
+
+    std::vector<std::string> sortedRouteKeys(
+        routeAuthorityMatchKeys.begin(),
+        routeAuthorityMatchKeys.end());
+    std::sort(sortedRouteKeys.begin(), sortedRouteKeys.end());
+    for (const auto& routeKey : sortedRouteKeys) {
+        HashCombineString(&hash, routeKey);
+    }
+
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(
+            authorityTransceiverSnapshot != nullptr &&
+            authorityTransceiverSnapshot->available &&
+            !authorityTransceiverSnapshot->stale
+                ? 1
+                : 0));
+
+    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
+        const auto isAirportLocalCandidate =
+            IsAirportLocalControllerCandidate(controller);
+        const auto isAirspaceAuthorityCandidate =
+            IsAuthorityControllerCandidate(controller);
+        if (!isAirportLocalCandidate && !isAirspaceAuthorityCandidate) {
+            continue;
+        }
+
+        const auto authorityDecisions =
+            xvatsim::core::authority::EvaluateControllerAuthority(
+                controllerAuthorityCatalog,
+                controller.callsign,
+                controller.frequency,
+                controller.facility);
+        const auto stationCandidates =
+            isAirspaceAuthorityCandidate &&
+            authorityTransceiverSnapshot != nullptr &&
+            authorityTransceiverSnapshot->available &&
+            !authorityTransceiverSnapshot->stale
+                ? FindAuthorityStationCandidatesIndexed(
+                      stationCandidateIndex,
+                      controller.callsign,
+                      controller.frequency)
+                : std::vector<brain::ReceivableControllerSnapshot>{};
+        const auto routeTransceiverProof =
+            !stationCandidates.empty() &&
+            HasTransceiverStationCandidateNearRouteAuthorityScope(
+                routeScopedPolygons,
+                stationCandidates);
+        const auto duplicatedAtisProof =
+            !controller.textAtis.empty() &&
+            DuplicatedAtisCoversRouteAuthority(
+                controller,
+                controllerAuthorityCatalog,
+                authorityPolygonCatalog,
+                routeAuthorityMatchKeys);
+        if (authorityDecisions.empty() &&
+            !routeTransceiverProof &&
+            !duplicatedAtisProof) {
+            continue;
+        }
+
+        HashCombineString(
+            &hash,
+            xvatsim::core::authority::NormalizeControllerCallsign(controller.callsign));
+        HashCombineString(&hash, NormalizeFrequency(controller.frequency));
+        HashCombine(&hash, static_cast<std::size_t>(controller.facility));
+        HashCombine(&hash, static_cast<std::size_t>(controller.actionable ? 1 : 0));
+        HashCombine(&hash, static_cast<std::size_t>(controller.atis ? 1 : 0));
+        if (duplicatedAtisProof) {
+            HashCombineString(&hash, controller.textAtis);
+        }
+
+        if (routeTransceiverProof) {
+            for (const auto& station : stationCandidates) {
+                HashCombineString(
+                    &hash,
+                    xvatsim::core::authority::NormalizeControllerCallsign(
+                        station.callsign));
+                HashCombineString(&hash, NormalizeFrequency(station.frequency));
+                HashCombineDouble(&hash, station.latitudeDeg);
+                HashCombineDouble(&hash, station.longitudeDeg);
+            }
+        }
+    }
+
+    return hash;
 }
 
 bool TokenCanActAsPoint(const xvatsim::core::route::ParsedRouteToken& token) {
@@ -5166,6 +9727,19 @@ void RouteSectorResolver::LoadBoundaryPayloadsForTesting(
         hasTerminalBoundaryCache_ ? lastFetchTickSeconds_ : 0;
     hasSnapshotCache_ = false;
     cachedSnapshot_ = {};
+    hasAuthorityRelevanceCache_ = false;
+    cachedAuthorityRelevanceSnapshot_ = {};
+    lastAuthorityRelevanceBuildTickSeconds_ = 0;
+    lastAuthorityRelevanceLatitudeDeg_ = 0.0;
+    lastAuthorityRelevanceLongitudeDeg_ = 0.0;
+    lastAuthorityRelevanceSignature_ = 0;
+    lastAuthorityOperationalScopeSignature_ = 0;
+    lastAuthorityWatchInputSignature_ = 0;
+    lastAuthorityRelevanceProgressRouteSignature_ = 0;
+    lastAuthorityRelevanceProgressWindowNm_ = 0.0;
+    authorityProgressRouteSignature_ = 0;
+    authorityProgressWindowNm_ = 0.0;
+    lastAuthorityProgressTickSeconds_ = 0;
     airportCoverageCache_.clear();
     hasPendingPayload_ = false;
     fetchInProgress_ = false;
@@ -5199,6 +9773,42 @@ void RouteSectorResolver::QueueBoundaryPayloadsForTesting(
     fetchInProgress_ = false;
 }
 
+void RouteSectorResolver::SetPreflightRouteCache(
+    const core::preflight::PreflightRouteCache& cache,
+    const std::string& validationReason) {
+    preflightRouteCache_ = cache;
+    preflightRouteCacheReason_ = validationReason;
+    hasSnapshotCache_ = false;
+    lastSnapshotRouteKey_.clear();
+    hasAuthorityRelevanceCache_ = false;
+    cachedAuthorityRelevanceSnapshot_ = {};
+    lastAuthorityRelevanceSignature_ = 0;
+    lastAuthorityOperationalScopeSignature_ = 0;
+    lastAuthorityWatchInputSignature_ = 0;
+    lastAuthorityRelevanceProgressRouteSignature_ = 0;
+    lastAuthorityRelevanceProgressWindowNm_ = 0.0;
+    authorityProgressRouteSignature_ = 0;
+    authorityProgressWindowNm_ = 0.0;
+    lastAuthorityProgressTickSeconds_ = 0;
+}
+
+void RouteSectorResolver::ClearPreflightRouteCache() {
+    preflightRouteCache_.reset();
+    preflightRouteCacheReason_.clear();
+    hasSnapshotCache_ = false;
+    lastSnapshotRouteKey_.clear();
+    hasAuthorityRelevanceCache_ = false;
+    cachedAuthorityRelevanceSnapshot_ = {};
+    lastAuthorityRelevanceSignature_ = 0;
+    lastAuthorityOperationalScopeSignature_ = 0;
+    lastAuthorityWatchInputSignature_ = 0;
+    lastAuthorityRelevanceProgressRouteSignature_ = 0;
+    lastAuthorityRelevanceProgressWindowNm_ = 0.0;
+    authorityProgressRouteSignature_ = 0;
+    authorityProgressWindowNm_ = 0.0;
+    lastAuthorityProgressTickSeconds_ = 0;
+}
+
 void RouteSectorResolver::ResetRuntimeState() {
     if (fetchThread_.joinable()) {
         fetchThread_.join();
@@ -5215,6 +9825,19 @@ void RouteSectorResolver::ResetRuntimeState() {
     lastSnapshotLongitudeDeg_ = 0.0;
     lastSnapshotRouteKey_.clear();
     cachedSnapshot_ = {};
+    hasAuthorityRelevanceCache_ = false;
+    cachedAuthorityRelevanceSnapshot_ = {};
+    lastAuthorityRelevanceBuildTickSeconds_ = 0;
+    lastAuthorityRelevanceLatitudeDeg_ = 0.0;
+    lastAuthorityRelevanceLongitudeDeg_ = 0.0;
+    lastAuthorityRelevanceSignature_ = 0;
+    lastAuthorityOperationalScopeSignature_ = 0;
+    lastAuthorityWatchInputSignature_ = 0;
+    lastAuthorityRelevanceProgressRouteSignature_ = 0;
+    lastAuthorityRelevanceProgressWindowNm_ = 0.0;
+    authorityProgressRouteSignature_ = 0;
+    authorityProgressWindowNm_ = 0.0;
+    lastAuthorityProgressTickSeconds_ = 0;
     airportCoverageCache_.clear();
     pendingBoundaryPayload_.clear();
     pendingTerminalBoundaryPayload_.clear();
@@ -5251,6 +9874,8 @@ brain::RouteSectorSnapshot RouteSectorResolver::Resolve(
         brain::RouteSectorSnapshot snapshot;
         snapshot.available = false;
         snapshot.stale = true;
+        snapshot.diagnosticCacheStatus = "input-stale";
+        snapshot.diagnosticReason = "network-plan-stale";
         snapshot.statusLine = networkPlanSnapshot.statusLine.empty()
                                   ? "ROUTE plan stale"
                                   : "ROUTE plan stale: " + networkPlanSnapshot.statusLine;
@@ -5264,6 +9889,9 @@ brain::RouteSectorSnapshot RouteSectorResolver::Resolve(
         brain::RouteSectorSnapshot snapshot;
         snapshot.available = false;
         snapshot.stale = true;
+        snapshot.diagnosticCacheStatus =
+            fetchInProgress_ ? "source-pending" : "source-unavailable";
+        snapshot.diagnosticReason = "boundary-cache-unavailable";
         snapshot.statusLine = fetchInProgress_ ? "ROUTE sectors pending" : "ROUTE sectors unavailable";
         return snapshot;
     }
@@ -5283,17 +9911,18 @@ brain::RouteSectorSnapshot RouteSectorResolver::Resolve(
             : std::numeric_limits<double>::max();
     const auto routeChanged =
         !hasSnapshotCache_ || routeSourceChanged || routeKey != lastSnapshotRouteKey_;
-    const auto snapshotCadenceSeconds = aircraftState.onGround
-                                            ? kGroundSnapshotCadenceSeconds
-                                            : kAirborneSnapshotCadenceSeconds;
-    const auto cadenceExpired =
-        !hasSnapshotCache_ ||
-        (nowSeconds - lastSnapshotBuildTickSeconds_) >= snapshotCadenceSeconds;
+    const auto movementThresholdNm = aircraftState.onGround
+                                         ? kGroundSnapshotMovementThresholdNm
+                                         : kAirborneSnapshotMovementThresholdNm;
     const auto movedEnough =
-        !hasSnapshotCache_ || movedDistanceNm >= kSnapshotMovementThresholdNm;
+        !hasSnapshotCache_ || movedDistanceNm >= movementThresholdNm;
 
-    if (!routeChanged && !cadenceExpired && !movedEnough) {
+    if (!routeChanged && !movedEnough) {
         auto snapshot = cachedSnapshot_;
+        snapshot.diagnosticCacheStatus = centerAuthorityFresh
+                                             ? "route-cache-hit"
+                                             : "route-cache-stale-hit";
+        snapshot.diagnosticReason = "route-key-and-movement-unchanged";
         snapshot.stale = !centerAuthorityFresh;
         if (snapshot.stale) {
             AppendStaleSuffixIfNeeded(&snapshot.statusLine);
@@ -5302,6 +9931,25 @@ brain::RouteSectorSnapshot RouteSectorResolver::Resolve(
     }
 
     auto snapshot = BuildSnapshot(aircraftState, networkPlanSnapshot);
+    if (snapshot.diagnosticCacheStatus.empty()) {
+        snapshot.diagnosticCacheStatus =
+            snapshot.statusLine.find("via preflight cache") != std::string::npos
+                ? "preflight-route-cache-build"
+                : "route-rebuild";
+    }
+    if (snapshot.diagnosticReason.empty()) {
+        if (routeSourceChanged) {
+            snapshot.diagnosticReason = "source-generation-changed";
+        } else if (routeChanged) {
+            snapshot.diagnosticReason = "route-key-changed";
+        } else if (movedEnough) {
+            snapshot.diagnosticReason = aircraftState.onGround
+                                            ? "ground-movement-threshold"
+                                            : "airborne-movement-threshold";
+        } else {
+            snapshot.diagnosticReason = "route-refresh";
+        }
+    }
     snapshot.stale = !centerAuthorityFresh;
     if (snapshot.statusLine.empty()) {
         snapshot.statusLine = snapshot.routeResolved ? "ROUTE sectors active" : "ROUTE pending";
@@ -5319,6 +9967,622 @@ brain::RouteSectorSnapshot RouteSectorResolver::Resolve(
     return snapshot;
 }
 
+brain::AuthorityRelevanceSnapshot RouteSectorResolver::ResolveAuthorityRelevance(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot) const {
+    brain::AuthorityRelevanceSnapshot snapshot;
+
+    if (!routeSectorSnapshot.available ||
+        routeSectorSnapshot.stale ||
+        !routeSectorSnapshot.routeResolved) {
+        snapshot.available = false;
+        snapshot.stale = true;
+        snapshot.controllerFeedGeneration = controllerFeedSnapshot.generation;
+        snapshot.centerBoundaryGeneration = routeSectorSnapshot.centerBoundaryGeneration;
+        snapshot.authorityCatalogGeneration = routeSectorSnapshot.authorityCatalogGeneration;
+        snapshot.terminalCoverageGeneration = terminalBoundaryGeneration_;
+        snapshot.diagnosticCacheStatus = "input-unavailable";
+        snapshot.diagnosticReason = "route-snapshot-unavailable";
+        snapshot.statusLine = "AUTHORITY route unavailable";
+        LogAuthorityDiagnosticsIfChanged(snapshot);
+        return snapshot;
+    }
+
+    snapshot.available = true;
+    snapshot.stale = false;
+    snapshot.controllerFeedGeneration = controllerFeedSnapshot.generation;
+    snapshot.centerBoundaryGeneration = routeSectorSnapshot.centerBoundaryGeneration;
+    snapshot.authorityCatalogGeneration = routeSectorSnapshot.authorityCatalogGeneration;
+    snapshot.terminalCoverageGeneration = terminalBoundaryGeneration_;
+    const auto nowSeconds = CurrentTickSeconds();
+    const auto remainingRouteDistanceNm = RouteDistanceNm(routeSectorSnapshot.waypoints);
+    const auto routeProgressSignature =
+        BuildAuthorityProgressRouteSignature(routeSectorSnapshot);
+    const auto arrivalPrep =
+        remainingRouteDistanceNm <= kAuthorityArrivalPrepDistanceNm;
+    const auto targetAuthorityWindowNm =
+        arrivalPrep
+            ? std::max(kAuthorityNearRouteWindowNm, remainingRouteDistanceNm)
+            : kAuthorityNearRouteWindowNm;
+    if (authorityProgressRouteSignature_ != routeProgressSignature ||
+        std::fabs(authorityProgressWindowNm_ - targetAuthorityWindowNm) > 1.0) {
+        authorityProgressRouteSignature_ = routeProgressSignature;
+        authorityProgressWindowNm_ = targetAuthorityWindowNm;
+        lastAuthorityProgressTickSeconds_ = nowSeconds;
+    }
+
+    const auto workScope =
+        BuildAuthorityRelevanceWorkScope(
+            aircraftState,
+            routeSectorSnapshot,
+            authorityProgressWindowNm_);
+    const auto operationalScopeSignature =
+        BuildAuthorityOperationalScopeSignature(
+            aircraftState,
+            controllerFeedSnapshot,
+            authorityTransceiverSnapshot,
+            workScope,
+            terminalBoundaryGeneration_);
+    const auto progressSignatureMatchesLastProof =
+        hasAuthorityRelevanceCache_ &&
+        routeProgressSignature == lastAuthorityRelevanceProgressRouteSignature_ &&
+        std::fabs(
+            authorityProgressWindowNm_ -
+            lastAuthorityRelevanceProgressWindowNm_) <= 1.0;
+    if (hasAuthorityRelevanceCache_ &&
+        progressSignatureMatchesLastProof &&
+        operationalScopeSignature == lastAuthorityOperationalScopeSignature_) {
+        const auto watchCadenceSeconds =
+            HasRelevantCenterAuthority(cachedAuthorityRelevanceSnapshot_)
+                ? kAuthorityControlledWindowWatchCadenceSeconds
+                : kAuthorityEmptyWindowWatchCadenceSeconds;
+        if (lastAuthorityRelevanceBuildTickSeconds_ > 0 &&
+            (nowSeconds - lastAuthorityRelevanceBuildTickSeconds_) <
+                watchCadenceSeconds) {
+            auto cachedSnapshot = cachedAuthorityRelevanceSnapshot_;
+            cachedSnapshot.diagnosticCacheStatus = "authority-cache-cadence-hit";
+            cachedSnapshot.diagnosticReason =
+                HasRelevantCenterAuthority(cachedAuthorityRelevanceSnapshot_)
+                    ? "controlled-window-watch-cadence"
+                    : "empty-window-watch-cadence";
+            return cachedSnapshot;
+        }
+    }
+    const auto stationCandidateIndex =
+        BuildAuthorityStationCandidateIndex(authorityTransceiverSnapshot);
+
+    const auto& scopeArtifacts =
+        GetCachedAuthorityRelevanceScopeArtifacts(
+            vatspyPayload_,
+            boundaryPayload_,
+            terminalBoundaryPayload_,
+            ownershipPayload_,
+            aircraftState,
+            controllerFeedSnapshot,
+            workScope,
+            terminalBoundaryGeneration_);
+    const auto& controllerAuthorityCatalog = scopeArtifacts.controllerAuthorityCatalog;
+    const auto& authorityPolygonCatalog = scopeArtifacts.authorityPolygonCatalog;
+    const auto& authorityPolygonExactIndexesByKey =
+        scopeArtifacts.authorityPolygonExactIndexesByKey;
+    const auto& authorityPolygonFamilyIndexesByKey =
+        scopeArtifacts.authorityPolygonFamilyIndexesByKey;
+    const auto& routeAuthorityPolygonKeys = scopeArtifacts.routeAuthorityPolygonKeys;
+    const auto& routePoints = workScope.routePoints;
+    const xvatsim::core::authority::GeoPoint aircraftPosition{
+        aircraftState.latitudeDeg,
+        aircraftState.longitudeDeg,
+    };
+    const auto& routeScopedAuthorityPolygonCatalog =
+        scopeArtifacts.routeScopedAuthorityPolygonCatalog;
+    const auto& routeAuthorityMatchKeys = scopeArtifacts.routeAuthorityMatchKeys;
+    const auto& routeScopedControllerAuthorityCatalog =
+        scopeArtifacts.routeScopedControllerAuthorityCatalog;
+    const auto& routeScopedAuthorityPolygons =
+        scopeArtifacts.routeScopedAuthorityPolygons;
+
+    const auto watchInputSignature =
+        BuildAuthorityWatchInputSignature(
+            controllerFeedSnapshot,
+            authorityTransceiverSnapshot,
+            stationCandidateIndex,
+            workScope,
+            scopeArtifacts);
+    if (hasAuthorityRelevanceCache_ &&
+        progressSignatureMatchesLastProof &&
+        operationalScopeSignature == lastAuthorityOperationalScopeSignature_ &&
+        watchInputSignature == lastAuthorityWatchInputSignature_) {
+        lastAuthorityRelevanceBuildTickSeconds_ = nowSeconds;
+        auto cachedSnapshot = cachedAuthorityRelevanceSnapshot_;
+        cachedSnapshot.diagnosticCacheStatus = "authority-cache-watch-hit";
+        cachedSnapshot.diagnosticReason = "watch-input-unchanged";
+        return cachedSnapshot;
+    }
+
+    auto relevanceSignature =
+        BuildScopedAuthorityRelevanceSignature(
+            controllerFeedSnapshot,
+            workScope.routeSectorSnapshot,
+            authorityTransceiverSnapshot,
+            stationCandidateIndex,
+            routeScopedControllerAuthorityCatalog,
+            routeScopedAuthorityPolygonCatalog,
+            routeAuthorityMatchKeys,
+            routeScopedAuthorityPolygons);
+    AddAuthorityWorkScopeSignature(
+        &relevanceSignature,
+        aircraftState,
+        workScope,
+        terminalBoundaryGeneration_);
+    const auto signatureChanged =
+        !hasAuthorityRelevanceCache_ ||
+        !progressSignatureMatchesLastProof ||
+        watchInputSignature != lastAuthorityWatchInputSignature_ ||
+        relevanceSignature != lastAuthorityRelevanceSignature_ ||
+        operationalScopeSignature != lastAuthorityOperationalScopeSignature_;
+    if (!signatureChanged) {
+        lastAuthorityRelevanceBuildTickSeconds_ = nowSeconds;
+        auto cachedSnapshot = cachedAuthorityRelevanceSnapshot_;
+        cachedSnapshot.diagnosticCacheStatus = "authority-cache-signature-hit";
+        cachedSnapshot.diagnosticReason = "scoped-signature-unchanged";
+        return cachedSnapshot;
+    }
+
+    snapshot.diagnosticCacheStatus = "authority-proof-build";
+    snapshot.diagnosticReason =
+        !hasAuthorityRelevanceCache_
+            ? "no-authority-cache"
+            : (!progressSignatureMatchesLastProof ? "route-progress-dirty"
+                                                  : "signature-or-source-dirty");
+    snapshot.diagnosticWorkStage = workScope.stage;
+    snapshot.diagnosticWindowNm = workScope.windowNm;
+    snapshot.diagnosticDeferredSectorCount = workScope.deferredSectorCount;
+
+    std::unordered_map<std::string, std::string> controllerFrequenciesByCallsign;
+    std::vector<xvatsim::core::authority::ActiveAuthorityPolygon> activeAuthorityPolygons;
+    std::unordered_set<std::string> insertedActivePolygonKeys;
+    std::unordered_set<std::string> countedCandidateControllerKeys;
+    std::unordered_set<std::string> transceiverRouteProofBlockedControllerKeys;
+    SourceOwnedAuthorityPolygonsByController sourceOwnedPolygonsByController;
+    int candidateControllers = 0;
+    int activationDataGaps = 0;
+    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
+        const auto isAirportLocalCandidate =
+            IsAirportLocalControllerCandidate(controller);
+        const auto isAirspaceAuthorityCandidate =
+            IsAuthorityControllerCandidate(controller);
+        if (!isAirspaceAuthorityCandidate && !isAirportLocalCandidate) {
+            continue;
+        }
+
+        const auto normalizedCallsign =
+            xvatsim::core::authority::NormalizeControllerCallsign(controller.callsign);
+        const auto canUseTransceiverStation =
+            authorityTransceiverSnapshot != nullptr &&
+            authorityTransceiverSnapshot->available &&
+            !authorityTransceiverSnapshot->stale &&
+            ControllerCanUseCenterTransceiverProof(controller);
+        const auto stationCandidates =
+            canUseTransceiverStation
+                ? FindAuthorityStationCandidatesIndexed(
+                      stationCandidateIndex,
+                      controller.callsign,
+                      controller.frequency)
+                : std::vector<brain::ReceivableControllerSnapshot>{};
+        const auto hasTransceiverStationCandidates =
+            !stationCandidates.empty();
+        const auto hasRouteProximateTransceiverStation =
+            hasTransceiverStationCandidates &&
+            HasTransceiverStationCandidateNearRouteAuthorityScope(
+                routeScopedAuthorityPolygons,
+                stationCandidates);
+
+        const auto authorityDecisions =
+            xvatsim::core::authority::EvaluateControllerAuthority(
+                routeScopedControllerAuthorityCatalog,
+                controller.callsign,
+                controller.frequency,
+                controller.facility);
+        const auto sourceOwnershipDecisions =
+            hasRouteProximateTransceiverStation
+                ? xvatsim::core::authority::EvaluateControllerAuthority(
+                      controllerAuthorityCatalog,
+                      controller.callsign,
+                      controller.frequency,
+                      controller.facility)
+                : authorityDecisions;
+        const auto routeScopedDecisions =
+            FilterAuthorityDecisionsToRouteKeys(
+                authorityDecisions,
+                routeAuthorityMatchKeys);
+        const auto terminalRejectionDecisions =
+            FilterTerminalAuthorityRejectionDecisions(authorityDecisions);
+        for (const auto& decision : sourceOwnershipDecisions) {
+            if (!decision.accepted) {
+                continue;
+            }
+            auto sourcePolygons = FindAuthorityPolygonsByAuthorityKeyIndexed(
+                authorityPolygonCatalog,
+                authorityPolygonExactIndexesByKey,
+                decision.evidence.polygonKey);
+            if (sourcePolygons.empty()) {
+                continue;
+            }
+            auto& ownedPolygons =
+                sourceOwnedPolygonsByController[normalizedCallsign];
+            for (const auto* polygon : sourcePolygons) {
+                if (polygon == nullptr) {
+                    continue;
+                }
+                const auto alreadyPresent = std::any_of(
+                    ownedPolygons.begin(),
+                    ownedPolygons.end(),
+                    [&](const auto* existing) {
+                        return existing != nullptr && existing->id == polygon->id;
+                    });
+                if (!alreadyPresent) {
+                    ownedPolygons.push_back(polygon);
+                }
+            }
+        }
+        if (authorityDecisions.empty()) {
+            if (isAirportLocalCandidate) {
+                continue;
+            }
+            if (hasRouteProximateTransceiverStation) {
+                auto inferredSourcePolygons =
+                    FindKnownAuthorityPolygonsByControllerCallsignBaseIndexed(
+                        authorityPolygonCatalog,
+                        authorityPolygonFamilyIndexesByKey,
+                        normalizedCallsign);
+                if (!inferredSourcePolygons.empty()) {
+                    sourceOwnedPolygonsByController[normalizedCallsign] =
+                        std::move(inferredSourcePolygons);
+                }
+            }
+            if (!ExtractDuplicatedAtisPositionTokens(controller.textAtis).empty()) {
+                continue;
+            }
+            if (hasTransceiverStationCandidates) {
+                continue;
+            }
+            if (countedCandidateControllerKeys.insert(normalizedCallsign).second) {
+                ++candidateControllers;
+            }
+            AppendAuthorityDiagnostic(
+                &snapshot.diagnostics,
+                normalizedCallsign + ":unmapped-controller");
+            continue;
+        }
+
+        const auto hasAcceptedAuthorityDecision =
+            std::any_of(
+                authorityDecisions.begin(),
+                authorityDecisions.end(),
+                [](const auto& decision) { return decision.accepted; });
+        if (routeScopedDecisions.empty() &&
+            !hasAcceptedAuthorityDecision &&
+            terminalRejectionDecisions.empty()) {
+            continue;
+        }
+
+        controllerFrequenciesByCallsign[normalizedCallsign] = controller.frequency;
+        if (countedCandidateControllerKeys.insert(normalizedCallsign).second) {
+            ++candidateControllers;
+        }
+
+        const auto activationResult =
+            xvatsim::core::authority::ActivateAuthorityPolygons(
+                routeScopedControllerAuthorityCatalog,
+                routeScopedAuthorityPolygonCatalog,
+                controller.callsign,
+                controller.frequency,
+                controller.facility);
+        if (activationResult.activePolygons.empty() &&
+            activationResult.dataGaps.empty()) {
+            AppendAuthorityDecisionDiagnostics(
+                &snapshot.diagnostics,
+                normalizedCallsign,
+                routeScopedDecisions.empty()
+                    ? terminalRejectionDecisions
+                    : routeScopedDecisions);
+        }
+        activationDataGaps += static_cast<int>(activationResult.dataGaps.size());
+        for (const auto& gap : activationResult.dataGaps) {
+            AppendAuthorityDiagnostic(
+                &snapshot.diagnostics,
+                normalizedCallsign + ":authority-gap:" +
+                    gap.authorityId + ":" +
+                    gap.polygonKey + ":" +
+                    gap.reason);
+        }
+
+        const auto hasDirectRouteOwnedActivePolygon =
+            std::any_of(
+                activationResult.activePolygons.begin(),
+                activationResult.activePolygons.end(),
+                [&](const auto& activePolygon) {
+                    return ActivePolygonBelongsToRouteAuthorityKeys(
+                        activePolygon,
+                        routeScopedAuthorityPolygonCatalog,
+                        routeAuthorityPolygonKeys);
+                });
+        if (hasDirectRouteOwnedActivePolygon) {
+            transceiverRouteProofBlockedControllerKeys.insert(normalizedCallsign);
+        }
+
+        for (const auto& activePolygon : activationResult.activePolygons) {
+            const auto activeKey = ActiveAuthorityKey(activePolygon);
+            if (!insertedActivePolygonKeys.insert(activeKey).second) {
+                continue;
+            }
+            activeAuthorityPolygons.push_back(activePolygon);
+        }
+    }
+
+    activeAuthorityPolygons = FilterActivePolygonsToRouteAuthorityKeys(
+        activeAuthorityPolygons,
+        routeScopedAuthorityPolygonCatalog,
+        routeAuthorityPolygonKeys,
+        &snapshot.diagnostics);
+    activeAuthorityPolygons = FilterActiveAuthorityPolygonsByTransceiverGeometry(
+        activeAuthorityPolygons,
+        routeScopedAuthorityPolygonCatalog,
+        controllerFrequenciesByCallsign,
+        authorityTransceiverSnapshot,
+        stationCandidateIndex,
+        &snapshot.diagnostics);
+
+    const auto transceiverProofPolygons =
+        ActivateAuthorityPolygonsByTransceiverRouteProof(
+            controllerFeedSnapshot,
+            routeScopedAuthorityPolygons,
+            authorityTransceiverSnapshot,
+            stationCandidateIndex,
+            &controllerFrequenciesByCallsign,
+            sourceOwnedPolygonsByController,
+            &transceiverRouteProofBlockedControllerKeys,
+            &countedCandidateControllerKeys,
+            &candidateControllers,
+            &snapshot.diagnostics);
+    for (const auto& activePolygon : transceiverProofPolygons) {
+        const auto activeKey = ActiveAuthorityKey(activePolygon);
+        if (!insertedActivePolygonKeys.insert(activeKey).second) {
+            continue;
+        }
+        activeAuthorityPolygons.push_back(activePolygon);
+    }
+
+    const auto duplicatedAtisPolygons =
+        ActivateAuthorityPolygonsByDuplicatedAtisProof(
+            controllerFeedSnapshot,
+            routeScopedControllerAuthorityCatalog,
+            routeScopedAuthorityPolygonCatalog,
+            routeAuthorityMatchKeys,
+            &controllerFrequenciesByCallsign,
+            &countedCandidateControllerKeys,
+            &candidateControllers,
+            &snapshot.diagnostics);
+    for (const auto& activePolygon : duplicatedAtisPolygons) {
+        const auto activeKey = ActiveAuthorityKey(activePolygon);
+        if (!insertedActivePolygonKeys.insert(activeKey).second) {
+            continue;
+        }
+        activeAuthorityPolygons.push_back(activePolygon);
+    }
+
+    const auto relevantAuthorityPolygons =
+        xvatsim::core::authority::ResolveRelevantAuthorityPolygons(
+            activeAuthorityPolygons,
+            routeScopedAuthorityPolygonCatalog,
+            aircraftState.valid,
+            aircraftPosition,
+            routePoints);
+
+    std::unordered_set<std::string> relevantActiveKeys;
+    for (const auto& relevantAuthorityPolygon : relevantAuthorityPolygons) {
+        relevantActiveKeys.insert(
+            ActiveAuthorityKey(relevantAuthorityPolygon.activePolygon));
+    }
+    for (const auto& activePolygon : activeAuthorityPolygons) {
+        if (relevantActiveKeys.find(ActiveAuthorityKey(activePolygon)) !=
+            relevantActiveKeys.end()) {
+            continue;
+        }
+        AppendAuthorityDiagnostic(
+            &snapshot.diagnostics,
+            activePolygon.callsign + ":active-not-relevant:" +
+                activePolygon.authorityId + ":" +
+                activePolygon.polygonId + ":" +
+                AuthorityKindLabel(activePolygon.kind));
+    }
+
+    snapshot.relevantAuthorities.reserve(relevantAuthorityPolygons.size());
+    for (const auto& relevantAuthorityPolygon : relevantAuthorityPolygons) {
+        brain::RelevantAuthoritySnapshot relevantAuthority;
+        relevantAuthority.callsign =
+            relevantAuthorityPolygon.activePolygon.callsign;
+        relevantAuthority.authorityId =
+            relevantAuthorityPolygon.activePolygon.authorityId;
+        relevantAuthority.polygonId =
+            relevantAuthorityPolygon.activePolygon.polygonId;
+        relevantAuthority.polygonKey =
+            relevantAuthorityPolygon.activePolygon.polygonKey;
+        relevantAuthority.matchedPattern =
+            relevantAuthorityPolygon.activePolygon.matchedPattern;
+        relevantAuthority.proofSource =
+            AuthorityProofSourceLabel(relevantAuthorityPolygon.activePolygon);
+        relevantAuthority.proofDetail =
+            AuthorityRelevanceProofDetail(relevantAuthorityPolygon);
+        relevantAuthority.kind =
+            ToBrainAuthorityRelevanceKind(relevantAuthorityPolygon.activePolygon.kind);
+        relevantAuthority.aircraftInside =
+            relevantAuthorityPolygon.aircraftInside;
+        relevantAuthority.routeIntersects =
+            relevantAuthorityPolygon.routeIntersects;
+        relevantAuthority.routeEntryDistanceNm =
+            relevantAuthorityPolygon.routeEntryDistanceNm;
+
+        const auto frequencyIt = controllerFrequenciesByCallsign.find(
+            xvatsim::core::authority::NormalizeControllerCallsign(
+                relevantAuthority.callsign));
+        if (frequencyIt != controllerFrequenciesByCallsign.end()) {
+            relevantAuthority.frequency = frequencyIt->second;
+        }
+
+        snapshot.relevantAuthorities.push_back(std::move(relevantAuthority));
+    }
+
+    SortUniqueStrings(&snapshot.diagnostics);
+    std::ostringstream status;
+    status << "AUTHORITY candidates=" << candidateControllers
+           << " authorities=" << routeScopedControllerAuthorityCatalog.authorities.size()
+           << " polygons=" << routeScopedAuthorityPolygonCatalog.polygons.size()
+           << " routeKeys=" << routeAuthorityPolygonKeys.size()
+           << " active=" << activeAuthorityPolygons.size()
+           << " relevant=" << snapshot.relevantAuthorities.size()
+           << " diagnostics=" << snapshot.diagnostics.size()
+           << " activationGaps=" << activationDataGaps;
+    if (workScope.deferredSectorCount > 0 ||
+        workScope.stage == "MID_ROUTE_QUEUE" ||
+        workScope.stage == "FULL_ROUTE_CACHE") {
+        status << " stage=" << workScope.stage
+               << " window=" << static_cast<int>(std::round(workScope.windowNm)) << "nm"
+               << " deferred=" << workScope.deferredSectorCount;
+    }
+    snapshot.statusLine = status.str();
+    LogAuthorityDiagnosticsIfChanged(snapshot);
+    cachedAuthorityRelevanceSnapshot_ = snapshot;
+    hasAuthorityRelevanceCache_ = true;
+    lastAuthorityRelevanceBuildTickSeconds_ = CurrentTickSeconds();
+    lastAuthorityRelevanceLatitudeDeg_ = aircraftState.latitudeDeg;
+    lastAuthorityRelevanceLongitudeDeg_ = aircraftState.longitudeDeg;
+    lastAuthorityRelevanceSignature_ = relevanceSignature;
+    lastAuthorityOperationalScopeSignature_ = operationalScopeSignature;
+    lastAuthorityWatchInputSignature_ = watchInputSignature;
+    lastAuthorityRelevanceProgressRouteSignature_ = routeProgressSignature;
+    lastAuthorityRelevanceProgressWindowNm_ = authorityProgressWindowNm_;
+    return snapshot;
+}
+
+brain::AuthorityRelevanceSnapshot RouteSectorResolver::RefreshAcceptedAuthorityProgress(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    const brain::AuthorityRelevanceSnapshot& authorityRelevanceSnapshot) const {
+    if (!authorityRelevanceSnapshot.available ||
+        authorityRelevanceSnapshot.stale ||
+        authorityRelevanceSnapshot.relevantAuthorities.empty() ||
+        !routeSectorSnapshot.available ||
+        routeSectorSnapshot.stale ||
+        !routeSectorSnapshot.routeResolved) {
+        return authorityRelevanceSnapshot;
+    }
+
+    const auto& authorityPolygonCatalog =
+        GetCachedCoreAuthorityPolygonCatalog(
+            boundaryPayload_,
+            terminalBoundaryPayload_,
+            ownershipPayload_);
+    if (authorityPolygonCatalog.polygons.empty()) {
+        return authorityRelevanceSnapshot;
+    }
+
+    std::unordered_map<std::string, brain::RelevantAuthoritySnapshot> authoritiesByKey;
+    std::vector<xvatsim::core::authority::ActiveAuthorityPolygon> activePolygons;
+    activePolygons.reserve(authorityRelevanceSnapshot.relevantAuthorities.size());
+    authoritiesByKey.reserve(authorityRelevanceSnapshot.relevantAuthorities.size());
+    for (const auto& authority : authorityRelevanceSnapshot.relevantAuthorities) {
+        const auto key =
+            AuthorityProgressKey(
+                authority.callsign,
+                authority.authorityId,
+                authority.polygonId,
+                authority.matchedPattern);
+        if (key == "|||") {
+            continue;
+        }
+
+        authoritiesByKey.emplace(key, authority);
+        activePolygons.push_back({
+            authority.callsign,
+            authority.authorityId,
+            authority.polygonId,
+            authority.polygonKey,
+            authority.matchedPattern,
+            xvatsim::core::authority::AuthoritySource::VatSpyBoundary,
+            ToCoreAuthorityKind(authority.kind),
+            authority.proofSource,
+            authority.proofDetail,
+        });
+    }
+    if (activePolygons.empty()) {
+        return authorityRelevanceSnapshot;
+    }
+
+    const auto routePoints =
+        BuildAuthorityProgressRoutePoints(aircraftState, routeSectorSnapshot);
+    if (routePoints.empty()) {
+        return authorityRelevanceSnapshot;
+    }
+
+    const xvatsim::core::authority::GeoPoint aircraftPosition{
+        aircraftState.latitudeDeg,
+        aircraftState.longitudeDeg,
+    };
+    const auto refreshedPolygons =
+        xvatsim::core::authority::ResolveRelevantAuthorityPolygons(
+            activePolygons,
+            authorityPolygonCatalog,
+            aircraftState.valid,
+            aircraftPosition,
+            routePoints);
+
+    auto refreshedSnapshot = authorityRelevanceSnapshot;
+    refreshedSnapshot.relevantAuthorities.clear();
+    refreshedSnapshot.relevantAuthorities.reserve(refreshedPolygons.size());
+    bool changed = false;
+    for (const auto& refreshedPolygon : refreshedPolygons) {
+        const auto& activePolygon = refreshedPolygon.activePolygon;
+        const auto key =
+            AuthorityProgressKey(
+                activePolygon.callsign,
+                activePolygon.authorityId,
+                activePolygon.polygonId,
+                activePolygon.matchedPattern);
+        const auto authorityIt = authoritiesByKey.find(key);
+        if (authorityIt == authoritiesByKey.end()) {
+            continue;
+        }
+
+        auto authority = authorityIt->second;
+        if (authority.aircraftInside != refreshedPolygon.aircraftInside ||
+            authority.routeIntersects != refreshedPolygon.routeIntersects ||
+            std::fabs(
+                authority.routeEntryDistanceNm -
+                refreshedPolygon.routeEntryDistanceNm) > 0.05) {
+            changed = true;
+        }
+        authority.aircraftInside = refreshedPolygon.aircraftInside;
+        authority.routeIntersects = refreshedPolygon.routeIntersects;
+        authority.routeEntryDistanceNm = refreshedPolygon.routeEntryDistanceNm;
+        refreshedSnapshot.relevantAuthorities.push_back(std::move(authority));
+    }
+
+    if (refreshedSnapshot.relevantAuthorities.size() !=
+        authorityRelevanceSnapshot.relevantAuthorities.size()) {
+        changed = true;
+    }
+    if (!changed) {
+        return authorityRelevanceSnapshot;
+    }
+
+    refreshedSnapshot.diagnosticCacheStatus = "authority-progress-refresh";
+    refreshedSnapshot.diagnosticReason = "accepted-authority-progress-refresh";
+    return refreshedSnapshot;
+}
+
 brain::AirportSectorSnapshot RouteSectorResolver::ResolveAirportCoverage(
     const std::string& airportIcao,
     bool hasAirportCoordinates,
@@ -5334,6 +10598,8 @@ brain::AirportSectorSnapshot RouteSectorResolver::ResolveAirportCoverage(
     if (!hasAirportCoordinates || airportIcao.empty()) {
         snapshot.available = false;
         snapshot.stale = true;
+        snapshot.diagnosticCacheStatus = "input-waiting";
+        snapshot.diagnosticReason = "airport-coordinates-missing";
         snapshot.statusLine = "AIRPORT sectors waiting";
         return snapshot;
     }
@@ -5341,6 +10607,9 @@ brain::AirportSectorSnapshot RouteSectorResolver::ResolveAirportCoverage(
     if (!hasBoundaryCache_ && !hasTerminalBoundaryCache_) {
         snapshot.available = false;
         snapshot.stale = true;
+        snapshot.diagnosticCacheStatus =
+            fetchInProgress_ ? "source-pending" : "source-unavailable";
+        snapshot.diagnosticReason = "airport-boundary-cache-unavailable";
         snapshot.statusLine =
             fetchInProgress_ ? "AIRPORT sectors pending" : "AIRPORT sectors unavailable";
         return snapshot;
@@ -5359,6 +10628,8 @@ brain::AirportSectorSnapshot RouteSectorResolver::ResolveAirportCoverage(
             cachedSnapshot.terminalCoverageGeneration == terminalBoundaryGeneration_;
         if (cachedSourceMatches) {
             snapshot = cachedSnapshot;
+            snapshot.diagnosticCacheStatus = "airport-coverage-cache-hit";
+            snapshot.diagnosticReason = "airport-key-and-source-unchanged";
             snapshot.stale = (hasBoundaryCache_ && !centerAuthorityFresh) ||
                              (hasTerminalBoundaryCache_ && !terminalFresh);
             if (snapshot.stale) {
@@ -5373,6 +10644,8 @@ brain::AirportSectorSnapshot RouteSectorResolver::ResolveAirportCoverage(
         airportIcao,
         airportLatitudeDeg,
         airportLongitudeDeg);
+    snapshot.diagnosticCacheStatus = "airport-coverage-build";
+    snapshot.diagnosticReason = "cache-miss-or-source-changed";
     snapshot.stale = (hasBoundaryCache_ && !centerAuthorityFresh) ||
                      (hasTerminalBoundaryCache_ && !terminalFresh);
     if (snapshot.statusLine.empty()) {
@@ -5503,6 +10776,8 @@ brain::RouteSectorSnapshot RouteSectorResolver::BuildSnapshot(
     const brain::NetworkPlanSnapshot& networkPlanSnapshot) const {
     brain::RouteSectorSnapshot snapshot;
     snapshot.available = true;
+    snapshot.departureIcao = networkPlanSnapshot.departureIcao;
+    snapshot.destinationIcao = networkPlanSnapshot.destinationIcao;
     snapshot.centerBoundaryGeneration = hasBoundaryCache_ ? centerBoundaryGeneration_ : 0;
     snapshot.authorityCatalogGeneration =
         hasAuthorityCatalogCache_ ? authorityCatalogGeneration_ : 0;
@@ -5521,8 +10796,33 @@ brain::RouteSectorSnapshot RouteSectorResolver::BuildSnapshot(
     }
 
     RouteResolveDiagnostics diagnostics;
-    snapshot.waypoints =
-        ResolveRouteWaypoints(aircraftState, networkPlanSnapshot, &diagnostics);
+    bool usedPreflightRouteCache = false;
+    if (preflightRouteCache_.has_value()) {
+        const auto cacheValidation =
+            core::preflight::ValidatePreflightRouteCacheForNetworkPlan(
+                *preflightRouteCache_,
+                networkPlanSnapshot,
+                false);
+        if (cacheValidation.accepted) {
+            snapshot.waypoints =
+                core::preflight::BuildRouteWaypointsFromCache(*preflightRouteCache_);
+            usedPreflightRouteCache = snapshot.waypoints.size() >= 2;
+            diagnostics.resolvedTokens.push_back(
+                "PREFLIGHT_CACHE:" +
+                preflightRouteCache_->plan.routeIdentityHash);
+            if (!preflightRouteCacheReason_.empty()) {
+                diagnostics.procedureMetadataSources.push_back(
+                    "PREFLIGHT_ROUTE_CACHE:" + preflightRouteCacheReason_);
+            } else {
+                diagnostics.procedureMetadataSources.push_back(
+                    "PREFLIGHT_ROUTE_CACHE");
+            }
+        }
+    }
+    if (!usedPreflightRouteCache) {
+        snapshot.waypoints =
+            ResolveRouteWaypoints(aircraftState, networkPlanSnapshot, &diagnostics);
+    }
     snapshot.routeResolved = snapshot.waypoints.size() >= 2;
     const auto directDistanceNm = GreatCircleDistanceNm(
         aircraftState.latitudeDeg,
@@ -5558,6 +10858,9 @@ brain::RouteSectorSnapshot RouteSectorResolver::BuildSnapshot(
     snapshot.routeResolved = traversalSnapshot.routeResolved;
     snapshot.statusLine =
         AppendUnsupportedRouteStatus(traversalSnapshot.statusLine, diagnostics);
+    if (usedPreflightRouteCache) {
+        snapshot.statusLine += " via preflight cache";
+    }
     PopulateTraversalControllerPrefixes(&snapshot.currentSectors, authorityCatalog);
     PopulateTraversalControllerPrefixes(&snapshot.nextSectors, authorityCatalog);
     snapshot.statusLine = AppendAuthorityGapStatus(
@@ -5600,7 +10903,10 @@ brain::AirportSectorSnapshot RouteSectorResolver::BuildAirportCoverageSnapshot(
     snapshot.terminalCoverageGeneration =
         hasTerminalBoundaryCache_ ? terminalBoundaryGeneration_ : 0;
     const auto& authorityCatalog =
-        GetCachedControllerAuthorityCatalog(vatspyPayload_, ownershipPayload_);
+        GetCachedControllerAuthorityCatalog(
+            vatspyPayload_,
+            terminalBoundaryPayload_,
+            ownershipPayload_);
 
     const GeoPoint airportPoint{airportLatitudeDeg, airportLongitudeDeg};
     std::size_t centerSectorCount = 0;
@@ -5643,6 +10949,16 @@ brain::AirportSectorSnapshot RouteSectorResolver::BuildAirportCoverageSnapshot(
             sector.entryDistanceNm = 0.0;
             sector.matchTokens.assign(feature.tokens.begin(), feature.tokens.end());
             std::sort(sector.matchTokens.begin(), sector.matchTokens.end());
+            sector.controllerCallsignPatterns =
+                ResolveAuthoritativeControllerCallsignPatterns(
+                    feature.label,
+                    feature.tokens,
+                    authorityCatalog);
+            sector.controllerPrefixes =
+                ResolveAuthoritativeControllerPrefixes(
+                    feature.label,
+                    feature.tokens,
+                    authorityCatalog);
             sector.terminalCoverage = true;
             snapshot.coveringSectors.push_back(std::move(sector));
             ++terminalSectorCount;
@@ -5696,9 +11012,19 @@ void RouteSectorResolver::StartAsyncBoundaryFetch(long long nowSeconds) const {
             (void)GetCachedControllerAuthorityCatalog(
                 authorityCatalogPayload,
                 ownershipAuthorityPayload);
+            (void)GetCachedCoreControllerAuthorityCatalog(
+                authorityCatalogPayload,
+                terminalBoundaryPayload,
+                ownershipAuthorityPayload);
         }
         if (!terminalBoundaryPayload.empty()) {
             (void)GetCachedTerminalSectorFeatures(terminalBoundaryPayload);
+        }
+        if (!boundaryPayload.empty() && !authorityCatalogPayload.empty()) {
+            (void)GetCachedCoreAuthorityPolygonCatalog(
+                boundaryPayload,
+                terminalBoundaryPayload,
+                ownershipAuthorityPayload);
         }
 
         StageFetchedPayloads(
@@ -5787,6 +11113,19 @@ void RouteSectorResolver::HarvestPendingFetch() const {
     lastFetchSucceeded_ = hasPendingCenterPackage && hasPendingTerminalPackage;
     hasSnapshotCache_ = false;
     lastSnapshotRouteKey_.clear();
+    hasAuthorityRelevanceCache_ = false;
+    cachedAuthorityRelevanceSnapshot_ = {};
+    lastAuthorityRelevanceBuildTickSeconds_ = 0;
+    lastAuthorityRelevanceLatitudeDeg_ = 0.0;
+    lastAuthorityRelevanceLongitudeDeg_ = 0.0;
+    lastAuthorityRelevanceSignature_ = 0;
+    lastAuthorityOperationalScopeSignature_ = 0;
+    lastAuthorityWatchInputSignature_ = 0;
+    lastAuthorityRelevanceProgressRouteSignature_ = 0;
+    lastAuthorityRelevanceProgressWindowNm_ = 0.0;
+    authorityProgressRouteSignature_ = 0;
+    authorityProgressWindowNm_ = 0.0;
+    lastAuthorityProgressTickSeconds_ = 0;
     airportCoverageCache_.clear();
 }
 

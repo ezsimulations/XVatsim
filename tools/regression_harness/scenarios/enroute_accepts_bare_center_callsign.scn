@@ -1,0 +1,9 @@
+name=Enroute Direct Feed Fails Closed Without Authority Evidence
+now_seconds=1000
+
+xpilot.connected=true
+route.current_sector=identifier=CZVR;entryDistanceNm=0;matchTokens=CZVR;controllerPrefixes=CZVR;controllerPatterns=CZVR,CZVR_CTR,CZVR_*_CTR,CZVR_FSS,CZVR_*_FSS
+controller.entry=callsign=CZVR;frequency=133.700;facility=6;actionable=true;atis=false
+
+expect.enroute_available=false
+expect.enroute_callsigns=<none>

@@ -39,6 +39,7 @@ constexpr std::size_t kMaxFrequencyChars = 16;
 constexpr std::size_t kMaxAirportChars = 8;
 constexpr std::size_t kMaxAltitudeChars = 16;
 constexpr std::size_t kMaxRouteTextChars = 4096;
+constexpr std::size_t kMaxControllerTextAtisChars = 2048;
 
 struct WinHttpHandle {
     WinHttpHandle() = default;
@@ -322,6 +323,44 @@ std::string GetOptionalJsonString(
     return text;
 }
 
+std::string GetOptionalJsonStringArrayText(
+    const winrt::Windows::Data::Json::JsonObject& object,
+    const wchar_t* key,
+    std::size_t maxChars) {
+    using namespace winrt::Windows::Data::Json;
+
+    if (!object.HasKey(key)) {
+        return {};
+    }
+
+    const auto value = object.GetNamedValue(key);
+    if (value.ValueType() != JsonValueType::Array) {
+        return {};
+    }
+
+    const auto array = value.GetArray();
+    std::string text;
+    for (uint32_t index = 0; index < array.Size(); ++index) {
+        const auto item = array.GetAt(index);
+        if (item.ValueType() != JsonValueType::String) {
+            continue;
+        }
+
+        auto line = TrimString(winrt::to_string(item.GetString()));
+        if (line.empty()) {
+            continue;
+        }
+        if (!text.empty()) {
+            text += " | ";
+        }
+        if (text.size() + line.size() > maxChars) {
+            break;
+        }
+        text += line;
+    }
+    return text;
+}
+
 double ParseFiledAltitudeText(std::string altitudeText) {
     if (altitudeText.size() > kMaxAltitudeChars) {
         return 0.0;
@@ -468,6 +507,10 @@ VatsimDataFeedSnapshot ParseFeed(const std::string& payload) {
                     controllerObject,
                     L"frequency",
                     kMaxFrequencyChars));
+            controller.textAtis = GetOptionalJsonStringArrayText(
+                controllerObject,
+                L"text_atis",
+                kMaxControllerTextAtisChars);
             const auto facilityNumber = controllerObject.GetNamedNumber(L"facility", 0);
             const auto visualRangeNumber =
                 controllerObject.GetNamedNumber(L"visual_range", 0);

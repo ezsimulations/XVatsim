@@ -3,7 +3,6 @@
 #include <array>
 #include <cmath>
 #include <cstring>
-#include <vector>
 
 #include "XPLMDataAccess.h"
 #include "XPLMProcessing.h"
@@ -20,7 +19,11 @@ constexpr int kTransponderModeTest = 4;
 constexpr int kTransponderModeGround = 5;
 constexpr int kTransponderModeTaOnly = 6;
 constexpr int kTransponderModeTaRa = 7;
-constexpr int kMaxDataRefStringBytes = 16 * 1024;
+constexpr int kMaxDataRefStringBytes = 256;
+constexpr float kActivityPollIntervalSeconds = 0.10f;
+constexpr float kRxSignalLatchSeconds = 0.45f;
+constexpr float kResolvedDataRefRetrySeconds = 5.0f;
+constexpr float kUnresolvedDataRefRetrySeconds = 1.0f;
 
 bool ReadDataBackedBool(XPLMDataRef dataRef) {
     std::array<std::byte, 8> buffer{};
@@ -155,9 +158,11 @@ brain::RadioStateSnapshot RadioStateSampler::Sample() {
     const auto xpilotCom2RxActive = ReadBool(xpilotCom2RxRef_);
     const auto nowSeconds = XPLMGetElapsedTime();
     const auto latchedCom1RxActive =
-        cachedCom1RxSignal_ || ((nowSeconds - lastCom1RxSeenSeconds_) <= 0.35f);
+        cachedCom1RxSignal_ ||
+        ((nowSeconds - lastCom1RxSeenSeconds_) <= kRxSignalLatchSeconds);
     const auto latchedCom2RxActive =
-        cachedCom2RxSignal_ || ((nowSeconds - lastCom2RxSeenSeconds_) <= 0.35f);
+        cachedCom2RxSignal_ ||
+        ((nowSeconds - lastCom2RxSeenSeconds_) <= kRxSignalLatchSeconds);
     const auto com1Active = ReadBool(com1ActiveRef_);
     const auto com2Active = ReadBool(com2ActiveRef_);
     const auto com1RxOverride = ReadBool(com1RxOverrideRef_);
@@ -229,6 +234,15 @@ brain::RadioStateSnapshot RadioStateSampler::Sample() {
 }
 
 void RadioStateSampler::ResolveDataRefs() {
+    const auto nowSeconds = XPLMGetElapsedTime();
+    const auto retrySeconds =
+        didResolveDataRefs_ ? kResolvedDataRefRetrySeconds
+                            : kUnresolvedDataRefRetrySeconds;
+    if ((nowSeconds - lastDataRefResolveAttemptSeconds_) < retrySeconds) {
+        return;
+    }
+    lastDataRefResolveAttemptSeconds_ = nowSeconds;
+
     auto resolveIfMissing = [](void*& dataRef, const char* name) {
         if (dataRef == nullptr) {
             dataRef = XPLMFindDataRef(name);
@@ -328,6 +342,7 @@ void RadioStateSampler::ResetDataRefs() {
     legacyTransponderModeRef_ = nullptr;
     rotateMd11AtcModeRef_ = nullptr;
     didResolveDataRefs_ = false;
+    lastDataRefResolveAttemptSeconds_ = -1000.0f;
 }
 
 void RadioStateSampler::EnsureActivityPolling() {
@@ -335,7 +350,10 @@ void RadioStateSampler::EnsureActivityPolling() {
         return;
     }
 
-    XPLMRegisterFlightLoopCallback(ActivityPollCallback, 0.05f, this);
+    XPLMRegisterFlightLoopCallback(
+        ActivityPollCallback,
+        kActivityPollIntervalSeconds,
+        this);
     didRegisterActivityPolling_ = true;
 }
 
@@ -419,16 +437,19 @@ std::string RadioStateSampler::ReadString(const void* dataRef) {
         return {};
     }
 
-    const auto size = XPLMGetDatab(dataRefHandle, nullptr, 0, 0);
-    if (size <= 0) {
-        return {};
-    }
-    if (size > kMaxDataRefStringBytes) {
+    std::array<char, kMaxDataRefStringBytes + 1> buffer{};
+    const auto bytesRead = XPLMGetDatab(
+        dataRefHandle,
+        buffer.data(),
+        0,
+        kMaxDataRefStringBytes);
+    if (bytesRead <= 0) {
         return {};
     }
 
-    std::vector<char> buffer(static_cast<std::size_t>(size) + 1U, '\0');
-    XPLMGetDatab(dataRefHandle, buffer.data(), 0, size);
+    const auto terminatorIndex =
+        bytesRead < kMaxDataRefStringBytes ? bytesRead : kMaxDataRefStringBytes;
+    buffer[static_cast<std::size_t>(terminatorIndex)] = '\0';
     return std::string(buffer.data());
 }
 
@@ -479,7 +500,7 @@ float RadioStateSampler::ActivityPollCallback(
 
     auto* self = static_cast<RadioStateSampler*>(refcon);
     if (self == nullptr) {
-        return 0.05f;
+        return kActivityPollIntervalSeconds;
     }
 
     const auto nowSeconds = XPLMGetElapsedTime();
@@ -501,7 +522,7 @@ float RadioStateSampler::ActivityPollCallback(
         self->lastCom2RxSeenSeconds_ = nowSeconds;
     }
 
-    return 0.05f;
+    return kActivityPollIntervalSeconds;
 }
 
 std::string RadioStateSampler::FormatFrequencyChannel(int channelNumber) {

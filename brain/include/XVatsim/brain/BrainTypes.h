@@ -151,6 +151,7 @@ struct ControllerSnapshot {
     int visualRangeNm = 0;
     bool actionable = true;
     bool atis = false;
+    std::string textAtis;
 };
 
 struct ControllerFeedSnapshot {
@@ -209,6 +210,10 @@ struct RouteSectorSnapshot {
     bool routeResolved = false;
     std::uint64_t centerBoundaryGeneration = 0;
     std::uint64_t authorityCatalogGeneration = 0;
+    std::string diagnosticCacheStatus;
+    std::string diagnosticReason;
+    std::string departureIcao;
+    std::string destinationIcao;
     std::string statusLine;
     std::vector<RouteWaypointSnapshot> waypoints;
     std::vector<RouteSectorMatchSnapshot> currentSectors;
@@ -228,6 +233,8 @@ struct RelevantAuthoritySnapshot {
     std::string polygonId;
     std::string polygonKey;
     std::string matchedPattern;
+    std::string proofSource;
+    std::string proofDetail;
     AuthorityRelevanceKind kind = AuthorityRelevanceKind::Center;
     bool aircraftInside = false;
     bool routeIntersects = false;
@@ -237,6 +244,17 @@ struct RelevantAuthoritySnapshot {
 struct AuthorityRelevanceSnapshot {
     bool available = false;
     bool stale = true;
+    std::uint64_t controllerFeedGeneration = 0;
+    std::uint64_t centerBoundaryGeneration = 0;
+    std::uint64_t authorityCatalogGeneration = 0;
+    std::uint64_t terminalCoverageGeneration = 0;
+    std::string diagnosticCacheStatus;
+    std::string diagnosticReason;
+    std::string diagnosticWorkStage;
+    double diagnosticWindowNm = 0.0;
+    int diagnosticDeferredSectorCount = 0;
+    std::string statusLine;
+    std::vector<std::string> diagnostics;
     std::vector<RelevantAuthoritySnapshot> relevantAuthorities;
 };
 
@@ -248,6 +266,8 @@ struct AirportSectorSnapshot {
     std::uint64_t centerBoundaryGeneration = 0;
     std::uint64_t authorityCatalogGeneration = 0;
     std::uint64_t terminalCoverageGeneration = 0;
+    std::string diagnosticCacheStatus;
+    std::string diagnosticReason;
     std::string airportIcao;
     std::string statusLine;
     std::vector<RouteSectorMatchSnapshot> coveringSectors;
@@ -273,6 +293,15 @@ enum class StationRole {
     Unicom,
 };
 
+enum class DisplayRelation {
+    Unknown,
+    CurrentPolygon,
+    NextPolygon,
+    ArrivalPrep,
+    Filtered,
+    Hidden,
+};
+
 struct BoardStationSnapshot {
     StationRole role = StationRole::Other;
     std::string callsign;
@@ -286,6 +315,8 @@ struct BoardStationSnapshot {
     bool offline = false;
     bool hasRouteEntryDistance = false;
     double routeEntryDistanceNm = 0.0;
+    std::string polygonKey;
+    DisplayRelation displayRelation = DisplayRelation::Unknown;
 };
 
 struct ModuleBoardSnapshot {

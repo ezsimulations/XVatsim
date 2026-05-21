@@ -1,0 +1,5 @@
+name=radio_reachable_phase_gate_filters_by_workflow_stage
+expect.radio_reachable_gate_departure_candidates=PANC_DEL@118.600:DEL:TEST_HARNESS,PANC_GND@121.900:GND:TEST_HARNESS,PANC_TWR@118.300:TWR:TEST_HARNESS,ANC_APP@125.700:APP_DEP:TEST_HARNESS,LAX_25_CTR@126.525:CTR:TEST_HARNESS
+expect.radio_reachable_gate_enroute_candidates=LAX_25_CTR@126.525:CTR:TEST_HARNESS
+expect.radio_reachable_gate_arrival_candidates=PANC_DEL@118.600:DEL:TEST_HARNESS,PANC_GND@121.900:GND:TEST_HARNESS,PANC_TWR@118.300:TWR:TEST_HARNESS,ANC_APP@125.700:APP_DEP:TEST_HARNESS,LAX_25_CTR@126.525:CTR:TEST_HARNESS
+expect.radio_reachable_gate_none_candidates=

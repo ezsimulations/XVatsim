@@ -27,6 +27,8 @@ public:
     brain::TransceiverResolutionSnapshot Resolve(
         const brain::AircraftStateSnapshot& aircraftState,
         const brain::ControllerFeedSnapshot& controllerFeedSnapshot);
+    brain::TransceiverResolutionSnapshot ResolveAuthorityStations(
+        const brain::ControllerFeedSnapshot& controllerFeedSnapshot);
     brain::TransceiverResolutionSnapshot ResolveAirportCoverage(
         const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
         bool hasAirportCoordinates,
@@ -55,6 +57,10 @@ private:
     double lastResolveLongitudeDeg_ = 0.0;
     double lastResolveAltitudeAglFt_ = 0.0;
     std::size_t lastControllerFeedHash_ = 0;
+    bool hasAuthorityStationCache_ = false;
+    brain::TransceiverResolutionSnapshot cachedAuthorityStationSnapshot_{};
+    long long lastAuthorityStationResolveTickSeconds_ = 0;
+    std::size_t lastAuthorityStationControllerFeedHash_ = 0;
     bool hasAirportCoverageCache_ = false;
     brain::TransceiverResolutionSnapshot cachedAirportCoverageSnapshot_{};
     long long lastAirportCoverageResolveTickSeconds_ = 0;

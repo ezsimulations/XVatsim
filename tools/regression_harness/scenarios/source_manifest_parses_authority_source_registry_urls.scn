@@ -1,0 +1,6 @@
+name=Source Manifest Parses Authority Source Registry Urls
+
+source_manifest.json={"current_commit_hash":"v2604.1","fir_boundaries_dat_url":"https://example.test/FIRBoundaries.dat","fir_boundaries_geojson_url":"https://example.test/Boundaries.geojson","vatspy_dat_url":"https://example.test/VATSpy.dat","simaware_tracon_geojson_url":"https://example.test/TRACONBoundaries.geojson","authority_source_registry_url":"https://example.test/authority-source-registry.json","authority_source_registry_urls":["https://example.test/vatglasses-registry.json","https://example.test/terminal-registry.json"]}
+
+expect.source_manifest_valid=true
+expect.source_manifest_values=commit:v2604.1,dat:https://example.test/FIRBoundaries.dat,geojson:https://example.test/Boundaries.geojson,simaware:https://example.test/TRACONBoundaries.geojson,vatspy:https://example.test/VATSpy.dat,vatglasses:,authority_source_registry:https://example.test/authority-source-registry.json,authority_source_registry_url:https://example.test/vatglasses-registry.json,authority_source_registry_url:https://example.test/terminal-registry.json

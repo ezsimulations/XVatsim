@@ -1,0 +1,2 @@
+name = phase_publisher_keeps_phases_isolated
+expect.phase_publisher_isolation_lifecycle = stored=1:reused=0:source=Enroute:stations=NY_CTR,stored=0:reused=0:source=None:stations=none,stored=1:reused=0:source=Arrival:stations=BOS_APP,stored=0:reused=1:source=Arrival:stations=BOS_APP

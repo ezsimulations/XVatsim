@@ -1,0 +1,40 @@
+name=Resolver VATGlasses Tower Terminal Kind Does Not Feed Enroute
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=true
+aircraft.latitude_deg=0.5
+aircraft.longitude_deg=0.5
+
+plan.departure_icao=KPHX
+plan.stale=false
+plan.departure_lat=0.5
+plan.departure_lon=-1.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.5
+plan.destination_lon=2.0
+plan.has_destination_coordinates=true
+
+radio.com1_active=118.000
+radio.com2_active=122.800
+
+controller.entry=callsign=PHX_TWR;frequency=120.900;facility=4;actionable=true;atis=false
+
+resolver.route_resolve=true
+resolver.center_feature=label=P3T;tokens=P3T;polygon=0,-2|0,3|1,3|1,-2
+resolver.authority_catalog_fir=P3T|Test Center|TST|P3T
+resolver.ownership_json={"airspace":[{"id":"PHX_TWR","group":"PHX_TWR","owner":["P3T"],"sectors":[{"points":[["000000","000000"],["000000","0010000"],["010000","0010000"],["010000","000000"]]}]}],"positions":{"P3T":{"pre":["PHX"],"type":"TWR","frequency":"120.900","callsign":"Phoenix Tower"}}}
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_authority_gaps=<none>
+expect.resolver_route_current_sectors=P3T
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_relevant_matches=PHX_TWR:VATGLASSES:P3T:VATGLASSES:P3T_PHX_TWR_0:aircraft=1:route=1:entry=0,PHX_TWR:VATGLASSES:P3T:VATSPY_BOUNDARY:P3T:aircraft=1:route=1:entry=0
+expect.resolver_authority_proof_sources=PHX_TWR:VATGLASSES_STATIC_OWNER,PHX_TWR:VATGLASSES_STATIC_OWNER
+expect.resolver_authority_proof_detail_contains=PHX_TWR:authoritySource=VATGLASSES,pattern=PHX_TWR,proofItems=callsign-pattern>facility-type>published-frequency>FREQUENCY_OWNED_MATCH,routeRelevance=aircraft-inside+route-intersects
+expect.resolver_enroute_available=false
+expect.resolver_enroute_callsigns=<none>

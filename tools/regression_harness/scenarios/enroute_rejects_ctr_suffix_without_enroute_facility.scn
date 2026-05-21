@@ -6,4 +6,4 @@ route.current_sector=identifier=KZLA;entryDistanceNm=0;matchTokens=KZLA;controll
 controller.entry=callsign=LAX_CTR;frequency=125.800;facility=5;actionable=true;atis=false
 
 expect.enroute_available=false
-expect.enroute_callsigns=KZLA
+expect.enroute_callsigns=<none>

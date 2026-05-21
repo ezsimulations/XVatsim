@@ -1,0 +1,3 @@
+name=radio_reachable_verifier_feed_skips_unchanged_snapshot
+expect.radio_reachable_verifier_unchanged_controllers=
+expect.radio_reachable_verifier_unchanged_status=RADIO_VERIFY available=1 stale=0 input=1 selected=0 diffAdded=0 diffRemoved=0 diffUnchanged=1

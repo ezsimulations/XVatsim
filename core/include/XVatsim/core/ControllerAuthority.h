@@ -12,6 +12,8 @@ enum class AuthoritySource {
     SimAwareTracon,
     VatGlasses,
     VatsimRadarExtension,
+    SpecialSectorData,
+    AirportLocal,
 };
 
 enum class AuthorityKind {
@@ -38,7 +40,10 @@ struct ControllerAuthority {
     std::vector<std::string> lookupKeys;
     std::vector<std::string> controllerPrefixes;
     std::vector<std::string> controllerCallsignPatterns;
+    std::vector<std::string> controllerFrequencies;
     std::string sourceRecord;
+    std::string proofSource;
+    std::string proofDetail;
 };
 
 struct AuthorityPolygon {
@@ -86,8 +91,31 @@ struct AuthorityPositionSourceRecord {
     std::string id;
     std::string name;
     std::string polygonKey;
+    std::string frequency;
     std::vector<std::string> controllerCallsignPatterns;
     std::string sourceRecord;
+    std::string proofSource;
+    std::string proofDetail;
+};
+
+struct AuthorityEvidence {
+    std::string callsign;
+    std::string frequency;
+    int vatsimFacility = 0;
+    std::string authorityId;
+    AuthoritySource authoritySource = AuthoritySource::VatSpyFir;
+    AuthorityKind authorityKind = AuthorityKind::Center;
+    std::string polygonKey;
+    std::string matchedPattern;
+    bool callsignMatched = false;
+    bool facilityMatched = false;
+    bool frequencyRequired = false;
+    bool frequencyMatched = false;
+    bool frequencyOwned = false;
+    std::string proofSource;
+    std::string proofDetail;
+    std::vector<std::string> proofItems;
+    std::vector<std::string> rejectionReasons;
 };
 
 struct ActiveControllerAuthority {
@@ -95,6 +123,15 @@ struct ActiveControllerAuthority {
     std::string authorityId;
     std::string polygonKey;
     std::string matchedPattern;
+    AuthorityKind kind = AuthorityKind::Center;
+    std::string proofSource;
+    std::string proofDetail;
+};
+
+struct AuthorityDecision {
+    bool accepted = false;
+    AuthorityEvidence evidence;
+    ActiveControllerAuthority activeAuthority;
 };
 
 struct ActiveAuthorityPolygon {
@@ -105,11 +142,14 @@ struct ActiveAuthorityPolygon {
     std::string matchedPattern;
     AuthoritySource polygonSource = AuthoritySource::VatSpyBoundary;
     AuthorityKind kind = AuthorityKind::Center;
+    std::string proofSource;
+    std::string proofDetail;
 };
 
 struct AuthorityActivationResult {
     std::vector<ActiveAuthorityPolygon> activePolygons;
     std::vector<AuthorityDataGap> dataGaps;
+    std::vector<AuthorityDecision> decisions;
 };
 
 struct RelevantAuthorityPolygon {
@@ -136,6 +176,10 @@ std::vector<AuthorityPositionSourceRecord> ParseAuthorityPositionSourceRecordsJs
     AuthoritySource source,
     const std::string& payload);
 
+std::vector<AuthorityPolygonSourceRecord> ParseAuthorityPolygonSourceRecordsJson(
+    AuthoritySource source,
+    const std::string& payload);
+
 ControllerAuthorityCatalog MergeControllerAuthorityCatalogs(
     const ControllerAuthorityCatalog& left,
     const ControllerAuthorityCatalog& right);
@@ -143,8 +187,26 @@ ControllerAuthorityCatalog MergeControllerAuthorityCatalogs(
 AuthorityPolygonCatalog CompileAuthorityPolygons(
     const std::vector<AuthorityPolygonSourceRecord>& sourceRecords);
 
+std::vector<AuthorityDecision> EvaluateControllerAuthority(
+    const ControllerAuthorityCatalog& catalog,
+    const std::string& callsign,
+    const std::string& frequency,
+    int vatsimFacility);
+
 std::vector<ActiveControllerAuthority> ResolveControllerAuthority(
     const ControllerAuthorityCatalog& catalog,
+    const std::string& callsign,
+    int vatsimFacility);
+
+std::vector<ActiveControllerAuthority> ResolveControllerAuthority(
+    const ControllerAuthorityCatalog& catalog,
+    const std::string& callsign,
+    const std::string& frequency,
+    int vatsimFacility);
+
+AuthorityActivationResult ActivateAuthorityPolygons(
+    const ControllerAuthorityCatalog& controllerCatalog,
+    const AuthorityPolygonCatalog& polygonCatalog,
     const std::string& callsign,
     int vatsimFacility);
 
@@ -152,6 +214,7 @@ AuthorityActivationResult ActivateAuthorityPolygons(
     const ControllerAuthorityCatalog& controllerCatalog,
     const AuthorityPolygonCatalog& polygonCatalog,
     const std::string& callsign,
+    const std::string& frequency,
     int vatsimFacility);
 
 std::vector<RelevantAuthorityPolygon> ResolveRelevantAuthorityPolygons(

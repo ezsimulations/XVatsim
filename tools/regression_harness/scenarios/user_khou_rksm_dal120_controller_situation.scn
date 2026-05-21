@@ -119,6 +119,19 @@ route.current_sector=identifier=KZFW;entryDistanceNm=0;matchTokens=KZFW;controll
 route.next_sector=identifier=PAZA;entryDistanceNm=2350;matchTokens=PAZA;controllerPrefixes=PAZA
 route.next_sector=identifier=RKRR;entryDistanceNm=6100;matchTokens=RKRR;controllerPrefixes=RKRR
 
+authority.board_handoff=true
+authority_catalog.fir=KZFW|Fort Worth Center|FTW|KZFW
+authority_catalog.fir=PAZA|Anchorage Oceanic|PAZA|PAZA
+authority_catalog.fir=RKRR|Korea Center|RKRR|RKRR
+authority_polygon.vatspy=key=KZFW;name=Fort Worth Center;tokens=KZFW,FTW;polygon=28.0,-105.0|36.0,-105.0|36.0,-94.0|28.0,-94.0
+authority_polygon.vatspy=key=PAZA;name=Anchorage Oceanic;tokens=PAZA;polygon=50.0,-180.0|65.0,-180.0|65.0,-130.0|50.0,-130.0
+authority_polygon.vatspy=key=RKRR;name=Korea Center;tokens=RKRR;polygon=35.0,126.0|39.0,126.0|39.0,129.0|35.0,129.0
+authority_position.local=id=KHOU_TWR;name=Houston Hobby Tower;polygon=KHOU;patterns=HOU_TWR;kind=terminal
+authority_polygon.local=id=KHOU;name=Houston Hobby Local;polygon=29.0,-96.0|30.0,-96.0|30.0,-95.0|29.0,-95.0
+authority_position.local=id=RKSM_GND;name=Seoul Ground;polygon=RKSM;patterns=RKSM_GND;kind=terminal
+authority_position.local=id=RKSM_TWR;name=Seoul Tower;polygon=RKSM;patterns=RKSM_TWR;kind=terminal
+authority_polygon.local=id=RKSM;name=Seoul Local;polygon=37.0,126.5|38.0,126.5|38.0,127.5|37.0,127.5
+
 controller.entry=callsign=HOU_TWR;frequency=118.700;facility=4;actionable=true;atis=false
 controller.entry=callsign=FTW_CTR;frequency=135.975;facility=6;actionable=true;atis=false
 controller.entry=callsign=PAZA_FSS;frequency=123.950;facility=1;actionable=true;atis=false
@@ -129,9 +142,9 @@ controller.entry=callsign=RKSM_TWR;frequency=118.050;facility=4;actionable=true;
 expect.departure_collected_available=true
 expect.departure_collected_callsigns=HOU_TWR
 expect.enroute_available=true
-expect.enroute_callsigns=FTW_CTR,PAZA_FSS,RKRR_CTR
-expect.arrival_local_available=true
-expect.arrival_local_callsigns=RKSM_GND,RKSM_TWR
+expect.enroute_callsigns=FTW_CTR
+expect.arrival_local_available=false
+expect.arrival_local_callsigns=<none>
 expect.resolved_waypoints=ACFT,FUZ,BATIK,SPS,LAA,HGO,QUAIL,FQF,OCS,PIH,DNJ,BEAMO,PDT,BRUKK,YKM,RADDY,SEA,ROSLN,DISCO,VIXOR,ARRUE,ROYST,YZT,YZP,JOWEN,LOHNE,ARCAL,59N60,OGGOE,NANDY,NATES,NIKLL,NYMPH,NUZAN,NRKEY,NIPPI,SUBEK,TOZAR,PTR,UREBI,ODERI,UBRAS,TBE,GINGA,TB30B,RUGMO,MKE,HWE,TAPPI,SKIPE,GNITS,SEPCO,KAMSA,ANDOL,SABET,TENAS,BUSKO,UGOVI,LESBU,KAE,BIKSI,TORUS,KARBU,EGOBA,RKSM
 expect.unsupported_tokens=<none>
 expect.unresolved_tokens=<none>

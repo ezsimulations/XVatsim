@@ -39,6 +39,20 @@ struct HandoffDecision {
     std::string reason = "no-flight-context";
 };
 
+enum class RecoveryRequestMode {
+    AutomaticReconnect,
+    Manual,
+};
+
+struct RecoveryDecision {
+    bool accepted = false;
+    brain::WorkflowStage stage = brain::WorkflowStage::None;
+    std::string reason = "not-evaluated";
+    FlightContext flightContext;
+    bool usedPreservedContext = false;
+    bool usedFreshNetworkPlan = false;
+};
+
 double DistanceToDestinationNm(
     const brain::AircraftStateSnapshot& aircraftState,
     const FlightContext& flightContext);
@@ -59,6 +73,14 @@ bool CanConfirmDepartureLocation(
     const brain::NetworkPlanSnapshot& networkPlanSnapshot,
     const WorkflowTuning& tuning = {});
 
+RecoveryDecision ResolveCurrentFlightRecovery(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::FlightPlanSnapshot& flightPlanSnapshot,
+    const brain::NetworkPlanSnapshot& networkPlanSnapshot,
+    const FlightContext& preservedFlightContext,
+    RecoveryRequestMode mode,
+    const WorkflowTuning& tuning = {});
+
 HandoffDecision ResolveWorkflowStage(
     const brain::AircraftStateSnapshot& aircraftState,
     const brain::RadioStateSnapshot& radioStateSnapshot,
@@ -69,11 +91,5 @@ HandoffDecision ResolveWorkflowStage(
     double nowSeconds,
     WorkflowState* state,
     const WorkflowTuning& tuning = {});
-
-brain::ModuleBoardSnapshot BuildDisplayBoard(
-    brain::WorkflowStage workflowStage,
-    const brain::ModuleBoardSnapshot& departureBoardSnapshot,
-    const brain::ModuleBoardSnapshot& arrivalBoardSnapshot,
-    const brain::ModuleBoardSnapshot& enrouteBoardSnapshot);
 
 }  // namespace xvatsim::core::workflow

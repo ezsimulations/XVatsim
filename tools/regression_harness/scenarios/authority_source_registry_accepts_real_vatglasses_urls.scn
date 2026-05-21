@@ -1,0 +1,5 @@
+name=Authority Source Registry Accepts Real VATGlasses Urls
+
+source_registry.json={"authority_sources":[{"source":"VATGLASSES","url":"https://raw.githubusercontent.com/lennycolton/vatglasses-data/main/data/zvr.json","regions":["CZVR","Vancouver"]},{"source":"VATGLASSES_STATIC_OWNER","url":"https://raw.githubusercontent.com/lennycolton/vatglasses-data/main/data/vh-vm.json","regions":["VHHK","Hong Kong"]},{"source":"TERMINAL_AUTHORITY","url":"https://example.test/terminal-authority.json","regions":["TEST_APP"]}]}
+
+expect.source_registry_values=TERMINAL_AUTHORITY:https://example.test/terminal-authority.json,VATGLASSES:https://raw.githubusercontent.com/lennycolton/vatglasses-data/main/data/vh-vm.json,VATGLASSES:https://raw.githubusercontent.com/lennycolton/vatglasses-data/main/data/zvr.json

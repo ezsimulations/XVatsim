@@ -103,6 +103,7 @@ brain::ModuleBoardSnapshot ArrivalModule::Collect(
     const brain::RadioStateSnapshot& radioStateSnapshot,
     const std::string& arrivalAirportIcao,
     const brain::AirportSectorSnapshot& airportSectorSnapshot,
+    const brain::AuthorityRelevanceSnapshot* authorityRelevanceSnapshot,
     xvatsim::modules::ctaf_lookup::CtafLookupService* ctafLookupService) const {
     brain::ModuleBoardSnapshot snapshot;
     snapshot.source = brain::BoardSource::Arrival;
@@ -119,7 +120,8 @@ brain::ModuleBoardSnapshot ArrivalModule::Collect(
         xPilotSessionSnapshot,
         controllerFeedSnapshot,
         radioStateSnapshot,
-        arrivalAirportIcao);
+        arrivalAirportIcao,
+        authorityRelevanceSnapshot);
     for (const auto& station : localSnapshot.stations) {
         AppendStation(station, &snapshot.stations, &insertedKeys);
     }
@@ -129,7 +131,8 @@ brain::ModuleBoardSnapshot ArrivalModule::Collect(
         controllerFeedSnapshot,
         radioStateSnapshot,
         arrivalAirportIcao,
-        airportSectorSnapshot);
+        airportSectorSnapshot,
+        authorityRelevanceSnapshot);
     for (const auto& station : airspaceSnapshot.stations) {
         AppendStation(station, &snapshot.stations, &insertedKeys);
     }

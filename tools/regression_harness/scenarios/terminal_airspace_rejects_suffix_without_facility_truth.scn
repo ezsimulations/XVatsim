@@ -7,11 +7,11 @@ flight.destination_icao=KPHL
 
 departure.coverage.available=true
 departure.coverage.has_terminal=true
-departure.coverage.sector=identifier=SCT;entryDistanceNm=0;matchTokens=SCT_APP;controllerPrefixes=SCT;terminalCoverage=true
+departure.coverage.sector=identifier=SCT;entryDistanceNm=0;matchTokens=SCT_APP;controllerPrefixes=SCT;controllerPatterns=SCT_APP;terminalCoverage=true
 
 arrival.coverage.available=true
 arrival.coverage.has_terminal=true
-arrival.coverage.sector=identifier=SCT;entryDistanceNm=0;matchTokens=SCT_APP;controllerPrefixes=SCT;terminalCoverage=true
+arrival.coverage.sector=identifier=SCT;entryDistanceNm=0;matchTokens=SCT_APP;controllerPrefixes=SCT;controllerPatterns=SCT_APP;terminalCoverage=true
 
 controller.entry=callsign=SCT_APP;frequency=128.050;facility=6;actionable=true;atis=false
 

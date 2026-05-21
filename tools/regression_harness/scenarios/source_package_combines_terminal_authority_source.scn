@@ -1,0 +1,5 @@
+name=Source Package Combines Terminal Authority Source
+
+source_package.terminal_authority_json={"source":"TERMINAL_AUTHORITY","positions":[{"id":"SCT_A_APP","polygon_key":"SCT_APP","kind":"terminal","frequency":"128.050","callsign_patterns":["SCT_A_APP"]}]}
+
+expect.source_package_payload={"source":"TERMINAL_AUTHORITY","positions":[{"id":"SCT_A_APP","polygon_key":"SCT_APP","kind":"terminal","frequency":"128.050","callsign_patterns":["SCT_A_APP"]}]}

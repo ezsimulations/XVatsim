@@ -1,0 +1,7 @@
+name=Source Manifest Rejects Untrusted Special Sector Data Urls
+now_seconds=1000
+
+source_manifest.json={"current_commit_hash":"v2604.1","fir_boundaries_dat_url":"https://example.test/FIRBoundaries.dat","fir_boundaries_geojson_url":"https://example.test/Boundaries.geojson","vatspy_dat_url":"https://example.test/VATSpy.dat","simaware_tracon_geojson_url":"https://example.test/TRACONBoundaries.geojson","special_sector_data_urls":["https://example.test/au-special-sector-data.json","http://example.test/nz-special-sector-data.json"]}
+
+expect.source_manifest_valid=false
+expect.source_manifest_values=commit:v2604.1,dat:https://example.test/FIRBoundaries.dat,geojson:https://example.test/Boundaries.geojson,simaware:https://example.test/TRACONBoundaries.geojson,vatspy:https://example.test/VATSpy.dat,vatglasses:,special_sector_data_url:https://example.test/au-special-sector-data.json,special_sector_data_url:http://example.test/nz-special-sector-data.json

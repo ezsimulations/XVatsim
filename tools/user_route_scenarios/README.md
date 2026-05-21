@@ -6,6 +6,41 @@ situation file into a regression harness `.scn` file.
 Use it when you want to test a flight plan offline without waiting for live
 VATSIM controller timing.
 
+## Live Battle-Test Probe
+
+Use this when you want to quickly battle-test a SimBrief/X-Plane `.fms` route
+against the controllers that are online right now.
+
+Double-click:
+
+```text
+tools\user_route_scenarios\Run_Live_FMS_Battle_Test.bat
+```
+
+Then paste the full `.fms` path and enter the callsign.
+
+The live probe downloads current VATSIM network data, VATSIM transceivers,
+VATSpy FIR/boundary data, and SimAware TRACON boundaries. It creates a
+temporary scenario under:
+
+```text
+tools\user_route_scenarios\generated_live
+```
+
+It then runs the regression harness and prints the important board/resolver
+summary lines. Normal live probes do not overwrite the permanent regression
+scenario folder.
+
+Command-line example:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\user_route_scenarios\Invoke-LiveFmsBattleTest.ps1 -FmsPath "C:\X-Plane 12\Output\FMS plans\LEPAEDDB01.fms" -Callsign DAL100
+```
+
+Only use `-SaveAsHarnessScenario` when a live failure should become a permanent
+saved regression case. If the target permanent scenario already exists, the
+script refuses to overwrite it unless `-ForceOverwrite` is also supplied.
+
 ## Owner Workflow
 
 1. Generate or download the SimBrief `.fms` file into X-Plane, usually:

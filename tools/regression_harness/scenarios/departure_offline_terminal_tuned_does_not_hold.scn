@@ -32,5 +32,5 @@ departure.station=role=Approach;callsign=SCT_APP;frequency=128.050;online=false;
 
 expect.stage=Enroute
 expect.reason=departure-released
-expect.display_source=None
+expect.display_source=Enroute
 expect.display_callsigns=<none>

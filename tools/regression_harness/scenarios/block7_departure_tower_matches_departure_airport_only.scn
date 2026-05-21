@@ -1,0 +1,29 @@
+name=Block7 Departure Tower Matches Departure Airport Only
+now_seconds=1000
+
+state.flight_active=true
+flight.departure_icao=KAAA
+flight.destination_icao=KCCC
+
+aircraft.valid=true
+aircraft.on_ground=true
+aircraft.battery_on=true
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+xpilot.connected=true
+controller.feed_available=true
+controller.feed_stale=false
+authority.board_handoff=true
+
+authority_position.local=id=KAAA_TWR;name=Alpha Tower;polygon=KAAA;patterns=AAA_TWR;kind=terminal
+authority_polygon.local=id=KAAA;name=Alpha Local;polygon=-1,-1|-1,1|1,1|1,-1
+authority_position.local=id=KBBB_TWR;name=Bravo Tower;polygon=KBBB;patterns=BBB_TWR;kind=terminal
+authority_polygon.local=id=KBBB;name=Bravo Local;polygon=10,10|10,11|11,11|11,10
+
+controller.entry=callsign=AAA_TWR;frequency=118.100;facility=4;actionable=true;atis=false
+controller.entry=callsign=BBB_TWR;frequency=119.100;facility=4;actionable=true;atis=false
+
+expect.departure_collected_available=true
+expect.departure_collected_callsigns=AAA_TWR
+expect.authority_relevant_polygon_matches=AAA_TWR:AIRPORT_LOCAL:KAAA_TWR:AIRPORT_LOCAL:KAAA:aircraft=1:route=0:entry=0

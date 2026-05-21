@@ -1,0 +1,6 @@
+name=Authority Source Registry Selects Broader VATGlasses List
+
+source_registry.file=assets/source_data/authority_source_registry.json
+
+expect.source_registry_count=153
+expect.source_registry_source_counts=VATGLASSES:139,VATGLASSES_DYNAMIC_DIRECTORY:14

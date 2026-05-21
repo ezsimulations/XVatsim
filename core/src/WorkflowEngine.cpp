@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <unordered_set>
 
 namespace xvatsim::core::workflow {
 
@@ -46,8 +45,128 @@ std::string NormalizeIcao(std::string airportIcao) {
     return normalized;
 }
 
+std::string NormalizeCallsign(std::string callsign) {
+    std::string normalized;
+    normalized.reserve(callsign.size());
+    for (const auto character : callsign) {
+        if (std::isalnum(static_cast<unsigned char>(character)) == 0) {
+            continue;
+        }
+
+        normalized.push_back(static_cast<char>(
+            std::toupper(static_cast<unsigned char>(character))));
+    }
+    return normalized;
+}
+
 bool AirportsMatch(const std::string& left, const std::string& right) {
     return !left.empty() && !right.empty() && NormalizeIcao(left) == NormalizeIcao(right);
+}
+
+bool HasUsableFiledRoute(const brain::NetworkPlanSnapshot& networkPlanSnapshot) {
+    return networkPlanSnapshot.matched &&
+           !networkPlanSnapshot.stale &&
+           !networkPlanSnapshot.departureIcao.empty() &&
+           !networkPlanSnapshot.destinationIcao.empty();
+}
+
+bool PlanMatchesFlightContext(
+    const FlightContext& flightContext,
+    const brain::NetworkPlanSnapshot& networkPlanSnapshot) {
+    return flightContext.active &&
+           HasUsableFiledRoute(networkPlanSnapshot) &&
+           AirportsMatch(flightContext.departureIcao, networkPlanSnapshot.departureIcao) &&
+           AirportsMatch(flightContext.destinationIcao, networkPlanSnapshot.destinationIcao);
+}
+
+void ApplyMissingAirportCoordinates(
+    const std::string& targetIcao,
+    const std::string& sourceIcao,
+    bool sourceHasCoordinates,
+    double sourceLatitudeDeg,
+    double sourceLongitudeDeg,
+    double* targetLatitudeDeg,
+    double* targetLongitudeDeg,
+    bool* targetHasCoordinates) {
+    if (targetLatitudeDeg == nullptr ||
+        targetLongitudeDeg == nullptr ||
+        targetHasCoordinates == nullptr ||
+        *targetHasCoordinates ||
+        !sourceHasCoordinates ||
+        !AirportsMatch(targetIcao, sourceIcao)) {
+        return;
+    }
+
+    *targetLatitudeDeg = sourceLatitudeDeg;
+    *targetLongitudeDeg = sourceLongitudeDeg;
+    *targetHasCoordinates = true;
+}
+
+FlightContext BuildRecoveredFlightContext(
+    const brain::FlightPlanSnapshot& flightPlanSnapshot,
+    const brain::NetworkPlanSnapshot& networkPlanSnapshot,
+    const FlightContext& preservedFlightContext,
+    bool usePreservedContext) {
+    FlightContext recoveredContext = usePreservedContext ? preservedFlightContext : FlightContext{};
+    recoveredContext.active = true;
+    if (!networkPlanSnapshot.matchedCallsign.empty()) {
+        recoveredContext.callsign = networkPlanSnapshot.matchedCallsign;
+    }
+    recoveredContext.departureIcao = networkPlanSnapshot.departureIcao;
+    recoveredContext.destinationIcao = networkPlanSnapshot.destinationIcao;
+    recoveredContext.routeText = networkPlanSnapshot.routeText;
+
+    if (networkPlanSnapshot.hasDepartureCoordinates) {
+        recoveredContext.departureLatDeg = networkPlanSnapshot.departureLatDeg;
+        recoveredContext.departureLonDeg = networkPlanSnapshot.departureLonDeg;
+        recoveredContext.hasDepartureCoordinates = true;
+    } else {
+        recoveredContext.hasDepartureCoordinates =
+            usePreservedContext &&
+            AirportsMatch(preservedFlightContext.departureIcao, recoveredContext.departureIcao) &&
+            preservedFlightContext.hasDepartureCoordinates;
+        if (recoveredContext.hasDepartureCoordinates) {
+            recoveredContext.departureLatDeg = preservedFlightContext.departureLatDeg;
+            recoveredContext.departureLonDeg = preservedFlightContext.departureLonDeg;
+        }
+    }
+    ApplyMissingAirportCoordinates(
+        recoveredContext.departureIcao,
+        flightPlanSnapshot.departureIcao,
+        flightPlanSnapshot.hasDepartureCoordinates,
+        flightPlanSnapshot.departureLatDeg,
+        flightPlanSnapshot.departureLonDeg,
+        &recoveredContext.departureLatDeg,
+        &recoveredContext.departureLonDeg,
+        &recoveredContext.hasDepartureCoordinates);
+
+    if (networkPlanSnapshot.hasDestinationCoordinates) {
+        recoveredContext.destinationLatDeg = networkPlanSnapshot.destinationLatDeg;
+        recoveredContext.destinationLonDeg = networkPlanSnapshot.destinationLonDeg;
+        recoveredContext.hasDestinationCoordinates = true;
+    } else {
+        recoveredContext.hasDestinationCoordinates =
+            usePreservedContext &&
+            AirportsMatch(
+                preservedFlightContext.destinationIcao,
+                recoveredContext.destinationIcao) &&
+            preservedFlightContext.hasDestinationCoordinates;
+        if (recoveredContext.hasDestinationCoordinates) {
+            recoveredContext.destinationLatDeg = preservedFlightContext.destinationLatDeg;
+            recoveredContext.destinationLonDeg = preservedFlightContext.destinationLonDeg;
+        }
+    }
+    ApplyMissingAirportCoordinates(
+        recoveredContext.destinationIcao,
+        flightPlanSnapshot.destinationIcao,
+        flightPlanSnapshot.hasDestinationCoordinates,
+        flightPlanSnapshot.destinationLatDeg,
+        flightPlanSnapshot.destinationLonDeg,
+        &recoveredContext.destinationLatDeg,
+        &recoveredContext.destinationLonDeg,
+        &recoveredContext.hasDestinationCoordinates);
+
+    return recoveredContext;
 }
 
 std::string NormalizeFrequency(std::string frequency) {
@@ -154,86 +273,6 @@ bool HasCom1TunedLiveRouteCenter(
     return false;
 }
 
-std::string BoardStationKey(const brain::BoardStationSnapshot& station) {
-    return std::to_string(static_cast<int>(station.role)) + "|" +
-           station.callsign + "|" + NormalizeFrequency(station.frequency);
-}
-
-void AppendBoardStationsUnique(
-    const brain::ModuleBoardSnapshot& source,
-    brain::ModuleBoardSnapshot* target) {
-    if (target == nullptr) {
-        return;
-    }
-
-    std::unordered_set<std::string> existingKeys;
-    existingKeys.reserve(target->stations.size());
-    for (const auto& station : target->stations) {
-        existingKeys.insert(BoardStationKey(station));
-    }
-
-    for (const auto& station : source.stations) {
-        const auto key = BoardStationKey(station);
-        if (existingKeys.insert(key).second) {
-            target->stations.push_back(station);
-        }
-    }
-
-    target->available = target->available || source.available;
-    target->displayStations = target->displayStations || source.displayStations;
-}
-
-brain::ModuleBoardSnapshot CurrentEnrouteCenterBoard(
-    const brain::ModuleBoardSnapshot& enrouteBoardSnapshot) {
-    auto snapshot = enrouteBoardSnapshot;
-    snapshot.stations.clear();
-    snapshot.available = false;
-    snapshot.displayStations = false;
-
-    for (const auto& station : enrouteBoardSnapshot.stations) {
-        if (station.role != brain::StationRole::Center) {
-            continue;
-        }
-
-        if (!IsLiveRouteCenterStation(station)) {
-            continue;
-        }
-
-        const auto currentRouteCenter =
-            station.sectorActive ||
-            (station.hasRouteEntryDistance && station.routeEntryDistanceNm <= 0.5);
-        if (!currentRouteCenter && !station.tuned) {
-            continue;
-        }
-
-        snapshot.stations.push_back(station);
-        snapshot.available = true;
-        snapshot.displayStations = true;
-    }
-
-    return snapshot;
-}
-
-brain::ModuleBoardSnapshot OnlineEnrouteDisplayBoard(
-    const brain::ModuleBoardSnapshot& enrouteBoardSnapshot) {
-    auto snapshot = enrouteBoardSnapshot;
-    snapshot.stations.clear();
-    snapshot.available = false;
-    snapshot.displayStations = false;
-
-    for (const auto& station : enrouteBoardSnapshot.stations) {
-        if (!IsLiveRouteCenterStation(station)) {
-            continue;
-        }
-
-        snapshot.stations.push_back(station);
-        snapshot.available = true;
-        snapshot.displayStations = true;
-    }
-
-    return snapshot;
-}
-
 }  // namespace
 
 double DistanceToDestinationNm(
@@ -298,6 +337,90 @@ bool CanConfirmDepartureLocation(
     }
 
     return false;
+}
+
+RecoveryDecision ResolveCurrentFlightRecovery(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::FlightPlanSnapshot& flightPlanSnapshot,
+    const brain::NetworkPlanSnapshot& networkPlanSnapshot,
+    const FlightContext& preservedFlightContext,
+    RecoveryRequestMode mode,
+    const WorkflowTuning& tuning) {
+    RecoveryDecision decision;
+    decision.reason =
+        mode == RecoveryRequestMode::Manual
+            ? "manual-recovery-not-evaluated"
+            : "automatic-recovery-not-evaluated";
+
+    if (!aircraftState.valid) {
+        decision.reason = "aircraft-state-invalid";
+        return decision;
+    }
+    if (!aircraftState.batteryOn) {
+        decision.reason = "battery-off";
+        return decision;
+    }
+    if (!networkPlanSnapshot.matched || networkPlanSnapshot.stale) {
+        decision.reason = "plan-unavailable";
+        return decision;
+    }
+    if (!HasUsableFiledRoute(networkPlanSnapshot)) {
+        decision.reason = "plan-route-missing";
+        return decision;
+    }
+
+    const auto usePreservedContext =
+        PlanMatchesFlightContext(preservedFlightContext, networkPlanSnapshot);
+    if (preservedFlightContext.active &&
+        !preservedFlightContext.callsign.empty() &&
+        !networkPlanSnapshot.matchedCallsign.empty() &&
+        NormalizeCallsign(preservedFlightContext.callsign) !=
+            NormalizeCallsign(networkPlanSnapshot.matchedCallsign)) {
+        decision.reason = "callsign-changed";
+        return decision;
+    }
+    if (preservedFlightContext.active && !usePreservedContext) {
+        decision.reason = "route-changed";
+        return decision;
+    }
+
+    auto recoveredContext = BuildRecoveredFlightContext(
+        flightPlanSnapshot,
+        networkPlanSnapshot,
+        preservedFlightContext,
+        usePreservedContext);
+
+    if (IsOnGroundAtDestination(aircraftState, recoveredContext, tuning)) {
+        decision.accepted = true;
+        decision.stage = brain::WorkflowStage::Arrival;
+        decision.reason = "recovery-destination-ground";
+    } else if (aircraftState.onGround) {
+        if (!CanConfirmDepartureLocation(
+                aircraftState,
+                flightPlanSnapshot,
+                networkPlanSnapshot,
+                tuning)) {
+            decision.reason = "ground-not-at-route-endpoint";
+            return decision;
+        }
+
+        decision.accepted = true;
+        decision.stage = brain::WorkflowStage::Departure;
+        decision.reason = "recovery-departure-ground";
+    } else if (IsInsideArrivalWakeDistance(aircraftState, recoveredContext, tuning)) {
+        decision.accepted = true;
+        decision.stage = brain::WorkflowStage::Arrival;
+        decision.reason = "recovery-arrival-distance";
+    } else {
+        decision.accepted = true;
+        decision.stage = brain::WorkflowStage::Enroute;
+        decision.reason = "recovery-enroute-airborne";
+    }
+
+    decision.flightContext = std::move(recoveredContext);
+    decision.usedPreservedContext = usePreservedContext;
+    decision.usedFreshNetworkPlan = true;
+    return decision;
 }
 
 HandoffDecision ResolveWorkflowStage(
@@ -389,39 +512,6 @@ HandoffDecision ResolveWorkflowStage(
     decision.stage = brain::WorkflowStage::Enroute;
     decision.reason = "departure-released";
     return decision;
-}
-
-brain::ModuleBoardSnapshot BuildDisplayBoard(
-    brain::WorkflowStage workflowStage,
-    const brain::ModuleBoardSnapshot& departureBoardSnapshot,
-    const brain::ModuleBoardSnapshot& arrivalBoardSnapshot,
-    const brain::ModuleBoardSnapshot& enrouteBoardSnapshot) {
-    using brain::WorkflowStage;
-
-    if (workflowStage == WorkflowStage::Enroute) {
-        return OnlineEnrouteDisplayBoard(enrouteBoardSnapshot);
-    }
-
-    if (workflowStage == WorkflowStage::Arrival) {
-        auto displayBoard = arrivalBoardSnapshot;
-        displayBoard.source = brain::BoardSource::Arrival;
-        AppendBoardStationsUnique(OnlineEnrouteDisplayBoard(enrouteBoardSnapshot), &displayBoard);
-        displayBoard.displayStations =
-            displayBoard.displayStations || !displayBoard.stations.empty();
-        return displayBoard;
-    }
-
-    if (workflowStage == WorkflowStage::Departure) {
-        auto displayBoard = departureBoardSnapshot;
-        displayBoard.source = brain::BoardSource::Departure;
-        const auto currentCenterBoard = CurrentEnrouteCenterBoard(enrouteBoardSnapshot);
-        AppendBoardStationsUnique(currentCenterBoard, &displayBoard);
-        displayBoard.displayStations =
-            displayBoard.displayStations || !displayBoard.stations.empty();
-        return displayBoard;
-    }
-
-    return {};
 }
 
 }  // namespace xvatsim::core::workflow

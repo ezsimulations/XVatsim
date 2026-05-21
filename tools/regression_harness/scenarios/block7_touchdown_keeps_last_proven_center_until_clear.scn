@@ -1,0 +1,2 @@
+name=Block7 Touchdown Keeps Last Proven Center Until Clear
+expect.phase_publisher_workflow_clear_lifecycle=stored=1:reused=0:source=Enroute:stations=NY_CTR,stored=0:reused=1:source=Enroute:stations=NY_CTR,stored=0:reused=0:source=None:stations=none

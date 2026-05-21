@@ -1,0 +1,7 @@
+name=Authority Source Registry Accepts Dynamic Directory Entry
+
+source_registry.json={"authority_sources":[{"source":"VATGLASSES_DYNAMIC_DIRECTORY","positions_url":"https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zab/positions.json","airspace_url":"https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zab/airspace.json","ownership_url":"https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zab/ownership/default.json","regions":["ZAB"]}]}
+
+expect.source_registry_count=1
+expect.source_registry_source_counts=VATGLASSES_DYNAMIC_DIRECTORY:1
+expect.source_registry_values=VATGLASSES_DYNAMIC_DIRECTORY:https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zab/positions.json|https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zab/airspace.json|https://raw.githubusercontent.com/lennycolton/vatglasses-data/a9fb0bb82d05e7bb12770fd90e6dca510754e0e5/data/zab/ownership/default.json

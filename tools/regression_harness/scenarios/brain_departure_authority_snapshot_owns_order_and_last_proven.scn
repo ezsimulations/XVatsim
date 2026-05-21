@@ -1,0 +1,8 @@
+name=Brain Departure Authority Snapshot Owns Order And Last Proven
+
+expect.brain_departure_work_order=ResolveDepartureAirportLocal,ResolveDepartureTerminal,ResolveCurrentCenter,BuildDepartureSnapshot
+expect.brain_departure_scheduler_runnable=ResolveDepartureAirportLocal,ResolveDepartureTerminal,ResolveCurrentCenter,BuildDepartureSnapshot
+expect.brain_departure_scheduler_deferred=<NONE>
+expect.brain_departure_scheduler_heavy_counts=requested=0,runnable=0,deferred=0
+expect.brain_departure_snapshot_lifecycle=available=1:stale=0:pending=0:lastProven=0:stations=1:generation=1:cache=departure-snapshot-rebuild:reason=departure-snapshot-first-build
+expect.brain_departure_pending_lifecycle=available=1:stale=1:pending=1:lastProven=1:stations=1:generation=1:cache=departure-snapshot-pending-last-proven:reason=departure-input-stale

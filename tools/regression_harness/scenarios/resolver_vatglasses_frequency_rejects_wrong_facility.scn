@@ -1,0 +1,40 @@
+name=Resolver VATGlasses Frequency Rejects Wrong Facility
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.5
+aircraft.longitude_deg=112.5
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.5
+plan.departure_lon=111.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.5
+plan.destination_lon=114.0
+plan.has_destination_coordinates=true
+
+radio.com1_active=118.000
+radio.com2_active=122.800
+
+controller.entry=callsign=HKG_W_CTR;frequency=127.100;facility=5;actionable=true;atis=false
+
+resolver.route_resolve=true
+resolver.center_feature=label=VHHK;tokens=VHHK;polygon=0,112|1,112|1,113|0,113
+resolver.authority_catalog_fir=VHHK|Hong Kong|HKG|VHHK
+resolver.ownership_json={"positions":{"TRW":{"pre":["HKG"],"type":"CTR","frequency":"127.100","callsign":"Hong Kong Radar"}},"airspace":{"TRW-AIRSPACE":{"id":"Area Radar West","group":"VHHK","sectors":[{"points":[["000000","1120000"],["010000","1120000"],["010000","1130000"],["000000","1130000"]]}]}},"ownership":{"airspace":{"TRW-AIRSPACE":["TRW"]}}}
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_authority_gaps=<none>
+expect.resolver_route_current_sectors=VHHK
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_status=AUTHORITY candidates=1 authorities=2 polygons=2 routeKeys=1 active=0 relevant=0 diagnostics=2 activationGaps=0
+expect.resolver_authority_diagnostics=HKG_W_CTR:facility-mismatch:VATGLASSES:TRW:TRW-AIRSPACE:HKG_*_CTR,HKG_W_CTR:facility-mismatch:VATSPY_FIR:VHHK:VHHK:HKG_*_CTR
+expect.resolver_authority_relevant_matches=<none>
+expect.resolver_enroute_available=false
+expect.resolver_enroute_callsigns=<none>

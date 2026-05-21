@@ -1,0 +1,27 @@
+name=Recovery Route Changed Rejects Preserved Context
+now_seconds=5000
+
+recovery.requested=true
+recovery.mode=automatic
+
+state.flight_active=true
+flight.departure_icao=PANC
+flight.destination_icao=VHHH
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.battery_on=true
+aircraft.latitude_deg=50.000000
+aircraft.longitude_deg=-140.000000
+
+plan.matched=true
+plan.stale=false
+plan.departure_icao=PANC
+plan.destination_icao=KONT
+
+expect.recovery_accepted=false
+expect.recovery_stage=None
+expect.recovery_reason=route-changed
+expect.recovery_used_preserved_context=false
+expect.recovery_used_fresh_network_plan=false
+expect.recovery_flight_context_active=false

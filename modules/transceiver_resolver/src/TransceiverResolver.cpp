@@ -41,6 +41,7 @@ constexpr double kEarthRadiusNm = 3440.065;
 constexpr double kMinReceivableRangeNm = 5.0;
 constexpr long long kResolveCadenceSeconds = 1;
 constexpr long long kAirportCoverageResolveCadenceSeconds = 5;
+constexpr long long kAuthorityStationResolveCadenceSeconds = 15;
 constexpr double kResolveMovementThresholdNm = 0.05;
 constexpr double kResolveAltitudeThresholdFt = 500.0;
 constexpr double kAirportCoverageAircraftAglFt = 5000.0;
@@ -329,8 +330,11 @@ std::vector<CachedTransceiver> ParseTransceivers(const std::string& payload) {
                 parsed.frequency = FormatFrequency(frequencyHz);
                 parsed.latitudeDeg = transceiver.GetNamedNumber(L"latDeg", 0.0);
                 parsed.longitudeDeg = transceiver.GetNamedNumber(L"lonDeg", 0.0);
-                parsed.heightAglFt =
-                    transceiver.GetNamedNumber(L"heightAglM", 0.0) * kMetersToFeet;
+                const auto heightMslM =
+                    transceiver.GetNamedNumber(
+                        L"heightMslM",
+                        transceiver.GetNamedNumber(L"heightAglM", 0.0));
+                parsed.heightAglFt = heightMslM * kMetersToFeet;
                 if (parsed.callsign.empty() ||
                     parsed.frequency.empty() ||
                     !IsValidPosition(parsed.latitudeDeg, parsed.longitudeDeg) ||
@@ -441,9 +445,16 @@ brain::TransceiverResolutionSnapshot ResolveReceivableControllers(
                 aircraftState.longitudeDeg,
                 transceiver.latitudeDeg,
                 transceiver.longitudeDeg);
+            const auto controllerVisualRangeNm =
+                controller.visualRangeNm > 0
+                    ? static_cast<double>(controller.visualRangeNm)
+                    : 0.0;
             const auto receivableRangeNm = std::max(
-                kMinReceivableRangeNm,
-                RadioHorizonNm(aircraftState.altitudeAglFt, transceiver.heightAglFt));
+                {kMinReceivableRangeNm,
+                 controllerVisualRangeNm,
+                 RadioHorizonNm(
+                     aircraftState.altitudeAglFt,
+                     transceiver.heightAglFt)});
 
             if (distanceNm > receivableRangeNm) {
                 continue;
@@ -490,6 +501,83 @@ brain::TransceiverResolutionSnapshot ResolveReceivableControllers(
     snapshot.receivableControllers = static_cast<int>(snapshot.candidates.size());
     snapshot.statusLine =
         "RX " + std::to_string(snapshot.receivableControllers) + " receivable";
+    return snapshot;
+}
+
+brain::TransceiverResolutionSnapshot ResolveAuthorityStations(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const std::unordered_map<std::string, std::vector<CachedTransceiver>>& indexedTransceivers,
+    bool isStaleFeed) {
+    brain::TransceiverResolutionSnapshot snapshot;
+    snapshot.available = !indexedTransceivers.empty();
+    snapshot.stale = isStaleFeed;
+    snapshot.statusLine =
+        isStaleFeed ? "AUTHORITY stations feed stale" : "AUTHORITY stations active";
+
+    if (isStaleFeed) {
+        snapshot.available = false;
+        return snapshot;
+    }
+
+    if (controllerFeedSnapshot.stale) {
+        snapshot.available = false;
+        snapshot.statusLine = "AUTHORITY stations ATC feed stale";
+        return snapshot;
+    }
+
+    if (!controllerFeedSnapshot.available) {
+        snapshot.available = false;
+        snapshot.statusLine = "AUTHORITY stations waiting for ATC feed";
+        return snapshot;
+    }
+
+    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
+        if (!controller.actionable) {
+            continue;
+        }
+
+        const auto transceiverEntry = indexedTransceivers.find(controller.callsign);
+        if (transceiverEntry == indexedTransceivers.end()) {
+            continue;
+        }
+
+        for (const auto& transceiver : transceiverEntry->second) {
+            const auto displayFrequency = ResolveDisplayFrequency(
+                controller.frequency,
+                transceiver.frequency);
+            if (displayFrequency.empty()) {
+                continue;
+            }
+
+            brain::ReceivableControllerSnapshot candidate;
+            candidate.callsign = controller.callsign;
+            candidate.frequency = displayFrequency;
+            candidate.distanceNm = 0.0;
+            candidate.score = 0.0;
+            candidate.latitudeDeg = transceiver.latitudeDeg;
+            candidate.longitudeDeg = transceiver.longitudeDeg;
+            snapshot.candidates.push_back(std::move(candidate));
+        }
+    }
+
+    std::sort(
+        snapshot.candidates.begin(),
+        snapshot.candidates.end(),
+        [](const auto& left, const auto& right) {
+            if (left.callsign != right.callsign) {
+                return left.callsign < right.callsign;
+            }
+            if (left.frequency != right.frequency) {
+                return left.frequency < right.frequency;
+            }
+            if (left.latitudeDeg != right.latitudeDeg) {
+                return left.latitudeDeg < right.latitudeDeg;
+            }
+            return left.longitudeDeg < right.longitudeDeg;
+        });
+    snapshot.receivableControllers = static_cast<int>(snapshot.candidates.size());
+    snapshot.statusLine =
+        "AUTHORITY stations " + std::to_string(snapshot.receivableControllers) + " located";
     return snapshot;
 }
 
@@ -665,6 +753,10 @@ void TransceiverResolver::Reset() {
     lastResolveLongitudeDeg_ = 0.0;
     lastResolveAltitudeAglFt_ = 0.0;
     lastControllerFeedHash_ = 0;
+    hasAuthorityStationCache_ = false;
+    cachedAuthorityStationSnapshot_ = {};
+    lastAuthorityStationResolveTickSeconds_ = 0;
+    lastAuthorityStationControllerFeedHash_ = 0;
     hasAirportCoverageCache_ = false;
     cachedAirportCoverageSnapshot_ = {};
     lastAirportCoverageResolveTickSeconds_ = 0;
@@ -737,6 +829,53 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::Resolve(
     lastResolveLongitudeDeg_ = aircraftState.longitudeDeg;
     lastResolveAltitudeAglFt_ = aircraftState.altitudeAglFt;
     lastControllerFeedHash_ = controllerFeedHash;
+    return snapshot;
+}
+
+brain::TransceiverResolutionSnapshot TransceiverResolver::ResolveAuthorityStations(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot) {
+    const auto refreshSucceeded = RefreshFeedIfNeeded();
+
+    if (cachedTransceivers_.empty()) {
+        brain::TransceiverResolutionSnapshot snapshot;
+        snapshot.available = false;
+        snapshot.stale = true;
+        snapshot.statusLine = "AUTHORITY stations feed unavailable";
+        return snapshot;
+    }
+
+    if (!refreshSucceeded) {
+        brain::TransceiverResolutionSnapshot snapshot;
+        snapshot.available = false;
+        snapshot.stale = true;
+        snapshot.statusLine = "AUTHORITY stations feed stale";
+        return snapshot;
+    }
+
+    const auto controllerFeedHash = BuildControllerFeedHash(controllerFeedSnapshot);
+    const auto nowSeconds = CurrentTickSeconds();
+    const auto feedChanged =
+        !hasAuthorityStationCache_ ||
+        controllerFeedHash != lastAuthorityStationControllerFeedHash_;
+    const auto cadenceExpired =
+        !hasAuthorityStationCache_ ||
+        (nowSeconds - lastAuthorityStationResolveTickSeconds_) >=
+            kAuthorityStationResolveCadenceSeconds;
+
+    if (!feedChanged && !cadenceExpired) {
+        auto snapshot = cachedAuthorityStationSnapshot_;
+        snapshot.stale = false;
+        return snapshot;
+    }
+
+    auto snapshot = xvatsim::modules::transceiver_resolver::ResolveAuthorityStations(
+        controllerFeedSnapshot,
+        indexedTransceivers_,
+        false);
+    cachedAuthorityStationSnapshot_ = snapshot;
+    hasAuthorityStationCache_ = true;
+    lastAuthorityStationResolveTickSeconds_ = nowSeconds;
+    lastAuthorityStationControllerFeedHash_ = controllerFeedHash;
     return snapshot;
 }
 

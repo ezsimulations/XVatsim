@@ -1,0 +1,41 @@
+name=Resolver Terminal Authority Package Frequency Relevance Feeds Snapshot
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.0
+plan.destination_lon=20.0
+plan.has_destination_coordinates=true
+
+radio.com1_active=118.000
+radio.com2_active=122.800
+
+controller.entry=callsign=SCT_A_APP;frequency=128.050;facility=5;actionable=true;atis=false
+
+resolver.route_resolve=true
+resolver.center_feature=label=TEST;tokens=TEST;polygon=-1,-1|-1,25|1,25|1,-1
+resolver.authority_catalog_fir=TEST|Test Center|TST|TEST
+resolver.terminal_feature=id=SCT;name=SoCal Approach;prefixes=SCT;polygon=-1,-1|-1,1|1,1|1,-1
+resolver.ownership_json={"source":"TERMINAL_AUTHORITY","positions":[{"id":"SCT_A_APP","name":"SoCal North Approach","polygon_key":"SCT_APP","kind":"terminal","frequency":"128.050","callsign_patterns":["SCT_A_APP"]}]}
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_authority_gaps=<none>
+expect.resolver_route_current_sectors=TEST
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_relevant_matches=SCT_A_APP:SIMAWARE_TRACON:SCT_A_APP:SIMAWARE_TRACON:SCT_APP:aircraft=1:route=1:entry=0
+expect.resolver_authority_proof_sources=SCT_A_APP:SIMAWARE_TRACON
+expect.resolver_authority_proof_detail_contains=SCT_A_APP:authoritySource=SIMAWARE_TRACON,pattern=SCT_A_APP,proofItems=callsign-pattern>facility-type>published-frequency>FREQUENCY_OWNED_MATCH,routeRelevance=aircraft-inside+route-intersects
+expect.resolver_enroute_available=false
+expect.resolver_enroute_callsigns=<none>

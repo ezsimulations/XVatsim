@@ -1,0 +1,20 @@
+name=Block7 Empty Radio Snapshot Produces CTAF Departure
+now_seconds=1000
+
+state.flight_active=true
+flight.departure_icao=KAAA
+flight.destination_icao=KBBB
+
+aircraft.valid=true
+aircraft.on_ground=true
+aircraft.battery_on=true
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+xpilot.connected=true
+departure.station=role=Ctaf;callsign=KAAA;frequency=122.800;online=true
+
+expect.stage=Departure
+expect.display_source=Departure
+expect.display_callsigns=KAAA
+expect.radio_reachable_source_candidates=<none>

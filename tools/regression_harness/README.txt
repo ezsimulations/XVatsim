@@ -419,8 +419,8 @@ Included scenarios
 - airport_center_token_cannot_match_terminal_airspace.scn
   Proves center coverage rows cannot masquerade as terminal APP/DEP authority even if a center boundary token has a terminal-looking suffix.
 
-- departure_terminal_fallback_without_sector_data.scn
-  Proves airport-token APP/DEP fallback remains available when no terminal coverage data exists, preserving no-data behavior without overriding authority data.
+- departure_terminal_rejects_prefix_without_sector_data.scn
+  Proves departure APP/DEP rows cannot be created from airport-prefix matching when terminal-sector authority is unavailable.
 
 - airport_coverage_terminal_tokens_authoritative.scn
   Proves airport coverage builder terminal match tokens come from explicit TRACON prefixes, not loose `id`/`name` strings or broad underscore-prefix expansion.
@@ -470,6 +470,9 @@ Included scenarios
 - enroute_rejects_ctr_suffix_without_enroute_facility.scn
   Proves a `_CTR` callsign suffix alone cannot make a controller eligible for ENROUTE when the controller feed facility code says it is not center/FSS service.
 
+- enroute_authority_snapshot_stale_blocks_legacy_route_sector.scn
+  Proves stale authority relevance blocks legacy route-sector matching instead of letting old ENROUTE fallback rows leak into live display logic.
+
 - authority_compiler_vatspy_hkg_activates_polygon.scn
   Proves a VATSpy FIR row compiles explicit HKG activation patterns and maps HKG_W_CTR to the VHHK authority polygon.
 
@@ -502,6 +505,45 @@ Included scenarios
 
 - authority_relevance_ignores_non_intersecting_active_polygon.scn
   Proves an online active polygon is not relevant when neither aircraft position nor route geometry intersects it.
+
+- resolver_authority_relevance_feeds_enroute.scn
+  Proves resolver-built active authority polygon relevance feeds the ENROUTE board without relying on legacy route-sector matching.
+
+- resolver_authority_reports_unmapped_controller_gap.scn
+  Proves the resolver reports a live controller as an explicit unmapped authority gap instead of silently ignoring or guessing it.
+
+- resolver_authority_reports_active_not_relevant.scn
+  Proves the resolver reports active-but-irrelevant authority polygons so online controllers outside the route/aircraft footprint remain traceable without display.
+
+- authority_position_json_vatglasses_static_frequency_matches_suffix.scn
+  Proves a VATGlasses static position maps a live arbitrary-suffix controller through published prefix/type/frequency and source-owned polygon key.
+
+- authority_position_json_vatglasses_static_rejects_wrong_frequency.scn
+  Proves the same arbitrary-suffix controller cannot activate a VATGlasses static position when the live frequency does not match the published position frequency.
+
+- resolver_vatglasses_static_frequency_relevance_feeds_enroute.scn
+  Proves resolver-built ENROUTE relevance consumes VATGlasses static position frequency plus owner polygon data and prefers that exact source over broad VATSpy coverage.
+
+- resolver_vatglasses_dynamic_frequency_relevance_feeds_enroute.scn
+  Proves resolver-built ENROUTE relevance consumes dynamic VATGlasses positions, airspace, and ownership data to light the exact source-owned polygon by published frequency.
+
+- resolver_vatglasses_dynamic_frequency_blocks_broad_fallback.scn
+  Proves a source-owned frequency mismatch blocks broad VATSpy wildcard fallback instead of lighting a plausible but unproven polygon.
+
+- resolver_vatglasses_frequency_rejects_transceiver_geo_mismatch.scn
+  Proves fresh live transceiver geography can reject a source-owned same-frequency controller when its station is incompatible with the claimed polygon.
+
+- resolver_duplicated_atis_derived_relevance_feeds_enroute.scn
+  Proves ATIS text can activate a source-owned, route-relevant covered position only through `DUPLICATED_ATIS_DERIVED` proof.
+
+- resolver_duplicated_atis_derived_rejects_wrong_facility.scn
+  Proves ATIS-derived covered-position proof rejects a non-center/FSS facility instead of lighting an ENROUTE polygon.
+
+- source_package_combines_vatglasses_dynamic_files.scn
+  Proves VATGlasses dynamic positions, airspace, and ownership files combine into the parser-ready source package payload.
+
+- source_manifest_parses_vatglasses_dynamic_directory.scn
+  Proves the source manifest can describe a live VATGlasses dynamic directory package without using a hand-built ownership payload URL.
 
 - resolver_authority_blank_prefix_is_data_gap.scn
   Proves a VATSpy FIR/UIR row with a blank callsign-prefix field does not invent the boundary identifier as a controller prefix and instead surfaces an explicit route authority gap.

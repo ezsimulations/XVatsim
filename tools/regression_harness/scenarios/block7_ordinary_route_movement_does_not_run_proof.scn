@@ -1,0 +1,3 @@
+name=Block7 Ordinary Route Movement Does Not Run Proof
+expect.brain_ordinary_movement_work_order=RunAuthorityFastPath|priority=CurrentEnrouteAuthority|reason=AircraftMovementThreshold|budget=Light|stage=ENR|polygon=NY|seq=2|cache=movement:ny:fast-path,PublishUiSnapshot|priority=Diagnostics|reason=UiRefresh|budget=Light|stage=ENR|cache=ui:last-proven
+expect.brain_ordinary_movement_heavy=RunAuthorityFastPath:heavy=0,PublishUiSnapshot:heavy=0

@@ -1,0 +1,15 @@
+name=radio_reachable_source_uses_transceiver_candidates_only
+now_seconds=100
+controller.feed_available=true
+controller.feed_stale=false
+controller.entry=callsign=BOS_CTR;frequency=134.700;facility=6;actionable=true
+controller.entry=callsign=PVD_APP;frequency=123.675;facility=5;actionable=true
+controller.entry=callsign=SEA_CTR;frequency=127.100;facility=6;actionable=true
+controller.entry=callsign=KJFK_TWR;frequency=119.100;facility=4;actionable=true
+transceiver.available=true
+transceiver.stale=false
+transceiver.status=RX 2 receivable
+transceiver.candidate=callsign=PVD_APP;frequency=123.675;distanceNm=42;score=10;lat=41.72;lon=-71.43
+transceiver.candidate=callsign=BOS_CTR;frequency=134.700;distanceNm=90;score=20;lat=42.36;lon=-71.05
+expect.radio_reachable_source_candidates=PVD_APP@123.675:APP_DEP:AFV_RADIO_RANGE,BOS_CTR@134.700:CTR:AFV_RADIO_RANGE
+expect.radio_reachable_source_counts=DEL=0,GND=0,TWR=0,APP_DEP=1,CTR=1,ATIS=0,OTHER=0

@@ -6,6 +6,8 @@ add_library(XVatsimPlugin SHARED
 
 set(XVATSIM_UI_TRANSITION_SOUND
     "${CMAKE_SOURCE_DIR}/assets/audio/ui_transition.mp3")
+set(XVATSIM_AUTHORITY_SOURCE_REGISTRY
+    "${CMAKE_SOURCE_DIR}/assets/source_data/authority_source_registry.json")
 
 target_compile_features(XVatsimPlugin PRIVATE cxx_std_17)
 
@@ -51,13 +53,10 @@ set_target_properties(XVatsimPlugin PROPERTIES
 
 target_link_libraries(XVatsimPlugin PRIVATE
     XVatsimAircraftState
-    XVatsimArrival
     XVatsimBrain
     XVatsimCtafLookup
     XVatsimControllerFeed
-    XVatsimDeparture
     XVatsimDiversionContext
-    XVatsimEnroute
     XVatsimFlightPlan
     XVatsimNetworkPlanLink
     XVatsimOverlay
@@ -85,6 +84,9 @@ add_custom_command(TARGET XVatsimPlugin POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${XVATSIM_UI_TRANSITION_SOUND}"
         "$<TARGET_FILE_DIR:XVatsimPlugin>/ui_transition.mp3"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${XVATSIM_AUTHORITY_SOURCE_REGISTRY}"
+        "$<TARGET_FILE_DIR:XVatsimPlugin>/authority_source_registry.json"
     COMMAND ${CMAKE_COMMAND} -E remove_directory
         "$<TARGET_FILE_DIR:XVatsimPlugin>/Debug"
     COMMAND ${CMAKE_COMMAND} -E remove_directory

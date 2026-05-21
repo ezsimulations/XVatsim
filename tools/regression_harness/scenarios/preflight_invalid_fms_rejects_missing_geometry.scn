@@ -1,0 +1,11 @@
+name=Preflight Invalid FMS Rejects Missing Geometry
+
+preflight.fms_line=I
+preflight.fms_line=1100 Version
+preflight.fms_line=CYCLE 2605
+preflight.fms_line=ADEP KSAN
+preflight.fms_line=ADES KPHX
+preflight.fms_line=NUMENR 0
+
+expect.preflight_parse_ok=false
+expect.preflight_waypoints=<NONE>

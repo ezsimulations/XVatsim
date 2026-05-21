@@ -1,0 +1,11 @@
+name=Brain display intent refreshes next distance without relevance proof
+
+display_intent.stage=Enroute
+display_intent.progress_nm=800
+display_intent.current_polygon=KZDC
+display_intent.next_polygon=KZDV
+
+enroute.station=role=Center;callsign=DEN_1_CTR;frequency=127.650;online=true;polygonKey=KZDV;displayRelation=NextPolygon;routeEntryDistanceNm=831
+enroute.station=role=Center;callsign=DEN_2_CTR;frequency=133.525;online=true;polygonKey=KZDV;displayRelation=NextPolygon;routeEntryDistanceNm=831
+
+expect.brain_display_intent_rows=DEN_1_CTR:NEXT_POLYGON:31nm,DEN_2_CTR:NEXT_POLYGON:31nm

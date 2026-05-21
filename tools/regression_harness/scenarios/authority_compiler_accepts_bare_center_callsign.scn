@@ -1,0 +1,10 @@
+name=Authority Compiler Accepts Bare Center Callsign
+now_seconds=1000
+
+authority_catalog.fir=CZVR|Vancouver|CZVR|CZVR
+controller.entry=callsign=CZVR;frequency=133.700;facility=6;actionable=true;atis=false
+
+expect.authority_catalog_ids=VATSPY_FIR:CZVR
+expect.authority_data_gaps=<none>
+expect.authority_active_matches=CZVR:VATSPY_FIR:CZVR:CZVR:CZVR
+expect.authority_unmapped_callsigns=<none>
