@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`5A95D1167766F48CEEE38640B9F45F9DA2A21654141B36652D438CF79464EA6B`
+`28C6D510C3647DF70F6A20CDB28B2E8E51483BA9638B7C71BACC141ED929B6FD`
 
 Reason for this hash:
 
@@ -86,6 +86,10 @@ Reason for this hash:
   Brain Display Intent marks a final board displayable.
 - Accepted-completion board filtering and final-display completion marking now
   live in `brain/src/BrainOwnedRuntime.cpp`, not the plugin shell.
+- `RunBrainOwnedPublisher` in `brain/src/BrainOwnedRuntime.cpp` now owns
+  publisher assembly: accepted-completion filtering, CTAF/UNICOM replacement,
+  Brain Display Intent, and displayed-completion marking. The plugin supplies
+  facts, diagnostics, and phase publish glue only.
 
 Regression harness status for this code:
 
@@ -104,7 +108,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`5A95D1167766F48CEEE38640B9F45F9DA2A21654141B36652D438CF79464EA6B`
+`28C6D510C3647DF70F6A20CDB28B2E8E51483BA9638B7C71BACC141ED929B6FD`
 
 Rules:
 

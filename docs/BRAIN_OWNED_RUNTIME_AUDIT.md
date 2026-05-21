@@ -95,7 +95,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`5A95D1167766F48CEEE38640B9F45F9DA2A21654141B36652D438CF79464EA6B`:
+`28C6D510C3647DF70F6A20CDB28B2E8E51483BA9638B7C71BACC141ED929B6FD`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -113,6 +113,8 @@ by installed hash
   and plugin intermediate publisher boards
 - accepted-completion board filtering and final-display completion marking from
   the plugin shell
+- publisher assembly, CTAF/UNICOM replacement, and Brain Display Intent
+  invocation from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -198,11 +200,13 @@ Display Intent sets that flag while assembling the final display board.
 - Extract brain publisher.
 - Keep plugin file as X-Plane shell and command/event host.
 
-Status: started. Accepted-completion filtering and final-display completion
-marking moved from `plugin/src/XVatsimPlugin.cpp` into
-`brain/src/BrainOwnedRuntime.cpp`. Release build passed and full harness passed
-`234 / 234` for installed hash
-`5A95D1167766F48CEEE38640B9F45F9DA2A21654141B36652D438CF79464EA6B`.
+Status: started. `RunBrainOwnedPublisher` now owns publisher assembly inside
+`brain/src/BrainOwnedRuntime.cpp`: accepted-completion filtering, CTAF/UNICOM
+replacement, Brain Display Intent invocation, and final-display completion
+marking moved out of `plugin/src/XVatsimPlugin.cpp`. The plugin now supplies
+facts, diagnostics, and phase publish glue only. Release build passed and full
+harness passed `234 / 234` for installed hash
+`28C6D510C3647DF70F6A20CDB28B2E8E51483BA9638B7C71BACC141ED929B6FD`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

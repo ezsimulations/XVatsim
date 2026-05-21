@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "XVatsim/brain/BrainDisplayIntent.h"
 #include "XVatsim/brain/BrainTypes.h"
 #include "XVatsim/brain/RadioReachableSnapshot.h"
 
@@ -86,6 +87,31 @@ struct BrainOwnedBoardFilterOutput {
     int rejectedUnapprovedStations = 0;
 };
 
+struct BrainOwnedPublisherInput {
+    WorkflowStage workflowStage = WorkflowStage::None;
+    double routeProgressDistanceNm = 0.0;
+    std::string currentPolygonKey;
+    std::string nextPolygonKey;
+    std::string arrivalPolygonKey;
+    ModuleBoardSnapshot departureBoard;
+    ModuleBoardSnapshot arrivalBoard;
+    ModuleBoardSnapshot enrouteBoard;
+    std::vector<BrainOwnedCandidateCompletion> completions;
+    bool hasDepartureCtafStation = false;
+    BoardStationSnapshot departureCtafStation;
+    bool hasArrivalCtafStation = false;
+    BoardStationSnapshot arrivalCtafStation;
+};
+
+struct BrainOwnedPublisherOutput {
+    ModuleBoardSnapshot departureBoard;
+    ModuleBoardSnapshot arrivalBoard;
+    ModuleBoardSnapshot enrouteBoard;
+    ModuleBoardSnapshot finalDisplay;
+    BrainDisplayIntentOutput displayIntent;
+    int rejectedUnapprovedStations = 0;
+};
+
 void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state);
 
 std::string ToString(BrainOwnedCandidateDecision decision);
@@ -108,6 +134,10 @@ BrainOwnedBoardFilterOutput FilterBrainOwnedBoardByAcceptedCompletions(
 void MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
     BrainOwnedRuntimeState* state,
     const ModuleBoardSnapshot& finalDisplay);
+
+BrainOwnedPublisherOutput RunBrainOwnedPublisher(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedPublisherInput& input);
 
 bool BrainOwnedCandidatesCompleteForCurrentBoard(
     const BrainOwnedRuntimeState& state,

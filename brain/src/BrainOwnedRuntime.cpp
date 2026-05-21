@@ -83,6 +83,47 @@ bool StationRequiresCompletion(const BoardStationSnapshot& station) {
            station.role != StationRole::Unicom;
 }
 
+bool IsCtafOrUnicom(const BoardStationSnapshot& station) {
+    return station.role == StationRole::Ctaf ||
+           station.role == StationRole::Unicom;
+}
+
+std::string StationKey(const BoardStationSnapshot& station) {
+    return std::to_string(static_cast<int>(station.role)) + "|" +
+           NormalizeCallsign(station.callsign) + "|" +
+           NormalizeFrequency(station.frequency) + "|" +
+           station.annotation;
+}
+
+void RemoveCtafStations(ModuleBoardSnapshot* board) {
+    if (board == nullptr) {
+        return;
+    }
+
+    board->stations.erase(
+        std::remove_if(
+            board->stations.begin(),
+            board->stations.end(),
+            IsCtafOrUnicom),
+        board->stations.end());
+    board->available = board->available || !board->stations.empty();
+}
+
+void AppendUniqueStation(
+    const BoardStationSnapshot& station,
+    ModuleBoardSnapshot* board,
+    std::unordered_set<std::string>* keys) {
+    if (board == nullptr || keys == nullptr) {
+        return;
+    }
+    if (!keys->insert(StationKey(station)).second) {
+        return;
+    }
+
+    board->stations.push_back(station);
+    board->available = true;
+}
+
 bool CompletionApprovesStation(
     const BrainOwnedCandidateCompletion& completion,
     const BoardStationSnapshot& station) {
@@ -213,6 +254,80 @@ void MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
         completion.displayed =
             CompletionDisplayedInFinalBoard(finalDisplay, completion);
     }
+}
+
+BrainOwnedPublisherOutput RunBrainOwnedPublisher(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedPublisherInput& input) {
+    BrainOwnedPublisherOutput output;
+
+    const auto departureFilter =
+        FilterBrainOwnedBoardByAcceptedCompletions(
+            input.departureBoard,
+            input.completions);
+    output.departureBoard = departureFilter.board;
+    output.rejectedUnapprovedStations +=
+        departureFilter.rejectedUnapprovedStations;
+
+    const auto arrivalFilter =
+        FilterBrainOwnedBoardByAcceptedCompletions(
+            input.arrivalBoard,
+            input.completions);
+    output.arrivalBoard = arrivalFilter.board;
+    output.rejectedUnapprovedStations +=
+        arrivalFilter.rejectedUnapprovedStations;
+
+    const auto enrouteFilter =
+        FilterBrainOwnedBoardByAcceptedCompletions(
+            input.enrouteBoard,
+            input.completions);
+    output.enrouteBoard = enrouteFilter.board;
+    output.rejectedUnapprovedStations +=
+        enrouteFilter.rejectedUnapprovedStations;
+
+    RemoveCtafStations(&output.departureBoard);
+    RemoveCtafStations(&output.arrivalBoard);
+
+    std::unordered_set<std::string> departureCtafKeys;
+    std::unordered_set<std::string> arrivalCtafKeys;
+    if (input.hasDepartureCtafStation) {
+        AppendUniqueStation(
+            input.departureCtafStation,
+            &output.departureBoard,
+            &departureCtafKeys);
+    }
+    if (input.hasArrivalCtafStation) {
+        AppendUniqueStation(
+            input.arrivalCtafStation,
+            &output.arrivalBoard,
+            &arrivalCtafKeys);
+    }
+
+    BrainDisplayIntentInput displayIntentInput;
+    displayIntentInput.workflowStage = input.workflowStage;
+    displayIntentInput.routeProgressDistanceNm =
+        input.routeProgressDistanceNm;
+    displayIntentInput.currentPolygonKey = input.currentPolygonKey;
+    displayIntentInput.nextPolygonKey = input.nextPolygonKey;
+    displayIntentInput.arrivalPolygonKey = input.arrivalPolygonKey;
+    displayIntentInput.departureBoard = output.departureBoard;
+    displayIntentInput.arrivalBoard = output.arrivalBoard;
+    displayIntentInput.enrouteBoard = output.enrouteBoard;
+
+    output.displayIntent = RunBrainDisplayIntentWorker(displayIntentInput);
+    output.departureBoard = output.displayIntent.departureBoard;
+    output.arrivalBoard = output.displayIntent.arrivalBoard;
+    output.enrouteBoard = output.displayIntent.enrouteBoard;
+    output.finalDisplay = output.displayIntent.finalDisplay;
+
+    if (state != nullptr) {
+        state->lastDisplayIntentHash = output.displayIntent.stableHash;
+        MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
+            state,
+            output.finalDisplay);
+    }
+
+    return output;
 }
 
 bool BrainOwnedCandidatesCompleteForCurrentBoard(

@@ -2054,58 +2054,30 @@ void Engineer3AppendStationUnique(
     board->available = true;
 }
 
-void Engineer3AppendCtafStation(
+bool Engineer3BuildCtafStation(
     const std::string& airportIcao,
     const xvatsim::modules::ctaf_lookup::CtafLookupEntry& ctafLookup,
     const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
-    xvatsim::brain::ModuleBoardSnapshot* board,
-    std::unordered_set<std::string>* insertedKeys) {
-    if (airportIcao.empty() || board == nullptr || insertedKeys == nullptr) {
-        return;
+    xvatsim::brain::BoardStationSnapshot* station) {
+    if (airportIcao.empty() || station == nullptr) {
+        return false;
     }
 
-    xvatsim::brain::BoardStationSnapshot station;
-    station.callsign = airportIcao;
+    *station = {};
+    station->callsign = airportIcao;
     if (ctafLookup.available) {
-        station.role = xvatsim::brain::StationRole::Ctaf;
-        station.frequency = ctafLookup.frequency;
-        station.tuned = Engineer3FrequencyTuned(ctafLookup.frequency, radioStateSnapshot);
+        station->role = xvatsim::brain::StationRole::Ctaf;
+        station->frequency = ctafLookup.frequency;
+        station->tuned = Engineer3FrequencyTuned(ctafLookup.frequency, radioStateSnapshot);
     } else if (ctafLookup.resolved) {
-        station.role = xvatsim::brain::StationRole::Unicom;
-        station.frequency = "122.800";
-        station.tuned = Engineer3FrequencyTuned("122.800", radioStateSnapshot);
+        station->role = xvatsim::brain::StationRole::Unicom;
+        station->frequency = "122.800";
+        station->tuned = Engineer3FrequencyTuned("122.800", radioStateSnapshot);
     } else {
-        station.role = xvatsim::brain::StationRole::Ctaf;
-        station.annotation = "lookup";
+        station->role = xvatsim::brain::StationRole::Ctaf;
+        station->annotation = "lookup";
     }
-
-    const auto key =
-        std::to_string(static_cast<int>(station.role)) + "|" +
-        NormalizeCallsign(station.callsign) + "|" + NormalizeFrequency(station.frequency) +
-        "|" + station.annotation;
-    if (!insertedKeys->insert(key).second) {
-        return;
-    }
-
-    board->stations.push_back(station);
-    board->available = true;
-}
-
-void Engineer3RemoveCtafStations(xvatsim::brain::ModuleBoardSnapshot* board) {
-    if (board == nullptr) {
-        return;
-    }
-
-    board->stations.erase(
-        std::remove_if(
-            board->stations.begin(),
-            board->stations.end(),
-            [](const auto& station) {
-                return station.role == xvatsim::brain::StationRole::Ctaf ||
-                       station.role == xvatsim::brain::StationRole::Unicom;
-            }),
-        board->stations.end());
-    board->available = board->available || !board->stations.empty();
+    return true;
 }
 
 std::string BrainControllerCandidateStableKey(
@@ -2692,26 +2664,16 @@ RefreshBrainControllerRelevance(
     return output;
 }
 
-struct BrainPublisherOutput {
-    xvatsim::brain::ModuleBoardSnapshot departureBoard;
-    xvatsim::brain::ModuleBoardSnapshot arrivalBoard;
-    xvatsim::brain::ModuleBoardSnapshot enrouteBoard;
-    xvatsim::brain::ModuleBoardSnapshot finalDisplay;
-    int rejectedUnapprovedStations = 0;
-    int displayIntentDisplayed = 0;
-    int displayIntentHidden = 0;
-};
-
 std::string SummarizeBrainPublisherOutput(
-    const BrainPublisherOutput& output,
+    const xvatsim::brain::BrainOwnedPublisherOutput& output,
     const xvatsim::brain::BrainControllerRelevanceWorkerOutput& relevanceOutput) {
     std::ostringstream stream;
     stream << "finalStations=" << output.finalDisplay.stations.size()
            << ",depStations=" << output.departureBoard.stations.size()
            << ",enrStations=" << output.enrouteBoard.stations.size()
            << ",arrStations=" << output.arrivalBoard.stations.size()
-           << ",intentDisplayed=" << output.displayIntentDisplayed
-           << ",intentHidden=" << output.displayIntentHidden
+           << ",intentDisplayed=" << output.displayIntent.displayed
+           << ",intentHidden=" << output.displayIntent.hidden
            << ",completions=" << relevanceOutput.completions.size()
            << ",rejectedUnapproved=" << output.rejectedUnapprovedStations;
     return stream.str();
@@ -2737,87 +2699,50 @@ std::string SummarizeBrainDisplayIntent(
     return stream.str();
 }
 
-BrainPublisherOutput RunBrainPublisher(
+xvatsim::brain::BrainOwnedPublisherOutput RunBrainPublisher(
     xvatsim::brain::WorkflowStage workflowStage,
     const xvatsim::brain::BrainControllerRelevanceWorkerOutput& relevanceOutput,
     const xvatsim::modules::ctaf_lookup::CtafLookupEntry& departureCtafLookup,
     const xvatsim::modules::ctaf_lookup::CtafLookupEntry& arrivalCtafLookup,
     const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
     const std::string& planKey) {
-    BrainPublisherOutput output;
-    const auto departureFilter =
-        xvatsim::brain::FilterBrainOwnedBoardByAcceptedCompletions(
-            relevanceOutput.departureBoard,
-            relevanceOutput.completions);
-    output.departureBoard = departureFilter.board;
-    output.rejectedUnapprovedStations +=
-        departureFilter.rejectedUnapprovedStations;
-
-    const auto arrivalFilter =
-        xvatsim::brain::FilterBrainOwnedBoardByAcceptedCompletions(
-            relevanceOutput.arrivalBoard,
-            relevanceOutput.completions);
-    output.arrivalBoard = arrivalFilter.board;
-    output.rejectedUnapprovedStations +=
-        arrivalFilter.rejectedUnapprovedStations;
-
-    const auto enrouteFilter =
-        xvatsim::brain::FilterBrainOwnedBoardByAcceptedCompletions(
-            relevanceOutput.enrouteBoard,
-            relevanceOutput.completions);
-    output.enrouteBoard = enrouteFilter.board;
-    output.rejectedUnapprovedStations +=
-        enrouteFilter.rejectedUnapprovedStations;
-
-    Engineer3RemoveCtafStations(&output.departureBoard);
-    Engineer3RemoveCtafStations(&output.arrivalBoard);
-    std::unordered_set<std::string> departureCtafKeys;
-    std::unordered_set<std::string> arrivalCtafKeys;
-    Engineer3AppendCtafStation(
-        gFlightContext.departureIcao,
-        departureCtafLookup,
-        radioStateSnapshot,
-        &output.departureBoard,
-        &departureCtafKeys);
-    Engineer3AppendCtafStation(
-        gFlightContext.destinationIcao,
-        arrivalCtafLookup,
-        radioStateSnapshot,
-        &output.arrivalBoard,
-        &arrivalCtafKeys);
-
-    xvatsim::brain::BrainDisplayIntentInput displayIntentInput;
-    displayIntentInput.workflowStage = workflowStage;
-    displayIntentInput.routeProgressDistanceNm =
+    xvatsim::brain::BrainOwnedPublisherInput publisherInput;
+    publisherInput.workflowStage = workflowStage;
+    publisherInput.routeProgressDistanceNm =
         gBrainOwnedRuntimeState.routeProgressDistanceNm;
-    displayIntentInput.currentPolygonKey =
+    publisherInput.currentPolygonKey =
         gBrainOwnedRuntimeState.currentPolygonKey;
-    displayIntentInput.nextPolygonKey = gBrainOwnedRuntimeState.nextPolygonKey;
-    displayIntentInput.arrivalPolygonKey =
+    publisherInput.nextPolygonKey = gBrainOwnedRuntimeState.nextPolygonKey;
+    publisherInput.arrivalPolygonKey =
         gBrainOwnedRuntimeState.arrivalPolygonKey;
-    displayIntentInput.departureBoard = output.departureBoard;
-    displayIntentInput.arrivalBoard = output.arrivalBoard;
-    displayIntentInput.enrouteBoard = output.enrouteBoard;
-    const auto displayIntentOutput =
-        xvatsim::brain::RunBrainDisplayIntentWorker(displayIntentInput);
-    output.departureBoard = displayIntentOutput.departureBoard;
-    output.arrivalBoard = displayIntentOutput.arrivalBoard;
-    output.enrouteBoard = displayIntentOutput.enrouteBoard;
-    output.finalDisplay = displayIntentOutput.finalDisplay;
-    output.displayIntentDisplayed = displayIntentOutput.displayed;
-    output.displayIntentHidden = displayIntentOutput.hidden;
-    gBrainOwnedRuntimeState.lastDisplayIntentHash =
-        displayIntentOutput.stableHash;
-    xvatsim::brain::MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
-        &gBrainOwnedRuntimeState,
-        output.finalDisplay);
+    publisherInput.departureBoard = relevanceOutput.departureBoard;
+    publisherInput.arrivalBoard = relevanceOutput.arrivalBoard;
+    publisherInput.enrouteBoard = relevanceOutput.enrouteBoard;
+    publisherInput.completions = relevanceOutput.completions;
+    publisherInput.hasDepartureCtafStation =
+        Engineer3BuildCtafStation(
+            gFlightContext.departureIcao,
+            departureCtafLookup,
+            radioStateSnapshot,
+            &publisherInput.departureCtafStation);
+    publisherInput.hasArrivalCtafStation =
+        Engineer3BuildCtafStation(
+            gFlightContext.destinationIcao,
+            arrivalCtafLookup,
+            radioStateSnapshot,
+            &publisherInput.arrivalCtafStation);
+
+    auto output =
+        xvatsim::brain::RunBrainOwnedPublisher(
+            &gBrainOwnedRuntimeState,
+            publisherInput);
 
     RecordDiagnosticJob(
         "BrainDisplayIntentWorker",
-        displayIntentOutput.reason,
+        output.displayIntent.reason,
         0,
         "brain-display-intent",
-        SummarizeBrainDisplayIntent(displayIntentOutput),
+        SummarizeBrainDisplayIntent(output.displayIntent),
         {},
         planKey);
 
@@ -2837,119 +2762,6 @@ BrainPublisherOutput RunBrainPublisher(
         {},
         planKey);
     return output;
-}
-
-void BuildEngineer3PhaseBoards(
-    const xvatsim::brain::XPilotSessionSnapshot& xPilotSessionSnapshot,
-    const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
-    const xvatsim::brain::RadioReachableControllerSnapshot& radioSnapshot,
-    const xvatsim::modules::ctaf_lookup::CtafLookupEntry& departureCtafLookup,
-    const xvatsim::modules::ctaf_lookup::CtafLookupEntry& arrivalCtafLookup,
-    xvatsim::brain::ModuleBoardSnapshot* departureBoard,
-    xvatsim::brain::ModuleBoardSnapshot* arrivalBoard,
-    xvatsim::brain::ModuleBoardSnapshot* enrouteBoard) {
-    if (departureBoard == nullptr || arrivalBoard == nullptr ||
-        enrouteBoard == nullptr) {
-        return;
-    }
-
-    *departureBoard = {};
-    *arrivalBoard = {};
-    *enrouteBoard = {};
-    departureBoard->source = xvatsim::brain::BoardSource::Departure;
-    arrivalBoard->source = xvatsim::brain::BoardSource::Arrival;
-    enrouteBoard->source = xvatsim::brain::BoardSource::Enroute;
-    departureBoard->airportIcao = gFlightContext.departureIcao;
-    arrivalBoard->airportIcao = gFlightContext.destinationIcao;
-
-    if (!xPilotSessionSnapshot.connected || !gFlightContext.active) {
-        return;
-    }
-
-    const auto departureTokens =
-        BuildEngineer3AirportTokens(gFlightContext.departureIcao);
-    const auto arrivalTokens =
-        BuildEngineer3AirportTokens(gFlightContext.destinationIcao);
-    std::unordered_set<std::string> departureKeys;
-    std::unordered_set<std::string> arrivalKeys;
-    std::unordered_set<std::string> enrouteKeys;
-    std::vector<Engineer3CenterCandidate> centerCandidates;
-
-    if (radioSnapshot.available && !radioSnapshot.stale) {
-        for (const auto& candidate : radioSnapshot.candidates) {
-            const auto role = Engineer3RoleFromRadioCandidate(candidate);
-            if (role == xvatsim::brain::StationRole::Other ||
-                role == xvatsim::brain::StationRole::Atis) {
-                continue;
-            }
-
-            xvatsim::brain::BoardStationSnapshot station;
-            station.role = role;
-            station.callsign = candidate.callsign;
-            station.frequency = candidate.frequency;
-            station.tuned =
-                Engineer3FrequencyTuned(candidate.frequency, radioStateSnapshot);
-            station.online = true;
-            station.sectorActive =
-                role == xvatsim::brain::StationRole::Center && station.tuned;
-            station.hasRouteEntryDistance = false;
-
-            if (role == xvatsim::brain::StationRole::Center) {
-                centerCandidates.push_back(
-                    {station, candidate, candidate.hasDistanceNm, candidate.distanceNm});
-                continue;
-            }
-
-            const auto localRole =
-                role == xvatsim::brain::StationRole::Delivery ||
-                role == xvatsim::brain::StationRole::Ground ||
-                role == xvatsim::brain::StationRole::Tower;
-            const auto appDepRole =
-                role == xvatsim::brain::StationRole::Approach ||
-                role == xvatsim::brain::StationRole::Departure;
-
-            if (localRole &&
-                Engineer3ControllerMatchesAirport(candidate.callsign, departureTokens)) {
-                Engineer3AppendStationUnique(
-                    station,
-                    departureBoard,
-                    &departureKeys);
-            }
-
-            if (appDepRole) {
-                Engineer3AppendStationUnique(
-                    station,
-                    departureBoard,
-                    &departureKeys);
-            }
-
-            if ((localRole || appDepRole) &&
-                Engineer3ControllerMatchesAirport(candidate.callsign, arrivalTokens)) {
-                Engineer3AppendStationUnique(
-                    station,
-                    arrivalBoard,
-                    &arrivalKeys);
-            }
-        }
-    }
-
-    Engineer3AppendSelectedCenterStations(
-        centerCandidates,
-        enrouteBoard,
-        &enrouteKeys);
-
-    Engineer3AppendCtafStation(
-        gFlightContext.departureIcao,
-        departureCtafLookup,
-        radioStateSnapshot,
-        departureBoard,
-        &departureKeys);
-    Engineer3AppendCtafStation(
-        gFlightContext.destinationIcao,
-        arrivalCtafLookup,
-        radioStateSnapshot,
-        arrivalBoard,
-        &arrivalKeys);
 }
 
 HandoffDecision ResolveEngineer3WorkflowStage(
