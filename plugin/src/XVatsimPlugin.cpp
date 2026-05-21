@@ -123,14 +123,10 @@ enum class PendingTextEntryMode {
     DiversionAirport,
 };
 
-enum class SessionBoundaryResult {
-    None,
-    ResetForDisconnect,
-    ResetForCallsignChange,
-};
-
 using FlightContext = xvatsim::brain::workflow::FlightContext;
 using HandoffDecision = xvatsim::brain::workflow::HandoffDecision;
+using SessionBoundaryResult =
+    xvatsim::brain::workflow::XPilotSessionBoundaryAction;
 
 struct PendingControllerMessageState {
     bool primed = false;
@@ -2478,63 +2474,44 @@ void PreserveFlightStateForNetworkDisconnect() {
 SessionBoundaryResult HandleXPilotSessionBoundary(
     const xvatsim::brain::XPilotSessionSnapshot& xPilotSessionSnapshot,
     const xvatsim::brain::PilotIdentitySnapshot& pilotIdentitySnapshot) {
-    auto connectedCallsign =
-        NormalizeCallsign(
-            pilotIdentitySnapshot.normalizedCallsign.empty()
-                ? pilotIdentitySnapshot.callsign
-                : pilotIdentitySnapshot.normalizedCallsign);
-    if (connectedCallsign.empty()) {
-        connectedCallsign = NormalizeCallsign(xPilotSessionSnapshot.callsign);
-    }
+    xvatsim::brain::workflow::XPilotSessionBoundaryInput input;
+    input.xPilotSession = xPilotSessionSnapshot;
+    input.pilotIdentity = pilotIdentitySnapshot;
+    input.state.lastXPilotConnected = gLastXPilotConnected;
+    input.state.lastConnectedPilotCallsign = gLastConnectedPilotCallsign;
+    input.state.disconnectedPilotCallsign = gDisconnectedPilotCallsign;
 
-    if (gLastXPilotConnected && !xPilotSessionSnapshot.connected) {
-        gDisconnectedPilotCallsign = gLastConnectedPilotCallsign;
+    const auto decision =
+        xvatsim::brain::workflow::ResolveXPilotSessionBoundary(input);
+
+    if (decision.shouldPreserveFlightStateForDisconnect) {
         PreserveFlightStateForNetworkDisconnect();
+    }
+    if (decision.shouldResetFlightScopedState) {
+        ResetFlightScopedStateForSessionBoundary(
+            decision.resetReason.c_str(),
+            false);
+    }
+    if (decision.shouldClearPendingRecoveryRequests) {
         gPendingAutomaticFlightRecovery = false;
         gManualFlightRecoveryRequested = false;
-        gLastXPilotConnected = false;
-        return SessionBoundaryResult::ResetForDisconnect;
     }
-
-    if (!xPilotSessionSnapshot.connected) {
-        gLastXPilotConnected = false;
-        return SessionBoundaryResult::None;
-    }
-
-    const auto reconnectCallsignChanged =
-        !gDisconnectedPilotCallsign.empty() &&
-        !connectedCallsign.empty() &&
-        connectedCallsign != gDisconnectedPilotCallsign;
-    if (reconnectCallsignChanged) {
-        ResetFlightScopedStateForSessionBoundary("pilot callsign changed after reconnect", false);
-        gDisconnectedPilotCallsign.clear();
-        return SessionBoundaryResult::ResetForCallsignChange;
-    }
-
-    const auto callsignChanged =
-        gLastXPilotConnected &&
-        !connectedCallsign.empty() &&
-        !gLastConnectedPilotCallsign.empty() &&
-        connectedCallsign != gLastConnectedPilotCallsign;
-    auto result = SessionBoundaryResult::None;
-    if (callsignChanged) {
-        ResetFlightScopedStateForSessionBoundary("pilot callsign changed", false);
-        result = SessionBoundaryResult::ResetForCallsignChange;
-    }
-
-    if (result == SessionBoundaryResult::None && !gDisconnectedPilotCallsign.empty()) {
+    if (decision.shouldQueueAutomaticRecovery) {
         gPendingAutomaticFlightRecovery = true;
-        gDisconnectedPilotCallsign.clear();
-        XPLMDebugString(
-            "[XVatsim] xPilot reconnect detected; waiting for fresh matched plan to recover current flight.\n");
+    }
+    if (decision.sawXPilotConnectedThisFlight) {
+        gSawXPilotConnectedThisFlight = true;
+    }
+    if (!decision.logLine.empty()) {
+        XPLMDebugString(decision.logLine.c_str());
     }
 
-    gLastXPilotConnected = true;
-    if (!connectedCallsign.empty()) {
-        gLastConnectedPilotCallsign = connectedCallsign;
-    }
-    gSawXPilotConnectedThisFlight = true;
-    return result;
+    gLastXPilotConnected = decision.nextState.lastXPilotConnected;
+    gLastConnectedPilotCallsign =
+        decision.nextState.lastConnectedPilotCallsign;
+    gDisconnectedPilotCallsign =
+        decision.nextState.disconnectedPilotCallsign;
+    return decision.action;
 }
 
 void BeginManualCtafEntry() {

@@ -553,6 +553,75 @@ RecoveryDecision ResolveCurrentFlightRecovery(
     return decision;
 }
 
+XPilotSessionBoundaryDecision ResolveXPilotSessionBoundary(
+    const XPilotSessionBoundaryInput& input) {
+    XPilotSessionBoundaryDecision decision;
+    decision.nextState = input.state;
+
+    auto connectedCallsign =
+        NormalizeCallsign(
+            input.pilotIdentity.normalizedCallsign.empty()
+                ? input.pilotIdentity.callsign
+                : input.pilotIdentity.normalizedCallsign);
+    if (connectedCallsign.empty()) {
+        connectedCallsign = NormalizeCallsign(input.xPilotSession.callsign);
+    }
+
+    if (input.state.lastXPilotConnected && !input.xPilotSession.connected) {
+        decision.action = XPilotSessionBoundaryAction::ResetForDisconnect;
+        decision.nextState.disconnectedPilotCallsign =
+            input.state.lastConnectedPilotCallsign;
+        decision.nextState.lastXPilotConnected = false;
+        decision.shouldPreserveFlightStateForDisconnect = true;
+        decision.shouldClearPendingRecoveryRequests = true;
+        return decision;
+    }
+
+    if (!input.xPilotSession.connected) {
+        decision.nextState.lastXPilotConnected = false;
+        return decision;
+    }
+
+    const auto reconnectCallsignChanged =
+        !input.state.disconnectedPilotCallsign.empty() &&
+        !connectedCallsign.empty() &&
+        connectedCallsign != input.state.disconnectedPilotCallsign;
+    if (reconnectCallsignChanged) {
+        decision.action = XPilotSessionBoundaryAction::ResetForCallsignChange;
+        decision.nextState = {};
+        decision.shouldResetFlightScopedState = true;
+        decision.resetReason = "pilot callsign changed after reconnect";
+        return decision;
+    }
+
+    const auto callsignChanged =
+        input.state.lastXPilotConnected &&
+        !connectedCallsign.empty() &&
+        !input.state.lastConnectedPilotCallsign.empty() &&
+        connectedCallsign != input.state.lastConnectedPilotCallsign;
+    if (callsignChanged) {
+        decision.action = XPilotSessionBoundaryAction::ResetForCallsignChange;
+        decision.nextState = {};
+        decision.shouldResetFlightScopedState = true;
+        decision.resetReason = "pilot callsign changed";
+        return decision;
+    }
+
+    if (!input.state.disconnectedPilotCallsign.empty()) {
+        decision.shouldQueueAutomaticRecovery = true;
+        decision.nextState.disconnectedPilotCallsign.clear();
+        decision.logLine =
+            "[XVatsim] xPilot reconnect detected; waiting for fresh matched plan to recover current flight.\n";
+    }
+
+    decision.nextState.lastXPilotConnected = true;
+    if (!connectedCallsign.empty()) {
+        decision.nextState.lastConnectedPilotCallsign = connectedCallsign;
+    }
+    decision.sawXPilotConnectedThisFlight = true;
+    return decision;
+}
+
 FlightContextUpdateOutput UpdateFlightContextFromNetworkPlan(
     const FlightContextUpdateInput& input) {
     FlightContextUpdateOutput output;

@@ -44,6 +44,36 @@ enum class RecoveryRequestMode {
     Manual,
 };
 
+enum class XPilotSessionBoundaryAction {
+    None,
+    ResetForDisconnect,
+    ResetForCallsignChange,
+};
+
+struct XPilotSessionBoundaryState {
+    bool lastXPilotConnected = false;
+    std::string lastConnectedPilotCallsign;
+    std::string disconnectedPilotCallsign;
+};
+
+struct XPilotSessionBoundaryInput {
+    XPilotSessionSnapshot xPilotSession;
+    PilotIdentitySnapshot pilotIdentity;
+    XPilotSessionBoundaryState state;
+};
+
+struct XPilotSessionBoundaryDecision {
+    XPilotSessionBoundaryAction action = XPilotSessionBoundaryAction::None;
+    XPilotSessionBoundaryState nextState;
+    bool shouldPreserveFlightStateForDisconnect = false;
+    bool shouldResetFlightScopedState = false;
+    bool shouldClearPendingRecoveryRequests = false;
+    bool shouldQueueAutomaticRecovery = false;
+    bool sawXPilotConnectedThisFlight = false;
+    std::string resetReason;
+    std::string logLine;
+};
+
 struct RecoveryDecision {
     bool accepted = false;
     WorkflowStage stage = WorkflowStage::None;
@@ -113,6 +143,9 @@ RecoveryDecision ResolveCurrentFlightRecovery(
     const FlightContext& preservedFlightContext,
     RecoveryRequestMode mode,
     const WorkflowTuning& tuning = {});
+
+XPilotSessionBoundaryDecision ResolveXPilotSessionBoundary(
+    const XPilotSessionBoundaryInput& input);
 
 FlightContextUpdateOutput UpdateFlightContextFromNetworkPlan(
     const FlightContextUpdateInput& input);

@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`AAB7203E2ED9AC9C03E79ED11B360B75E06AB6C9ED5B04CB804C54DC91072DA9`
+`8B9C0F54B01E7EA9C2DFE1E330AEA40D252E017D34B19D61F4CADB1E01CF3A66`
 
 Reason for this hash:
 
@@ -143,6 +143,9 @@ Reason for this hash:
 - Brain-owned runtime now owns active-flight flight-plan sampling cadence and
   cached flight-plan snapshot state. The plugin runs `FlightPlanSampler` only
   when the brain requests a fresh sample.
+- `ResolveXPilotSessionBoundary` now owns xPilot disconnect/reconnect/callsign
+  boundary decisions. The plugin applies the brain-returned preserve/reset and
+  recovery flags.
 
 Regression harness status for this code:
 
@@ -161,7 +164,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`AAB7203E2ED9AC9C03E79ED11B360B75E06AB6C9ED5B04CB804C54DC91072DA9`
+`8B9C0F54B01E7EA9C2DFE1E330AEA40D252E017D34B19D61F4CADB1E01CF3A66`
 
 Rules:
 

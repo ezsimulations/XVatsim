@@ -63,6 +63,7 @@ brain-owned source files.
 - `brain/src/BrainWorkflow.cpp`
   - Owns workflow phase, current-flight recovery decisions, and normal
     flight-context lock/refresh and retarget decisions.
+  - Owns xPilot disconnect/reconnect/callsign boundary decisions.
   - `core/WorkflowEngine.h` remains only as a compatibility shim for existing
     callers.
 
@@ -178,6 +179,7 @@ by installed hash
 - enroute initial display-hold state and timing from the plugin shell
 - active-flight flight-plan sampling cadence and cached flight-plan snapshot
   state from the plugin shell
+- xPilot disconnect/reconnect/callsign boundary decisions from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -361,6 +363,13 @@ sampling cadence and cached flight-plan snapshot state through
 plugin runs `FlightPlanSampler` only when the brain requests a fresh sample.
 Release build passed and full harness passed `234 / 234` for installed hash
 `AAB7203E2ED9AC9C03E79ED11B360B75E06AB6C9ED5B04CB804C54DC91072DA9`.
+
+Follow-up update: `ResolveXPilotSessionBoundary` now owns xPilot
+disconnect/reconnect/callsign boundary decisions inside
+`brain/src/BrainWorkflow.cpp`. The plugin stores shell session facts and applies
+only the brain-returned preserve/reset/recovery flags. Release build passed and
+full harness passed `234 / 234` for installed hash
+`8B9C0F54B01E7EA9C2DFE1E330AEA40D252E017D34B19D61F4CADB1E01CF3A66`.
 
 ### Slice 4: Quarantine Legacy Runtime
 
