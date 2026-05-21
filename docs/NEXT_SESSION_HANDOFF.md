@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`5B3277315E5E0A27A428C665245E855402F3FCE87315CDC5CAA49B82F0AC0FE9`
+`CEF8BFF73D2436F7B251CC1F15BB7ED44A76D33B3440AC05682AD2134A3C0C50`
 
 Reason for this hash:
 
@@ -81,9 +81,8 @@ Reason for this hash:
   not the retired core display builder.
 - Brain Display Intent filters offline/no-frequency rows out of the final UI
   snapshot while preserving them as worker facts/diagnostics.
-- Legacy departure/arrival/enroute collectors no longer assert
-  `displayStations`; they may produce fact rows for harness coverage, but only
-  Brain Display Intent marks a final board displayable.
+- Legacy departure/arrival/enroute collectors may produce fact rows for
+  harness coverage, but only Brain Display Intent builds final display rows.
 - Accepted-completion board filtering and final-display completion marking now
   live in `brain/src/BrainOwnedRuntime.cpp`, not the plugin shell.
 - `RunBrainOwnedPublisher` in `brain/src/BrainOwnedRuntime.cpp` now owns
@@ -236,6 +235,8 @@ Reason for this hash:
 - Raw `BoardStationSnapshot` no longer carries `displayRelation`; relevance
   records relation on completions and Display Intent infers final UI relation
   from fact fields.
+- Raw `ModuleBoardSnapshot` no longer carries `displayStations`; board display
+  ownership exists only in `FinalDisplaySnapshot`.
 
 Regression harness status for this code:
 
@@ -254,7 +255,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`5B3277315E5E0A27A428C665245E855402F3FCE87315CDC5CAA49B82F0AC0FE9`
+`CEF8BFF73D2436F7B251CC1F15BB7ED44A76D33B3440AC05682AD2134A3C0C50`
 
 Rules:
 

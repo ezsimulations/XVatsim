@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `5B3277315E5E0A27A428C665245E855402F3FCE87315CDC5CAA49B82F0AC0FE9`
+  `CEF8BFF73D2436F7B251CC1F15BB7ED44A76D33B3440AC05682AD2134A3C0C50`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -210,7 +210,7 @@ Only then may XVatsim be treated as store-release ready.
   board builder has been removed; Brain Display Intent is the display assembly
   owner and filters offline/no-frequency rows from the final UI snapshot;
   legacy departure/arrival/enroute collectors and plugin intermediate publisher
-  boards no longer assert display ownership through `displayStations`;
+  boards no longer assert display ownership;
   accepted-completion board filtering and final-display completion marking now
   live in brain-owned runtime code instead of the plugin shell;
   `RunBrainOwnedPublisher` now owns publisher assembly, CTAF/UNICOM
@@ -328,7 +328,8 @@ Only then may XVatsim be treated as store-release ready.
   raw `BoardStationSnapshot` no longer carries `annotation`, leaving UI text
   annotations on `FinalDisplayStationSnapshot`; raw `BoardStationSnapshot` no
   longer carries `displayRelation`, leaving relation on candidate completions
-  and final display rows;
+  and final display rows; raw `ModuleBoardSnapshot` no longer carries
+  `displayStations`;
   brain-owned runtime audit map updated.
 - Active live streak: remains `0`; the next valid live test is Battle Test #1
   for this installed hash.

@@ -317,7 +317,6 @@ struct BoardStationSnapshot {
 
 struct ModuleBoardSnapshot {
     bool available = false;
-    bool displayStations = false;
     BoardSource source = BoardSource::None;
     std::string airportIcao;
     std::vector<BoardStationSnapshot> stations;

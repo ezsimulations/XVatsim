@@ -261,6 +261,7 @@ by installed hash
   Engineer 3 refresh shell
 - temporary display-mutated `ModuleBoardSnapshot` staging inside Brain Display
   Intent
+- raw module-board `displayStations` ownership flag from `ModuleBoardSnapshot`
 - raw module-board `next` and `standby` display flags from
   `BoardStationSnapshot`
 - raw module-board `annotation` display text from `BoardStationSnapshot`
@@ -290,16 +291,15 @@ Their CMake target names are now explicitly harness legacy:
 2. Legacy fact modules still exist in the repo.
    The old plugin refresh body and plugin-owned live board caches have been
    removed. Older departure/arrival/enroute collectors still compile for
-   library/harness coverage, but they no longer assert `displayStations`; the
-   next cleanup step is to rename/extract them as explicit fact-only workers or
-   retire the unused libraries.
+   library/harness coverage. The next cleanup step is to rename/extract them
+   as explicit fact-only workers or retire the unused libraries.
 
-3. `ModuleBoardSnapshot` still carries a `displayStations` flag.
+3. Raw board/display state split is mostly complete.
    The final UI board is split into `FinalDisplaySnapshot` /
    `FinalDisplayStationSnapshot`, Brain Display Intent no longer creates
-   display-mutated `BoardStationSnapshot` rows, and raw board rows no longer
-   carry `next`, `standby`, `annotation`, or `displayRelation`. The remaining
-   raw-board display ownership risk is the board-level `displayStations` flag.
+   display-mutated `BoardStationSnapshot` rows, raw station rows no longer
+   carry `next`, `standby`, `annotation`, or `displayRelation`, and raw module
+   boards no longer carry `displayStations`.
 
 4. Workflow selection still depends on provisional relevance.
    The provisional pass now lives behind the explicit brain-owned
@@ -699,6 +699,13 @@ through those fact fields instead of raw-board relation hints. Release build
 passed and full harness passed `234 / 234` for installed hash
 `5B3277315E5E0A27A428C665245E855402F3FCE87315CDC5CAA49B82F0AC0FE9`.
 
+Follow-up update: Removed raw-board `displayStations` from
+`ModuleBoardSnapshot`. Raw module boards now carry only availability, source,
+airport, and fact rows; final-display availability belongs to
+`FinalDisplaySnapshot`. Release build passed and full harness passed
+`234 / 234` for installed hash
+`CEF8BFF73D2436F7B251CC1F15BB7ED44A76D33B3440AC05682AD2134A3C0C50`.
+
 ### Slice 4: Quarantine Legacy Runtime
 
 - Move old runtime functions into a clearly named legacy/quarantine unit.
@@ -723,8 +730,10 @@ Status: active. The final UI board now uses `FinalDisplaySnapshot` /
 publishes or stages display-mutated enroute rows as runtime module board state.
 Raw worker board rows also no longer carry `next` or `standby` display flags.
 Raw worker board rows also no longer carry `annotation` display text or
-`displayRelation` state. Remaining work is to remove the board-level
-`displayStations` flag from raw module board snapshots.
+`displayRelation` state, and raw module boards no longer carry
+`displayStations`. Remaining work is in the broader legacy module quarantine,
+plugin-shell reduction, heavy-proof audit, and workflow/provisional-relevance
+cleanup.
 
 ## Guardrails
 

@@ -90,9 +90,6 @@ void HashModuleBoardSnapshot(
     std::uint64_t* hash,
     const ModuleBoardSnapshot& snapshot) {
     HashCombine(hash, static_cast<std::uint64_t>(snapshot.available ? 1u : 0u));
-    HashCombine(
-        hash,
-        static_cast<std::uint64_t>(snapshot.displayStations ? 1u : 0u));
     HashCombine(hash, static_cast<std::uint64_t>(snapshot.source));
     HashCombine(hash, snapshot.airportIcao);
     HashCombine(hash, static_cast<std::uint64_t>(snapshot.stations.size()));

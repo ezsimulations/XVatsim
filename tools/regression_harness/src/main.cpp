@@ -1205,7 +1205,6 @@ xvatsim::brain::AirportSectorSnapshot MakeBrainDepartureAirportSector(
 xvatsim::brain::ModuleBoardSnapshot MakeBrainDepartureBoard() {
     xvatsim::brain::ModuleBoardSnapshot board;
     board.available = true;
-    board.displayStations = true;
     board.source = xvatsim::brain::BoardSource::Departure;
     board.airportIcao = "KAAA";
     xvatsim::brain::BoardStationSnapshot station;
@@ -3082,7 +3081,6 @@ bool AddStation(ModuleBoardSnapshot* board, const std::string& value) {
 
     board->stations.push_back(station);
     board->available = true;
-    board->displayStations = true;
     return true;
 }
 
