@@ -1841,44 +1841,15 @@ bool LegacyAuthorityRuntimeAllowed(
     return false;
 }
 
-bool Engineer3FrequencyTuned(
-    const std::string& frequency,
-    const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot) {
-    const auto normalizedTarget = NormalizeFrequency(frequency);
-    if (normalizedTarget.empty()) {
-        return false;
-    }
-
-    return NormalizeFrequency(radioStateSnapshot.com1ActiveFrequency) ==
-               normalizedTarget ||
-           NormalizeFrequency(radioStateSnapshot.com2ActiveFrequency) ==
-               normalizedTarget;
-}
-
-bool Engineer3BuildCtafStation(
+xvatsim::brain::BrainOwnedCtafLookupFact BuildBrainOwnedCtafLookupFact(
     const std::string& airportIcao,
-    const xvatsim::modules::ctaf_lookup::CtafLookupEntry& ctafLookup,
-    const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
-    xvatsim::brain::BoardStationSnapshot* station) {
-    if (airportIcao.empty() || station == nullptr) {
-        return false;
-    }
-
-    *station = {};
-    station->callsign = airportIcao;
-    if (ctafLookup.available) {
-        station->role = xvatsim::brain::StationRole::Ctaf;
-        station->frequency = ctafLookup.frequency;
-        station->tuned = Engineer3FrequencyTuned(ctafLookup.frequency, radioStateSnapshot);
-    } else if (ctafLookup.resolved) {
-        station->role = xvatsim::brain::StationRole::Unicom;
-        station->frequency = "122.800";
-        station->tuned = Engineer3FrequencyTuned("122.800", radioStateSnapshot);
-    } else {
-        station->role = xvatsim::brain::StationRole::Ctaf;
-        station->annotation = "lookup";
-    }
-    return true;
+    const xvatsim::modules::ctaf_lookup::CtafLookupEntry& ctafLookup) {
+    xvatsim::brain::BrainOwnedCtafLookupFact fact;
+    fact.airportIcao = airportIcao;
+    fact.resolved = ctafLookup.resolved;
+    fact.available = ctafLookup.available;
+    fact.frequency = ctafLookup.frequency;
+    return fact;
 }
 
 std::string SummarizeBrainControllerRelevance(
@@ -1980,23 +1951,20 @@ xvatsim::brain::BrainOwnedPublisherOutput RunBrainPublisher(
     const std::string& planKey) {
     xvatsim::brain::BrainOwnedPublisherFactInput publisherFacts;
     publisherFacts.workflowStage = workflowStage;
+    publisherFacts.radios = radioStateSnapshot;
     publisherFacts.departureBoard = relevanceOutput.departureBoard;
     publisherFacts.arrivalBoard = relevanceOutput.arrivalBoard;
     publisherFacts.enrouteBoard = relevanceOutput.enrouteBoard;
     publisherFacts.completions = relevanceOutput.completions;
     publisherFacts.publishReason = "brain-owned-ui-publish";
-    publisherFacts.hasDepartureCtafStation =
-        Engineer3BuildCtafStation(
+    publisherFacts.departureCtaf =
+        BuildBrainOwnedCtafLookupFact(
             gFlightContext.departureIcao,
-            departureCtafLookup,
-            radioStateSnapshot,
-            &publisherFacts.departureCtafStation);
-    publisherFacts.hasArrivalCtafStation =
-        Engineer3BuildCtafStation(
+            departureCtafLookup);
+    publisherFacts.arrivalCtaf =
+        BuildBrainOwnedCtafLookupFact(
             gFlightContext.destinationIcao,
-            arrivalCtafLookup,
-            radioStateSnapshot,
-            &publisherFacts.arrivalCtafStation);
+            arrivalCtafLookup);
     const auto publisherInput =
         xvatsim::brain::BuildBrainOwnedPublisherInputFromFacts(
             gBrainOwnedRuntimeState,

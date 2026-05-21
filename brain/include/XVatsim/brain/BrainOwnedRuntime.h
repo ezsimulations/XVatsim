@@ -145,16 +145,22 @@ struct BrainOwnedPublisherInput {
     std::string publishReason;
 };
 
+struct BrainOwnedCtafLookupFact {
+    std::string airportIcao;
+    bool resolved = false;
+    bool available = false;
+    std::string frequency;
+};
+
 struct BrainOwnedPublisherFactInput {
     WorkflowStage workflowStage = WorkflowStage::None;
+    RadioStateSnapshot radios;
     ModuleBoardSnapshot departureBoard;
     ModuleBoardSnapshot arrivalBoard;
     ModuleBoardSnapshot enrouteBoard;
     std::vector<BrainOwnedCandidateCompletion> completions;
-    bool hasDepartureCtafStation = false;
-    BoardStationSnapshot departureCtafStation;
-    bool hasArrivalCtafStation = false;
-    BoardStationSnapshot arrivalCtafStation;
+    BrainOwnedCtafLookupFact departureCtaf;
+    BrainOwnedCtafLookupFact arrivalCtaf;
     bool verificationPending = false;
     std::string publishReason;
 };

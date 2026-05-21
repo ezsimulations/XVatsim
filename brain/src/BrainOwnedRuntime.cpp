@@ -8,6 +8,8 @@
 namespace xvatsim::brain {
 namespace {
 
+constexpr char kUnicomFallbackFrequency[] = "122.800";
+
 const char* WorkflowStageToken(WorkflowStage stage) {
     switch (stage) {
         case WorkflowStage::Departure:
@@ -88,6 +90,20 @@ bool IsCtafOrUnicom(const BoardStationSnapshot& station) {
            station.role == StationRole::Unicom;
 }
 
+bool FrequencyTuned(
+    const std::string& frequency,
+    const RadioStateSnapshot& radioStateSnapshot) {
+    const auto normalizedTarget = NormalizeFrequency(frequency);
+    if (normalizedTarget.empty()) {
+        return false;
+    }
+
+    return NormalizeFrequency(radioStateSnapshot.com1ActiveFrequency) ==
+               normalizedTarget ||
+           NormalizeFrequency(radioStateSnapshot.com2ActiveFrequency) ==
+               normalizedTarget;
+}
+
 std::string StationKey(const BoardStationSnapshot& station) {
     return std::to_string(static_cast<int>(station.role)) + "|" +
            NormalizeCallsign(station.callsign) + "|" +
@@ -146,6 +162,31 @@ bool CompletionDisplayedInFinalBoard(
                    NormalizeFrequency(displayedStation.frequency) ==
                        NormalizeFrequency(completion.frequency);
         });
+}
+
+bool BuildCtafStationFromLookupFact(
+    const BrainOwnedCtafLookupFact& fact,
+    const RadioStateSnapshot& radios,
+    BoardStationSnapshot* station) {
+    if (station == nullptr || fact.airportIcao.empty()) {
+        return false;
+    }
+
+    *station = {};
+    station->callsign = fact.airportIcao;
+    if (fact.available) {
+        station->role = StationRole::Ctaf;
+        station->frequency = fact.frequency;
+        station->tuned = FrequencyTuned(fact.frequency, radios);
+    } else if (fact.resolved) {
+        station->role = StationRole::Unicom;
+        station->frequency = kUnicomFallbackFrequency;
+        station->tuned = FrequencyTuned(kUnicomFallbackFrequency, radios);
+    } else {
+        station->role = StationRole::Ctaf;
+        station->annotation = "lookup";
+    }
+    return true;
 }
 
 }  // namespace
@@ -351,10 +392,16 @@ BrainOwnedPublisherInput BuildBrainOwnedPublisherInputFromFacts(
     input.arrivalBoard = facts.arrivalBoard;
     input.enrouteBoard = facts.enrouteBoard;
     input.completions = facts.completions;
-    input.hasDepartureCtafStation = facts.hasDepartureCtafStation;
-    input.departureCtafStation = facts.departureCtafStation;
-    input.hasArrivalCtafStation = facts.hasArrivalCtafStation;
-    input.arrivalCtafStation = facts.arrivalCtafStation;
+    input.hasDepartureCtafStation =
+        BuildCtafStationFromLookupFact(
+            facts.departureCtaf,
+            facts.radios,
+            &input.departureCtafStation);
+    input.hasArrivalCtafStation =
+        BuildCtafStationFromLookupFact(
+            facts.arrivalCtaf,
+            facts.radios,
+            &input.arrivalCtafStation);
     input.verificationPending = facts.verificationPending;
     input.publishReason = facts.publishReason;
     return input;

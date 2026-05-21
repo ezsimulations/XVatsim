@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`8A159734EEB1EDE32A54869FA20B634B7798C78ED3376C33BE456E4B480C95F8`
+`374EDA031F594BA7C35AFF7DA7B4D75B333801D61E5247E998ACCA19C7F19D16`
 
 Reason for this hash:
 
@@ -112,6 +112,9 @@ Reason for this hash:
   worker inputs from brain-owned route/radio context.
 - `BuildBrainOwnedPublisherInputFromFacts` now shapes Brain Publisher input
   from brain-owned route context plus plugin-supplied relevance and CTAF facts.
+- Brain-owned runtime now turns CTAF lookup facts plus radio state into
+  CTAF/UNICOM board stations, including the tuned flag; the plugin no longer
+  builds CTAF/UNICOM display stations.
 
 Regression harness status for this code:
 
@@ -130,7 +133,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`8A159734EEB1EDE32A54869FA20B634B7798C78ED3376C33BE456E4B480C95F8`
+`374EDA031F594BA7C35AFF7DA7B4D75B333801D61E5247E998ACCA19C7F19D16`
 
 Rules:
 

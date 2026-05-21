@@ -96,6 +96,8 @@ brain-owned source files.
   - Owns radio phase-gate storage and final published runtime snapshot commits.
   - Owns Brain Publisher input shaping from route context plus relevance and
     CTAF facts.
+  - Owns CTAF/UNICOM station shaping and tuned-state decisions from CTAF lookup
+    facts plus radio state.
 
 ### UI Renderer
 
@@ -112,7 +114,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`8A159734EEB1EDE32A54869FA20B634B7798C78ED3376C33BE456E4B480C95F8`:
+`374EDA031F594BA7C35AFF7DA7B4D75B333801D61E5247E998ACCA19C7F19D16`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -148,6 +150,7 @@ by installed hash
   the plugin shell
 - Controller Relevance worker input shaping from the plugin shell
 - Brain Publisher input shaping from the plugin shell
+- CTAF/UNICOM station shaping and tuned-state decisions from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -260,6 +263,12 @@ brain-owned route context plus plugin-supplied relevance and CTAF facts. Release
 build passed and full harness passed `234 / 234` for
 installed hash
 `8A159734EEB1EDE32A54869FA20B634B7798C78ED3376C33BE456E4B480C95F8`.
+
+Follow-up update: Brain-owned runtime now turns plugin-supplied CTAF lookup
+facts and radio state into CTAF/UNICOM board stations, including tuned-state
+decisions. The plugin only adapts the CTAF module result into neutral facts.
+Release build passed and full harness passed `234 / 234` for installed hash
+`374EDA031F594BA7C35AFF7DA7B4D75B333801D61E5247E998ACCA19C7F19D16`.
 
 ### Slice 4: Quarantine Legacy Runtime
 
