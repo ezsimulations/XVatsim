@@ -64,6 +64,7 @@ brain-owned source files.
   - Owns workflow phase, current-flight recovery decisions, and normal
     flight-context lock/refresh and retarget decisions.
   - Owns xPilot disconnect/reconnect/callsign boundary decisions.
+  - Owns invalid-aircraft-state and cold/dark boundary decisions.
   - `core/WorkflowEngine.h` remains only as a compatibility shim for existing
     callers.
 
@@ -180,6 +181,7 @@ by installed hash
 - active-flight flight-plan sampling cadence and cached flight-plan snapshot
   state from the plugin shell
 - xPilot disconnect/reconnect/callsign boundary decisions from the plugin shell
+- invalid-aircraft-state and cold/dark boundary decisions from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -370,6 +372,14 @@ disconnect/reconnect/callsign boundary decisions inside
 only the brain-returned preserve/reset/recovery flags. Release build passed and
 full harness passed `234 / 234` for installed hash
 `8B9C0F54B01E7EA9C2DFE1E330AEA40D252E017D34B19D61F4CADB1E01CF3A66`.
+
+Follow-up update: `ResolveAircraftRuntimeBoundary` now owns
+invalid-aircraft-state and cold/dark boundary decisions inside
+`brain/src/BrainWorkflow.cpp`. The plugin applies only the brain-returned
+reset/latch flags, then hides or renders the X-Plane overlay as the shell side
+effect. Release build passed and full harness passed `234 / 234` for installed
+hash
+`A0350D5D203EE9AC614A6B71C13D63D3C10318D2164D8EFFE1580E310AFBA756`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

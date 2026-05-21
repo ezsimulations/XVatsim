@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`8B9C0F54B01E7EA9C2DFE1E330AEA40D252E017D34B19D61F4CADB1E01CF3A66`
+`A0350D5D203EE9AC614A6B71C13D63D3C10318D2164D8EFFE1580E310AFBA756`
 
 Reason for this hash:
 
@@ -146,6 +146,9 @@ Reason for this hash:
 - `ResolveXPilotSessionBoundary` now owns xPilot disconnect/reconnect/callsign
   boundary decisions. The plugin applies the brain-returned preserve/reset and
   recovery flags.
+- `ResolveAircraftRuntimeBoundary` now owns invalid-aircraft-state and
+  cold/dark boundary decisions. The plugin applies the brain-returned reset and
+  latch flags, then hides/renders the X-Plane overlay.
 
 Regression harness status for this code:
 
@@ -164,7 +167,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`8B9C0F54B01E7EA9C2DFE1E330AEA40D252E017D34B19D61F4CADB1E01CF3A66`
+`A0350D5D203EE9AC614A6B71C13D63D3C10318D2164D8EFFE1580E310AFBA756`
 
 Rules:
 

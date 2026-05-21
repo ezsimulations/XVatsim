@@ -622,6 +622,38 @@ XPilotSessionBoundaryDecision ResolveXPilotSessionBoundary(
     return decision;
 }
 
+AircraftRuntimeBoundaryDecision ResolveAircraftRuntimeBoundary(
+    const AircraftRuntimeBoundaryInput& input) {
+    AircraftRuntimeBoundaryDecision decision;
+    decision.nextColdDarkResetApplied = input.coldDarkResetApplied;
+    decision.nextAircraftStateInvalidBoundaryActive =
+        input.aircraftStateInvalidBoundaryActive;
+
+    if (!input.aircraftState.valid) {
+        decision.aircraftStateInvalid = true;
+        decision.nextAircraftStateInvalidBoundaryActive = true;
+        if (!input.aircraftStateInvalidBoundaryActive) {
+            decision.shouldResetForInvalidAircraftState = true;
+            decision.logLine =
+                "[XVatsim] Aircraft state unavailable; runtime presentation reset.\n";
+        }
+        return decision;
+    }
+
+    decision.nextAircraftStateInvalidBoundaryActive = false;
+    if (input.aircraftState.batteryOn) {
+        decision.nextColdDarkResetApplied = false;
+        return decision;
+    }
+
+    decision.coldDarkBoundaryActive = true;
+    decision.nextColdDarkResetApplied = true;
+    decision.shouldResetSessionRuntimeCaches =
+        !input.coldDarkResetApplied;
+    decision.shouldResetPresentationState = true;
+    return decision;
+}
+
 FlightContextUpdateOutput UpdateFlightContextFromNetworkPlan(
     const FlightContextUpdateInput& input) {
     FlightContextUpdateOutput output;

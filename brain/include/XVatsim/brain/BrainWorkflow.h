@@ -74,6 +74,23 @@ struct XPilotSessionBoundaryDecision {
     std::string logLine;
 };
 
+struct AircraftRuntimeBoundaryInput {
+    AircraftStateSnapshot aircraftState;
+    bool coldDarkResetApplied = false;
+    bool aircraftStateInvalidBoundaryActive = false;
+};
+
+struct AircraftRuntimeBoundaryDecision {
+    bool aircraftStateInvalid = false;
+    bool coldDarkBoundaryActive = false;
+    bool shouldResetForInvalidAircraftState = false;
+    bool shouldResetSessionRuntimeCaches = false;
+    bool shouldResetPresentationState = false;
+    bool nextColdDarkResetApplied = false;
+    bool nextAircraftStateInvalidBoundaryActive = false;
+    std::string logLine;
+};
+
 struct RecoveryDecision {
     bool accepted = false;
     WorkflowStage stage = WorkflowStage::None;
@@ -146,6 +163,9 @@ RecoveryDecision ResolveCurrentFlightRecovery(
 
 XPilotSessionBoundaryDecision ResolveXPilotSessionBoundary(
     const XPilotSessionBoundaryInput& input);
+
+AircraftRuntimeBoundaryDecision ResolveAircraftRuntimeBoundary(
+    const AircraftRuntimeBoundaryInput& input);
 
 FlightContextUpdateOutput UpdateFlightContextFromNetworkPlan(
     const FlightContextUpdateInput& input);

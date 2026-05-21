@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `8B9C0F54B01E7EA9C2DFE1E330AEA40D252E017D34B19D61F4CADB1E01CF3A66`
+  `A0350D5D203EE9AC614A6B71C13D63D3C10318D2164D8EFFE1580E310AFBA756`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -264,7 +264,9 @@ Only then may XVatsim be treated as store-release ready.
   `FlightPlanSampler` only when the brain requests a fresh sample;
   `ResolveXPilotSessionBoundary` now owns xPilot disconnect/reconnect/callsign
   boundary decisions while the plugin applies the returned preserve/reset and
-  recovery flags;
+  recovery flags; `ResolveAircraftRuntimeBoundary` now owns
+  invalid-aircraft-state and cold/dark boundary decisions while the plugin
+  applies the returned reset/latch flags and hides/renders the X-Plane overlay;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

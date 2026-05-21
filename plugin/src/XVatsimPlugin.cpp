@@ -2407,21 +2407,30 @@ void ResetPresentationStateForColdDark() {
     ResetStandbyAssistLatch();
 }
 
-void ResetForInvalidAircraftStateFrame() {
-    if (gAircraftStateInvalidBoundaryActive) {
-        return;
-    }
-
-    ResetPluginRuntimeState(false, false);
-    gAircraftStateInvalidBoundaryActive = true;
-    XPLMDebugString(
-        "[XVatsim] Aircraft state unavailable; runtime presentation reset.\n");
-}
-
 void ResetSessionState() {
     ResetPluginRuntimeState(true, true);
     XPLMDebugString("[XVatsim] Session reset for next flight.\n");
     RefreshOverlayFromBrain();
+}
+
+void ApplyAircraftRuntimeBoundaryDecision(
+    const xvatsim::brain::workflow::AircraftRuntimeBoundaryDecision& decision) {
+    if (decision.shouldResetForInvalidAircraftState) {
+        ResetPluginRuntimeState(false, false);
+    }
+    if (decision.shouldResetSessionRuntimeCaches) {
+        ResetSessionRuntimeCaches(true);
+    }
+    if (decision.shouldResetPresentationState) {
+        ResetPresentationStateForColdDark();
+    }
+    if (!decision.logLine.empty()) {
+        XPLMDebugString(decision.logLine.c_str());
+    }
+
+    gColdDarkResetApplied = decision.nextColdDarkResetApplied;
+    gAircraftStateInvalidBoundaryActive =
+        decision.nextAircraftStateInvalidBoundaryActive;
 }
 
 void ResetFlightScopedStateForSessionBoundary(
@@ -2750,21 +2759,6 @@ void PersistOverlayGeometryIfChanged() {
         }
     }
     SavePluginSettings();
-}
-
-bool ApplyColdDarkSessionBoundary(
-    const xvatsim::brain::AircraftStateSnapshot& aircraftState) {
-    if (aircraftState.batteryOn) {
-        gColdDarkResetApplied = false;
-        return false;
-    }
-
-    if (!gColdDarkResetApplied) {
-        ResetSessionRuntimeCaches(true);
-        gColdDarkResetApplied = true;
-    }
-    ResetPresentationStateForColdDark();
-    return true;
 }
 
 void RenderDormantBoundaryFrame(bool hideWindow) {
@@ -3604,12 +3598,23 @@ void RefreshOverlayFromBrainEngineer3() {
     diagnostics.aircraftStateUs = ElapsedMicrosecondsSince(timingStarted);
     diagnostics.onGround = aircraftState.onGround;
     diagnostics.batteryOn = aircraftState.batteryOn;
-    if (!aircraftState.valid) {
-        ResetForInvalidAircraftStateFrame();
+    xvatsim::brain::workflow::AircraftRuntimeBoundaryInput
+        aircraftBoundaryInput;
+    aircraftBoundaryInput.aircraftState = aircraftState;
+    aircraftBoundaryInput.coldDarkResetApplied = gColdDarkResetApplied;
+    aircraftBoundaryInput.aircraftStateInvalidBoundaryActive =
+        gAircraftStateInvalidBoundaryActive;
+    const auto aircraftBoundaryDecision =
+        xvatsim::brain::workflow::ResolveAircraftRuntimeBoundary(
+            aircraftBoundaryInput);
+    if (aircraftBoundaryDecision.aircraftStateInvalid) {
+        ApplyAircraftRuntimeBoundaryDecision(aircraftBoundaryDecision);
         gOverlayWindow.Hide();
         return;
     }
-    gAircraftStateInvalidBoundaryActive = false;
+    if (!aircraftBoundaryDecision.coldDarkBoundaryActive) {
+        ApplyAircraftRuntimeBoundaryDecision(aircraftBoundaryDecision);
+    }
 
     timingStarted = std::chrono::steady_clock::now();
     const auto xPilotSessionSnapshot = gXPilotBridge.Poll();
@@ -3617,7 +3622,8 @@ void RefreshOverlayFromBrainEngineer3() {
     diagnostics.xpilotPollMs = diagnostics.xpilotPollUs / 1000;
     diagnostics.xpilotConnected = xPilotSessionSnapshot.connected;
     diagnostics.callsign = xPilotSessionSnapshot.callsign;
-    if (ApplyColdDarkSessionBoundary(aircraftState)) {
+    if (aircraftBoundaryDecision.coldDarkBoundaryActive) {
+        ApplyAircraftRuntimeBoundaryDecision(aircraftBoundaryDecision);
         RenderSessionBoundaryFrame(aircraftState, xPilotSessionSnapshot, false);
         return;
     }
