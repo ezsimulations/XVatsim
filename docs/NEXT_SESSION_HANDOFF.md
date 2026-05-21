@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`41094E64705B00113F08D0FAD390357E2A4BC4D0734B049E68589769A3D27277`
+`5B3277315E5E0A27A428C665245E855402F3FCE87315CDC5CAA49B82F0AC0FE9`
 
 Reason for this hash:
 
@@ -233,6 +233,9 @@ Reason for this hash:
   UI-only flags now live only on `FinalDisplayStationSnapshot`.
 - Raw `BoardStationSnapshot` no longer carries `annotation`; UI text
   annotations now live only on `FinalDisplayStationSnapshot`.
+- Raw `BoardStationSnapshot` no longer carries `displayRelation`; relevance
+  records relation on completions and Display Intent infers final UI relation
+  from fact fields.
 
 Regression harness status for this code:
 
@@ -251,7 +254,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`41094E64705B00113F08D0FAD390357E2A4BC4D0734B049E68589769A3D27277`
+`5B3277315E5E0A27A428C665245E855402F3FCE87315CDC5CAA49B82F0AC0FE9`
 
 Rules:
 

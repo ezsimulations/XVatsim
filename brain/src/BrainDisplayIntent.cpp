@@ -96,7 +96,6 @@ FinalDisplayStationSnapshot ToFinalDisplayStation(
     displayStation.hasRouteEntryDistance = station.hasRouteEntryDistance;
     displayStation.routeEntryDistanceNm = station.routeEntryDistanceNm;
     displayStation.polygonKey = station.polygonKey;
-    displayStation.displayRelation = station.displayRelation;
     return displayStation;
 }
 
@@ -116,9 +115,6 @@ void AppendUnique(
 DisplayRelation InferCenterRelation(
     const BoardStationSnapshot& station,
     const BrainDisplayIntentInput& input) {
-    if (station.displayRelation != DisplayRelation::Unknown) {
-        return station.displayRelation;
-    }
     if (station.sectorActive || station.tuned ||
         KeysEqual(station.polygonKey, input.currentPolygonKey)) {
         return DisplayRelation::CurrentPolygon;
@@ -128,6 +124,9 @@ DisplayRelation InferCenterRelation(
     }
     if (KeysEqual(station.polygonKey, input.arrivalPolygonKey)) {
         return DisplayRelation::ArrivalPrep;
+    }
+    if (!station.polygonKey.empty()) {
+        return DisplayRelation::Hidden;
     }
     if (station.hasRouteEntryDistance) {
         return station.routeEntryDistanceNm <=

@@ -3038,7 +3038,8 @@ bool AddStation(ModuleBoardSnapshot* board, const std::string& value) {
             if (!parsedRelation.has_value()) {
                 return false;
             }
-            station.displayRelation = *parsedRelation;
+            // Legacy scenarios may still specify raw-board display relation.
+            // Display Intent now infers relation from fact fields.
         } else if (field == "tuned") {
             if (!ParseBool(fieldValue, &station.tuned)) {
                 return false;

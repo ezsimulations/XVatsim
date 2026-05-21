@@ -313,7 +313,6 @@ struct BoardStationSnapshot {
     bool hasRouteEntryDistance = false;
     double routeEntryDistanceNm = 0.0;
     std::string polygonKey;
-    DisplayRelation displayRelation = DisplayRelation::Unknown;
 };
 
 struct ModuleBoardSnapshot {

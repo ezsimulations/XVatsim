@@ -264,6 +264,7 @@ by installed hash
 - raw module-board `next` and `standby` display flags from
   `BoardStationSnapshot`
 - raw module-board `annotation` display text from `BoardStationSnapshot`
+- raw module-board `displayRelation` state from `BoardStationSnapshot`
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -293,14 +294,12 @@ Their CMake target names are now explicitly harness legacy:
    next cleanup step is to rename/extract them as explicit fact-only workers or
    retire the unused libraries.
 
-3. `BoardStationSnapshot` still carries some pre-display relation fields.
+3. `ModuleBoardSnapshot` still carries a `displayStations` flag.
    The final UI board is split into `FinalDisplaySnapshot` /
    `FinalDisplayStationSnapshot`, Brain Display Intent no longer creates
    display-mutated `BoardStationSnapshot` rows, and raw board rows no longer
-   carry `next`, `standby`, or `annotation`. Remaining cleanup is to split
-   accepted fact truth from pre-display relation fields before Display Intent
-   so fact rows cannot drift back into UI state. This was the class of issue
-   behind the OAK `0nm` failure.
+   carry `next`, `standby`, `annotation`, or `displayRelation`. The remaining
+   raw-board display ownership risk is the board-level `displayStations` flag.
 
 4. Workflow selection still depends on provisional relevance.
    The provisional pass now lives behind the explicit brain-owned
@@ -691,6 +690,15 @@ store annotations on module fact rows. Release build passed and full harness
 passed `234 / 234` for installed hash
 `41094E64705B00113F08D0FAD390357E2A4BC4D0734B049E68589769A3D27277`.
 
+Follow-up update: Removed raw-board `displayRelation` state from
+`BoardStationSnapshot`. Controller Relevance now records relation directly on
+candidate completions, and Brain Display Intent infers final UI relation from
+fact fields such as polygon key, active/tuned state, and route-entry distance.
+The display-intent regression scenarios now express current/next/hidden state
+through those fact fields instead of raw-board relation hints. Release build
+passed and full harness passed `234 / 234` for installed hash
+`5B3277315E5E0A27A428C665245E855402F3FCE87315CDC5CAA49B82F0AC0FE9`.
+
 ### Slice 4: Quarantine Legacy Runtime
 
 - Move old runtime functions into a clearly named legacy/quarantine unit.
@@ -714,9 +722,9 @@ Status: active. The final UI board now uses `FinalDisplaySnapshot` /
 `ModuleBoardSnapshot` as final display truth, and Display Intent no longer
 publishes or stages display-mutated enroute rows as runtime module board state.
 Raw worker board rows also no longer carry `next` or `standby` display flags.
-Raw worker board rows also no longer carry `annotation` display text. Remaining
-work is to split accepted worker fact truth from pre-display relation fields
-before Display Intent.
+Raw worker board rows also no longer carry `annotation` display text or
+`displayRelation` state. Remaining work is to remove the board-level
+`displayStations` flag from raw module board snapshots.
 
 ## Guardrails
 

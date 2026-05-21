@@ -223,6 +223,7 @@ void RecordCandidateDecision(
     BrainOwnedCandidateDecision decision,
     const std::string& reason,
     const BoardStationSnapshot& station,
+    DisplayRelation displayRelation,
     std::vector<BrainOwnedCandidateCompletion>* completions) {
     if (completions == nullptr) {
         return;
@@ -241,7 +242,7 @@ void RecordCandidateDecision(
     completion.callsign = candidate.callsign;
     completion.frequency = candidate.frequency;
     completion.facilityGroup = candidate.group;
-    completion.displayRelation = station.displayRelation;
+    completion.displayRelation = displayRelation;
     completion.decision = decision;
     completion.displayed = false;
     completion.hasRouteEntryDistance = station.hasRouteEntryDistance;
@@ -533,6 +534,7 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                 BrainOwnedCandidateDecision::Rejected,
                 "facility-not-ui-relevant",
                 station,
+                DisplayRelation::Hidden,
                 &output.completions);
             continue;
         }
@@ -544,11 +546,13 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                 BrainOwnedCandidateDecision::Rejected,
                 "guard-frequency-rejected",
                 station,
+                DisplayRelation::Hidden,
                 &output.completions);
             continue;
         }
 
         bool accepted = false;
+        DisplayRelation completionRelation = DisplayRelation::Unknown;
         std::string reason;
         const auto localRole =
             role == StationRole::Delivery ||
@@ -564,21 +568,19 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                     MatchCenterToRoutePolygon(input, candidate);
                 if (routeMatch.matched || !routeMatch.hasRouteMetadata ||
                     station.tuned) {
-                    station.polygonKey = routeMatch.matched
-                                             ? routeMatch.polygonKey
-                                             : input.currentPolygonKey;
-                    station.displayRelation =
+                    const auto relation =
                         routeMatch.matched
                             ? routeMatch.displayRelation
                             : DisplayRelation::CurrentPolygon;
+                    station.polygonKey = routeMatch.matched
+                                             ? routeMatch.polygonKey
+                                             : input.currentPolygonKey;
                     station.sectorActive =
-                        station.displayRelation ==
-                            DisplayRelation::CurrentPolygon ||
+                        relation == DisplayRelation::CurrentPolygon ||
                         station.tuned;
                     station.hasRouteEntryDistance =
                         routeMatch.matched &&
-                        routeMatch.displayRelation ==
-                            DisplayRelation::NextPolygon &&
+                        relation == DisplayRelation::NextPolygon &&
                         routeMatch.hasRouteEntryDistance;
                     station.routeEntryDistanceNm =
                         station.hasRouteEntryDistance
@@ -586,49 +588,53 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                             : 0.0;
                     centerCandidates.push_back({station});
                     accepted = true;
+                    completionRelation = relation;
                     reason = routeMatch.matched
                                  ? routeMatch.reason
                                  : (station.tuned
                                         ? "center-tuned-current-radio"
                                         : "center-route-metadata-unavailable-reachable");
                 } else {
+                    completionRelation = DisplayRelation::Hidden;
                     reason = routeMatch.reason;
                 }
             } else {
+                completionRelation = DisplayRelation::Hidden;
                 reason = "center-not-needed-for-phase";
             }
         } else if (includeDepartureGroups &&
                    localRole &&
                    ControllerMatchesAirport(candidate.callsign, departureTokens)) {
             station.polygonKey = input.currentPolygonKey;
-            station.displayRelation = DisplayRelation::CurrentPolygon;
             AppendStationUnique(
                 station,
                 &output.departureBoard,
                 &departureKeys);
             accepted = true;
+            completionRelation = DisplayRelation::CurrentPolygon;
             reason = "departure-airport-match";
         } else if (includeDepartureGroups && appDepRole) {
             station.polygonKey = input.currentPolygonKey;
-            station.displayRelation = DisplayRelation::CurrentPolygon;
             AppendStationUnique(
                 station,
                 &output.departureBoard,
                 &departureKeys);
             accepted = true;
+            completionRelation = DisplayRelation::CurrentPolygon;
             reason = "departure-terminal-reachable";
         } else if (includeArrivalGroups &&
                    (localRole || appDepRole) &&
                    ControllerMatchesAirport(candidate.callsign, arrivalTokens)) {
             station.polygonKey = input.arrivalPolygonKey;
-            station.displayRelation = DisplayRelation::ArrivalPrep;
             AppendStationUnique(
                 station,
                 &output.arrivalBoard,
                 &arrivalKeys);
             accepted = true;
+            completionRelation = DisplayRelation::ArrivalPrep;
             reason = "arrival-airport-match";
         } else {
+            completionRelation = DisplayRelation::Hidden;
             reason = "phase-or-airport-filter-rejected";
         }
 
@@ -639,6 +645,7 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                      : BrainOwnedCandidateDecision::Rejected,
             reason,
             station,
+            completionRelation,
             &output.completions);
     }
 

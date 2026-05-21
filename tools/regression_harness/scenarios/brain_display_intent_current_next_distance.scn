@@ -5,9 +5,9 @@ display_intent.progress_nm=760
 display_intent.current_polygon=KZDC
 display_intent.next_polygon=KZDV
 
-enroute.station=role=Center;callsign=ZDC_CTR;frequency=127.700;online=true;polygonKey=KZDC;displayRelation=CurrentPolygon;sectorActive=true
-enroute.station=role=Center;callsign=DEN_1_CTR;frequency=127.650;online=true;polygonKey=KZDV;displayRelation=NextPolygon;routeEntryDistanceNm=831
-enroute.station=role=Center;callsign=DEN_2_CTR;frequency=133.525;online=true;polygonKey=KZDV;displayRelation=NextPolygon;routeEntryDistanceNm=831
-enroute.station=role=Center;callsign=MEM_CTR;frequency=128.150;online=true;polygonKey=KZME;displayRelation=Hidden;routeEntryDistanceNm=500
+enroute.station=role=Center;callsign=ZDC_CTR;frequency=127.700;online=true;polygonKey=KZDC;sectorActive=true
+enroute.station=role=Center;callsign=DEN_1_CTR;frequency=127.650;online=true;polygonKey=KZDV;routeEntryDistanceNm=831
+enroute.station=role=Center;callsign=DEN_2_CTR;frequency=133.525;online=true;polygonKey=KZDV;routeEntryDistanceNm=831
+enroute.station=role=Center;callsign=MEM_CTR;frequency=128.150;online=true;polygonKey=KZME;routeEntryDistanceNm=500
 
 expect.brain_display_intent_rows=ZDC_CTR:CURRENT_POLYGON:ACTIVE,DEN_1_CTR:NEXT_POLYGON:71nm,DEN_2_CTR:NEXT_POLYGON:71nm
