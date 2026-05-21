@@ -78,9 +78,17 @@ Implemented shadow diagnostics:
 
 - Live plugin still executes the old production path.
 - Existing Block 1 diagnostic jobs are translated into typed brain work items only when diagnostics are logged.
-- Diagnostic log lines now include `shadowScheduler=...`.
+- At this historical point, diagnostic log lines included
+  `shadowScheduler=...`.
 - The shadow summary reports requested job count, heavy count, runnable count, deferred count, heavy deferred count, and whether the old refresh asked for multiple heavy jobs.
 - This identifies where the future production scheduler would have prevented multi-heavy-job refresh spikes.
+
+Retirement note 2026-05-21:
+
+- The shadow scheduler diagnostic path was later removed from the live plugin
+  after Engineer 3 became the unconditional runtime entry. Current diagnostics
+  no longer log `shadowScheduler=...`; the plugin shell reports actual recorded
+  jobs and no longer reconstructs a parallel scheduler model from old job names.
 
 Verification:
 

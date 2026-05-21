@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`C6529D8176F0E71773C7D2E1201E190067E21FAAED1C33E0E2F23B6D0D8DF7DB`
+`A50003DE3B7483597DE659E85EA422A54758D311CB0F82E9B405633774C606DC`
 
 Reason for this hash:
 
@@ -182,6 +182,9 @@ Reason for this hash:
   expiry timing.
 - Brain-owned runtime now owns controller-message display state, sequence
   tracking, cached recall, visibility, and clear/ack behavior.
+- Plugin diagnostics no longer build or log a shadow brain scheduler from old
+  diagnostic job names. The plugin includes the brain work model types it uses,
+  but no longer depends on `BrainWorkScheduler.h`.
 
 Regression harness status for this code:
 
@@ -200,7 +203,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`C6529D8176F0E71773C7D2E1201E190067E21FAAED1C33E0E2F23B6D0D8DF7DB`
+`A50003DE3B7483597DE659E85EA422A54758D311CB0F82E9B405633774C606DC`
 
 Rules:
 

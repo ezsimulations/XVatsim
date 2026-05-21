@@ -228,6 +228,8 @@ by installed hash
   shell
 - controller-message display state, sequence tracking, cached recall,
   visibility, and clear/ack behavior from the plugin shell
+- shadow brain scheduler diagnostics reconstructed from old plugin diagnostic
+  job names
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -521,6 +523,14 @@ The plugin only polls xPilot private-message facts, consumes overlay button
 requests, and renders the brain-owned controller message card. Release build
 passed and full harness passed `234 / 234` for installed hash
 `C6529D8176F0E71773C7D2E1201E190067E21FAAED1C33E0E2F23B6D0D8DF7DB`.
+
+Follow-up update: Removed the plugin-side shadow brain scheduler diagnostics
+that translated old diagnostic job names into synthetic `BrainWorkItem`s and
+logged `shadowScheduler=...`. Diagnostics now report the actual recorded jobs,
+timings, route status, authority status, and authority proof summary without a
+parallel scheduler model in the X-Plane shell. Release build passed and full
+harness passed `234 / 234` for installed hash
+`A50003DE3B7483597DE659E85EA422A54758D311CB0F82E9B405633774C606DC`.
 
 ### Slice 4: Quarantine Legacy Runtime
 
