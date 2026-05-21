@@ -136,6 +136,8 @@ context storage have moved into brain-owned source files.
   - Owns display override mode (`Auto`, forced open, forced sleep) and
     preserves it across runtime resets.
   - Owns manual query/transient status display state and expiry timing.
+  - Owns controller-message display state, sequence tracking, cached recall,
+    visibility, and clear/ack behavior.
 
 ### UI Renderer
 
@@ -224,6 +226,8 @@ by installed hash
 - display override mode from the plugin shell
 - manual query/transient status display state and expiry timing from the plugin
   shell
+- controller-message display state, sequence tracking, cached recall,
+  visibility, and clear/ack behavior from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -510,6 +514,13 @@ and user-command status lines as facts, while overlay wake/build reads the
 brain-owned snapshot. Release build passed and full harness passed `234 / 234`
 for installed hash
 `4D7AAB367D3F2A30BCB58EF984660781374180170C032BBDDCEDB6CAA7D79ACE`.
+
+Follow-up update: Brain-owned runtime now owns controller-message display
+state, sequence tracking, cached recall, visibility, and clear/ack behavior.
+The plugin only polls xPilot private-message facts, consumes overlay button
+requests, and renders the brain-owned controller message card. Release build
+passed and full harness passed `234 / 234` for installed hash
+`C6529D8176F0E71773C7D2E1201E190067E21FAAED1C33E0E2F23B6D0D8DF7DB`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

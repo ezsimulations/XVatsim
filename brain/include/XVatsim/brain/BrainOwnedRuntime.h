@@ -45,6 +45,15 @@ struct BrainOwnedCandidateCompletion {
     std::string stableKey;
 };
 
+struct BrainOwnedControllerMessageState {
+    bool primed = false;
+    int lastSequence = 0;
+    bool visible = false;
+    bool cachedAvailable = false;
+    std::string from;
+    std::string body;
+};
+
 struct BrainOwnedRuntimeState {
     bool hasRoutePolygonSnapshot = false;
     RouteSectorSnapshot routePolygonSnapshot;
@@ -95,6 +104,7 @@ struct BrainOwnedRuntimeState {
         BrainOwnedDisplayOverrideMode::Auto;
     ManualQuerySnapshot manualQuerySnapshot;
     long long manualQueryVisibleUntilSeconds = 0;
+    BrainOwnedControllerMessageState controllerMessageState;
     bool departureReleasedThisFlight = false;
     bool arrivalAwakeThisFlight = false;
     double airborneSinceSeconds = -1.0;
@@ -435,6 +445,17 @@ void CommitBrainOwnedManualQuerySnapshot(
 void ExpireBrainOwnedManualQuery(
     BrainOwnedRuntimeState* state,
     long long nowSeconds);
+
+void ResetBrainOwnedControllerMessageState(BrainOwnedRuntimeState* state);
+
+void ClearBrainOwnedControllerMessage(BrainOwnedRuntimeState* state);
+
+void RecallBrainOwnedControllerMessage(BrainOwnedRuntimeState* state);
+
+void UpdateBrainOwnedControllerMessageState(
+    BrainOwnedRuntimeState* state,
+    const XPilotPrivateMessageSnapshot& messageSnapshot,
+    bool controllerMessageUiEnabled);
 
 BrainOwnedPreflightRouteCacheDecision BeginBrainOwnedPreflightRouteCacheApplication(
     BrainOwnedRuntimeState* state,

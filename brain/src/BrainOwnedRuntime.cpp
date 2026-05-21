@@ -557,6 +557,71 @@ void ExpireBrainOwnedManualQuery(
     ClearBrainOwnedManualQuery(state);
 }
 
+void ResetBrainOwnedControllerMessageState(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->controllerMessageState = {};
+}
+
+void ClearBrainOwnedControllerMessage(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->controllerMessageState.visible = false;
+}
+
+void RecallBrainOwnedControllerMessage(BrainOwnedRuntimeState* state) {
+    if (state == nullptr ||
+        !state->controllerMessageState.cachedAvailable) {
+        return;
+    }
+    state->controllerMessageState.visible = true;
+}
+
+void UpdateBrainOwnedControllerMessageState(
+    BrainOwnedRuntimeState* state,
+    const XPilotPrivateMessageSnapshot& messageSnapshot,
+    bool controllerMessageUiEnabled) {
+    if (state == nullptr) {
+        return;
+    }
+    if (!controllerMessageUiEnabled || !messageSnapshot.loaded) {
+        ResetBrainOwnedControllerMessageState(state);
+        return;
+    }
+
+    auto& pendingMessage = state->controllerMessageState;
+    if (!pendingMessage.primed) {
+        pendingMessage.primed = true;
+        pendingMessage.lastSequence = messageSnapshot.sequence;
+        return;
+    }
+
+    if (messageSnapshot.sequence < pendingMessage.lastSequence) {
+        pendingMessage.lastSequence = messageSnapshot.sequence;
+        pendingMessage.visible = false;
+        pendingMessage.cachedAvailable = false;
+        pendingMessage.from.clear();
+        pendingMessage.body.clear();
+        return;
+    }
+
+    if (messageSnapshot.sequence == pendingMessage.lastSequence) {
+        return;
+    }
+
+    pendingMessage.lastSequence = messageSnapshot.sequence;
+    if (!messageSnapshot.available) {
+        return;
+    }
+
+    pendingMessage.cachedAvailable = true;
+    pendingMessage.visible = true;
+    pendingMessage.from = messageSnapshot.from;
+    pendingMessage.body = messageSnapshot.body;
+}
+
 BrainOwnedPreflightRouteCacheDecision BeginBrainOwnedPreflightRouteCacheApplication(
     BrainOwnedRuntimeState* state,
     const BrainOwnedPreflightRouteCacheInput& input) {

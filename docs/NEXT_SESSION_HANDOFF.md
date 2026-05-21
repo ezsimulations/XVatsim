@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`4D7AAB367D3F2A30BCB58EF984660781374180170C032BBDDCEDB6CAA7D79ACE`
+`C6529D8176F0E71773C7D2E1201E190067E21FAAED1C33E0E2F23B6D0D8DF7DB`
 
 Reason for this hash:
 
@@ -180,6 +180,8 @@ Reason for this hash:
   forced sleep) and preserves it across runtime resets.
 - Brain-owned runtime now owns manual query/transient status display state and
   expiry timing.
+- Brain-owned runtime now owns controller-message display state, sequence
+  tracking, cached recall, visibility, and clear/ack behavior.
 
 Regression harness status for this code:
 
@@ -198,7 +200,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`4D7AAB367D3F2A30BCB58EF984660781374180170C032BBDDCEDB6CAA7D79ACE`
+`C6529D8176F0E71773C7D2E1201E190067E21FAAED1C33E0E2F23B6D0D8DF7DB`
 
 Rules:
 

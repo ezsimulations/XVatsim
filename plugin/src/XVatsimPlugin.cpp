@@ -121,15 +121,6 @@ using HandoffDecision = xvatsim::brain::workflow::HandoffDecision;
 using SessionBoundaryResult =
     xvatsim::brain::workflow::XPilotSessionBoundaryAction;
 
-struct PendingControllerMessageState {
-    bool primed = false;
-    int lastSequence = 0;
-    bool visible = false;
-    bool cachedAvailable = false;
-    std::string from;
-    std::string body;
-};
-
 struct DiagnosticJobRecord {
     std::string name;
     std::string reason;
@@ -247,7 +238,6 @@ long long gLastDiagnosticsSummarySeconds = 0;
 bool gHasLastDiagnosticsAuthorityHash = false;
 std::size_t gLastDiagnosticsAuthorityHash = 0;
 PendingTextEntryMode gPendingTextEntryMode = PendingTextEntryMode::None;
-PendingControllerMessageState gPendingControllerMessage;
 RefreshDiagnosticsFrame gRefreshDiagnosticsFrame;
 std::optional<xvatsim::core::preflight::PreflightRouteCache> gPreflightRouteCacheCandidate;
 std::string gPreflightRouteCachePath;
@@ -510,11 +500,13 @@ void ShowTransientStatusLine(const std::string& line) {
 }
 
 void ClearControllerMessage() {
-    gPendingControllerMessage.visible = false;
+    xvatsim::brain::ClearBrainOwnedControllerMessage(
+        &gBrainOwnedRuntimeState);
 }
 
 void ResetControllerMessageState() {
-    gPendingControllerMessage = {};
+    xvatsim::brain::ResetBrainOwnedControllerMessageState(
+        &gBrainOwnedRuntimeState);
 }
 
 void AcknowledgeControllerMessage() {
@@ -522,53 +514,16 @@ void AcknowledgeControllerMessage() {
 }
 
 void RecallControllerMessage() {
-    if (!gPendingControllerMessage.cachedAvailable) {
-        return;
-    }
-
-    gPendingControllerMessage.visible = true;
+    xvatsim::brain::RecallBrainOwnedControllerMessage(
+        &gBrainOwnedRuntimeState);
 }
 
 void UpdateControllerMessageState(
     const xvatsim::brain::XPilotPrivateMessageSnapshot& messageSnapshot) {
-    if (!kControllerMessageUiEnabled) {
-        ResetControllerMessageState();
-        return;
-    }
-
-    if (!messageSnapshot.loaded) {
-        ResetControllerMessageState();
-        return;
-    }
-
-    if (!gPendingControllerMessage.primed) {
-        gPendingControllerMessage.primed = true;
-        gPendingControllerMessage.lastSequence = messageSnapshot.sequence;
-        return;
-    }
-
-    if (messageSnapshot.sequence < gPendingControllerMessage.lastSequence) {
-        gPendingControllerMessage.lastSequence = messageSnapshot.sequence;
-        gPendingControllerMessage.visible = false;
-        gPendingControllerMessage.cachedAvailable = false;
-        gPendingControllerMessage.from.clear();
-        gPendingControllerMessage.body.clear();
-        return;
-    }
-
-    if (messageSnapshot.sequence == gPendingControllerMessage.lastSequence) {
-        return;
-    }
-
-    gPendingControllerMessage.lastSequence = messageSnapshot.sequence;
-    if (!messageSnapshot.available) {
-        return;
-    }
-
-    gPendingControllerMessage.cachedAvailable = true;
-    gPendingControllerMessage.visible = true;
-    gPendingControllerMessage.from = messageSnapshot.from;
-    gPendingControllerMessage.body = messageSnapshot.body;
+    xvatsim::brain::UpdateBrainOwnedControllerMessageState(
+        &gBrainOwnedRuntimeState,
+        messageSnapshot,
+        kControllerMessageUiEnabled);
 }
 
 std::vector<std::string> WrapOverlayMessageText(
@@ -629,7 +584,7 @@ std::vector<std::string> WrapOverlayMessageText(
 }
 
 void ApplyControllerMessageCard(
-    const PendingControllerMessageState& pendingMessage,
+    const xvatsim::brain::BrainOwnedControllerMessageState& pendingMessage,
     xvatsim::brain::OverlayViewModel* overlayModel) {
     if (overlayModel == nullptr || overlayModel->bodyLines.empty()) {
         return;
@@ -2284,7 +2239,8 @@ void ResetPresentationStateForColdDark() {
     ClearFlightRecoveryState();
     xvatsim::brain::ClearBrainOwnedAircraftStateInvalidBoundary(
         &gBrainOwnedRuntimeState);
-    gPendingControllerMessage = {};
+    xvatsim::brain::ResetBrainOwnedControllerMessageState(
+        &gBrainOwnedRuntimeState);
     xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
     ResetBrainDisplayPublisherCache();
     ResetStandbyAssistLatch();
@@ -3646,7 +3602,7 @@ void RefreshOverlayFromBrainEngineer3() {
         xPilotSessionSnapshot);
     const auto controllerMessageVisible =
         kControllerMessageUiEnabled &&
-        gPendingControllerMessage.visible &&
+        gBrainOwnedRuntimeState.controllerMessageState.visible &&
         !gBrainOwnedRuntimeState.manualQuerySnapshot.visible &&
         gPendingTextEntryMode == PendingTextEntryMode::None;
     const auto textEntryActive = gPendingTextEntryMode != PendingTextEntryMode::None;
@@ -3748,11 +3704,13 @@ void RefreshOverlayFromBrainEngineer3() {
     overlayModel.showMessageRecall =
         kControllerMessageUiEnabled &&
         !controllerMessageVisible &&
-        gPendingControllerMessage.cachedAvailable &&
+        gBrainOwnedRuntimeState.controllerMessageState.cachedAvailable &&
         !gBrainOwnedRuntimeState.manualQuerySnapshot.visible &&
         gPendingTextEntryMode == PendingTextEntryMode::None;
     if (kControllerMessageUiEnabled && controllerMessageVisible) {
-        ApplyControllerMessageCard(gPendingControllerMessage, &overlayModel);
+        ApplyControllerMessageCard(
+            gBrainOwnedRuntimeState.controllerMessageState,
+            &overlayModel);
     }
 
     timingStarted = std::chrono::steady_clock::now();
