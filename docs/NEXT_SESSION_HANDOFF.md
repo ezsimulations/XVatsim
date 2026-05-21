@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`B107DCF4ADA2D99F00036D1E3BFAAC172EB38F98C0675A4BBF5BF0444ADA610A`
+`43249716748D6035783A1703A8359AF5CF432F425FC743773C7F6A6FBA650D29`
 
 Reason for this hash:
 
@@ -121,6 +121,9 @@ Reason for this hash:
 - `CommitBrainOwnedPublishedRuntimeFromPublisherOutput` now commits the final
   brain-approved board after standby assist has been applied, so runtime state
   and the rendered UI snapshot stay aligned.
+- `DecideBrainOwnedOverlayWake` now owns overlay wake/hide/reason decisions
+  from shell facts. The plugin still updates X-Plane window state, but it no
+  longer decides whether the UI should wake.
 
 Regression harness status for this code:
 
@@ -139,7 +142,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`B107DCF4ADA2D99F00036D1E3BFAAC172EB38F98C0675A4BBF5BF0444ADA610A`
+`43249716748D6035783A1703A8359AF5CF432F425FC743773C7F6A6FBA650D29`
 
 Rules:
 

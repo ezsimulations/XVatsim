@@ -128,6 +128,33 @@ struct BrainOwnedPublishedRuntimeInput {
     ModuleBoardSnapshot finalDisplay;
 };
 
+enum class BrainOwnedDisplayOverrideMode {
+    Auto,
+    ForcedOpen,
+    ForcedSleep,
+};
+
+struct BrainOwnedOverlayWakeInput {
+    AircraftStateSnapshot aircraftState;
+    XPilotSessionSnapshot xPilotSession;
+    WorkflowStage workflowStage = WorkflowStage::None;
+    ModuleBoardSnapshot finalDisplay;
+    BrainOwnedDisplayOverrideMode displayOverrideMode =
+        BrainOwnedDisplayOverrideMode::Auto;
+    bool manualQueryVisible = false;
+    bool textEntryActive = false;
+    bool controllerMessageVisible = false;
+    bool sawXPilotConnectedThisFlight = false;
+    bool enrouteInitialHoldActive = false;
+};
+
+struct BrainOwnedOverlayWakeDecision {
+    bool shouldWake = false;
+    bool hideUntilXpilotConnect = false;
+    bool xPilotDisconnectedAlert = false;
+    std::string reason;
+};
+
 struct BrainOwnedStandbyAssistPlanInput {
     WorkflowStage workflowStage = WorkflowStage::None;
     std::string planKey;
@@ -231,6 +258,9 @@ RadioReachableControllerSnapshot RunBrainOwnedRadioPhaseGate(
 void CommitBrainOwnedPublishedRuntime(
     BrainOwnedRuntimeState* state,
     const BrainOwnedPublishedRuntimeInput& input);
+
+BrainOwnedOverlayWakeDecision DecideBrainOwnedOverlayWake(
+    const BrainOwnedOverlayWakeInput& input);
 
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     const BrainOwnedStandbyAssistPlanInput& input);

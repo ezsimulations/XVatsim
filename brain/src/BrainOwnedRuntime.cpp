@@ -90,6 +90,19 @@ bool IsCtafOrUnicom(const BoardStationSnapshot& station) {
            station.role == StationRole::Unicom;
 }
 
+bool IsLiveRouteCenterStation(const BoardStationSnapshot& station) {
+    return station.role == StationRole::Center &&
+           !station.offline &&
+           !station.frequency.empty();
+}
+
+bool HasLiveRouteCenters(const ModuleBoardSnapshot& board) {
+    return std::any_of(
+        board.stations.begin(),
+        board.stations.end(),
+        IsLiveRouteCenterStation);
+}
+
 bool IsBlockedControllerFrequency(const std::string& frequency) {
     const auto normalizedFrequency = NormalizeFrequency(frequency);
     return normalizedFrequency == "121500" || normalizedFrequency == "199998";
@@ -448,6 +461,89 @@ void CommitBrainOwnedPublishedRuntime(
     state->lastWorkflowStage = input.workflowStage;
     state->lastPlanKey = input.planKey;
     state->lastRadioBoardHash = input.gatedRadioSnapshot.stableHash;
+}
+
+BrainOwnedOverlayWakeDecision DecideBrainOwnedOverlayWake(
+    const BrainOwnedOverlayWakeInput& input) {
+    BrainOwnedOverlayWakeDecision decision;
+    decision.xPilotDisconnectedAlert =
+        input.sawXPilotConnectedThisFlight &&
+        !input.xPilotSession.connected;
+
+    bool autoWake = false;
+    if (input.manualQueryVisible || decision.xPilotDisconnectedAlert) {
+        autoWake = true;
+    } else if (!input.xPilotSession.connected) {
+        autoWake = false;
+    } else if (input.workflowStage == WorkflowStage::Arrival) {
+        autoWake = true;
+    } else if (input.workflowStage == WorkflowStage::Enroute) {
+        autoWake =
+            HasLiveRouteCenters(input.finalDisplay) ||
+            input.enrouteInitialHoldActive;
+    } else if (input.workflowStage == WorkflowStage::Departure) {
+        autoWake = true;
+    } else {
+        autoWake = true;
+    }
+
+    const auto controllerMessageWake =
+        input.controllerMessageVisible &&
+        input.displayOverrideMode != BrainOwnedDisplayOverrideMode::ForcedSleep;
+    const auto criticalWake =
+        input.manualQueryVisible ||
+        input.textEntryActive ||
+        decision.xPilotDisconnectedAlert;
+
+    decision.shouldWake = autoWake;
+    if (input.displayOverrideMode == BrainOwnedDisplayOverrideMode::ForcedOpen) {
+        decision.shouldWake = true;
+    } else if (input.displayOverrideMode ==
+               BrainOwnedDisplayOverrideMode::ForcedSleep) {
+        decision.shouldWake = false;
+    }
+    if (criticalWake || controllerMessageWake) {
+        decision.shouldWake = true;
+    }
+
+    decision.hideUntilXpilotConnect =
+        input.displayOverrideMode == BrainOwnedDisplayOverrideMode::Auto &&
+        !input.manualQueryVisible &&
+        !input.textEntryActive &&
+        !input.xPilotSession.connected &&
+        !input.sawXPilotConnectedThisFlight;
+
+    decision.reason = "enroute-empty";
+    if (input.displayOverrideMode == BrainOwnedDisplayOverrideMode::ForcedOpen) {
+        decision.reason = "manual-open";
+    } else if (
+        input.displayOverrideMode == BrainOwnedDisplayOverrideMode::ForcedSleep) {
+        decision.reason = "manual-sleep";
+    } else if (input.manualQueryVisible) {
+        decision.reason = "manual-query";
+    } else if (input.textEntryActive) {
+        decision.reason = "text-entry";
+    } else if (input.controllerMessageVisible) {
+        decision.reason = "controller-message";
+    } else if (decision.hideUntilXpilotConnect) {
+        decision.reason = "xpilot-waiting";
+    } else if (decision.xPilotDisconnectedAlert) {
+        decision.reason = "xpilot-disconnected";
+    } else if (!input.aircraftState.batteryOn) {
+        decision.reason = "battery-off";
+    } else if (input.workflowStage == WorkflowStage::Departure) {
+        decision.reason = "departure-board";
+    } else if (input.workflowStage == WorkflowStage::Arrival) {
+        decision.reason = "arrival-board";
+    } else if (
+        input.workflowStage == WorkflowStage::Enroute &&
+        !input.finalDisplay.stations.empty()) {
+        decision.reason = "enroute-board";
+    } else if (input.workflowStage == WorkflowStage::None) {
+        decision.reason = "startup";
+    }
+
+    return decision;
 }
 
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(

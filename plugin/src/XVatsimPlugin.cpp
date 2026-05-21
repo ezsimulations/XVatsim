@@ -949,23 +949,6 @@ bool IsOnGroundAtDestination(const xvatsim::brain::AircraftStateSnapshot& aircra
         tuning);
 }
 
-bool IsLiveRouteCenterStation(const xvatsim::brain::BoardStationSnapshot& station) {
-    return station.role == xvatsim::brain::StationRole::Center &&
-           !station.offline &&
-           !station.frequency.empty();
-}
-
-bool HasLiveRouteCenters(
-    const xvatsim::brain::ModuleBoardSnapshot& enrouteBoardSnapshot) {
-    for (const auto& station : enrouteBoardSnapshot.stations) {
-        if (IsLiveRouteCenterStation(station)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 bool CanConfirmDepartureLocation(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     const xvatsim::brain::FlightPlanSnapshot& flightPlanSnapshot,
@@ -2909,6 +2892,19 @@ DisplayOverrideMode ToDisplayOverrideMode(
     }
 }
 
+xvatsim::brain::BrainOwnedDisplayOverrideMode ToBrainDisplayOverrideMode(
+    DisplayOverrideMode mode) {
+    switch (mode) {
+        case DisplayOverrideMode::ForcedOpen:
+            return xvatsim::brain::BrainOwnedDisplayOverrideMode::ForcedOpen;
+        case DisplayOverrideMode::ForcedSleep:
+            return xvatsim::brain::BrainOwnedDisplayOverrideMode::ForcedSleep;
+        case DisplayOverrideMode::Auto:
+        default:
+            return xvatsim::brain::BrainOwnedDisplayOverrideMode::Auto;
+    }
+}
+
 std::string ResolveSettingsPath() {
     char systemPath[1024] = {};
     XPLMGetSystemPath(systemPath);
@@ -3459,11 +3455,9 @@ void RefreshManualQueryState() {
     }
 }
 
-bool ShouldAutoWakeOverlay(
+void UpdateOverlayWakeTracking(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
-    const xvatsim::brain::XPilotSessionSnapshot& xPilotSessionSnapshot,
-    xvatsim::brain::WorkflowStage workflowStage,
-    const xvatsim::brain::ModuleBoardSnapshot& enrouteBoardSnapshot) {
+    const xvatsim::brain::XPilotSessionSnapshot& xPilotSessionSnapshot) {
     if (xPilotSessionSnapshot.connected) {
         gSawXPilotConnectedThisFlight = true;
     }
@@ -3490,34 +3484,6 @@ bool ShouldAutoWakeOverlay(
             gCruiseGateSatisfiedSinceSeconds = -1.0f;
         }
     }
-
-    const auto xPilotDisconnectedAlert =
-        gSawXPilotConnectedThisFlight && !xPilotSessionSnapshot.connected;
-
-    if (gManualQuerySnapshot.visible || xPilotDisconnectedAlert) {
-        return true;
-    }
-
-    if (!xPilotSessionSnapshot.connected) {
-        return false;
-    }
-
-    if (workflowStage == xvatsim::brain::WorkflowStage::Arrival) {
-        return true;
-    }
-
-    if (workflowStage == xvatsim::brain::WorkflowStage::Enroute) {
-        const auto enrouteInitialHoldActive =
-            gEnrouteInitialDisplayUntilSeconds >= XPLMGetElapsedTime();
-        return HasLiveRouteCenters(enrouteBoardSnapshot) ||
-               enrouteInitialHoldActive;
-    }
-
-    if (workflowStage == xvatsim::brain::WorkflowStage::Departure) {
-        return true;
-    }
-
-    return true;
 }
 
 bool ShouldHandleCommandBegin(XPLMCommandPhase phase) {
@@ -4222,81 +4188,42 @@ void RefreshOverlayFromBrainEngineer3() {
     }
 
     timingStarted = std::chrono::steady_clock::now();
-    const auto autoWake = ShouldAutoWakeOverlay(
+    UpdateOverlayWakeTracking(
         aircraftState,
-        xPilotSessionSnapshot,
-        workflowStage,
-        activeBoardSnapshot);
+        xPilotSessionSnapshot);
     const auto controllerMessageVisible =
         kControllerMessageUiEnabled &&
         gPendingControllerMessage.visible &&
         !gManualQuerySnapshot.visible &&
         gPendingTextEntryMode == PendingTextEntryMode::None;
-    const auto controllerMessageWake =
-        controllerMessageVisible &&
-        gDisplayOverrideMode != DisplayOverrideMode::ForcedSleep;
     const auto textEntryActive = gPendingTextEntryMode != PendingTextEntryMode::None;
-    const auto criticalWake =
-        gManualQuerySnapshot.visible ||
-        textEntryActive ||
-        (gSawXPilotConnectedThisFlight && !xPilotSessionSnapshot.connected);
-
-    auto shouldWake = autoWake;
-    if (gDisplayOverrideMode == DisplayOverrideMode::ForcedOpen) {
-        shouldWake = true;
-    } else if (gDisplayOverrideMode == DisplayOverrideMode::ForcedSleep) {
-        shouldWake = false;
-    }
-    if (criticalWake || controllerMessageWake) {
-        shouldWake = true;
-    }
-    diagnostics.shouldWake = shouldWake;
+    xvatsim::brain::BrainOwnedOverlayWakeInput wakeInput;
+    wakeInput.aircraftState = aircraftState;
+    wakeInput.xPilotSession = xPilotSessionSnapshot;
+    wakeInput.workflowStage = workflowStage;
+    wakeInput.finalDisplay = activeBoardSnapshot;
+    wakeInput.displayOverrideMode = ToBrainDisplayOverrideMode(gDisplayOverrideMode);
+    wakeInput.manualQueryVisible = gManualQuerySnapshot.visible;
+    wakeInput.textEntryActive = textEntryActive;
+    wakeInput.controllerMessageVisible = controllerMessageVisible;
+    wakeInput.sawXPilotConnectedThisFlight = gSawXPilotConnectedThisFlight;
+    wakeInput.enrouteInitialHoldActive =
+        gEnrouteInitialDisplayUntilSeconds >= XPLMGetElapsedTime();
+    const auto wakeDecision =
+        xvatsim::brain::DecideBrainOwnedOverlayWake(wakeInput);
+    diagnostics.shouldWake = wakeDecision.shouldWake;
 
     gOverlayWindow.SetAutomaticMode(gDisplayOverrideMode == DisplayOverrideMode::Auto);
 
-    const auto hideUntilXpilotConnect =
-        gDisplayOverrideMode == DisplayOverrideMode::Auto &&
-        !gManualQuerySnapshot.visible &&
-        !textEntryActive &&
-        !xPilotSessionSnapshot.connected &&
-        !gSawXPilotConnectedThisFlight;
-
-    const char* wakeReason = "enroute-empty";
-    if (gDisplayOverrideMode == DisplayOverrideMode::ForcedOpen) {
-        wakeReason = "manual-open";
-    } else if (gDisplayOverrideMode == DisplayOverrideMode::ForcedSleep) {
-        wakeReason = "manual-sleep";
-    } else if (gManualQuerySnapshot.visible) {
-        wakeReason = "manual-query";
-    } else if (textEntryActive) {
-        wakeReason = "text-entry";
-    } else if (kControllerMessageUiEnabled && controllerMessageVisible) {
-        wakeReason = "controller-message";
-    } else if (hideUntilXpilotConnect) {
-        wakeReason = "xpilot-waiting";
-    } else if (gSawXPilotConnectedThisFlight && !xPilotSessionSnapshot.connected) {
-        wakeReason = "xpilot-disconnected";
-    } else if (!aircraftState.batteryOn) {
-        wakeReason = "battery-off";
-    } else if (workflowStage == xvatsim::brain::WorkflowStage::Departure) {
-        wakeReason = "departure-board";
-    } else if (workflowStage == xvatsim::brain::WorkflowStage::Arrival) {
-        wakeReason = "arrival-board";
-    } else if (workflowStage == xvatsim::brain::WorkflowStage::Enroute &&
-               !activeBoardSnapshot.stations.empty()) {
-        wakeReason = "enroute-board";
-    } else if (workflowStage == xvatsim::brain::WorkflowStage::None) {
-        wakeReason = "startup";
-    }
-    diagnostics.wakeReason = wakeReason;
+    diagnostics.wakeReason = wakeDecision.reason;
     diagnostics.wakeDecisionUs = ElapsedMicrosecondsSince(timingStarted);
 
-    if (!shouldWake) {
+    if (!wakeDecision.shouldWake) {
         xvatsim::brain::OverlayViewModel overlayModel;
         overlayModel.mode = xvatsim::brain::OverlayMode::Dormant;
         overlayModel.visible = false;
 
-        if (hideUntilXpilotConnect) {
+        if (wakeDecision.hideUntilXpilotConnect) {
             timingStarted = std::chrono::steady_clock::now();
             gOverlayWindow.Hide();
             diagnostics.overlayUpdateUs = ElapsedMicrosecondsSince(timingStarted);

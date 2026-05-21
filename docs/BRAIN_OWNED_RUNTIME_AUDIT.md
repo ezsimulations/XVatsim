@@ -101,6 +101,7 @@ brain-owned source files.
   - Owns standby-assist target selection and display flag application.
   - Owns final published runtime commit shaping from Brain Publisher output and
     the final standby-assisted display board.
+  - Owns overlay wake/hide/reason decisions from shell-provided UI facts.
 
 ### UI Renderer
 
@@ -117,7 +118,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`B107DCF4ADA2D99F00036D1E3BFAAC172EB38F98C0675A4BBF5BF0444ADA610A`:
+`43249716748D6035783A1703A8359AF5CF432F425FC743773C7F6A6FBA650D29`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -157,6 +158,7 @@ by installed hash
 - standby-assist target selection and display flag application from the plugin
   shell
 - final published runtime input shaping from the plugin shell
+- overlay wake/hide/reason decisions from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -289,6 +291,14 @@ hand-assembles `BrainOwnedPublishedRuntimeInput`, and runtime state now matches
 the rendered UI board. Release build passed and full harness passed
 `234 / 234` for installed hash
 `B107DCF4ADA2D99F00036D1E3BFAAC172EB38F98C0675A4BBF5BF0444ADA610A`.
+
+Follow-up update: `DecideBrainOwnedOverlayWake` now owns overlay
+wake/hide/reason decisions from shell facts, including manual-query, text-entry,
+controller-message, xPilot wait/disconnect, workflow, and enroute-center
+presence. The plugin still performs X-Plane window updates and tracks shell
+state, but no longer decides whether the UI should wake. Release build passed
+and full harness passed `234 / 234` for installed hash
+`43249716748D6035783A1703A8359AF5CF432F425FC743773C7F6A6FBA650D29`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

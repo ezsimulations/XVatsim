@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `B107DCF4ADA2D99F00036D1E3BFAAC172EB38F98C0675A4BBF5BF0444ADA610A`
+  `43249716748D6035783A1703A8359AF5CF432F425FC743773C7F6A6FBA650D29`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -244,6 +244,8 @@ Only then may XVatsim be treated as store-release ready.
   `CommitBrainOwnedPublishedRuntimeFromPublisherOutput` after the
   standby-assisted final display board is available, keeping runtime state and
   rendered UI aligned;
+  `DecideBrainOwnedOverlayWake` now owns overlay wake/hide/reason decisions
+  from shell facts while the plugin only updates the X-Plane overlay window;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.
