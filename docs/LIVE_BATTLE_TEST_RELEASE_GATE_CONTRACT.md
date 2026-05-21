@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `7541089D7D7EA2104C9A94BE571E00716F74B580C3EA004DD20876D7EFCB8F40`
+  `933E5F4AAC1EDD2AD63336DCD7EAB0C516FB685F73CA01992167071F8935DA51`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -282,7 +282,9 @@ Only then may XVatsim be treated as store-release ready.
   flight context during new-context runtime clears; brain-owned runtime now
   owns xPilot session boundary state, current-flight recovery request latches,
   and aircraft cold/dark/invalid-state boundary latches while the plugin only
-  applies side effects from brain decisions;
+  applies side effects from brain decisions; brain-owned runtime now owns the
+  standby-assist write latch and decides when the plugin should perform the
+  COM1 standby write side effect;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

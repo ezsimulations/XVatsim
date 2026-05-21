@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`7541089D7D7EA2104C9A94BE571E00716F74B580C3EA004DD20876D7EFCB8F40`
+`933E5F4AAC1EDD2AD63336DCD7EAB0C516FB685F73CA01992167071F8935DA51`
 
 Reason for this hash:
 
@@ -168,6 +168,8 @@ Reason for this hash:
 - Brain-owned runtime now owns xPilot session boundary state,
   current-flight recovery request latches, and aircraft cold/dark/invalid-state
   boundary latches. The plugin no longer carries those as separate globals.
+- Brain-owned runtime now owns the standby-assist write latch and decides when
+  the plugin should perform the COM1 standby write side effect.
 
 Regression harness status for this code:
 
@@ -186,7 +188,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`7541089D7D7EA2104C9A94BE571E00716F74B580C3EA004DD20876D7EFCB8F40`
+`933E5F4AAC1EDD2AD63336DCD7EAB0C516FB685F73CA01992167071F8935DA51`
 
 Rules:
 

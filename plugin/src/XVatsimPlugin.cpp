@@ -250,8 +250,6 @@ xvatsim::brain::PilotIdentitySnapshot gLastPilotIdentitySnapshot;
 xvatsim::brain::FlightPlanSnapshot gLastFlightPlanSnapshot;
 xvatsim::brain::NetworkPlanSnapshot gLastNetworkPlanSnapshot;
 xvatsim::brain::BrainOwnedRuntimeState gBrainOwnedRuntimeState;
-std::string gStandbyAssistLatchKey;
-bool gStandbyAssistWriteConsumed = false;
 long long gLastFlightLoopPerfWarningSeconds = 0;
 long long gLastDiagnosticsSlowRefreshSeconds = 0;
 long long gLastDiagnosticsSummarySeconds = 0;
@@ -676,8 +674,8 @@ void ApplyControllerMessageCard(
 }
 
 void ResetStandbyAssistLatch() {
-    gStandbyAssistLatchKey.clear();
-    gStandbyAssistWriteConsumed = false;
+    xvatsim::brain::ResetBrainOwnedStandbyAssistLatch(
+        &gBrainOwnedRuntimeState);
 }
 
 void ApplyStandbyRecommendation(
@@ -698,25 +696,17 @@ void ApplyStandbyRecommendation(
         xvatsim::brain::BuildBrainOwnedStandbyAssistPlan(standbyInput);
     *boardSnapshot = standbyPlan.board;
 
-    if (!standbyPlan.hasTarget) {
-        ResetStandbyAssistLatch();
-        return;
-    }
+    const auto sideEffectDecision =
+        xvatsim::brain::DecideBrainOwnedStandbyAssistSideEffect(
+            &gBrainOwnedRuntimeState,
+            standbyPlan,
+            gPluginSettings.standbyAssistEnabled);
 
-    if (standbyPlan.latchKey != gStandbyAssistLatchKey) {
-        gStandbyAssistLatchKey = standbyPlan.latchKey;
-        gStandbyAssistWriteConsumed = false;
-    }
-
-    bool standbyLoaded = false;
-    if (gPluginSettings.standbyAssistEnabled) {
-        standbyLoaded = standbyPlan.targetAlreadyInCom1Standby;
-        if (!standbyLoaded && !gStandbyAssistWriteConsumed) {
-            standbyLoaded =
-                gRadioStateSampler.SetCom1StandbyFrequency(
-                    standbyPlan.targetFrequency);
-        }
-        gStandbyAssistWriteConsumed = true;
+    auto standbyLoaded = sideEffectDecision.standbyLoaded;
+    if (sideEffectDecision.shouldWriteCom1Standby) {
+        standbyLoaded =
+            gRadioStateSampler.SetCom1StandbyFrequency(
+                sideEffectDecision.targetFrequency);
     }
 
     *boardSnapshot =

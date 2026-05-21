@@ -81,6 +81,8 @@ struct BrainOwnedRuntimeState {
     double activeCruiseTargetFt = 0.0;
     double cruiseGateSatisfiedSinceSeconds = -1.0;
     std::string cruiseTargetSourceKey;
+    std::string standbyAssistLatchKey;
+    bool standbyAssistWriteConsumed = false;
     bool departureReleasedThisFlight = false;
     bool arrivalAwakeThisFlight = false;
     double airborneSinceSeconds = -1.0;
@@ -268,6 +270,12 @@ struct BrainOwnedStandbyAssistPlanOutput {
     bool targetAlreadyInCom1Standby = false;
 };
 
+struct BrainOwnedStandbyAssistSideEffectDecision {
+    bool shouldWriteCom1Standby = false;
+    bool standbyLoaded = false;
+    std::string targetFrequency;
+};
+
 struct BrainOwnedPublisherInput {
     WorkflowStage workflowStage = WorkflowStage::None;
     double routeProgressDistanceNm = 0.0;
@@ -354,6 +362,8 @@ void ApplyBrainOwnedXPilotSessionBoundaryDecision(
 void ApplyBrainOwnedAircraftRuntimeBoundaryDecision(
     BrainOwnedRuntimeState* state,
     const workflow::AircraftRuntimeBoundaryDecision& decision);
+
+void ResetBrainOwnedStandbyAssistLatch(BrainOwnedRuntimeState* state);
 
 std::string ToString(BrainOwnedCandidateDecision decision);
 
@@ -450,6 +460,12 @@ void MarkBrainOwnedXPilotConnectedIfConnected(
 
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     const BrainOwnedStandbyAssistPlanInput& input);
+
+BrainOwnedStandbyAssistSideEffectDecision
+DecideBrainOwnedStandbyAssistSideEffect(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedStandbyAssistPlanOutput& plan,
+    bool standbyAssistEnabled);
 
 ModuleBoardSnapshot ApplyBrainOwnedStandbyAssistResult(
     const BrainOwnedStandbyAssistPlanOutput& plan,

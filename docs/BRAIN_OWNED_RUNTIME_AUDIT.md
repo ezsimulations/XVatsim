@@ -127,6 +127,8 @@ context storage have moved into brain-owned source files.
     clearing derived runtime state for a new context.
   - Owns xPilot session boundary state, current-flight recovery request
     latches, and aircraft cold/dark/invalid-state boundary latches.
+  - Owns the standby-assist write latch and COM1 standby write/no-write
+    decision. The plugin performs only the radio write side effect.
 
 ### UI Renderer
 
@@ -206,6 +208,8 @@ by installed hash
 - active flight context storage from the plugin shell
 - xPilot session boundary state, current-flight recovery request latches, and
   aircraft cold/dark/invalid-state boundary latches from the plugin shell
+- standby-assist write latch and COM1 standby write/no-write decision from the
+  plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -455,6 +459,13 @@ boundary latches. The plugin no longer carries those as `gLastXPilotConnected`,
 facts and applies brain helper commits. Release build passed and full harness
 passed `234 / 234` for installed hash
 `7541089D7D7EA2104C9A94BE571E00716F74B580C3EA004DD20876D7EFCB8F40`.
+
+Follow-up update: Brain-owned runtime now owns the standby-assist write latch
+and decides whether the plugin should perform a COM1 standby write for the
+brain-selected target. The plugin only executes the radio side effect when the
+brain asks and then applies the brain-owned standby result to the final board.
+Release build passed and full harness passed `234 / 234` for installed hash
+`933E5F4AAC1EDD2AD63336DCD7EAB0C516FB685F73CA01992167071F8935DA51`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

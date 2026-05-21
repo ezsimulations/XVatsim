@@ -441,6 +441,14 @@ void ApplyBrainOwnedAircraftRuntimeBoundaryDecision(
         decision.nextAircraftStateInvalidBoundaryActive;
 }
 
+void ResetBrainOwnedStandbyAssistLatch(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->standbyAssistLatchKey.clear();
+    state->standbyAssistWriteConsumed = false;
+}
+
 std::string ToString(BrainOwnedCandidateDecision decision) {
     switch (decision) {
         case BrainOwnedCandidateDecision::Pending:
@@ -1129,6 +1137,34 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
         NormalizeFrequency(input.radios.com1StandbyFrequency) ==
             normalizedTarget;
     return output;
+}
+
+BrainOwnedStandbyAssistSideEffectDecision
+DecideBrainOwnedStandbyAssistSideEffect(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedStandbyAssistPlanOutput& plan,
+    bool standbyAssistEnabled) {
+    BrainOwnedStandbyAssistSideEffectDecision decision;
+    if (state == nullptr || !plan.hasTarget) {
+        ResetBrainOwnedStandbyAssistLatch(state);
+        return decision;
+    }
+
+    if (plan.latchKey != state->standbyAssistLatchKey) {
+        state->standbyAssistLatchKey = plan.latchKey;
+        state->standbyAssistWriteConsumed = false;
+    }
+
+    if (!standbyAssistEnabled) {
+        return decision;
+    }
+
+    decision.targetFrequency = plan.targetFrequency;
+    decision.standbyLoaded = plan.targetAlreadyInCom1Standby;
+    decision.shouldWriteCom1Standby =
+        !decision.standbyLoaded && !state->standbyAssistWriteConsumed;
+    state->standbyAssistWriteConsumed = true;
+    return decision;
 }
 
 ModuleBoardSnapshot ApplyBrainOwnedStandbyAssistResult(
