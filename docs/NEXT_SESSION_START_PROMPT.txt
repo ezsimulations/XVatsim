@@ -30,17 +30,20 @@ C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl
 
 Installed SHA256:
 
-1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456
+3ACE28B2E521493FA39A01444ADCFF6E7451B6292426257301EC8F54E992D363
 
 Last verified state:
 
 - Release build passed.
 - Full regression harness passed: 234 / 234.
-- Installed runtime hash remains
-  1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456.
-- A docs-only post-flight handoff was added after the UPS3511 validation
-  review; the next thread should verify `git status --short` before doing
-  anything else.
+- Installed runtime hash is
+  3ACE28B2E521493FA39A01444ADCFF6E7451B6292426257301EC8F54E992D363.
+- The installed build adds diagnostics-only trace lines for future live
+  flights:
+  `event=radio-board-candidate-diff` and
+  `event=candidate-completion-trace`.
+- The next thread should verify `git status --short` before doing anything
+  else.
 
 What was fixed in the last cleanup session:
 
@@ -68,12 +71,11 @@ Most recent post-flight review:
 - Health looked good: route resolved, DEP -> ENR -> ARR worked, empty enroute
   slept, KPDX/KONT CTAF display behavior matched expectations, no connected
   heavy authority proof fired, and slow refreshes were isolated.
-- Diagnostic caveat: current summary diagnostics prove aggregate radio-board
-  candidate counts and rejected completion counts, but they do not preserve
-  exact active-flight raw candidate callsigns/frequencies for rejected rows.
-- If exact raw candidate proof is needed from logs alone, add only a narrow
-  diagnostics-only Engineer 3 trace for radio-board candidate diffs and
-  candidate completion results. Do not treat that as permission for runtime
+- Diagnostic caveat: the UPS3511 log cannot retroactively prove exact DEN/SLC
+  raw candidate rows, but the current installed build now emits exact
+  radio-board candidate diff and post-publisher completion/display trace lines
+  for the next live test.
+- The trace is diagnostics-only. Do not treat it as permission for runtime
   refactor or old authority-path cleanup.
 
 Live logs to watch:

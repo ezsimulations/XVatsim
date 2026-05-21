@@ -110,6 +110,7 @@ constexpr long long kRadioBoardSnapshotCadenceSeconds = 1;
 constexpr long long kRadioBoardPendingRouteRetrySeconds = 2;
 constexpr long long kActiveFlightPlanSampleCadenceSeconds = 15;
 constexpr long long kEngineer3RadioBoardRefreshSeconds = 5;
+constexpr std::size_t kDiagnosticsMaxTraceItems = 24;
 
 using HandoffDecision = xvatsim::brain::workflow::HandoffDecision;
 using SessionBoundaryResult =
@@ -199,6 +200,10 @@ struct PluginDiagnosticsState {
     long long lastSummarySeconds = 0;
     bool hasLastAuthorityHash = false;
     std::size_t lastAuthorityHash = 0;
+    bool hasLastRadioBoardTraceHash = false;
+    std::size_t lastRadioBoardTraceHash = 0;
+    bool hasLastCompletionTraceHash = false;
+    std::size_t lastCompletionTraceHash = 0;
     RefreshDiagnosticsFrame frame;
 };
 
@@ -238,6 +243,16 @@ void RefreshOverlayFromBrain();
 void RefreshOverlayFromBrainEngineer3();
 void ResetPresentationStateForColdDark();
 void ClearFlightRecoveryState();
+void ResetDiagnosticsTraceState();
+void AppendDiagnosticsLogLine(const std::string& line);
+void LogRadioBoardCandidateDiffTrace(
+    xvatsim::brain::WorkflowStage workflowStage,
+    const std::string& planKey,
+    const xvatsim::brain::RadioReachableControllerSnapshot& snapshot,
+    const xvatsim::brain::RadioReachableCandidateDiff& diff);
+void LogCandidateCompletionTrace(
+    xvatsim::brain::WorkflowStage workflowStage,
+    const std::string& planKey);
 
 std::string SummarizeRouteAuthorityPlan(
     const xvatsim::brain::RouteAuthorityPlan& plan);
@@ -439,6 +454,7 @@ void ResetSessionRuntimeCaches(bool resetVatsimFeed) {
     gRouteSectorResolver.ResetRuntimeState();
     gRouteSectorResolver.ClearPreflightRouteCache();
     ResetBrainOwnedRuntimeCache();
+    ResetDiagnosticsTraceState();
     gTransceiverResolver.Reset();
     ResetBrainDisplayPublisherCache();
 }
@@ -1253,6 +1269,8 @@ xvatsim::brain::BrainOwnedPublisherOutput RunBrainPublisher(
             &gBrainOwnedRuntimeState,
             publisherInput);
 
+    LogCandidateCompletionTrace(workflowStage, planKey);
+
     RecordDiagnosticJob(
         "BrainDisplayIntentWorker",
         output.displayIntent.reason,
@@ -1612,6 +1630,275 @@ void AppendDiagnosticsLogLine(const std::string& line) {
     }
 
     output << "tick=" << CurrentTickSeconds() << " " << line << "\n";
+}
+
+void ResetDiagnosticsTraceState() {
+    gDiagnosticsState.hasLastRadioBoardTraceHash = false;
+    gDiagnosticsState.lastRadioBoardTraceHash = 0;
+    gDiagnosticsState.hasLastCompletionTraceHash = false;
+    gDiagnosticsState.lastCompletionTraceHash = 0;
+}
+
+std::string SanitizeLogToken(
+    std::string value,
+    std::size_t maxChars = kMaxLogFieldChars) {
+    auto token = SanitizeLogText(std::move(value), maxChars);
+    for (auto& character : token) {
+        const auto byte = static_cast<unsigned char>(character);
+        if (std::isspace(byte) != 0 ||
+            character == '"' ||
+            character == '\'' ||
+            character == ',' ||
+            character == ';') {
+            character = '_';
+        }
+    }
+    return token.empty() ? "none" : token;
+}
+
+std::string FormatTraceDistance(bool hasDistance, double distanceNm) {
+    if (!hasDistance) {
+        return "na";
+    }
+
+    return std::to_string(static_cast<int>(std::round(distanceNm)));
+}
+
+std::string JoinTraceTokens(
+    const std::vector<std::string>& values,
+    std::size_t maxItems,
+    std::size_t maxChars) {
+    if (values.empty()) {
+        return "none";
+    }
+
+    std::ostringstream stream;
+    const auto countToLog = std::min<std::size_t>(values.size(), maxItems);
+    for (std::size_t index = 0; index < countToLog; ++index) {
+        if (index > 0) {
+            stream << ";";
+        }
+        stream << SanitizeLogToken(values[index], maxChars);
+    }
+    if (values.size() > countToLog) {
+        stream << ";+" << (values.size() - countToLog);
+    }
+    return stream.str();
+}
+
+std::string FormatRadioCandidateTrace(
+    const xvatsim::brain::RadioReachableControllerCandidate& candidate) {
+    std::ostringstream stream;
+    stream << SanitizeLogToken(candidate.callsign, 32)
+           << "@"
+           << SanitizeLogToken(candidate.frequency, 16)
+           << ":facility=" << candidate.vatsimFacility
+           << ":group=" << xvatsim::brain::ToString(candidate.group)
+           << ":source=" << xvatsim::brain::ToString(candidate.source)
+           << ":actionable=" << (candidate.actionable ? 1 : 0)
+           << ":atis=" << (candidate.atis ? 1 : 0)
+           << ":vr=" << candidate.visualRangeNm
+           << ":dist="
+           << FormatTraceDistance(
+                  candidate.hasDistanceNm,
+                  candidate.distanceNm)
+           << ":stable=" << SanitizeLogToken(candidate.stableKey, 96);
+    return stream.str();
+}
+
+std::string FormatRadioCandidateTraceList(
+    const xvatsim::brain::RadioReachableControllerSnapshot& snapshot) {
+    if (snapshot.candidates.empty()) {
+        return "none";
+    }
+
+    std::ostringstream stream;
+    const auto countToLog =
+        std::min<std::size_t>(
+            snapshot.candidates.size(),
+            kDiagnosticsMaxTraceItems);
+    for (std::size_t index = 0; index < countToLog; ++index) {
+        if (index > 0) {
+            stream << ";";
+        }
+        stream << FormatRadioCandidateTrace(snapshot.candidates[index]);
+    }
+    if (snapshot.candidates.size() > countToLog) {
+        stream << ";+" << (snapshot.candidates.size() - countToLog);
+    }
+    return stream.str();
+}
+
+std::string FormatCompletionTrace(
+    const xvatsim::brain::BrainOwnedCandidateCompletion& completion) {
+    const auto completed =
+        completion.decision !=
+        xvatsim::brain::BrainOwnedCandidateDecision::Pending;
+    std::ostringstream stream;
+    stream << SanitizeLogToken(completion.callsign, 32)
+           << "@"
+           << SanitizeLogToken(completion.frequency, 16)
+           << ":facility=" << xvatsim::brain::ToString(completion.facilityGroup)
+           << ":decision="
+           << SanitizeLogToken(xvatsim::brain::ToString(completion.decision), 24)
+           << ":complete=" << (completed ? 1 : 0)
+           << ":display=" << (completion.displayed ? "displayed" : "hidden")
+           << ":relation="
+           << SanitizeLogToken(
+                  xvatsim::brain::ToString(completion.displayRelation),
+                  32)
+           << ":current="
+           << SanitizeLogToken(completion.currentPolygonKey, 64)
+           << ":matched="
+           << SanitizeLogToken(completion.matchedPolygonKey, 64)
+           << ":currentIndex=" << completion.currentPolygonIndex
+           << ":inputHash=" << completion.radioBoardHash
+           << "/" << completion.routePolygonHash
+           << ":entryNm="
+           << FormatTraceDistance(
+                  completion.hasRouteEntryDistance,
+                  completion.routeEntryDistanceNm)
+           << ":reason=" << SanitizeLogToken(completion.reason, 80)
+           << ":stable=" << SanitizeLogToken(completion.stableKey, 128);
+    return stream.str();
+}
+
+std::string FormatCompletionTraceList(
+    const std::vector<xvatsim::brain::BrainOwnedCandidateCompletion>&
+        completions) {
+    if (completions.empty()) {
+        return "none";
+    }
+
+    std::ostringstream stream;
+    const auto countToLog =
+        std::min<std::size_t>(completions.size(), kDiagnosticsMaxTraceItems);
+    for (std::size_t index = 0; index < countToLog; ++index) {
+        if (index > 0) {
+            stream << ";";
+        }
+        stream << FormatCompletionTrace(completions[index]);
+    }
+    if (completions.size() > countToLog) {
+        stream << ";+" << (completions.size() - countToLog);
+    }
+    return stream.str();
+}
+
+bool ShouldEmitTraceLine(
+    const std::string& line,
+    bool* hasLastHash,
+    std::size_t* lastHash) {
+    if (hasLastHash == nullptr || lastHash == nullptr) {
+        return true;
+    }
+
+    const auto hash = std::hash<std::string>{}(line);
+    if (*hasLastHash && *lastHash == hash) {
+        return false;
+    }
+
+    *hasLastHash = true;
+    *lastHash = hash;
+    return true;
+}
+
+void LogRadioBoardCandidateDiffTrace(
+    xvatsim::brain::WorkflowStage workflowStage,
+    const std::string& planKey,
+    const xvatsim::brain::RadioReachableControllerSnapshot& snapshot,
+    const xvatsim::brain::RadioReachableCandidateDiff& diff) {
+    const auto& state = gBrainOwnedRuntimeState;
+    const auto diffMatchesSnapshot =
+        diff.currentHash == snapshot.stableHash;
+
+    std::ostringstream stream;
+    stream << "event=radio-board-candidate-diff"
+           << " phase=" << WorkflowStageToken(workflowStage)
+           << " plan=" << SanitizeLogToken(planKey, 128)
+           << " route=" << SanitizeLogToken(gDiagnosticsState.frame.route, 32)
+           << " currentPolygon="
+           << SanitizeLogToken(state.currentPolygonKey, 64)
+           << " nextPolygon="
+           << SanitizeLogToken(state.nextPolygonKey, 64)
+           << " arrivalPolygon="
+           << SanitizeLogToken(state.arrivalPolygonKey, 64)
+           << " inputHash=" << snapshot.stableHash
+           << "/" << state.routePolygonHash
+           << " rawRadioHash=" << snapshot.stableHash
+           << " routeHash=" << state.routePolygonHash
+           << " generation=" << snapshot.generation
+           << " available=" << (snapshot.available ? 1 : 0)
+           << " stale=" << (snapshot.stale ? 1 : 0)
+           << " source=" << xvatsim::brain::ToString(snapshot.source)
+           << " previousHash=" << diff.previousHash
+           << " currentHash=" << diff.currentHash
+           << " diffMatchesSnapshot=" << (diffMatchesSnapshot ? 1 : 0)
+           << " previousCandidates=" << diff.previousCandidates
+           << " currentCandidates=" << diff.currentCandidates
+           << " added=" << diff.added
+           << " removed=" << diff.removed
+           << " unchanged=" << diff.unchanged
+           << " addedKeys="
+           << JoinTraceTokens(
+                  diff.addedStableKeys,
+                  kDiagnosticsMaxTraceItems,
+                  128)
+           << " removedKeys="
+           << JoinTraceTokens(
+                  diff.removedStableKeys,
+                  kDiagnosticsMaxTraceItems,
+                  128)
+           << " candidates="
+           << FormatRadioCandidateTraceList(snapshot)
+           << " status="
+           << SanitizeLogToken(snapshot.statusLine, 180)
+           << " diffStatus="
+           << SanitizeLogToken(diff.statusLine, 180);
+
+    const auto line = stream.str();
+    if (ShouldEmitTraceLine(
+            line,
+            &gDiagnosticsState.hasLastRadioBoardTraceHash,
+            &gDiagnosticsState.lastRadioBoardTraceHash)) {
+        AppendDiagnosticsLogLine(line);
+    }
+}
+
+void LogCandidateCompletionTrace(
+    xvatsim::brain::WorkflowStage workflowStage,
+    const std::string& planKey) {
+    const auto& state = gBrainOwnedRuntimeState;
+    std::ostringstream stream;
+    stream << "event=candidate-completion-trace"
+           << " phase=" << WorkflowStageToken(workflowStage)
+           << " plan=" << SanitizeLogToken(planKey, 128)
+           << " route=" << SanitizeLogToken(gDiagnosticsState.frame.route, 32)
+           << " currentPolygon="
+           << SanitizeLogToken(state.currentPolygonKey, 64)
+           << " nextPolygon="
+           << SanitizeLogToken(state.nextPolygonKey, 64)
+           << " arrivalPolygon="
+           << SanitizeLogToken(state.arrivalPolygonKey, 64)
+           << " currentIndex=" << state.currentPolygonIndex
+           << " inputHash=" << state.gatedRadioSnapshot.stableHash
+           << "/" << state.routePolygonHash
+           << " rawRadioHash=" << state.radioSnapshot.stableHash
+           << " gatedRadioHash=" << state.gatedRadioSnapshot.stableHash
+           << " routeHash=" << state.routePolygonHash
+           << " candidatesComplete="
+           << (state.candidatesComplete ? 1 : 0)
+           << " completions=" << state.candidateCompletions.size()
+           << " results="
+           << FormatCompletionTraceList(state.candidateCompletions);
+
+    const auto line = stream.str();
+    if (ShouldEmitTraceLine(
+            line,
+            &gDiagnosticsState.hasLastCompletionTraceHash,
+            &gDiagnosticsState.lastCompletionTraceHash)) {
+        AppendDiagnosticsLogLine(line);
+    }
 }
 
 long long SumTrackedRefreshMicroseconds(const RefreshDiagnosticsFrame& frame) {
@@ -3156,6 +3443,11 @@ void RefreshOverlayFromBrainEngineer3() {
         workflowDecision = workflowOutput.decision;
         diagnostics.stage = WorkflowStageToken(workflowDecision.stage);
         diagnostics.stageReason = workflowDecision.reason;
+        LogRadioBoardCandidateDiffTrace(
+            workflowDecision.stage,
+            planKey,
+            radioSnapshot,
+            gBrainOwnedRuntimeState.radioDiff);
 
         gatedRadioSnapshot =
             xvatsim::brain::RunBrainOwnedRadioPhaseGate(

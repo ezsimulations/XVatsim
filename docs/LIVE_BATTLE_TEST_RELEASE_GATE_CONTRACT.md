@@ -44,6 +44,16 @@ empty-enroute sleep, CTAF display at KPDX/KONT, no connected heavy authority
 proof, and isolated refresh costs. The active consecutive pass count remains
 `0`; the next valid live battle test is still Battle Test #1 for this hash.
 
+Diagnostics trace update 2026-05-21: installed hash
+`3ACE28B2E521493FA39A01444ADCFF6E7451B6292426257301EC8F54E992D363`
+adds a diagnostics-only Engineer 3 trace for future flights:
+`event=radio-board-candidate-diff` records raw radio-board candidate diffs, and
+`event=candidate-completion-trace` records post-publisher completion decisions
+with displayed/hidden state. This is black-box evidence only; it does not
+change workflow, relevance, display intent, UI wake behavior, or the old
+authority path. The active consecutive pass count remains `0`; the next valid
+live battle test is Battle Test #1 for this hash.
+
 ## Purpose
 
 XVatsim is not release-ready because a single test works. It is release-ready
@@ -208,8 +218,10 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456`
-- Reason: Engineer 3 locked as the unconditional live refresh entry;
+  `3ACE28B2E521493FA39A01444ADCFF6E7451B6292426257301EC8F54E992D363`
+- Reason: diagnostics-only Engineer 3 trace added for radio-board candidate
+  diffs and post-publisher completion/display results; Engineer 3 locked as the
+  unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
   board cache, radio-board runtime, scheduled authority, and scheduled departure

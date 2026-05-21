@@ -65,6 +65,9 @@ Live test focus:
 - Any reachable frequency that does not belong to the current flight should be
   captured by the radio board, processed by relevance, marked complete, and
   rejected with enough diagnostic detail to prove why it stayed off the UI.
+- Future flights now emit `event=radio-board-candidate-diff` and
+  `event=candidate-completion-trace` lines in `xvatsim_diagnostics.log` for
+  exact black-box comparison against the xPilot radio board.
 - Current-polygon center should display as current/green.
 - Next-polygon center should display as next/orange with remaining distance.
 - OAK Center / OAK_62_CTR behavior is an important first retest target because
@@ -110,23 +113,19 @@ Observed and confirmed from logs:
 - Slow refreshes were isolated and explainable:
   startup 170ms, route build 929ms, enroute wake 95ms, arrival wake 101ms.
 
-Important diagnostic caveat:
+Important diagnostic update:
 
-- The current summary diagnostics prove aggregate radio-board candidate counts,
-  relevance completion counts, rejected completion counts, display counts, and
-  no-heavy-fallback behavior.
-- They do not preserve exact active-flight raw candidate callsigns/frequencies
-  in the summary result fields for rejected candidates.
-- Therefore, the UPS3511 review confirms module health at an aggregate level,
-  but it cannot prove from logs alone that the in-flight xPilot DEN/SLC rows
-  were the exact raw candidates processed and rejected by XVatsim.
-- If exact raw candidate proof is required before the next formal battle-test
-  verdict, add a narrow diagnostics-only Engineer 3 trace for radio-board
-  candidate diffs and candidate completion results. This should log callsign,
-  frequency, facility group, input hash, phase, current/next polygon,
-  accepted/rejected, rejection reason, and displayed/hidden.
-- Do not use that possible logging improvement as permission for runtime
-  refactor or old authority-path cleanup.
+- The UPS3511 review still confirms module health only at an aggregate level;
+  that old log cannot retroactively prove the exact in-flight xPilot DEN/SLC
+  rows were the exact raw candidates processed and rejected by XVatsim.
+- The current installed build adds a narrow diagnostics-only Engineer 3 trace
+  for future flights: `event=radio-board-candidate-diff` and
+  `event=candidate-completion-trace`.
+- Those lines record callsign, frequency, facility group, input hash,
+  workflow phase, current/next/arrival polygon, candidate diff, completion
+  decision, accept/reject reason, and displayed/hidden result.
+- This is black-box evidence only. It does not change workflow, relevance,
+  display intent, UI wake behavior, or the old authority path.
 
 ## Current Runtime Direction
 
@@ -156,10 +155,12 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456`
+`3ACE28B2E521493FA39A01444ADCFF6E7451B6292426257301EC8F54E992D363`
 
 Reason for this hash:
 
+- Added a diagnostics-only Engineer 3 trace for radio-board candidate diffs
+  and post-publisher completion/display results.
 - Brain-owned display boundary cleanup.
 - Relevance no longer builds final display boards.
 - Relevance no longer marks candidates as displayed.
@@ -357,6 +358,8 @@ Regression harness status for this code:
 
 - Release build passed.
 - Full harness passed: `234 / 234`.
+- Installed XPL hash verified:
+  `3ACE28B2E521493FA39A01444ADCFF6E7451B6292426257301EC8F54E992D363`.
 
 ## Live Battle Test Gate
 
@@ -370,7 +373,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456`
+`3ACE28B2E521493FA39A01444ADCFF6E7451B6292426257301EC8F54E992D363`
 
 Rules:
 

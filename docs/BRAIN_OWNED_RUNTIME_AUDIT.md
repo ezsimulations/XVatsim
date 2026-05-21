@@ -761,6 +761,16 @@ instead of departure/enroute board snapshots. Release build passed and full
 harness passed `234 / 234` for installed hash
 `1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456`.
 
+Follow-up update: The plugin now emits diagnostics-only Engineer 3 trace lines
+for future live validation. `event=radio-board-candidate-diff` records raw
+radio-board candidate diffs with phase and route-polygon context, and
+`event=candidate-completion-trace` records post-publisher completion decisions
+with displayed/hidden state. This is black-box evidence only; runtime workflow,
+relevance, display intent, UI wake behavior, and the old authority path are
+unchanged. Release build passed and full harness passed `234 / 234` for
+installed hash
+`3ACE28B2E521493FA39A01444ADCFF6E7451B6292426257301EC8F54E992D363`.
+
 ### Slice 5: Convert Or Retire Old Modules
 
 - Convert departure/arrival/enroute modules to fact-only workers, or remove
