@@ -3164,7 +3164,7 @@ void RefreshOverlayFromBrainEngineer3() {
     xvatsim::brain::ModuleBoardSnapshot departureBoardSnapshot;
     xvatsim::brain::ModuleBoardSnapshot arrivalBoardSnapshot;
     xvatsim::brain::ModuleBoardSnapshot enrouteBoardSnapshot;
-    xvatsim::brain::ModuleBoardSnapshot activeBoardSnapshot;
+    xvatsim::brain::ModuleBoardSnapshot finalDisplaySnapshot;
     xvatsim::brain::TransceiverResolutionSnapshot transceiverResolutionSnapshot;
     xvatsim::brain::RadioReachableControllerSnapshot gatedRadioSnapshot;
     xvatsim::brain::BrainOwnedPublisherOutput publisherOutput;
@@ -3243,7 +3243,7 @@ void RefreshOverlayFromBrainEngineer3() {
         departureBoardSnapshot = publisherOutput.departureBoard;
         arrivalBoardSnapshot = publisherOutput.arrivalBoard;
         enrouteBoardSnapshot = publisherOutput.enrouteBoard;
-        activeBoardSnapshot = publisherOutput.finalDisplay;
+        finalDisplaySnapshot = publisherOutput.finalDisplay;
 
         RecordDiagnosticJob(
             "Engineer3Runtime",
@@ -3268,7 +3268,7 @@ void RefreshOverlayFromBrainEngineer3() {
         workflowStage,
         effectiveNetworkPlanSnapshot,
         radioStateSnapshot,
-        &activeBoardSnapshot);
+        &finalDisplaySnapshot);
     diagnostics.standbyAssistUs = ElapsedMicrosecondsSince(timingStarted);
 
     if (hasPublisherOutput) {
@@ -3278,7 +3278,7 @@ void RefreshOverlayFromBrainEngineer3() {
             planKey,
             gatedRadioSnapshot,
             publisherOutput,
-            activeBoardSnapshot);
+            finalDisplaySnapshot);
     }
 
     timingStarted = std::chrono::steady_clock::now();
@@ -3296,7 +3296,7 @@ void RefreshOverlayFromBrainEngineer3() {
     wakeInput.aircraftState = aircraftState;
     wakeInput.xPilotSession = xPilotSessionSnapshot;
     wakeInput.workflowStage = workflowStage;
-    wakeInput.finalDisplay = activeBoardSnapshot;
+    wakeInput.finalDisplay = finalDisplaySnapshot;
     wakeInput.displayOverrideMode = gBrainOwnedRuntimeState.displayOverrideMode;
     wakeInput.manualQueryVisible =
         gBrainOwnedRuntimeState.manualQuerySnapshot.visible;
@@ -3367,7 +3367,7 @@ void RefreshOverlayFromBrainEngineer3() {
         effectiveNetworkPlanSnapshot,
         controllerFeedSnapshot,
         transceiverResolutionSnapshot,
-        activeBoardSnapshot,
+        finalDisplaySnapshot,
         gBrainOwnedRuntimeState.manualQuerySnapshot);
     diagnostics.overlayBuildUs = ElapsedMicrosecondsSince(timingStarted);
     diagnostics.overlayBuildMs = diagnostics.overlayBuildUs / 1000;

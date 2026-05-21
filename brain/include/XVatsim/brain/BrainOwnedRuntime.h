@@ -89,7 +89,6 @@ struct BrainOwnedRuntimeState {
     ModuleBoardSnapshot relevanceDepartureBoardSnapshot;
     ModuleBoardSnapshot relevanceArrivalBoardSnapshot;
     ModuleBoardSnapshot relevanceEnrouteBoardSnapshot;
-    ModuleBoardSnapshot activeBoardSnapshot;
     ModuleBoardSnapshot finalDisplaySnapshot;
     PhaseSnapshotPublisherState phaseSnapshotPublisherState;
     std::uint64_t lastDisplayIntentHash = 0;

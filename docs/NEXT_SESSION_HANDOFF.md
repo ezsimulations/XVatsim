@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`56AE27E03BF2048CF4A32DAA8BDCF0677DF792D8F66F07A9BDEB272559A84361`
+`55A6E4F98B7507B30D2BD101F2138E5E8BC124E8E8460EDE716493CD788FC388`
 
 Reason for this hash:
 
@@ -211,6 +211,9 @@ Reason for this hash:
   phase selection through `ResolveBrainOwnedWorkflowSelection`. The plugin
   supplies facts and receives the brain-owned phase decision plus provisional
   boards.
+- Removed the duplicate `activeBoardSnapshot` runtime field. Brain-owned
+  runtime stores the final brain-approved UI board as `finalDisplaySnapshot`,
+  and the plugin/UI path names that board as final display.
 
 Regression harness status for this code:
 
@@ -229,7 +232,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`56AE27E03BF2048CF4A32DAA8BDCF0677DF792D8F66F07A9BDEB272559A84361`
+`55A6E4F98B7507B30D2BD101F2138E5E8BC124E8E8460EDE716493CD788FC388`
 
 Rules:
 

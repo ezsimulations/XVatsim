@@ -16,7 +16,7 @@ public:
         const NetworkPlanSnapshot& networkPlanSnapshot,
         const ControllerFeedSnapshot& controllerFeedSnapshot,
         const TransceiverResolutionSnapshot& transceiverResolutionSnapshot,
-        const ModuleBoardSnapshot& activeBoardSnapshot,
+        const ModuleBoardSnapshot& finalDisplaySnapshot,
         const ManualQuerySnapshot& manualQuerySnapshot);
 };
 

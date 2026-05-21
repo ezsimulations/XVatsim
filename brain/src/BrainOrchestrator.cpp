@@ -432,7 +432,7 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
     const NetworkPlanSnapshot& networkPlanSnapshot,
     const ControllerFeedSnapshot& controllerFeedSnapshot,
     const TransceiverResolutionSnapshot& transceiverResolutionSnapshot,
-    const ModuleBoardSnapshot& activeBoardSnapshot,
+    const ModuleBoardSnapshot& finalDisplaySnapshot,
     const ManualQuerySnapshot& manualQuerySnapshot) {
     (void)controllerFeedSnapshot;
 
@@ -447,13 +447,13 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
         {FormatXPilotLine(xPilotSessionSnapshot), OverlayTone::Normal},
     };
 
-    if (activeBoardSnapshot.available || activeBoardSnapshot.displayStations) {
-        const auto orderedStations = OrderStations(activeBoardSnapshot);
+    if (finalDisplaySnapshot.available || finalDisplaySnapshot.displayStations) {
+        const auto orderedStations = OrderStations(finalDisplaySnapshot);
         const auto countToDisplay =
             std::min(orderedStations.size(), kMaxDisplayedStations);
         for (std::size_t index = 0; index < countToDisplay; ++index) {
             const auto& station = orderedStations[index];
-            bodyLines.push_back(FormatBoardLine(station, activeBoardSnapshot.source));
+            bodyLines.push_back(FormatBoardLine(station, finalDisplaySnapshot.source));
         }
         if (orderedStations.size() > countToDisplay) {
             bodyLines.push_back(

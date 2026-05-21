@@ -147,6 +147,8 @@ Plugin diagnostics timing/log throttle state is grouped under one shell-owned
     submissions.
   - Owns provisional relevance plus workflow phase selection through
     `ResolveBrainOwnedWorkflowSelection`.
+  - Stores the final brain-approved UI board only as `finalDisplaySnapshot`;
+    the duplicate `activeBoardSnapshot` runtime field is gone.
 
 ### UI Renderer
 
@@ -248,6 +250,8 @@ by installed hash
 - loose plugin diagnostics globals and misleading `activeTx` timing labels from
   the plugin shell
 - provisional relevance plus workflow phase selection from the plugin shell
+- duplicate final-display storage under the ambiguous `activeBoardSnapshot`
+  runtime name
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -614,6 +618,13 @@ The plugin supplies aircraft/radio/radio-board facts and receives the
 brain-owned phase decision plus provisional departure/arrival/enroute boards.
 Release build passed and full harness passed `234 / 234` for installed hash
 `56AE27E03BF2048CF4A32DAA8BDCF0677DF792D8F66F07A9BDEB272559A84361`.
+
+Follow-up update: Removed the duplicate `activeBoardSnapshot` runtime field and
+renamed the plugin/UI path to pass `finalDisplaySnapshot` into
+`BrainOrchestrator::BuildOverlayViewModel`. The brain-owned final UI board now
+has one runtime name: `finalDisplaySnapshot`. Release build passed and full
+harness passed `234 / 234` for installed hash
+`55A6E4F98B7507B30D2BD101F2138E5E8BC124E8E8460EDE716493CD788FC388`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

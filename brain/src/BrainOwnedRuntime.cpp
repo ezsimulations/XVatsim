@@ -891,7 +891,6 @@ void CommitBrainOwnedPublishedRuntime(
     state->departureBoardSnapshot = input.departureBoard;
     state->arrivalBoardSnapshot = input.arrivalBoard;
     state->enrouteBoardSnapshot = input.enrouteBoard;
-    state->activeBoardSnapshot = input.finalDisplay;
     state->finalDisplaySnapshot = input.finalDisplay;
     state->lastWorkflowStage = input.workflowStage;
     state->lastPlanKey = input.planKey;
