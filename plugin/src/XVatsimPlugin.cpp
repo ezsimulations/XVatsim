@@ -111,12 +111,6 @@ constexpr long long kRadioBoardPendingRouteRetrySeconds = 2;
 constexpr long long kActiveFlightPlanSampleCadenceSeconds = 15;
 constexpr long long kEngineer3RadioBoardRefreshSeconds = 5;
 
-enum class DisplayOverrideMode {
-    Auto,
-    ForcedOpen,
-    ForcedSleep,
-};
-
 enum class PendingTextEntryMode {
     None,
     ManualCtaf,
@@ -244,7 +238,6 @@ XPLMMenuID gPluginMenu = nullptr;
 int gPluginMenuItemIndex = -1;
 bool gFlightLoopRegistered = false;
 bool gPluginRuntimeEnabled = false;
-DisplayOverrideMode gDisplayOverrideMode = DisplayOverrideMode::Auto;
 xvatsim::brain::AircraftStateSnapshot gLastAircraftStateSnapshot;
 xvatsim::brain::PilotIdentitySnapshot gLastPilotIdentitySnapshot;
 xvatsim::brain::FlightPlanSnapshot gLastFlightPlanSnapshot;
@@ -2422,43 +2415,32 @@ void BeginManualCtafEntry() {
 }
 
 xvatsim::modules::settings_store::StoredDisplayMode ToStoredDisplayMode(
-    DisplayOverrideMode mode) {
+    xvatsim::brain::BrainOwnedDisplayOverrideMode mode) {
     using xvatsim::modules::settings_store::StoredDisplayMode;
+    using xvatsim::brain::BrainOwnedDisplayOverrideMode;
     switch (mode) {
-        case DisplayOverrideMode::ForcedOpen:
+        case BrainOwnedDisplayOverrideMode::ForcedOpen:
             return StoredDisplayMode::Open;
-        case DisplayOverrideMode::ForcedSleep:
+        case BrainOwnedDisplayOverrideMode::ForcedSleep:
             return StoredDisplayMode::Sleep;
-        case DisplayOverrideMode::Auto:
+        case BrainOwnedDisplayOverrideMode::Auto:
         default:
             return StoredDisplayMode::Auto;
     }
 }
 
-DisplayOverrideMode ToDisplayOverrideMode(
+xvatsim::brain::BrainOwnedDisplayOverrideMode ToDisplayOverrideMode(
     xvatsim::modules::settings_store::StoredDisplayMode mode) {
     using xvatsim::modules::settings_store::StoredDisplayMode;
+    using xvatsim::brain::BrainOwnedDisplayOverrideMode;
     switch (mode) {
         case StoredDisplayMode::Open:
-            return DisplayOverrideMode::ForcedOpen;
+            return BrainOwnedDisplayOverrideMode::ForcedOpen;
         case StoredDisplayMode::Sleep:
-            return DisplayOverrideMode::ForcedSleep;
+            return BrainOwnedDisplayOverrideMode::ForcedSleep;
         case StoredDisplayMode::Auto:
         default:
-            return DisplayOverrideMode::Auto;
-    }
-}
-
-xvatsim::brain::BrainOwnedDisplayOverrideMode ToBrainDisplayOverrideMode(
-    DisplayOverrideMode mode) {
-    switch (mode) {
-        case DisplayOverrideMode::ForcedOpen:
-            return xvatsim::brain::BrainOwnedDisplayOverrideMode::ForcedOpen;
-        case DisplayOverrideMode::ForcedSleep:
-            return xvatsim::brain::BrainOwnedDisplayOverrideMode::ForcedSleep;
-        case DisplayOverrideMode::Auto:
-        default:
-            return xvatsim::brain::BrainOwnedDisplayOverrideMode::Auto;
+            return BrainOwnedDisplayOverrideMode::Auto;
     }
 }
 
@@ -2566,15 +2548,21 @@ void ApplyPreflightRouteCacheForPlanIfNeeded(
 }
 
 void SavePluginSettings() {
-    gPluginSettings.displayMode = ToStoredDisplayMode(gDisplayOverrideMode);
+    gPluginSettings.displayMode =
+        ToStoredDisplayMode(gBrainOwnedRuntimeState.displayOverrideMode);
     if (!gSettingsStore.Save(gPluginSettings)) {
         XPLMDebugString("[XVatsim] Settings save failed.\n");
     }
 }
 
-void ApplyDisplayOverrideMode(DisplayOverrideMode mode) {
-    gDisplayOverrideMode = mode;
-    gOverlayWindow.SetAutomaticMode(gDisplayOverrideMode == DisplayOverrideMode::Auto);
+void ApplyDisplayOverrideMode(
+    xvatsim::brain::BrainOwnedDisplayOverrideMode mode) {
+    xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
+        &gBrainOwnedRuntimeState,
+        mode);
+    gOverlayWindow.SetAutomaticMode(
+        gBrainOwnedRuntimeState.displayOverrideMode ==
+        xvatsim::brain::BrainOwnedDisplayOverrideMode::Auto);
     SavePluginSettings();
     RefreshOverlayFromBrain();
 }
@@ -2674,17 +2662,25 @@ void RenderSessionBoundaryFrame(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     const xvatsim::brain::XPilotSessionSnapshot& xPilotSessionSnapshot,
     bool wakeForDisconnectAlert) {
-    gOverlayWindow.SetAutomaticMode(gDisplayOverrideMode == DisplayOverrideMode::Auto);
+    const auto displayOverrideMode =
+        gBrainOwnedRuntimeState.displayOverrideMode;
+    gOverlayWindow.SetAutomaticMode(
+        displayOverrideMode ==
+        xvatsim::brain::BrainOwnedDisplayOverrideMode::Auto);
 
     auto shouldWake = wakeForDisconnectAlert;
-    if (gDisplayOverrideMode == DisplayOverrideMode::ForcedOpen) {
+    if (displayOverrideMode ==
+        xvatsim::brain::BrainOwnedDisplayOverrideMode::ForcedOpen) {
         shouldWake = true;
-    } else if (gDisplayOverrideMode == DisplayOverrideMode::ForcedSleep) {
+    } else if (displayOverrideMode ==
+               xvatsim::brain::BrainOwnedDisplayOverrideMode::ForcedSleep) {
         shouldWake = false;
     }
 
     if (!shouldWake) {
-        RenderDormantBoundaryFrame(gDisplayOverrideMode == DisplayOverrideMode::Auto);
+        RenderDormantBoundaryFrame(
+            displayOverrideMode ==
+            xvatsim::brain::BrainOwnedDisplayOverrideMode::Auto);
         return;
     }
 
@@ -2704,17 +2700,20 @@ void RenderSessionBoundaryFrame(
 }
 
 void ForceDisplayOpen() {
-    ApplyDisplayOverrideMode(DisplayOverrideMode::ForcedOpen);
+    ApplyDisplayOverrideMode(
+        xvatsim::brain::BrainOwnedDisplayOverrideMode::ForcedOpen);
 }
 
 void ForceDisplaySleep() {
     DiscardPendingTextEntryState();
-    ApplyDisplayOverrideMode(DisplayOverrideMode::ForcedSleep);
+    ApplyDisplayOverrideMode(
+        xvatsim::brain::BrainOwnedDisplayOverrideMode::ForcedSleep);
 }
 
 void ReturnDisplayToAuto() {
     DiscardPendingTextEntryState();
-    ApplyDisplayOverrideMode(DisplayOverrideMode::Auto);
+    ApplyDisplayOverrideMode(
+        xvatsim::brain::BrainOwnedDisplayOverrideMode::Auto);
 }
 
 void RequestCurrentFlightRecovery() {
@@ -3675,7 +3674,7 @@ void RefreshOverlayFromBrainEngineer3() {
     wakeInput.xPilotSession = xPilotSessionSnapshot;
     wakeInput.workflowStage = workflowStage;
     wakeInput.finalDisplay = activeBoardSnapshot;
-    wakeInput.displayOverrideMode = ToBrainDisplayOverrideMode(gDisplayOverrideMode);
+    wakeInput.displayOverrideMode = gBrainOwnedRuntimeState.displayOverrideMode;
     wakeInput.manualQueryVisible = gManualQuerySnapshot.visible;
     wakeInput.textEntryActive = textEntryActive;
     wakeInput.controllerMessageVisible = controllerMessageVisible;
@@ -3686,7 +3685,9 @@ void RefreshOverlayFromBrainEngineer3() {
         xvatsim::brain::DecideBrainOwnedOverlayWake(wakeInput);
     diagnostics.shouldWake = wakeDecision.shouldWake;
 
-    gOverlayWindow.SetAutomaticMode(gDisplayOverrideMode == DisplayOverrideMode::Auto);
+    gOverlayWindow.SetAutomaticMode(
+        gBrainOwnedRuntimeState.displayOverrideMode ==
+        xvatsim::brain::BrainOwnedDisplayOverrideMode::Auto);
 
     diagnostics.wakeReason = wakeDecision.reason;
     diagnostics.wakeDecisionUs = ElapsedMicrosecondsSince(timingStarted);
@@ -3852,7 +3853,9 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
 
     gSettingsStore.SetPath(ResolveSettingsPath());
     gPluginSettings = gSettingsStore.Load();
-    gDisplayOverrideMode = ToDisplayOverrideMode(gPluginSettings.displayMode);
+    xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
+        &gBrainOwnedRuntimeState,
+        ToDisplayOverrideMode(gPluginSettings.displayMode));
     gOverlayWindow.SetTransitionSoundPath(ResolvePluginAssetPath("ui_transition.mp3"));
     LoadPreflightRouteCacheCandidate();
     ApplyOverlayAppearanceSettings();
@@ -3896,7 +3899,9 @@ PLUGIN_API void XPluginStop() {
 PLUGIN_API int XPluginEnable() {
     ResetPluginRuntimeState(true, true);
     LoadPreflightRouteCacheCandidate();
-    gDisplayOverrideMode = ToDisplayOverrideMode(gPluginSettings.displayMode);
+    xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
+        &gBrainOwnedRuntimeState,
+        ToDisplayOverrideMode(gPluginSettings.displayMode));
     gPluginRuntimeEnabled = true;
     RegisterFlightLoop(kInitialFlightLoopDelaySeconds);
     XPLMDebugString("[XVatsim] Plugin enabled.\n");
@@ -3908,7 +3913,9 @@ PLUGIN_API void XPluginDisable() {
     UnregisterFlightLoop();
     PersistOverlayGeometryIfChanged();
     ResetPluginRuntimeState(true, true);
-    gDisplayOverrideMode = ToDisplayOverrideMode(gPluginSettings.displayMode);
+    xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
+        &gBrainOwnedRuntimeState,
+        ToDisplayOverrideMode(gPluginSettings.displayMode));
     gOverlayWindow.Hide();
     XPLMDebugString("[XVatsim] Plugin disabled.\n");
 }

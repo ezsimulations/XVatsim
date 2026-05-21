@@ -323,7 +323,9 @@ void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state) {
     if (state == nullptr) {
         return;
     }
+    const auto displayOverrideMode = state->displayOverrideMode;
     *state = {};
+    state->displayOverrideMode = displayOverrideMode;
 }
 
 void ResetBrainOwnedRuntimeCachePreservingFlightContext(
@@ -332,8 +334,10 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
         return;
     }
     const auto flightContext = state->flightContext;
+    const auto displayOverrideMode = state->displayOverrideMode;
     *state = {};
     state->flightContext = flightContext;
+    state->displayOverrideMode = displayOverrideMode;
 }
 
 void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state) {
@@ -492,6 +496,15 @@ void ClearBrainOwnedPreflightRouteCacheApplication(
         return;
     }
     state->preflightRouteCacheAppliedPlanKey.clear();
+}
+
+void SetBrainOwnedDisplayOverrideMode(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedDisplayOverrideMode mode) {
+    if (state == nullptr) {
+        return;
+    }
+    state->displayOverrideMode = mode;
 }
 
 BrainOwnedPreflightRouteCacheDecision BeginBrainOwnedPreflightRouteCacheApplication(

@@ -20,6 +20,12 @@ enum class BrainOwnedCandidateDecision {
     NeedsVerification,
 };
 
+enum class BrainOwnedDisplayOverrideMode {
+    Auto,
+    ForcedOpen,
+    ForcedSleep,
+};
+
 struct BrainOwnedCandidateCompletion {
     std::uint64_t radioBoardHash = 0;
     std::uint64_t routePolygonHash = 0;
@@ -85,6 +91,8 @@ struct BrainOwnedRuntimeState {
     bool standbyAssistWriteConsumed = false;
     std::string diversionOverrideSourceKey;
     std::string preflightRouteCacheAppliedPlanKey;
+    BrainOwnedDisplayOverrideMode displayOverrideMode =
+        BrainOwnedDisplayOverrideMode::Auto;
     bool departureReleasedThisFlight = false;
     bool arrivalAwakeThisFlight = false;
     double airborneSinceSeconds = -1.0;
@@ -152,12 +160,6 @@ struct BrainOwnedPublishedRuntimeInput {
     ModuleBoardSnapshot arrivalBoard;
     ModuleBoardSnapshot enrouteBoard;
     ModuleBoardSnapshot finalDisplay;
-};
-
-enum class BrainOwnedDisplayOverrideMode {
-    Auto,
-    ForcedOpen,
-    ForcedSleep,
 };
 
 struct BrainOwnedOverlayWakeInput {
@@ -411,6 +413,10 @@ BrainOwnedDiversionOverrideDecision DecideBrainOwnedDiversionOverride(
 
 void ClearBrainOwnedPreflightRouteCacheApplication(
     BrainOwnedRuntimeState* state);
+
+void SetBrainOwnedDisplayOverrideMode(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedDisplayOverrideMode mode);
 
 BrainOwnedPreflightRouteCacheDecision BeginBrainOwnedPreflightRouteCacheApplication(
     BrainOwnedRuntimeState* state,

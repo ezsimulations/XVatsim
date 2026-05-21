@@ -133,6 +133,8 @@ context storage have moved into brain-owned source files.
     manual diversion override for the current source VATSIM flight plan.
   - Owns preflight route-cache applied-plan state and the decision to clear,
     validate, or apply the route resolver cache.
+  - Owns display override mode (`Auto`, forced open, forced sleep) and
+    preserves it across runtime resets.
 
 ### UI Renderer
 
@@ -218,6 +220,7 @@ by installed hash
   shell
 - preflight route-cache applied-plan state and clear/validate/apply decision
   from the plugin shell
+- display override mode from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -490,6 +493,13 @@ validation, and route-resolver cache side effects, but no longer carries
 `gPreflightRouteCacheAppliedPlanKey` or independently decides cache reuse.
 Release build passed and full harness passed `234 / 234` for installed hash
 `2576A86E309F085EC35FF5D638FC378325081C00F8CE93F4D38461F904DBF190`.
+
+Follow-up update: Brain-owned runtime now owns display override mode (`Auto`,
+forced open, forced sleep) and preserves it across runtime resets. The plugin
+command/menu/settings layer only sets the brain-owned mode and performs overlay
+window side effects. Release build passed and full harness passed `234 / 234`
+for installed hash
+`0A0A7A626DF447E43BB834885929C043F199FE487F93EE053836C8AC132427F9`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

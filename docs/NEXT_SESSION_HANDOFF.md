@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`2576A86E309F085EC35FF5D638FC378325081C00F8CE93F4D38461F904DBF190`
+`0A0A7A626DF447E43BB834885929C043F199FE487F93EE053836C8AC132427F9`
 
 Reason for this hash:
 
@@ -176,6 +176,8 @@ Reason for this hash:
 - Brain-owned runtime now owns preflight route-cache applied-plan state and
   decides when the plugin should clear, validate, or apply the route resolver
   cache.
+- Brain-owned runtime now owns display override mode (`Auto`, forced open,
+  forced sleep) and preserves it across runtime resets.
 
 Regression harness status for this code:
 
@@ -194,7 +196,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`2576A86E309F085EC35FF5D638FC378325081C00F8CE93F4D38461F904DBF190`
+`0A0A7A626DF447E43BB834885929C043F199FE487F93EE053836C8AC132427F9`
 
 Rules:
 
