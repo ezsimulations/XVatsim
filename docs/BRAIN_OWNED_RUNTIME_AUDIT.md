@@ -59,6 +59,9 @@ relevance, relevance cache ownership, publisher ownership, overlay wake
 decisions, workflow/recovery ownership, normal flight-context update decisions,
 manual diversion/revert flight-context retarget decisions, and active flight
 context storage have moved into brain-owned source files.
+Plugin diagnostics timing/log throttle state is grouped under one shell-owned
+`PluginDiagnosticsState`, and radio range worker timing is logged as
+`radioRange` rather than the older `activeTx` label.
 
 - `brain/src/BrainWorkflow.cpp`
   - Owns workflow phase, current-flight recovery decisions, and normal
@@ -240,6 +243,8 @@ by installed hash
 - unused plugin-side hash/active-transceiver helpers from the retired board and
   radio refresh paths
 - global stateless `gBrain` object from the plugin shell
+- loose plugin diagnostics globals and misleading `activeTx` timing labels from
+  the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -590,6 +595,14 @@ harness-only legacy coverage rather than live plugin modules. Release build
 passed and full harness passed `234 / 234`; installed hash remained
 `C00D070DE02ADD449A0881FE340D98DF6B67A6C43140EB3319FC80496C4B5CA4` because the
 plugin binary was unchanged.
+
+Follow-up update: Plugin diagnostics state is now grouped under
+`PluginDiagnosticsState`, replacing the loose refresh/perf-warning log throttle
+globals in `plugin/src/XVatsimPlugin.cpp`. Refresh diagnostics now log the radio
+range worker timing as `radioRange` instead of `activeTx`, matching the
+Engineer 3 worker boundary. Release build passed and full harness passed
+`234 / 234` for installed hash
+`1E0B9DB0BF9920B26D3E77E17B9005F1349E82AC358B8D1941387015F4C37A07`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

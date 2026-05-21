@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`C00D070DE02ADD449A0881FE340D98DF6B67A6C43140EB3319FC80496C4B5CA4`
+`1E0B9DB0BF9920B26D3E77E17B9005F1349E82AC358B8D1941387015F4C37A07`
 
 Reason for this hash:
 
@@ -204,6 +204,9 @@ Reason for this hash:
   `XVatsimHarnessLegacyArrival`, `XVatsimHarnessLegacyDeparture`, and
   `XVatsimHarnessLegacyEnroute`. They are harness legacy coverage targets, not
   live Engineer 3 modules.
+- Plugin diagnostics state is now grouped under one shell-owned
+  `PluginDiagnosticsState`, and refresh timing logs say `radioRange` instead of
+  the older `activeTx` label.
 
 Regression harness status for this code:
 
@@ -222,7 +225,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`C00D070DE02ADD449A0881FE340D98DF6B67A6C43140EB3319FC80496C4B5CA4`
+`1E0B9DB0BF9920B26D3E77E17B9005F1349E82AC358B8D1941387015F4C37A07`
 
 Rules:
 

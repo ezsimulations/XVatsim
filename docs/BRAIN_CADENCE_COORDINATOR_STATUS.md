@@ -18,7 +18,7 @@ Implemented diagnostics:
 - Authority relevance logs job name, reason, duration, source generations, cache/proof status, result counts, work stage, window, and deferred count where available.
 - Departure and arrival airport coverage log cache/build status and sector counts.
 - Departure, arrival, and enroute board snapshots log board cache hits/builds and station counts.
-- Workflow, active transceiver, overlay build, and overlay update now appear in the per-refresh job summary.
+- Workflow, radio-range resolve, overlay build, and overlay update now appear in the per-refresh job summary.
 
 Verification:
 
@@ -244,7 +244,7 @@ Implemented Block 6C:
 
 - Added microsecond-level baseline refresh instrumentation to the live plugin diagnostics.
 - Diagnostic lines now include `totalUs` alongside `totalMs`.
-- Diagnostic lines now include `usTimings=...` with aircraft sampling, xPilot polling, VATSIM feed polling, controller snapshot build, flight-plan sampling, network-plan polling, radio sampling, controller-message handling, manual-query handling, flight-context updates, CTAF lookup, route resolution, route-authority plan, authority-station resolution, authority relevance, departure/arrival/enroute board work, workflow, standby assist, wake decision, active transceiver resolution, overlay build/update, display logging, tracked total, and untracked total.
+- Diagnostic lines now include `usTimings=...` with aircraft sampling, xPilot polling, VATSIM feed polling, controller snapshot build, flight-plan sampling, network-plan polling, radio sampling, controller-message handling, manual-query handling, flight-context updates, CTAF lookup, route resolution, route-authority plan, authority-station resolution, authority relevance, departure/arrival/enroute board work, workflow, standby assist, wake decision, radio-range resolve, overlay build/update, display logging, tracked total, and untracked total.
 - Existing authority truth rules, workflow rules, display rules, and controller acceptance/rejection rules were not changed.
 
 Implemented Block 6D:

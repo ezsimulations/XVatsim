@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `C00D070DE02ADD449A0881FE340D98DF6B67A6C43140EB3319FC80496C4B5CA4`
+  `1E0B9DB0BF9920B26D3E77E17B9005F1349E82AC358B8D1941387015F4C37A07`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -309,7 +309,9 @@ Only then may XVatsim be treated as store-release ready.
   as part of the live module stack; those harness-only legacy board libraries
   are now named `XVatsimHarnessLegacyArrival`,
   `XVatsimHarnessLegacyDeparture`, and `XVatsimHarnessLegacyEnroute` so they are
-  not mistaken for live plugin modules;
+  not mistaken for live plugin modules; plugin diagnostics state is now grouped
+  under one shell-owned `PluginDiagnosticsState`, and refresh timing logs say
+  `radioRange` instead of `activeTx`;
   brain-owned runtime audit map updated.
-- Active live streak: reset to `0` because runtime authority/display boundary
-  code changed.
+- Active live streak: remains `0`; the next valid live test is Battle Test #1
+  for this installed hash.

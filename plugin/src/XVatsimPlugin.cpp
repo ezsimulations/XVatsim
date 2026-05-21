@@ -162,7 +162,7 @@ struct RefreshDiagnosticsFrame {
     long long authorityRelevanceMs = 0;
     long long enrouteBoardMs = 0;
     long long workflowMs = 0;
-    long long activeTransceiverResolveMs = 0;
+    long long radioRangeResolveMs = 0;
     long long overlayBuildMs = 0;
     long long overlayUpdateMs = 0;
     long long aircraftStateUs = 0;
@@ -186,11 +186,20 @@ struct RefreshDiagnosticsFrame {
     long long workflowUs = 0;
     long long standbyAssistUs = 0;
     long long wakeDecisionUs = 0;
-    long long activeTransceiverResolveUs = 0;
+    long long radioRangeResolveUs = 0;
     long long overlayBuildUs = 0;
     long long overlayUpdateUs = 0;
     long long displayLoggingUs = 0;
     std::vector<DiagnosticJobRecord> jobs;
+};
+
+struct PluginDiagnosticsState {
+    long long lastFlightLoopPerfWarningSeconds = 0;
+    long long lastSlowRefreshSeconds = 0;
+    long long lastSummarySeconds = 0;
+    bool hasLastAuthorityHash = false;
+    std::size_t lastAuthorityHash = 0;
+    RefreshDiagnosticsFrame frame;
 };
 
 xvatsim::modules::aircraft_state::AircraftStateSampler gAircraftStateSampler;
@@ -221,12 +230,7 @@ int gPluginMenuItemIndex = -1;
 bool gFlightLoopRegistered = false;
 bool gPluginRuntimeEnabled = false;
 xvatsim::brain::BrainOwnedRuntimeState gBrainOwnedRuntimeState;
-long long gLastFlightLoopPerfWarningSeconds = 0;
-long long gLastDiagnosticsSlowRefreshSeconds = 0;
-long long gLastDiagnosticsSummarySeconds = 0;
-bool gHasLastDiagnosticsAuthorityHash = false;
-std::size_t gLastDiagnosticsAuthorityHash = 0;
-RefreshDiagnosticsFrame gRefreshDiagnosticsFrame;
+PluginDiagnosticsState gDiagnosticsState;
 std::optional<xvatsim::core::preflight::PreflightRouteCache> gPreflightRouteCacheCandidate;
 std::string gPreflightRouteCachePath;
 
@@ -1146,20 +1150,20 @@ void RecordDiagnosticJob(
     std::string result,
     std::string sourceGenerations = {},
     std::string routeKey = {}) {
-    if (!gRefreshDiagnosticsFrame.valid) {
+    if (!gDiagnosticsState.frame.valid) {
         return;
     }
 
     DiagnosticJobRecord job;
     job.name = std::move(name);
     job.reason = std::move(reason);
-    job.stage = gRefreshDiagnosticsFrame.stage;
+    job.stage = gDiagnosticsState.frame.stage;
     job.cacheStatus = std::move(cacheStatus);
     job.result = std::move(result);
     job.sourceGenerations = std::move(sourceGenerations);
     job.routeKey = std::move(routeKey);
     job.durationMs = durationMs;
-    gRefreshDiagnosticsFrame.jobs.push_back(std::move(job));
+    gDiagnosticsState.frame.jobs.push_back(std::move(job));
 }
 
 xvatsim::brain::BrainOwnedCtafLookupFact BuildBrainOwnedCtafLookupFact(
@@ -1369,8 +1373,8 @@ xvatsim::brain::BrainRadioRangeWorkerOutput RunBrainRadioRangeWorker(
         gTransceiverResolver.Resolve(input.aircraft, input.controllerFeed);
     const auto resolveUs = ElapsedMicrosecondsSince(started);
     if (diagnostics != nullptr) {
-        diagnostics->activeTransceiverResolveUs = resolveUs;
-        diagnostics->activeTransceiverResolveMs = resolveUs / 1000;
+        diagnostics->radioRangeResolveUs = resolveUs;
+        diagnostics->radioRangeResolveMs = resolveUs / 1000;
     }
 
     return xvatsim::brain::BuildBrainRadioRangeWorkerOutput(
@@ -1395,8 +1399,8 @@ xvatsim::brain::RadioReachableControllerSnapshot BuildEngineer3RadioSnapshot(
             reuseInput);
     if (reuseOutput.canReuse) {
         if (diagnostics != nullptr) {
-            diagnostics->activeTransceiverResolveUs = 0;
-            diagnostics->activeTransceiverResolveMs = 0;
+            diagnostics->radioRangeResolveUs = 0;
+            diagnostics->radioRangeResolveMs = 0;
         }
         RecordDiagnosticJob(
             "Engineer3RadioBoard",
@@ -1433,7 +1437,7 @@ xvatsim::brain::RadioReachableControllerSnapshot BuildEngineer3RadioSnapshot(
     RecordDiagnosticJob(
         "Engineer3RadioBoard",
         commitOutput.reason,
-        diagnostics != nullptr ? diagnostics->activeTransceiverResolveMs : 0,
+        diagnostics != nullptr ? diagnostics->radioRangeResolveMs : 0,
         commitOutput.cacheStatus,
         result.str(),
         {},
@@ -1710,18 +1714,18 @@ long long SumTrackedRefreshMicroseconds(const RefreshDiagnosticsFrame& frame) {
            frame.workflowUs +
            frame.standbyAssistUs +
            frame.wakeDecisionUs +
-           frame.activeTransceiverResolveUs +
+           frame.radioRangeResolveUs +
            frame.overlayBuildUs +
            frame.overlayUpdateUs +
            frame.displayLoggingUs;
 }
 
 void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefreshUs) {
-    if (!gRefreshDiagnosticsFrame.valid) {
+    if (!gDiagnosticsState.frame.valid) {
         return;
     }
 
-    auto& frame = gRefreshDiagnosticsFrame;
+    auto& frame = gDiagnosticsState.frame;
     frame.authorityProofSummary =
         SanitizeLogText(frame.authorityProofSummary, 1200);
     const auto nowSeconds = CurrentTickSeconds();
@@ -1730,15 +1734,15 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
             ? frame.authorityProofHash
             : HashAuthorityProofSummary(frame.authorityProofSummary);
     const auto authorityChanged =
-        !gHasLastDiagnosticsAuthorityHash ||
-        authorityHash != gLastDiagnosticsAuthorityHash;
+        !gDiagnosticsState.hasLastAuthorityHash ||
+        authorityHash != gDiagnosticsState.lastAuthorityHash;
     const auto slowRefresh = totalRefreshMs >= kDiagnosticsSlowRefreshThresholdMs;
     const auto shouldLogSlow =
         slowRefresh &&
-        (nowSeconds - gLastDiagnosticsSlowRefreshSeconds) >=
+        (nowSeconds - gDiagnosticsState.lastSlowRefreshSeconds) >=
             kDiagnosticsSlowRefreshLogIntervalSeconds;
     const auto shouldLogSummary =
-        (nowSeconds - gLastDiagnosticsSummarySeconds) >=
+        (nowSeconds - gDiagnosticsState.lastSummarySeconds) >=
         kDiagnosticsSummaryIntervalSeconds;
 
     if (!authorityChanged && !shouldLogSlow && !shouldLogSummary) {
@@ -1746,14 +1750,14 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
     }
 
     if (authorityChanged) {
-        gHasLastDiagnosticsAuthorityHash = true;
-        gLastDiagnosticsAuthorityHash = authorityHash;
+        gDiagnosticsState.hasLastAuthorityHash = true;
+        gDiagnosticsState.lastAuthorityHash = authorityHash;
     }
     if (shouldLogSlow) {
-        gLastDiagnosticsSlowRefreshSeconds = nowSeconds;
+        gDiagnosticsState.lastSlowRefreshSeconds = nowSeconds;
     }
     if (shouldLogSummary) {
-        gLastDiagnosticsSummarySeconds = nowSeconds;
+        gDiagnosticsState.lastSummarySeconds = nowSeconds;
     }
 
     std::ostringstream stream;
@@ -1792,7 +1796,7 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
            << ",authorityRelevance:" << frame.authorityRelevanceMs
            << ",enrBoard:" << frame.enrouteBoardMs
            << ",workflow:" << frame.workflowMs
-           << ",activeTx:" << frame.activeTransceiverResolveMs
+           << ",radioRange:" << frame.radioRangeResolveMs
            << ",overlayBuild:" << frame.overlayBuildMs
            << ",overlayUpdate:" << frame.overlayUpdateMs
            << " usTimings=aircraft:" << frame.aircraftStateUs
@@ -1816,7 +1820,7 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
            << ",workflow:" << frame.workflowUs
            << ",standbyAssist:" << frame.standbyAssistUs
            << ",wakeDecision:" << frame.wakeDecisionUs
-           << ",activeTx:" << frame.activeTransceiverResolveUs
+           << ",radioRange:" << frame.radioRangeResolveUs
            << ",overlayBuild:" << frame.overlayBuildUs
            << ",overlayUpdate:" << frame.overlayUpdateUs
            << ",displayLog:" << frame.displayLoggingUs
@@ -3041,8 +3045,8 @@ void RefreshOverlayFromBrainEngineer3() {
         return;
     }
 
-    gRefreshDiagnosticsFrame = {};
-    auto& diagnostics = gRefreshDiagnosticsFrame;
+    gDiagnosticsState.frame = {};
+    auto& diagnostics = gDiagnosticsState.frame;
     diagnostics.valid = true;
 
     auto timingStarted = std::chrono::steady_clock::now();
@@ -3469,8 +3473,9 @@ float FlightLoopCallback(
     MaybeLogRefreshDiagnostics(refreshElapsedMs, refreshElapsedUs);
     if (refreshElapsedMs >= 40) {
         const auto nowSeconds = CurrentTickSeconds();
-        if ((nowSeconds - gLastFlightLoopPerfWarningSeconds) >= 30) {
-            gLastFlightLoopPerfWarningSeconds = nowSeconds;
+        if ((nowSeconds -
+             gDiagnosticsState.lastFlightLoopPerfWarningSeconds) >= 30) {
+            gDiagnosticsState.lastFlightLoopPerfWarningSeconds = nowSeconds;
             std::ostringstream stream;
             stream << "[XVatsim] Perf warning: refresh took "
                    << refreshElapsedMs
