@@ -145,6 +145,8 @@ Plugin diagnostics timing/log throttle state is grouped under one shell-owned
     fact snapshots for command-side brain decisions.
   - Owns pending overlay text-entry mode for manual CTAF and diversion command
     submissions.
+  - Owns provisional relevance plus workflow phase selection through
+    `ResolveBrainOwnedWorkflowSelection`.
 
 ### UI Renderer
 
@@ -245,6 +247,7 @@ by installed hash
 - global stateless `gBrain` object from the plugin shell
 - loose plugin diagnostics globals and misleading `activeTx` timing labels from
   the plugin shell
+- provisional relevance plus workflow phase selection from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -279,10 +282,11 @@ Their CMake target names are now explicitly harness legacy:
    online/tuned facts share one struct. This caused the OAK `0nm` failure when
    display-ready state was reused as relevance truth.
 
-4. Workflow selection depends on provisional relevance.
-   Engineer 3 currently runs a provisional relevance pass before final phase
-   gating. That may be acceptable short-term, but it should become an explicit
-   brain workflow input instead of an implicit board-building dependency.
+4. Workflow selection still depends on provisional relevance.
+   The provisional pass now lives behind the explicit brain-owned
+   `ResolveBrainOwnedWorkflowSelection` helper instead of plugin-side glue. The
+   remaining architectural target is to make workflow phase facts independent
+   from provisional board building where practical.
 
 5. Old modules can still create display boards from authority snapshots.
    The live Engineer 3 path should not rely on those modules for display truth.
@@ -603,6 +607,13 @@ range worker timing as `radioRange` instead of `activeTx`, matching the
 Engineer 3 worker boundary. Release build passed and full harness passed
 `234 / 234` for installed hash
 `1E0B9DB0BF9920B26D3E77E17B9005F1349E82AC358B8D1941387015F4C37A07`.
+
+Follow-up update: Brain-owned runtime now owns the provisional relevance pass
+used for workflow phase selection through `ResolveBrainOwnedWorkflowSelection`.
+The plugin supplies aircraft/radio/radio-board facts and receives the
+brain-owned phase decision plus provisional departure/arrival/enroute boards.
+Release build passed and full harness passed `234 / 234` for installed hash
+`56AE27E03BF2048CF4A32DAA8BDCF0677DF792D8F66F07A9BDEB272559A84361`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

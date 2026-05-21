@@ -236,6 +236,23 @@ struct BrainOwnedFlightPlanSampleCommitInput {
     FlightPlanSnapshot snapshot;
 };
 
+struct BrainOwnedWorkflowSelectionInput {
+    AircraftStateSnapshot aircraft;
+    RadioStateSnapshot radios;
+    RadioReachableControllerSnapshot radioSnapshot;
+    std::string departureIcao;
+    std::string arrivalIcao;
+    double nowSeconds = 0.0;
+    workflow::WorkflowTuning tuning;
+};
+
+struct BrainOwnedWorkflowSelectionOutput {
+    workflow::HandoffDecision decision;
+    ModuleBoardSnapshot departureBoard;
+    ModuleBoardSnapshot arrivalBoard;
+    ModuleBoardSnapshot enrouteBoard;
+};
+
 struct BrainOwnedCruiseTargetTuning {
     double gateToleranceFt = 1000.0;
     double stableVerticalSpeedFpm = 800.0;
@@ -576,6 +593,10 @@ workflow::WorkflowState BuildBrainOwnedWorkflowState(
 void CommitBrainOwnedWorkflowState(
     BrainOwnedRuntimeState* state,
     const workflow::WorkflowState& workflowState);
+
+BrainOwnedWorkflowSelectionOutput ResolveBrainOwnedWorkflowSelection(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedWorkflowSelectionInput& input);
 
 void ApplyBrainOwnedWorkflowRecoveryStage(
     BrainOwnedRuntimeState* state,

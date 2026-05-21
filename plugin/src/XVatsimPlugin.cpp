@@ -1335,36 +1335,6 @@ xvatsim::brain::BrainOwnedPublisherOutput RunBrainPublisher(
     return output;
 }
 
-HandoffDecision ResolveEngineer3WorkflowStage(
-    const xvatsim::brain::AircraftStateSnapshot& aircraftState,
-    const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
-    const xvatsim::brain::ModuleBoardSnapshot& departureBoardSnapshot,
-    const xvatsim::brain::ModuleBoardSnapshot& enrouteBoardSnapshot) {
-    auto state =
-        xvatsim::brain::BuildBrainOwnedWorkflowState(
-            gBrainOwnedRuntimeState);
-
-    xvatsim::brain::workflow::WorkflowTuning tuning;
-    tuning.arrivalWakeDistanceNm = kArrivalWakeDistanceNm;
-    tuning.departureReleaseHoldSeconds = kDepartureReleaseHoldSeconds;
-
-    const auto decision = xvatsim::brain::workflow::ResolveWorkflowStage(
-        aircraftState,
-        radioStateSnapshot,
-        false,
-        false,
-        departureBoardSnapshot,
-        enrouteBoardSnapshot,
-        XPLMGetElapsedTime(),
-        &state,
-        tuning);
-
-    xvatsim::brain::CommitBrainOwnedWorkflowState(
-        &gBrainOwnedRuntimeState,
-        state);
-    return decision;
-}
-
 xvatsim::brain::BrainRadioRangeWorkerOutput RunBrainRadioRangeWorker(
     const xvatsim::brain::BrainRadioRangeWorkerInput& input,
     RefreshDiagnosticsFrame* diagnostics) {
@@ -3218,29 +3188,24 @@ void RefreshOverlayFromBrainEngineer3() {
         transceiverResolutionSnapshot =
             gBrainOwnedRuntimeState.transceiverSnapshot;
 
-        xvatsim::brain::BrainOwnedControllerRelevanceInputRequest
-            provisionalRequest;
-        provisionalRequest.workflowStage = xvatsim::brain::WorkflowStage::None;
-        provisionalRequest.radioSnapshot = radioSnapshot;
-        provisionalRequest.departureIcao = flightContext.departureIcao;
-        provisionalRequest.arrivalIcao = flightContext.destinationIcao;
-        provisionalRequest.radios = radioStateSnapshot;
-        const auto provisionalInput =
-            xvatsim::brain::BuildBrainOwnedControllerRelevanceInput(
-                gBrainOwnedRuntimeState,
-                provisionalRequest);
-        const auto provisionalRelevance =
-            xvatsim::brain::RunBrainControllerRelevanceWorker(provisionalInput);
-        departureBoardSnapshot = provisionalRelevance.departureBoard;
-        arrivalBoardSnapshot = provisionalRelevance.arrivalBoard;
-        enrouteBoardSnapshot = provisionalRelevance.enrouteBoard;
-
-        workflowDecision =
-            ResolveEngineer3WorkflowStage(
-                aircraftState,
-                radioStateSnapshot,
-                departureBoardSnapshot,
-                enrouteBoardSnapshot);
+        xvatsim::brain::BrainOwnedWorkflowSelectionInput workflowInput;
+        workflowInput.aircraft = aircraftState;
+        workflowInput.radios = radioStateSnapshot;
+        workflowInput.radioSnapshot = radioSnapshot;
+        workflowInput.departureIcao = flightContext.departureIcao;
+        workflowInput.arrivalIcao = flightContext.destinationIcao;
+        workflowInput.nowSeconds = XPLMGetElapsedTime();
+        workflowInput.tuning.arrivalWakeDistanceNm = kArrivalWakeDistanceNm;
+        workflowInput.tuning.departureReleaseHoldSeconds =
+            kDepartureReleaseHoldSeconds;
+        const auto workflowOutput =
+            xvatsim::brain::ResolveBrainOwnedWorkflowSelection(
+                &gBrainOwnedRuntimeState,
+                workflowInput);
+        workflowDecision = workflowOutput.decision;
+        departureBoardSnapshot = workflowOutput.departureBoard;
+        arrivalBoardSnapshot = workflowOutput.arrivalBoard;
+        enrouteBoardSnapshot = workflowOutput.enrouteBoard;
         diagnostics.stage = WorkflowStageToken(workflowDecision.stage);
         diagnostics.stageReason = workflowDecision.reason;
 

@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`1E0B9DB0BF9920B26D3E77E17B9005F1349E82AC358B8D1941387015F4C37A07`
+`56AE27E03BF2048CF4A32DAA8BDCF0677DF792D8F66F07A9BDEB272559A84361`
 
 Reason for this hash:
 
@@ -207,6 +207,10 @@ Reason for this hash:
 - Plugin diagnostics state is now grouped under one shell-owned
   `PluginDiagnosticsState`, and refresh timing logs say `radioRange` instead of
   the older `activeTx` label.
+- Brain-owned runtime now owns the provisional relevance pass used for workflow
+  phase selection through `ResolveBrainOwnedWorkflowSelection`. The plugin
+  supplies facts and receives the brain-owned phase decision plus provisional
+  boards.
 
 Regression harness status for this code:
 
@@ -225,7 +229,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`1E0B9DB0BF9920B26D3E77E17B9005F1349E82AC358B8D1941387015F4C37A07`
+`56AE27E03BF2048CF4A32DAA8BDCF0677DF792D8F66F07A9BDEB272559A84361`
 
 Rules:
 

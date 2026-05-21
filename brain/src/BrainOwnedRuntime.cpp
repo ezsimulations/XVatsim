@@ -1,5 +1,7 @@
 #include "XVatsim/brain/BrainOwnedRuntime.h"
 
+#include "XVatsim/brain/BrainOwnedWorkerTypes.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -1261,6 +1263,48 @@ void CommitBrainOwnedWorkflowState(
     state->arrivalAwakeThisFlight = workflowState.arrivalAwakeThisFlight;
     state->airborneSinceSeconds = workflowState.airborneSinceSeconds;
     state->flightContext = workflowState.flightContext;
+}
+
+BrainOwnedWorkflowSelectionOutput ResolveBrainOwnedWorkflowSelection(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedWorkflowSelectionInput& input) {
+    BrainOwnedWorkflowSelectionOutput output;
+    if (state == nullptr) {
+        return output;
+    }
+
+    BrainOwnedControllerRelevanceInputRequest provisionalRequest;
+    provisionalRequest.workflowStage = WorkflowStage::None;
+    provisionalRequest.radioSnapshot = input.radioSnapshot;
+    provisionalRequest.departureIcao = input.departureIcao;
+    provisionalRequest.arrivalIcao = input.arrivalIcao;
+    provisionalRequest.radios = input.radios;
+
+    const auto provisionalInput =
+        BuildBrainOwnedControllerRelevanceInput(
+            *state,
+            provisionalRequest);
+    const auto provisionalRelevance =
+        RunBrainControllerRelevanceWorker(provisionalInput);
+
+    output.departureBoard = provisionalRelevance.departureBoard;
+    output.arrivalBoard = provisionalRelevance.arrivalBoard;
+    output.enrouteBoard = provisionalRelevance.enrouteBoard;
+
+    auto workflowState = BuildBrainOwnedWorkflowState(*state);
+    output.decision = workflow::ResolveWorkflowStage(
+        input.aircraft,
+        input.radios,
+        false,
+        false,
+        output.departureBoard,
+        output.enrouteBoard,
+        input.nowSeconds,
+        &workflowState,
+        input.tuning);
+
+    CommitBrainOwnedWorkflowState(state, workflowState);
+    return output;
 }
 
 void ApplyBrainOwnedWorkflowRecoveryStage(
