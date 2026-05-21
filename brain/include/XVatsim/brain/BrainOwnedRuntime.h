@@ -313,6 +313,8 @@ struct BrainOwnedPublisherOutput {
 };
 
 void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state);
+void ResetBrainOwnedRuntimeCachePreservingFlightContext(
+    BrainOwnedRuntimeState* state);
 void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state);
 
 void CommitBrainOwnedFlightContext(

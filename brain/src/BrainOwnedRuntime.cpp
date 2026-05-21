@@ -326,6 +326,16 @@ void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state) {
     *state = {};
 }
 
+void ResetBrainOwnedRuntimeCachePreservingFlightContext(
+    BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    const auto flightContext = state->flightContext;
+    *state = {};
+    state->flightContext = flightContext;
+}
+
 void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state) {
     if (state == nullptr) {
         return;

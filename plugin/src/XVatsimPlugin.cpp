@@ -813,7 +813,8 @@ void ResetEnrouteInitialDisplayHold() {
 }
 
 void ResetFlightProgressStateForNewContext() {
-    ResetBrainOwnedRuntimeCache();
+    xvatsim::brain::ResetBrainOwnedRuntimeCachePreservingFlightContext(
+        &gBrainOwnedRuntimeState);
     xvatsim::brain::ResetBrainOwnedWorkflowProgress(
         &gBrainOwnedRuntimeState);
     ResetEnrouteInitialDisplayHold();

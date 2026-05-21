@@ -123,6 +123,8 @@ context storage have moved into brain-owned source files.
   - Owns the xPilot-seen latch used by overlay wake/disconnect behavior.
   - Owns active flight context storage; the plugin commits and clears
     brain-returned context through brain helpers.
+  - Owns the cache-reset path that preserves active flight context while
+    clearing derived runtime state for a new context.
 
 ### UI Renderer
 
@@ -432,6 +434,13 @@ brain helpers. Workflow state construction now pulls flight context from the
 brain-owned runtime. Release build passed and full harness passed `234 / 234`
 for installed hash
 `0271DCFB0667726B5DFEE0ADBE430704629DF3ED775C07B2BD45273AF5FAA513`.
+
+Follow-up update: Brain-owned runtime now provides
+`ResetBrainOwnedRuntimeCachePreservingFlightContext`, and new-context runtime
+cache clears use it so a just-locked brain-owned flight context is not erased
+with derived runtime state. Release build passed and full harness passed
+`234 / 234` for installed hash
+`A16D4BA7CA20709A211C3D8624CBABC059FE86940737740D8EA803A1E7CA3A1C`.
 
 ### Slice 4: Quarantine Legacy Runtime
 
