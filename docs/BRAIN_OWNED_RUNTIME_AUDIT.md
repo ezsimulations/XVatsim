@@ -252,6 +252,9 @@ fallback APIs, but none of it may be reachable from ordinary live UI refresh.
 The CMake build graph now gates these old board modules behind
 `XVATSIM_BUILD_REGRESSION_HARNESS`, so plugin-only builds do not compile them as
 part of the live module stack.
+Their CMake target names are now explicitly harness legacy:
+`XVatsimHarnessLegacyArrival`, `XVatsimHarnessLegacyDeparture`, and
+`XVatsimHarnessLegacyEnroute`.
 
 ## Known Contract Risks
 
@@ -576,6 +579,15 @@ departure/arrival/enroute board modules behind `XVATSIM_BUILD_REGRESSION_HARNESS
 They still build for regression coverage, but plugin-only builds no longer
 compile them as part of the live Engineer 3 module stack. Release build passed
 and full harness passed `234 / 234`; installed hash remained
+`C00D070DE02ADD449A0881FE340D98DF6B67A6C43140EB3319FC80496C4B5CA4` because the
+plugin binary was unchanged.
+
+Follow-up update: The harness-only legacy board libraries were renamed to
+`XVatsimHarnessLegacyArrival`, `XVatsimHarnessLegacyDeparture`, and
+`XVatsimHarnessLegacyEnroute`, and `docs/ARCHITECTURE.md` plus
+`modules/README.md` now describe `arrival`, `departure`, and `enroute` as
+harness-only legacy coverage rather than live plugin modules. Release build
+passed and full harness passed `234 / 234`; installed hash remained
 `C00D070DE02ADD449A0881FE340D98DF6B67A6C43140EB3319FC80496C4B5CA4` because the
 plugin binary was unchanged.
 

@@ -1,16 +1,16 @@
-add_library(XVatsimArrival STATIC
+add_library(XVatsimHarnessLegacyArrival STATIC
     src/ArrivalAirspaceModule.cpp
     src/ArrivalLocalModule.cpp
     src/ArrivalModule.cpp
 )
 
-target_compile_features(XVatsimArrival PUBLIC cxx_std_17)
+target_compile_features(XVatsimHarnessLegacyArrival PUBLIC cxx_std_17)
 
-target_include_directories(XVatsimArrival PUBLIC
+target_include_directories(XVatsimHarnessLegacyArrival PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/brain/include
 )
 
-target_link_libraries(XVatsimArrival PUBLIC
+target_link_libraries(XVatsimHarnessLegacyArrival PUBLIC
     XVatsimCtafLookup
 )

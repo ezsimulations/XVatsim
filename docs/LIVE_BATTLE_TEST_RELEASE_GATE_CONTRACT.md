@@ -306,7 +306,10 @@ Only then may XVatsim be treated as store-release ready.
   stateless brain API and the plugin no longer carries a global `gBrain`
   object; old departure/arrival/enroute board modules are now gated behind
   `XVATSIM_BUILD_REGRESSION_HARNESS` so plugin-only builds do not compile them
-  as part of the live module stack;
+  as part of the live module stack; those harness-only legacy board libraries
+  are now named `XVatsimHarnessLegacyArrival`,
+  `XVatsimHarnessLegacyDeparture`, and `XVatsimHarnessLegacyEnroute` so they are
+  not mistaken for live plugin modules;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

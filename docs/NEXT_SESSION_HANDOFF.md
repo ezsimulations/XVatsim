@@ -200,6 +200,10 @@ Reason for this hash:
   `XVATSIM_BUILD_REGRESSION_HARNESS` in CMake. They still build for harness
   coverage, but plugin-only builds no longer compile them as part of the live
   module stack.
+- The old departure/arrival/enroute board libraries are now named
+  `XVatsimHarnessLegacyArrival`, `XVatsimHarnessLegacyDeparture`, and
+  `XVatsimHarnessLegacyEnroute`. They are harness legacy coverage targets, not
+  live Engineer 3 modules.
 
 Regression harness status for this code:
 

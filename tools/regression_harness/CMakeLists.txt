@@ -5,10 +5,10 @@ add_executable(XVatsimRegressionHarness
 target_compile_features(XVatsimRegressionHarness PRIVATE cxx_std_17)
 
 target_link_libraries(XVatsimRegressionHarness PRIVATE
-    XVatsimArrival
     XVatsimBrain
-    XVatsimDeparture
-    XVatsimEnroute
+    XVatsimHarnessLegacyArrival
+    XVatsimHarnessLegacyDeparture
+    XVatsimHarnessLegacyEnroute
     XVatsimRouteSector
     XVatsimWorkflowCore
 )

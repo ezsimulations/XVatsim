@@ -2,10 +2,13 @@
 
 ## Governing Rule
 
-XVatsim has one live decision path. Source modules collect bounded observations,
-the plugin host owns X-Plane integration and lifecycle, the core workflow resolves
-flight-stage ownership, route-sector modules resolve authoritative controller
-coverage, and the brain converts the resulting state into the overlay view model.
+XVatsim has one live decision path:
+
+`Brain decides. Modules produce facts. UI displays brain-approved facts.`
+
+Source modules collect bounded observations, the plugin host owns X-Plane
+integration and lifecycle side effects, and the brain owns workflow, controller
+relevance, display intent, and final UI publication.
 
 Dormant prototype modules must not remain in the live source tree. If a module is
 not part of the compiled plugin or regression harness, it should be archived outside
@@ -23,14 +26,6 @@ Responsibilities:
 - enforce source freshness and runtime/session boundaries
 - pass validated snapshots into workflow, route-sector, board, and brain layers
 
-### Core Workflow
-
-Responsibilities:
-
-- resolve Departure, Enroute, Arrival, or None from explicit state
-- keep departure-release, arrival-wake, and cruise-target state deterministic
-- avoid controller-selection shortcuts or guessed source substitution
-
 ### Route And Authority Resolution
 
 Responsibilities:
@@ -45,9 +40,12 @@ Responsibilities:
 
 Responsibilities:
 
-- build the overlay view model from already-resolved state
-- format display text safely
-- keep rendering decisions separate from source acquisition and route authority
+- decide which workers run and when they run
+- own flight context, workflow phase, route polygon runtime state, radio board
+  reuse, controller relevance, display intent, and final UI publication
+- accept or reject every reachable controller candidate with a logged reason
+- keep broad authority proof out of ordinary UI refresh unless explicitly
+  scheduled as a fallback
 
 ### Overlay
 
@@ -60,12 +58,9 @@ Responsibilities:
 ## Live Module Set
 
 - `aircraft_state`: samples and validates aircraft position, altitude, power, and motion state
-- `arrival`: builds destination-local and destination-airspace boards
 - `controller_feed`: converts fresh VATSIM data into controller snapshots
-- `ctaf_lookup`: resolves airport CTAF display lines and manual CTAF queries
-- `departure`: builds departure-airport boards
-- `diversion_context`: owns manual diversion override state
-- `enroute`: builds route-center boards from resolved route sectors
+- `ctaf_lookup`: resolves airport CTAF facts and manual CTAF queries
+- `diversion_context`: produces manual diversion context facts
 - `flight_plan`: samples simulator/FMS flight-plan context
 - `network_plan_link`: matches VATSIM network flight plans to the connected pilot
 - `overlay`: renders the cockpit UI
@@ -76,6 +71,15 @@ Responsibilities:
 - `transceiver_resolver`: resolves usable transceiver/range information from fresh feeds
 - `vatsim_data_feed`: fetches and sanitizes the VATSIM public data feed
 - `xpilot_bridge`: reads xPilot session state and gated optional message refs
+
+## Harness-Only Legacy Coverage
+
+The old `arrival`, `departure`, and `enroute` board collectors are no longer
+part of the live plugin module set. They compile only for
+`XVATSIM_BUILD_REGRESSION_HARNESS` as `XVatsimHarnessLegacyArrival`,
+`XVatsimHarnessLegacyDeparture`, and `XVatsimHarnessLegacyEnroute` so historical
+scenarios can keep guarding old evidence while Engineer 3 remains the single
+live runtime.
 
 ## Non-Goals For V1
 

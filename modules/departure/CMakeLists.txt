@@ -1,14 +1,14 @@
-add_library(XVatsimDeparture STATIC
+add_library(XVatsimHarnessLegacyDeparture STATIC
     src/DepartureModule.cpp
 )
 
-target_compile_features(XVatsimDeparture PUBLIC cxx_std_17)
+target_compile_features(XVatsimHarnessLegacyDeparture PUBLIC cxx_std_17)
 
-target_include_directories(XVatsimDeparture PUBLIC
+target_include_directories(XVatsimHarnessLegacyDeparture PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/brain/include
 )
 
-target_link_libraries(XVatsimDeparture PUBLIC
+target_link_libraries(XVatsimHarnessLegacyDeparture PUBLIC
     XVatsimCtafLookup
 )
