@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`933E5F4AAC1EDD2AD63336DCD7EAB0C516FB685F73CA01992167071F8935DA51`
+`607D50B58A25E32B96AC4C37D9A9248576FCDBE4F12AB6E6EDC233F52A297EC7`
 
 Reason for this hash:
 
@@ -170,6 +170,9 @@ Reason for this hash:
   boundary latches. The plugin no longer carries those as separate globals.
 - Brain-owned runtime now owns the standby-assist write latch and decides when
   the plugin should perform the COM1 standby write side effect.
+- Brain-owned runtime now owns diversion override source-key state and decides
+  whether a manual diversion override still belongs to the current source
+  VATSIM flight plan.
 
 Regression harness status for this code:
 
@@ -188,7 +191,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`933E5F4AAC1EDD2AD63336DCD7EAB0C516FB685F73CA01992167071F8935DA51`
+`607D50B58A25E32B96AC4C37D9A9248576FCDBE4F12AB6E6EDC233F52A297EC7`
 
 Rules:
 

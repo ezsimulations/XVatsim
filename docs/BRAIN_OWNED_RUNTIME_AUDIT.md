@@ -129,6 +129,8 @@ context storage have moved into brain-owned source files.
     latches, and aircraft cold/dark/invalid-state boundary latches.
   - Owns the standby-assist write latch and COM1 standby write/no-write
     decision. The plugin performs only the radio write side effect.
+  - Owns diversion override source-key state and the decision to use or clear a
+    manual diversion override for the current source VATSIM flight plan.
 
 ### UI Renderer
 
@@ -210,6 +212,8 @@ by installed hash
   aircraft cold/dark/invalid-state boundary latches from the plugin shell
 - standby-assist write latch and COM1 standby write/no-write decision from the
   plugin shell
+- diversion override source-key state and use/clear decision from the plugin
+  shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -466,6 +470,14 @@ brain-selected target. The plugin only executes the radio side effect when the
 brain asks and then applies the brain-owned standby result to the final board.
 Release build passed and full harness passed `234 / 234` for installed hash
 `933E5F4AAC1EDD2AD63336DCD7EAB0C516FB685F73CA01992167071F8935DA51`.
+
+Follow-up update: Brain-owned runtime now owns diversion override source-key
+state and decides whether a manual diversion override still belongs to the
+current source VATSIM flight plan. The plugin still performs the X-Plane
+airport lookup and module reset/effective-plan side effects, but it no longer
+carries `gDiversionOverrideSourceKey` or decides override validity. Release
+build passed and full harness passed `234 / 234` for installed hash
+`607D50B58A25E32B96AC4C37D9A9248576FCDBE4F12AB6E6EDC233F52A297EC7`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

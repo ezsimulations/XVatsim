@@ -83,6 +83,7 @@ struct BrainOwnedRuntimeState {
     std::string cruiseTargetSourceKey;
     std::string standbyAssistLatchKey;
     bool standbyAssistWriteConsumed = false;
+    std::string diversionOverrideSourceKey;
     bool departureReleasedThisFlight = false;
     bool arrivalAwakeThisFlight = false;
     double airborneSinceSeconds = -1.0;
@@ -276,6 +277,17 @@ struct BrainOwnedStandbyAssistSideEffectDecision {
     std::string targetFrequency;
 };
 
+struct BrainOwnedDiversionOverrideInput {
+    bool hasOverride = false;
+    std::string sourcePlanKey;
+};
+
+struct BrainOwnedDiversionOverrideDecision {
+    bool useOverride = false;
+    bool clearOverride = false;
+    std::string logLine;
+};
+
 struct BrainOwnedPublisherInput {
     WorkflowStage workflowStage = WorkflowStage::None;
     double routeProgressDistanceNm = 0.0;
@@ -364,6 +376,16 @@ void ApplyBrainOwnedAircraftRuntimeBoundaryDecision(
     const workflow::AircraftRuntimeBoundaryDecision& decision);
 
 void ResetBrainOwnedStandbyAssistLatch(BrainOwnedRuntimeState* state);
+
+void ClearBrainOwnedDiversionOverrideSource(BrainOwnedRuntimeState* state);
+
+void SetBrainOwnedDiversionOverrideSourceKey(
+    BrainOwnedRuntimeState* state,
+    const std::string& sourcePlanKey);
+
+BrainOwnedDiversionOverrideDecision DecideBrainOwnedDiversionOverride(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedDiversionOverrideInput& input);
 
 std::string ToString(BrainOwnedCandidateDecision decision);
 

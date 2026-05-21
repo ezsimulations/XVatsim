@@ -449,6 +449,43 @@ void ResetBrainOwnedStandbyAssistLatch(BrainOwnedRuntimeState* state) {
     state->standbyAssistWriteConsumed = false;
 }
 
+void ClearBrainOwnedDiversionOverrideSource(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->diversionOverrideSourceKey.clear();
+}
+
+void SetBrainOwnedDiversionOverrideSourceKey(
+    BrainOwnedRuntimeState* state,
+    const std::string& sourcePlanKey) {
+    if (state == nullptr) {
+        return;
+    }
+    state->diversionOverrideSourceKey = sourcePlanKey;
+}
+
+BrainOwnedDiversionOverrideDecision DecideBrainOwnedDiversionOverride(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedDiversionOverrideInput& input) {
+    BrainOwnedDiversionOverrideDecision decision;
+    if (!input.hasOverride) {
+        return decision;
+    }
+
+    if (input.sourcePlanKey.empty() ||
+        state.diversionOverrideSourceKey.empty() ||
+        input.sourcePlanKey != state.diversionOverrideSourceKey) {
+        decision.clearOverride = true;
+        decision.logLine =
+            "[XVatsim] Diversion override cleared because source VATSIM flight plan was stale, unmatched, or changed.\n";
+        return decision;
+    }
+
+    decision.useOverride = true;
+    return decision;
+}
+
 std::string ToString(BrainOwnedCandidateDecision decision) {
     switch (decision) {
         case BrainOwnedCandidateDecision::Pending:

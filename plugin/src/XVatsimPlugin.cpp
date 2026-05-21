@@ -255,7 +255,6 @@ long long gLastDiagnosticsSlowRefreshSeconds = 0;
 long long gLastDiagnosticsSummarySeconds = 0;
 bool gHasLastDiagnosticsAuthorityHash = false;
 std::size_t gLastDiagnosticsAuthorityHash = 0;
-std::string gDiversionOverrideSourceKey;
 PendingTextEntryMode gPendingTextEntryMode = PendingTextEntryMode::None;
 PendingControllerMessageState gPendingControllerMessage;
 RefreshDiagnosticsFrame gRefreshDiagnosticsFrame;
@@ -784,7 +783,8 @@ void SyncCruiseTargetFromNetworkPlan(
 
 void ClearDiversionOverrideState() {
     gDiversionContextModule.Reset();
-    gDiversionOverrideSourceKey.clear();
+    xvatsim::brain::ClearBrainOwnedDiversionOverrideSource(
+        &gBrainOwnedRuntimeState);
 }
 
 void ResetFlightScopedManualPlanState() {
@@ -850,18 +850,27 @@ void RetargetFlightContextToPlan(
 
 xvatsim::brain::NetworkPlanSnapshot BuildEffectiveNetworkPlanSnapshot(
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
-    if (!gDiversionContextModule.HasOverride()) {
+    xvatsim::brain::BrainOwnedDiversionOverrideInput input;
+    input.hasOverride = gDiversionContextModule.HasOverride();
+    if (!input.hasOverride) {
         return networkPlanSnapshot;
     }
 
-    const auto sourcePlanKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
+    input.sourcePlanKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
+    const auto decision =
+        xvatsim::brain::DecideBrainOwnedDiversionOverride(
+            gBrainOwnedRuntimeState,
+            input);
 
-    if (sourcePlanKey.empty() ||
-        gDiversionOverrideSourceKey.empty() ||
-        sourcePlanKey != gDiversionOverrideSourceKey) {
+    if (decision.clearOverride) {
         ClearDiversionOverrideState();
-        XPLMDebugString(
-            "[XVatsim] Diversion override cleared because source VATSIM flight plan was stale, unmatched, or changed.\n");
+        if (!decision.logLine.empty()) {
+            XPLMDebugString(decision.logLine.c_str());
+        }
+        return networkPlanSnapshot;
+    }
+
+    if (!decision.useOverride) {
         return networkPlanSnapshot;
     }
 
@@ -2794,9 +2803,14 @@ void ApplyDiversionFromSubmittedText(const std::string& submittedText) {
         return;
     }
 
-    if (gDiversionContextModule.HasOverride() &&
-        !gDiversionOverrideSourceKey.empty() &&
-        gDiversionOverrideSourceKey != sourcePlanKey) {
+    xvatsim::brain::BrainOwnedDiversionOverrideInput overrideInput;
+    overrideInput.hasOverride = gDiversionContextModule.HasOverride();
+    overrideInput.sourcePlanKey = sourcePlanKey;
+    const auto overrideDecision =
+        xvatsim::brain::DecideBrainOwnedDiversionOverride(
+            gBrainOwnedRuntimeState,
+            overrideInput);
+    if (overrideDecision.clearOverride) {
         ClearDiversionOverrideState();
         ShowTransientStatusLine("DIVERT cleared; flight plan changed");
         LogDiversionAction(
@@ -2810,7 +2824,9 @@ void ApplyDiversionFromSubmittedText(const std::string& submittedText) {
         return;
     }
 
-    gDiversionOverrideSourceKey = sourcePlanKey;
+    xvatsim::brain::SetBrainOwnedDiversionOverrideSourceKey(
+        &gBrainOwnedRuntimeState,
+        sourcePlanKey);
     if (!result.changed) {
         return;
     }

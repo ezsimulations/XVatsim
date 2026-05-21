@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `933E5F4AAC1EDD2AD63336DCD7EAB0C516FB685F73CA01992167071F8935DA51`
+  `607D50B58A25E32B96AC4C37D9A9248576FCDBE4F12AB6E6EDC233F52A297EC7`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -284,7 +284,9 @@ Only then may XVatsim be treated as store-release ready.
   and aircraft cold/dark/invalid-state boundary latches while the plugin only
   applies side effects from brain decisions; brain-owned runtime now owns the
   standby-assist write latch and decides when the plugin should perform the
-  COM1 standby write side effect;
+  COM1 standby write side effect; brain-owned runtime now owns diversion
+  override source-key state and decides whether the manual diversion override
+  still belongs to the current source VATSIM flight plan;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.
