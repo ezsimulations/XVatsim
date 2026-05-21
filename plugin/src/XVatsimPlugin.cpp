@@ -19,7 +19,6 @@
 #include "XVatsim/brain/BrainDisplayIntent.h"
 #include "XVatsim/brain/BrainOwnedRuntime.h"
 #include "XVatsim/brain/BrainOwnedWorkerTypes.h"
-#include "XVatsim/brain/PhaseSnapshotPublisher.h"
 #include "XVatsim/brain/RadioReachableSnapshot.h"
 #include "XVatsim/brain/BrainWorkScheduler.h"
 #include "XVatsim/brain/RoutePolygonTransition.h"
@@ -276,7 +275,6 @@ xvatsim::brain::FlightPlanSnapshot gLastFlightPlanSnapshot;
 bool gHasRuntimeFlightPlanSnapshot = false;
 long long gLastRuntimeFlightPlanSampleSeconds = 0;
 xvatsim::brain::NetworkPlanSnapshot gLastNetworkPlanSnapshot;
-xvatsim::brain::PhaseSnapshotPublisherState gPhaseSnapshotPublisherState;
 xvatsim::brain::BrainOwnedRuntimeState gBrainOwnedRuntimeState;
 float gCruiseGateSatisfiedSinceSeconds = -1.0f;
 std::string gStandbyAssistLatchKey;
@@ -546,7 +544,8 @@ bool NeedsTransceiverResolution(
 }
 
 void ResetBrainDisplayPublisherCache() {
-    gPhaseSnapshotPublisherState.Reset();
+    xvatsim::brain::ResetBrainOwnedDisplayPublisherState(
+        &gBrainOwnedRuntimeState);
 }
 
 void ResetBrainOwnedRuntimeCache() {
@@ -1889,40 +1888,6 @@ bool LegacyAuthorityRuntimeAllowed(
     return false;
 }
 
-xvatsim::brain::ModuleBoardSnapshot PublishDisplayBoardSnapshot(
-    xvatsim::brain::WorkflowStage workflowStage,
-    const xvatsim::brain::ModuleBoardSnapshot& activeBoardSnapshot,
-    bool verificationPending,
-    const std::string& reason,
-    const std::string& planKey) {
-    xvatsim::brain::PhaseSnapshotPublishRequest request;
-    request.stage = workflowStage;
-    request.candidate = activeBoardSnapshot;
-    request.verificationPending = verificationPending;
-    request.reason = reason;
-
-    const auto publishResult =
-        xvatsim::brain::PublishPhaseSnapshot(
-            &gPhaseSnapshotPublisherState,
-            request);
-
-    std::ostringstream result;
-    result << publishResult.statusLine
-           << ",state="
-           << xvatsim::brain::PhaseSnapshotPublisherStateSummary(
-                  gPhaseSnapshotPublisherState);
-    RecordDiagnosticJob(
-        "PhaseSnapshotPublisher",
-        reason.empty() ? "publish-display-board" : reason,
-        0,
-        publishResult.usedLastProven ? "ui-last-proven-reused"
-                                      : "ui-candidate-published",
-        result.str(),
-        {},
-        planKey);
-    return publishResult.snapshot;
-}
-
 std::vector<std::string> BuildEngineer3AirportTokens(const std::string& airportIcao) {
     std::vector<std::string> tokens;
     const auto normalized = NormalizeIcaoInput(airportIcao);
@@ -2719,6 +2684,7 @@ xvatsim::brain::BrainOwnedPublisherOutput RunBrainPublisher(
     publisherInput.arrivalBoard = relevanceOutput.arrivalBoard;
     publisherInput.enrouteBoard = relevanceOutput.enrouteBoard;
     publisherInput.completions = relevanceOutput.completions;
+    publisherInput.publishReason = "brain-owned-ui-publish";
     publisherInput.hasDepartureCtafStation =
         Engineer3BuildCtafStation(
             gFlightContext.departureIcao,
@@ -2746,11 +2712,18 @@ xvatsim::brain::BrainOwnedPublisherOutput RunBrainPublisher(
         {},
         planKey);
 
-    output.finalDisplay = PublishDisplayBoardSnapshot(
-        workflowStage,
-        output.finalDisplay,
-        false,
-        "brain-owned-ui-publish",
+    std::ostringstream phasePublishResult;
+    phasePublishResult << output.phasePublish.statusLine
+                       << ",state="
+                       << output.phasePublisherStateSummary;
+    RecordDiagnosticJob(
+        "PhaseSnapshotPublisher",
+        publisherInput.publishReason,
+        0,
+        output.phasePublish.usedLastProven ? "ui-last-proven-reused"
+                                           : "ui-candidate-published",
+        phasePublishResult.str(),
+        {},
         planKey);
 
     RecordDiagnosticJob(

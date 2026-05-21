@@ -157,6 +157,13 @@ void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state) {
     *state = {};
 }
 
+void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->phaseSnapshotPublisherState.Reset();
+}
+
 std::string ToString(BrainOwnedCandidateDecision decision) {
     switch (decision) {
         case BrainOwnedCandidateDecision::Pending:
@@ -321,6 +328,19 @@ BrainOwnedPublisherOutput RunBrainOwnedPublisher(
     output.finalDisplay = output.displayIntent.finalDisplay;
 
     if (state != nullptr) {
+        PhaseSnapshotPublishRequest publishRequest;
+        publishRequest.stage = input.workflowStage;
+        publishRequest.candidate = output.finalDisplay;
+        publishRequest.verificationPending = input.verificationPending;
+        publishRequest.reason = input.publishReason;
+        output.phasePublish =
+            PublishPhaseSnapshot(
+                &state->phaseSnapshotPublisherState,
+                publishRequest);
+        output.finalDisplay = output.phasePublish.snapshot;
+        output.phasePublisherStateSummary =
+            PhaseSnapshotPublisherStateSummary(
+                state->phaseSnapshotPublisherState);
         state->lastDisplayIntentHash = output.displayIntent.stableHash;
         MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
             state,

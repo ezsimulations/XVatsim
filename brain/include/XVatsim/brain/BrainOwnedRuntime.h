@@ -6,6 +6,7 @@
 
 #include "XVatsim/brain/BrainDisplayIntent.h"
 #include "XVatsim/brain/BrainTypes.h"
+#include "XVatsim/brain/PhaseSnapshotPublisher.h"
 #include "XVatsim/brain/RadioReachableSnapshot.h"
 
 namespace xvatsim::brain {
@@ -67,6 +68,7 @@ struct BrainOwnedRuntimeState {
     ModuleBoardSnapshot relevanceEnrouteBoardSnapshot;
     ModuleBoardSnapshot activeBoardSnapshot;
     ModuleBoardSnapshot finalDisplaySnapshot;
+    PhaseSnapshotPublisherState phaseSnapshotPublisherState;
     std::uint64_t lastDisplayIntentHash = 0;
 
     WorkflowStage lastWorkflowStage = WorkflowStage::None;
@@ -101,6 +103,8 @@ struct BrainOwnedPublisherInput {
     BoardStationSnapshot departureCtafStation;
     bool hasArrivalCtafStation = false;
     BoardStationSnapshot arrivalCtafStation;
+    bool verificationPending = false;
+    std::string publishReason;
 };
 
 struct BrainOwnedPublisherOutput {
@@ -109,10 +113,13 @@ struct BrainOwnedPublisherOutput {
     ModuleBoardSnapshot enrouteBoard;
     ModuleBoardSnapshot finalDisplay;
     BrainDisplayIntentOutput displayIntent;
+    PhaseSnapshotPublishResult phasePublish;
+    std::string phasePublisherStateSummary;
     int rejectedUnapprovedStations = 0;
 };
 
 void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state);
+void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state);
 
 std::string ToString(BrainOwnedCandidateDecision decision);
 

@@ -95,7 +95,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`28C6D510C3647DF70F6A20CDB28B2E8E51483BA9638B7C71BACC141ED929B6FD`:
+`74645C49A91A37299894DE2CED33311888E62CF5EF2B399B820042AE472E9908`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -115,6 +115,7 @@ by installed hash
   the plugin shell
 - publisher assembly, CTAF/UNICOM replacement, and Brain Display Intent
   invocation from the plugin shell
+- phase snapshot publisher state and publish invocation from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -202,11 +203,11 @@ Display Intent sets that flag while assembling the final display board.
 
 Status: started. `RunBrainOwnedPublisher` now owns publisher assembly inside
 `brain/src/BrainOwnedRuntime.cpp`: accepted-completion filtering, CTAF/UNICOM
-replacement, Brain Display Intent invocation, and final-display completion
-marking moved out of `plugin/src/XVatsimPlugin.cpp`. The plugin now supplies
-facts, diagnostics, and phase publish glue only. Release build passed and full
-harness passed `234 / 234` for installed hash
-`28C6D510C3647DF70F6A20CDB28B2E8E51483BA9638B7C71BACC141ED929B6FD`.
+replacement, Brain Display Intent invocation, phase snapshot publish state, and
+final-display completion marking moved out of `plugin/src/XVatsimPlugin.cpp`.
+The plugin now supplies facts and diagnostics only. Release build passed and
+full harness passed `234 / 234` for installed hash
+`74645C49A91A37299894DE2CED33311888E62CF5EF2B399B820042AE472E9908`.
 
 ### Slice 4: Quarantine Legacy Runtime
 
