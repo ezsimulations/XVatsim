@@ -53,6 +53,24 @@ struct RecoveryDecision {
     bool usedFreshNetworkPlan = false;
 };
 
+struct FlightContextUpdateInput {
+    FlightContext currentContext;
+    AircraftStateSnapshot aircraftState;
+    PilotIdentitySnapshot pilotIdentity;
+    FlightPlanSnapshot flightPlan;
+    NetworkPlanSnapshot networkPlan;
+    WorkflowTuning tuning;
+};
+
+struct FlightContextUpdateOutput {
+    FlightContext flightContext;
+    bool changed = false;
+    bool lockedNewContext = false;
+    bool metadataChanged = false;
+    bool shouldResetFlightScopedState = false;
+    bool shouldInvalidatePresentation = false;
+};
+
 double DistanceToDestinationNm(
     const AircraftStateSnapshot& aircraftState,
     const FlightContext& flightContext);
@@ -80,6 +98,9 @@ RecoveryDecision ResolveCurrentFlightRecovery(
     const FlightContext& preservedFlightContext,
     RecoveryRequestMode mode,
     const WorkflowTuning& tuning = {});
+
+FlightContextUpdateOutput UpdateFlightContextFromNetworkPlan(
+    const FlightContextUpdateInput& input);
 
 HandoffDecision ResolveWorkflowStage(
     const AircraftStateSnapshot& aircraftState,

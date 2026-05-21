@@ -104,6 +104,134 @@ void ApplyMissingAirportCoordinates(
     *targetHasCoordinates = true;
 }
 
+bool CoordinatesDiffer(
+    double leftLatitudeDeg,
+    double leftLongitudeDeg,
+    double rightLatitudeDeg,
+    double rightLongitudeDeg) {
+    constexpr double kCoordinateToleranceDeg = 1e-4;
+    return std::fabs(leftLatitudeDeg - rightLatitudeDeg) >
+               kCoordinateToleranceDeg ||
+           std::fabs(leftLongitudeDeg - rightLongitudeDeg) >
+               kCoordinateToleranceDeg;
+}
+
+bool ApplyAuthoritativeAirportCoordinates(
+    const std::string& targetIcao,
+    const std::string& sourceIcao,
+    bool sourceHasCoordinates,
+    double sourceLatitudeDeg,
+    double sourceLongitudeDeg,
+    double* targetLatitudeDeg,
+    double* targetLongitudeDeg,
+    bool* targetHasCoordinates) {
+    if (targetLatitudeDeg == nullptr ||
+        targetLongitudeDeg == nullptr ||
+        targetHasCoordinates == nullptr ||
+        !sourceHasCoordinates ||
+        !AirportsMatch(targetIcao, sourceIcao)) {
+        return false;
+    }
+
+    if (*targetHasCoordinates &&
+        !CoordinatesDiffer(
+            *targetLatitudeDeg,
+            *targetLongitudeDeg,
+            sourceLatitudeDeg,
+            sourceLongitudeDeg)) {
+        return false;
+    }
+
+    *targetLatitudeDeg = sourceLatitudeDeg;
+    *targetLongitudeDeg = sourceLongitudeDeg;
+    *targetHasCoordinates = true;
+    return true;
+}
+
+bool ApplyMissingAirportCoordinatesWithChange(
+    const std::string& targetIcao,
+    const std::string& sourceIcao,
+    bool sourceHasCoordinates,
+    double sourceLatitudeDeg,
+    double sourceLongitudeDeg,
+    double* targetLatitudeDeg,
+    double* targetLongitudeDeg,
+    bool* targetHasCoordinates) {
+    if (targetHasCoordinates == nullptr) {
+        return false;
+    }
+    const auto hadCoordinates = *targetHasCoordinates;
+    ApplyMissingAirportCoordinates(
+        targetIcao,
+        sourceIcao,
+        sourceHasCoordinates,
+        sourceLatitudeDeg,
+        sourceLongitudeDeg,
+        targetLatitudeDeg,
+        targetLongitudeDeg,
+        targetHasCoordinates);
+    return !hadCoordinates && *targetHasCoordinates;
+}
+
+FlightContext BuildLockedFlightContextFromNetworkPlan(
+    const brain::PilotIdentitySnapshot& pilotIdentitySnapshot,
+    const brain::FlightPlanSnapshot& flightPlanSnapshot,
+    const brain::NetworkPlanSnapshot& networkPlanSnapshot,
+    const FlightContext& previousContext) {
+    FlightContext nextContext;
+    nextContext.active = true;
+    nextContext.callsign = pilotIdentitySnapshot.callsign;
+    nextContext.departureIcao = networkPlanSnapshot.departureIcao;
+    nextContext.departureLatDeg = networkPlanSnapshot.departureLatDeg;
+    nextContext.departureLonDeg = networkPlanSnapshot.departureLonDeg;
+    nextContext.hasDepartureCoordinates =
+        networkPlanSnapshot.hasDepartureCoordinates;
+    nextContext.destinationIcao = networkPlanSnapshot.destinationIcao;
+    nextContext.destinationLatDeg = networkPlanSnapshot.destinationLatDeg;
+    nextContext.destinationLonDeg = networkPlanSnapshot.destinationLonDeg;
+    nextContext.hasDestinationCoordinates =
+        networkPlanSnapshot.hasDestinationCoordinates;
+    nextContext.routeText = networkPlanSnapshot.routeText;
+
+    ApplyMissingAirportCoordinates(
+        nextContext.departureIcao,
+        flightPlanSnapshot.departureIcao,
+        flightPlanSnapshot.hasDepartureCoordinates,
+        flightPlanSnapshot.departureLatDeg,
+        flightPlanSnapshot.departureLonDeg,
+        &nextContext.departureLatDeg,
+        &nextContext.departureLonDeg,
+        &nextContext.hasDepartureCoordinates);
+    ApplyMissingAirportCoordinates(
+        nextContext.destinationIcao,
+        flightPlanSnapshot.destinationIcao,
+        flightPlanSnapshot.hasDestinationCoordinates,
+        flightPlanSnapshot.destinationLatDeg,
+        flightPlanSnapshot.destinationLonDeg,
+        &nextContext.destinationLatDeg,
+        &nextContext.destinationLonDeg,
+        &nextContext.hasDestinationCoordinates);
+    ApplyMissingAirportCoordinates(
+        nextContext.departureIcao,
+        previousContext.departureIcao,
+        previousContext.hasDepartureCoordinates,
+        previousContext.departureLatDeg,
+        previousContext.departureLonDeg,
+        &nextContext.departureLatDeg,
+        &nextContext.departureLonDeg,
+        &nextContext.hasDepartureCoordinates);
+    ApplyMissingAirportCoordinates(
+        nextContext.destinationIcao,
+        previousContext.destinationIcao,
+        previousContext.hasDestinationCoordinates,
+        previousContext.destinationLatDeg,
+        previousContext.destinationLonDeg,
+        &nextContext.destinationLatDeg,
+        &nextContext.destinationLonDeg,
+        &nextContext.hasDestinationCoordinates);
+    return nextContext;
+}
+
 FlightContext BuildRecoveredFlightContext(
     const brain::FlightPlanSnapshot& flightPlanSnapshot,
     const brain::NetworkPlanSnapshot& networkPlanSnapshot,
@@ -423,6 +551,124 @@ RecoveryDecision ResolveCurrentFlightRecovery(
     decision.usedPreservedContext = usePreservedContext;
     decision.usedFreshNetworkPlan = true;
     return decision;
+}
+
+FlightContextUpdateOutput UpdateFlightContextFromNetworkPlan(
+    const FlightContextUpdateInput& input) {
+    FlightContextUpdateOutput output;
+    output.flightContext = input.currentContext;
+
+    if (!input.pilotIdentity.connected ||
+        !input.networkPlan.matched ||
+        input.networkPlan.stale) {
+        return output;
+    }
+
+    const auto callsignChanged =
+        input.currentContext.active &&
+        !input.pilotIdentity.callsign.empty() &&
+        input.currentContext.callsign != input.pilotIdentity.callsign;
+    const auto routeChanged =
+        input.currentContext.active &&
+        (!AirportsMatch(
+             input.currentContext.departureIcao,
+             input.networkPlan.departureIcao) ||
+         !AirportsMatch(
+             input.currentContext.destinationIcao,
+             input.networkPlan.destinationIcao));
+
+    if (!input.currentContext.active || callsignChanged || routeChanged) {
+        if (!CanConfirmDepartureLocation(
+                input.aircraftState,
+                input.flightPlan,
+                input.networkPlan,
+                input.tuning)) {
+            return output;
+        }
+
+        output.flightContext =
+            BuildLockedFlightContextFromNetworkPlan(
+                input.pilotIdentity,
+                input.flightPlan,
+                input.networkPlan,
+                input.currentContext);
+        output.changed = true;
+        output.lockedNewContext = true;
+        output.shouldResetFlightScopedState = true;
+        output.shouldInvalidatePresentation = true;
+        return output;
+    }
+
+    auto nextContext = input.currentContext;
+    bool changed = false;
+
+    if (!input.pilotIdentity.callsign.empty() &&
+        nextContext.callsign != input.pilotIdentity.callsign) {
+        nextContext.callsign = input.pilotIdentity.callsign;
+        changed = true;
+    }
+
+    if (!input.networkPlan.routeText.empty() &&
+        nextContext.routeText != input.networkPlan.routeText) {
+        nextContext.routeText = input.networkPlan.routeText;
+        changed = true;
+    }
+
+    changed =
+        ApplyAuthoritativeAirportCoordinates(
+            nextContext.departureIcao,
+            input.networkPlan.departureIcao,
+            input.networkPlan.hasDepartureCoordinates,
+            input.networkPlan.departureLatDeg,
+            input.networkPlan.departureLonDeg,
+            &nextContext.departureLatDeg,
+            &nextContext.departureLonDeg,
+            &nextContext.hasDepartureCoordinates) ||
+        changed;
+    changed =
+        ApplyMissingAirportCoordinatesWithChange(
+            nextContext.departureIcao,
+            input.flightPlan.departureIcao,
+            input.flightPlan.hasDepartureCoordinates,
+            input.flightPlan.departureLatDeg,
+            input.flightPlan.departureLonDeg,
+            &nextContext.departureLatDeg,
+            &nextContext.departureLonDeg,
+            &nextContext.hasDepartureCoordinates) ||
+        changed;
+
+    changed =
+        ApplyAuthoritativeAirportCoordinates(
+            nextContext.destinationIcao,
+            input.networkPlan.destinationIcao,
+            input.networkPlan.hasDestinationCoordinates,
+            input.networkPlan.destinationLatDeg,
+            input.networkPlan.destinationLonDeg,
+            &nextContext.destinationLatDeg,
+            &nextContext.destinationLonDeg,
+            &nextContext.hasDestinationCoordinates) ||
+        changed;
+    changed =
+        ApplyMissingAirportCoordinatesWithChange(
+            nextContext.destinationIcao,
+            input.flightPlan.destinationIcao,
+            input.flightPlan.hasDestinationCoordinates,
+            input.flightPlan.destinationLatDeg,
+            input.flightPlan.destinationLonDeg,
+            &nextContext.destinationLatDeg,
+            &nextContext.destinationLonDeg,
+            &nextContext.hasDestinationCoordinates) ||
+        changed;
+
+    if (!changed) {
+        return output;
+    }
+
+    output.flightContext = std::move(nextContext);
+    output.changed = true;
+    output.metadataChanged = true;
+    output.shouldInvalidatePresentation = true;
+    return output;
 }
 
 HandoffDecision ResolveWorkflowStage(

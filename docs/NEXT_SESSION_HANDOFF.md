@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`078CF4DC56990C61E4EF60F4192F6B900C20B438BC4426F32165312AEEEBCF1F`
+`A7C23053B5172C9533A8EFFE846F531F2E921A8A1190114AA998C952DFA6C139`
 
 Reason for this hash:
 
@@ -129,6 +129,11 @@ Reason for this hash:
   shim for existing callers.
 - The unused pre-Engineer-3 plugin workflow wrapper and unused distance wrappers
   have been removed from `plugin/src/XVatsimPlugin.cpp`.
+- `UpdateFlightContextFromNetworkPlan` now owns normal flight-context
+  lock/refresh decisions, including departure confirmation, callsign/route
+  change relock, route text refresh, and authoritative/missing airport
+  coordinate refresh. The plugin only applies the brain output and performs
+  reset/invalidate side effects.
 
 Regression harness status for this code:
 
@@ -147,7 +152,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`078CF4DC56990C61E4EF60F4192F6B900C20B438BC4426F32165312AEEEBCF1F`
+`A7C23053B5172C9533A8EFFE846F531F2E921A8A1190114AA998C952DFA6C139`
 
 Rules:
 

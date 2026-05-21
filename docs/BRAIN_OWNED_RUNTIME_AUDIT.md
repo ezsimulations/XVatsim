@@ -56,11 +56,12 @@ This is shrinking toward the correct shape. The plugin still hosts the live
 X-Plane shell, input sampling, module fact adapters, and diagnostics, but
 radio-board cache ownership, route-polygon runtime/cache ownership, controller
 relevance, relevance cache ownership, publisher ownership, overlay wake
-decisions, and workflow/recovery ownership have moved into brain-owned source
-files.
+decisions, workflow/recovery ownership, and normal flight-context update
+decisions have moved into brain-owned source files.
 
 - `brain/src/BrainWorkflow.cpp`
-  - Owns workflow phase and current-flight recovery decisions.
+  - Owns workflow phase, current-flight recovery decisions, and normal
+    flight-context lock/refresh decisions.
   - `core/WorkflowEngine.h` remains only as a compatibility shim for existing
     callers.
 
@@ -167,6 +168,7 @@ by installed hash
 - overlay wake/hide/reason decisions from the plugin shell
 - workflow/recovery implementation from `core/src/WorkflowEngine.cpp`
 - unused pre-Engineer-3 plugin workflow wrapper and unused distance wrappers
+- normal flight-context lock/refresh decisions from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -321,6 +323,14 @@ live path to call `brain::workflow::ResolveWorkflowStage` through the Engineer
 3 wrapper only. Release build passed and full harness passed `234 / 234` for
 installed hash
 `078CF4DC56990C61E4EF60F4192F6B900C20B438BC4426F32165312AEEEBCF1F`.
+
+Follow-up update: `UpdateFlightContextFromNetworkPlan` now owns normal
+flight-context lock/refresh decisions inside `brain/src/BrainWorkflow.cpp`,
+including departure confirmation, callsign/route change relock, route text
+refresh, and authoritative/missing airport coordinate refresh. The plugin only
+applies the brain output context and performs reset/invalidate side effects.
+Release build passed and full harness passed `234 / 234` for installed hash
+`A7C23053B5172C9533A8EFFE846F531F2E921A8A1190114AA998C952DFA6C139`.
 
 ### Slice 4: Quarantine Legacy Runtime
 
