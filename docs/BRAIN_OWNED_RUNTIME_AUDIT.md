@@ -98,6 +98,7 @@ brain-owned source files.
     CTAF facts.
   - Owns CTAF/UNICOM station shaping and tuned-state decisions from CTAF lookup
     facts plus radio state.
+  - Owns standby-assist target selection and display flag application.
 
 ### UI Renderer
 
@@ -114,7 +115,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`374EDA031F594BA7C35AFF7DA7B4D75B333801D61E5247E998ACCA19C7F19D16`:
+`C1EF7EEAB8B64A5092B00AA8EB12F9C58155DD34FF5D1E417850F711EC9B10F8`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -151,6 +152,8 @@ by installed hash
 - Controller Relevance worker input shaping from the plugin shell
 - Brain Publisher input shaping from the plugin shell
 - CTAF/UNICOM station shaping and tuned-state decisions from the plugin shell
+- standby-assist target selection and display flag application from the plugin
+  shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -269,6 +272,12 @@ facts and radio state into CTAF/UNICOM board stations, including tuned-state
 decisions. The plugin only adapts the CTAF module result into neutral facts.
 Release build passed and full harness passed `234 / 234` for installed hash
 `374EDA031F594BA7C35AFF7DA7B4D75B333801D61E5247E998ACCA19C7F19D16`.
+
+Follow-up update: Brain-owned runtime now owns standby-assist target selection
+and display flag application. The plugin only performs the X-Plane COM1
+standby write side effect and feeds the result back to the brain. Release build
+passed and full harness passed `234 / 234` for installed hash
+`C1EF7EEAB8B64A5092B00AA8EB12F9C58155DD34FF5D1E417850F711EC9B10F8`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

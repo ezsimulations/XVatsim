@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`374EDA031F594BA7C35AFF7DA7B4D75B333801D61E5247E998ACCA19C7F19D16`
+`C1EF7EEAB8B64A5092B00AA8EB12F9C58155DD34FF5D1E417850F711EC9B10F8`
 
 Reason for this hash:
 
@@ -115,6 +115,9 @@ Reason for this hash:
 - Brain-owned runtime now turns CTAF lookup facts plus radio state into
   CTAF/UNICOM board stations, including the tuned flag; the plugin no longer
   builds CTAF/UNICOM display stations.
+- Brain-owned runtime now owns standby-assist target selection and display flag
+  application. The plugin only performs the X-Plane COM1 standby write side
+  effect, then feeds the result back to the brain.
 
 Regression harness status for this code:
 
@@ -133,7 +136,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`374EDA031F594BA7C35AFF7DA7B4D75B333801D61E5247E998ACCA19C7F19D16`
+`C1EF7EEAB8B64A5092B00AA8EB12F9C58155DD34FF5D1E417850F711EC9B10F8`
 
 Rules:
 

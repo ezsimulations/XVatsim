@@ -90,6 +90,65 @@ bool IsCtafOrUnicom(const BoardStationSnapshot& station) {
            station.role == StationRole::Unicom;
 }
 
+bool IsBlockedControllerFrequency(const std::string& frequency) {
+    const auto normalizedFrequency = NormalizeFrequency(frequency);
+    return normalizedFrequency == "121500" || normalizedFrequency == "199998";
+}
+
+bool IsStandbyEligibleRole(StationRole role) {
+    switch (role) {
+        case StationRole::Delivery:
+        case StationRole::Ground:
+        case StationRole::Tower:
+        case StationRole::Departure:
+        case StationRole::Approach:
+        case StationRole::Center:
+            return true;
+        case StationRole::Atis:
+        case StationRole::Ctaf:
+        case StationRole::Unicom:
+        case StationRole::Other:
+        default:
+            return false;
+    }
+}
+
+int StandbyRoleRank(WorkflowStage workflowStage, StationRole role) {
+    if (workflowStage == WorkflowStage::Arrival) {
+        switch (role) {
+            case StationRole::Center:
+                return 0;
+            case StationRole::Approach:
+            case StationRole::Departure:
+                return 1;
+            case StationRole::Tower:
+                return 2;
+            case StationRole::Ground:
+                return 3;
+            case StationRole::Delivery:
+                return 4;
+            default:
+                return 99;
+        }
+    }
+
+    switch (role) {
+        case StationRole::Delivery:
+            return 0;
+        case StationRole::Ground:
+            return 1;
+        case StationRole::Tower:
+            return 2;
+        case StationRole::Departure:
+        case StationRole::Approach:
+            return 3;
+        case StationRole::Center:
+            return 4;
+        default:
+            return 99;
+    }
+}
+
 bool FrequencyTuned(
     const std::string& frequency,
     const RadioStateSnapshot& radioStateSnapshot) {
@@ -102,6 +161,18 @@ bool FrequencyTuned(
                normalizedTarget ||
            NormalizeFrequency(radioStateSnapshot.com2ActiveFrequency) ==
                normalizedTarget;
+}
+
+std::string StandbyAssistWorkflowKey(
+    WorkflowStage workflowStage,
+    const std::string& planKey,
+    const RadioStateSnapshot& radios,
+    const BoardStationSnapshot& targetStation) {
+    return planKey + "|" +
+           std::to_string(static_cast<int>(workflowStage)) + "|" +
+           NormalizeFrequency(radios.com1ActiveFrequency) + "|" +
+           NormalizeCallsign(targetStation.callsign) + "|" +
+           NormalizeFrequency(targetStation.frequency);
 }
 
 std::string StationKey(const BoardStationSnapshot& station) {
@@ -377,6 +448,121 @@ void CommitBrainOwnedPublishedRuntime(
     state->lastWorkflowStage = input.workflowStage;
     state->lastPlanKey = input.planKey;
     state->lastRadioBoardHash = input.gatedRadioSnapshot.stableHash;
+}
+
+BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
+    const BrainOwnedStandbyAssistPlanInput& input) {
+    BrainOwnedStandbyAssistPlanOutput output;
+    output.workflowStage = input.workflowStage;
+    output.board = input.board;
+    for (auto& station : output.board.stations) {
+        station.standby = false;
+    }
+
+    if (input.workflowStage != WorkflowStage::Departure &&
+        input.workflowStage != WorkflowStage::Arrival &&
+        input.workflowStage != WorkflowStage::Enroute) {
+        return output;
+    }
+    if (input.planKey.empty() || !input.radios.valid) {
+        return output;
+    }
+
+    std::vector<std::size_t> orderedEligibleIndices;
+    orderedEligibleIndices.reserve(output.board.stations.size());
+    for (std::size_t index = 0; index < output.board.stations.size(); ++index) {
+        const auto& station = output.board.stations[index];
+        if (station.offline ||
+            !IsStandbyEligibleRole(station.role) ||
+            station.frequency.empty() ||
+            IsBlockedControllerFrequency(station.frequency)) {
+            continue;
+        }
+        orderedEligibleIndices.push_back(index);
+    }
+
+    if (input.workflowStage != WorkflowStage::Enroute) {
+        std::stable_sort(
+            orderedEligibleIndices.begin(),
+            orderedEligibleIndices.end(),
+            [&](std::size_t leftIndex, std::size_t rightIndex) {
+                const auto& left = output.board.stations[leftIndex];
+                const auto& right = output.board.stations[rightIndex];
+                const auto leftRank =
+                    StandbyRoleRank(input.workflowStage, left.role);
+                const auto rightRank =
+                    StandbyRoleRank(input.workflowStage, right.role);
+                if (leftRank != rightRank) {
+                    return leftRank < rightRank;
+                }
+                if (left.frequency != right.frequency) {
+                    return left.frequency < right.frequency;
+                }
+                return left.callsign < right.callsign;
+            });
+    }
+
+    if (orderedEligibleIndices.empty()) {
+        return output;
+    }
+
+    std::size_t targetPosition = 0;
+    for (std::size_t position = 0; position < orderedEligibleIndices.size();
+         ++position) {
+        if (output.board.stations[orderedEligibleIndices[position]].tuned) {
+            targetPosition = position + 1;
+        }
+    }
+
+    while (targetPosition < orderedEligibleIndices.size() &&
+           output.board.stations[orderedEligibleIndices[targetPosition]].tuned) {
+        ++targetPosition;
+    }
+    if (targetPosition >= orderedEligibleIndices.size()) {
+        return output;
+    }
+
+    const auto targetIndex = orderedEligibleIndices[targetPosition];
+    const auto& targetStation = output.board.stations[targetIndex];
+    if (targetStation.frequency.empty()) {
+        return output;
+    }
+
+    output.hasTarget = true;
+    output.targetStationIndex = targetIndex;
+    output.targetFrequency = targetStation.frequency;
+    output.latchKey =
+        StandbyAssistWorkflowKey(
+            input.workflowStage,
+            input.planKey,
+            input.radios,
+            targetStation);
+    const auto normalizedTarget = NormalizeFrequency(targetStation.frequency);
+    output.targetAlreadyInCom1Standby =
+        !normalizedTarget.empty() &&
+        NormalizeFrequency(input.radios.com1StandbyFrequency) ==
+            normalizedTarget;
+    return output;
+}
+
+ModuleBoardSnapshot ApplyBrainOwnedStandbyAssistResult(
+    const BrainOwnedStandbyAssistPlanOutput& plan,
+    bool standbyLoaded) {
+    auto board = plan.board;
+    if (!plan.hasTarget || plan.targetStationIndex >= board.stations.size()) {
+        return board;
+    }
+    if (plan.workflowStage == WorkflowStage::Enroute) {
+        return board;
+    }
+
+    auto& targetStation = board.stations[plan.targetStationIndex];
+    if (standbyLoaded) {
+        targetStation.standby = true;
+    } else {
+        targetStation.next = true;
+    }
+    return board;
 }
 
 BrainOwnedPublisherInput BuildBrainOwnedPublisherInputFromFacts(

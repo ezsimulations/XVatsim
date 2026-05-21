@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `374EDA031F594BA7C35AFF7DA7B4D75B333801D61E5247E998ACCA19C7F19D16`
+  `C1EF7EEAB8B64A5092B00AA8EB12F9C58155DD34FF5D1E417850F711EC9B10F8`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -237,6 +237,9 @@ Only then may XVatsim be treated as store-release ready.
   brain-owned runtime now turns CTAF lookup facts plus radio state into
   CTAF/UNICOM board stations, including tuned-state decisions, while the plugin
   only adapts the CTAF module output into neutral facts;
+  brain-owned runtime now owns standby-assist target selection and display flag
+  application while the plugin only performs the COM1 standby radio-write side
+  effect and feeds the result back to the brain;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

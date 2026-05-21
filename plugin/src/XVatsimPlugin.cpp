@@ -702,84 +702,9 @@ void ApplyControllerMessageCard(
     overlayModel->bodyLines = std::move(lines);
 }
 
-std::string StandbyAssistWorkflowKey(
-    xvatsim::brain::WorkflowStage workflowStage,
-    const std::string& sourcePlanKey,
-    const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
-    const xvatsim::brain::BoardStationSnapshot& targetStation) {
-    return sourcePlanKey + "|" +
-           std::to_string(static_cast<int>(workflowStage)) + "|" +
-           NormalizeFrequency(radioStateSnapshot.com1ActiveFrequency) + "|" +
-           NormalizeCallsign(targetStation.callsign) + "|" +
-           NormalizeFrequency(targetStation.frequency);
-}
-
-bool IsBlockedControllerFrequency(const std::string& frequency) {
-    const auto normalizedFrequency = NormalizeFrequency(frequency);
-    return normalizedFrequency == "121500" || normalizedFrequency == "199998";
-}
-
 void ResetStandbyAssistLatch() {
     gStandbyAssistLatchKey.clear();
     gStandbyAssistWriteConsumed = false;
-}
-
-bool IsStandbyEligibleRole(xvatsim::brain::StationRole role) {
-    using xvatsim::brain::StationRole;
-    switch (role) {
-        case StationRole::Delivery:
-        case StationRole::Ground:
-        case StationRole::Tower:
-        case StationRole::Departure:
-        case StationRole::Approach:
-        case StationRole::Center:
-            return true;
-        case StationRole::Atis:
-        case StationRole::Ctaf:
-        case StationRole::Unicom:
-        case StationRole::Other:
-        default:
-            return false;
-    }
-}
-
-int StandbyRoleRank(
-    xvatsim::brain::WorkflowStage workflowStage,
-    xvatsim::brain::StationRole role) {
-    using xvatsim::brain::StationRole;
-    if (workflowStage == xvatsim::brain::WorkflowStage::Arrival) {
-        switch (role) {
-            case StationRole::Center:
-                return 0;
-            case StationRole::Approach:
-            case StationRole::Departure:
-                return 1;
-            case StationRole::Tower:
-                return 2;
-            case StationRole::Ground:
-                return 3;
-            case StationRole::Delivery:
-                return 4;
-            default:
-                return 99;
-        }
-    }
-
-    switch (role) {
-        case StationRole::Delivery:
-            return 0;
-        case StationRole::Ground:
-            return 1;
-        case StationRole::Tower:
-            return 2;
-        case StationRole::Departure:
-        case StationRole::Approach:
-            return 3;
-        case StationRole::Center:
-            return 4;
-        default:
-            return 99;
-    }
 }
 
 void ApplyStandbyRecommendation(
@@ -791,119 +716,40 @@ void ApplyStandbyRecommendation(
         return;
     }
 
-    if (workflowStage != xvatsim::brain::WorkflowStage::Departure &&
-        workflowStage != xvatsim::brain::WorkflowStage::Arrival &&
-        workflowStage != xvatsim::brain::WorkflowStage::Enroute) {
+    xvatsim::brain::BrainOwnedStandbyAssistPlanInput standbyInput;
+    standbyInput.workflowStage = workflowStage;
+    standbyInput.planKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
+    standbyInput.radios = radioStateSnapshot;
+    standbyInput.board = *boardSnapshot;
+    const auto standbyPlan =
+        xvatsim::brain::BuildBrainOwnedStandbyAssistPlan(standbyInput);
+    *boardSnapshot = standbyPlan.board;
+
+    if (!standbyPlan.hasTarget) {
         ResetStandbyAssistLatch();
         return;
     }
 
-    for (auto& station : boardSnapshot->stations) {
-        station.next = false;
-        station.standby = false;
-    }
-
-    const auto sourcePlanKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
-    if (sourcePlanKey.empty()) {
-        ResetStandbyAssistLatch();
-        return;
-    }
-
-    if (!radioStateSnapshot.valid) {
-        ResetStandbyAssistLatch();
-        return;
-    }
-
-    std::vector<std::size_t> orderedEligibleIndices;
-    orderedEligibleIndices.reserve(boardSnapshot->stations.size());
-    for (std::size_t index = 0; index < boardSnapshot->stations.size(); ++index) {
-        const auto& station = boardSnapshot->stations[index];
-        if (station.offline ||
-            !IsStandbyEligibleRole(station.role) ||
-            station.frequency.empty() ||
-            IsBlockedControllerFrequency(station.frequency)) {
-            continue;
-        }
-        orderedEligibleIndices.push_back(index);
-    }
-
-    if (workflowStage != xvatsim::brain::WorkflowStage::Enroute) {
-        std::stable_sort(
-            orderedEligibleIndices.begin(),
-            orderedEligibleIndices.end(),
-            [&](std::size_t leftIndex, std::size_t rightIndex) {
-                const auto& left = boardSnapshot->stations[leftIndex];
-                const auto& right = boardSnapshot->stations[rightIndex];
-                const auto leftRank = StandbyRoleRank(workflowStage, left.role);
-                const auto rightRank = StandbyRoleRank(workflowStage, right.role);
-                if (leftRank != rightRank) {
-                    return leftRank < rightRank;
-                }
-                if (left.frequency != right.frequency) {
-                    return left.frequency < right.frequency;
-                }
-                return left.callsign < right.callsign;
-            });
-    }
-
-    if (orderedEligibleIndices.empty()) {
-        ResetStandbyAssistLatch();
-        return;
-    }
-
-    std::size_t targetPosition = 0;
-    for (std::size_t position = 0; position < orderedEligibleIndices.size(); ++position) {
-        if (boardSnapshot->stations[orderedEligibleIndices[position]].tuned) {
-            targetPosition = position + 1;
-        }
-    }
-
-    while (targetPosition < orderedEligibleIndices.size() &&
-           boardSnapshot->stations[orderedEligibleIndices[targetPosition]].tuned) {
-        ++targetPosition;
-    }
-
-    if (targetPosition >= orderedEligibleIndices.size()) {
-        ResetStandbyAssistLatch();
-        return;
-    }
-
-    auto& targetStation = boardSnapshot->stations[orderedEligibleIndices[targetPosition]];
-    if (targetStation.frequency.empty()) {
-        ResetStandbyAssistLatch();
-        return;
-    }
-
-    const auto latchKey =
-        StandbyAssistWorkflowKey(
-            workflowStage,
-            sourcePlanKey,
-            radioStateSnapshot,
-            targetStation);
-    if (latchKey != gStandbyAssistLatchKey) {
-        gStandbyAssistLatchKey = latchKey;
+    if (standbyPlan.latchKey != gStandbyAssistLatchKey) {
+        gStandbyAssistLatchKey = standbyPlan.latchKey;
         gStandbyAssistWriteConsumed = false;
     }
 
     bool standbyLoaded = false;
     if (gPluginSettings.standbyAssistEnabled) {
-        const auto normalizedTarget = NormalizeFrequency(targetStation.frequency);
-        standbyLoaded =
-            !normalizedTarget.empty() &&
-            NormalizeFrequency(radioStateSnapshot.com1StandbyFrequency) == normalizedTarget;
+        standbyLoaded = standbyPlan.targetAlreadyInCom1Standby;
         if (!standbyLoaded && !gStandbyAssistWriteConsumed) {
-            standbyLoaded = gRadioStateSampler.SetCom1StandbyFrequency(targetStation.frequency);
+            standbyLoaded =
+                gRadioStateSampler.SetCom1StandbyFrequency(
+                    standbyPlan.targetFrequency);
         }
         gStandbyAssistWriteConsumed = true;
     }
 
-    if (workflowStage != xvatsim::brain::WorkflowStage::Enroute) {
-        if (standbyLoaded) {
-            targetStation.standby = true;
-        } else {
-            targetStation.next = true;
-        }
-    }
+    *boardSnapshot =
+        xvatsim::brain::ApplyBrainOwnedStandbyAssistResult(
+            standbyPlan,
+            standbyLoaded);
 }
 
 double ResolveCruiseComparisonAltitudeFt(

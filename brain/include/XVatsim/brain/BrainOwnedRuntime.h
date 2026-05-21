@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -127,6 +128,23 @@ struct BrainOwnedPublishedRuntimeInput {
     ModuleBoardSnapshot finalDisplay;
 };
 
+struct BrainOwnedStandbyAssistPlanInput {
+    WorkflowStage workflowStage = WorkflowStage::None;
+    std::string planKey;
+    RadioStateSnapshot radios;
+    ModuleBoardSnapshot board;
+};
+
+struct BrainOwnedStandbyAssistPlanOutput {
+    bool hasTarget = false;
+    WorkflowStage workflowStage = WorkflowStage::None;
+    ModuleBoardSnapshot board;
+    std::size_t targetStationIndex = 0;
+    std::string targetFrequency;
+    std::string latchKey;
+    bool targetAlreadyInCom1Standby = false;
+};
+
 struct BrainOwnedPublisherInput {
     WorkflowStage workflowStage = WorkflowStage::None;
     double routeProgressDistanceNm = 0.0;
@@ -213,6 +231,13 @@ RadioReachableControllerSnapshot RunBrainOwnedRadioPhaseGate(
 void CommitBrainOwnedPublishedRuntime(
     BrainOwnedRuntimeState* state,
     const BrainOwnedPublishedRuntimeInput& input);
+
+BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
+    const BrainOwnedStandbyAssistPlanInput& input);
+
+ModuleBoardSnapshot ApplyBrainOwnedStandbyAssistResult(
+    const BrainOwnedStandbyAssistPlanOutput& plan,
+    bool standbyLoaded);
 
 BrainOwnedPublisherInput BuildBrainOwnedPublisherInputFromFacts(
     const BrainOwnedRuntimeState& state,
