@@ -237,6 +237,8 @@ by installed hash
 - latest sampled aircraft, pilot identity, flight-plan, and network-plan fact
   snapshot cache from the plugin shell
 - pending overlay text-entry mode from the plugin shell
+- unused plugin-side hash/active-transceiver helpers from the retired board and
+  radio refresh paths
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -553,6 +555,12 @@ the overlay text box, but it no longer stores `gPendingTextEntryMode`; it sets
 and consumes the brain-owned prompt mode instead. Release build passed and full
 harness passed `234 / 234` for installed hash
 `00AE47855BC49B2CD35152CD2B6771B4EA92546E6B6952D53B3F6A9355925C28`.
+
+Follow-up update: Removed unused plugin-side `HashRadioBoardInputs`,
+`HashCtafLookupEntry`, and `NeedsTransceiverResolution` helpers left over from
+retired board and radio refresh paths. Release build passed and full harness
+passed `234 / 234` for installed hash
+`F81C86F85F836912CF5A7A441AFB0C5A446FC7C8C4E8DE4E8BF08FC472503762`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

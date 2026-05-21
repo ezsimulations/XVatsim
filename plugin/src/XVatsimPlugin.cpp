@@ -408,33 +408,6 @@ std::size_t HashPilotSessionBoardInputs(const xvatsim::brain::XPilotSessionSnaps
     return hash;
 }
 
-std::size_t HashRadioBoardInputs(const xvatsim::brain::RadioStateSnapshot& snapshot) {
-    std::size_t hash = 0;
-    HashCombineBool(&hash, snapshot.valid);
-    HashCombineString(&hash, NormalizeFrequency(snapshot.com1ActiveFrequency));
-    HashCombineString(&hash, NormalizeFrequency(snapshot.com2ActiveFrequency));
-    return hash;
-}
-
-std::size_t HashCtafLookupEntry(
-    const xvatsim::modules::ctaf_lookup::CtafLookupEntry& entry) {
-    std::size_t hash = 0;
-    HashCombineBool(&hash, entry.resolved);
-    HashCombineBool(&hash, entry.available);
-    HashCombineString(&hash, NormalizeFrequency(entry.frequency));
-    return hash;
-}
-
-bool NeedsTransceiverResolution(
-    xvatsim::brain::WorkflowStage workflowStage,
-    const xvatsim::brain::XPilotSessionSnapshot& xPilotSessionSnapshot,
-    const xvatsim::brain::ModuleBoardSnapshot& activeBoardSnapshot) {
-    return xPilotSessionSnapshot.connected &&
-           workflowStage != xvatsim::brain::WorkflowStage::Enroute &&
-           !activeBoardSnapshot.available &&
-           !activeBoardSnapshot.displayStations;
-}
-
 void ResetBrainDisplayPublisherCache() {
     xvatsim::brain::ResetBrainOwnedDisplayPublisherState(
         &gBrainOwnedRuntimeState);

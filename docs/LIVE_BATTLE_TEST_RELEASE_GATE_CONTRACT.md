@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `00AE47855BC49B2CD35152CD2B6771B4EA92546E6B6952D53B3F6A9355925C28`
+  `F81C86F85F836912CF5A7A441AFB0C5A446FC7C8C4E8DE4E8BF08FC472503762`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -300,7 +300,9 @@ Only then may XVatsim be treated as store-release ready.
   snapshots while the plugin only commits sampled facts and reads them from
   brain-owned state for command side effects; brain-owned runtime now owns
   pending overlay text-entry mode for manual CTAF and diversion prompts while
-  the plugin only opens and reads the overlay text box;
+  the plugin only opens and reads the overlay text box; unused plugin-side
+  hash/active-transceiver helpers from retired board and radio refresh paths
+  have been removed;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.
