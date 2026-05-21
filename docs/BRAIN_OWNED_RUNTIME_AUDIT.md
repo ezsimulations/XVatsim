@@ -100,8 +100,10 @@ Plugin diagnostics timing/log throttle state is grouped under one shell-owned
 - `brain/src/BrainDisplayIntent.cpp`
   - Owns current-vs-next display relation, orange distance annotation, final
     board assembly.
+  - Publishes final UI rows as `FinalDisplaySnapshot`, not as a raw
+    `ModuleBoardSnapshot`.
 - `brain/src/PhaseSnapshotPublisher.cpp`
-  - Owns last-proven phase snapshot reuse.
+  - Owns last-proven final display snapshot reuse.
 - `brain/src/BrainOwnedRuntime.cpp`
   - Owns accepted-completion filtering, CTAF/UNICOM replacement, Brain Display
     Intent invocation, phase snapshot publishing, and displayed-completion
@@ -283,10 +285,13 @@ Their CMake target names are now explicitly harness legacy:
    next cleanup step is to rename/extract them as explicit fact-only workers or
    retire the unused libraries.
 
-3. `BoardStationSnapshot` mixes fact state and display state.
-   Route-entry distance, display relation, annotation, active/next flags, and
-   online/tuned facts share one struct. This caused the OAK `0nm` failure when
-   display-ready state was reused as relevance truth.
+3. `BoardStationSnapshot` still mixes worker fact state and display-intent
+   state before the final display boundary.
+   The final UI board is now split into `FinalDisplaySnapshot` /
+   `FinalDisplayStationSnapshot`, but route-entry distance, display relation,
+   annotation, active/next flags, and online/tuned facts still share the worker
+   board row before Display Intent. This was the class of issue behind the OAK
+   `0nm` failure.
 
 4. Workflow selection still depends on provisional relevance.
    The provisional pass now lives behind the explicit brain-owned
@@ -635,6 +640,16 @@ needed for standby assist, commit, wake, and UI rendering. Release build passed
 and full harness passed `234 / 234` for installed hash
 `16D00B1CF1583C29EACCF8B6200FDD97F426F409273509EACACCDF7E67591862`.
 
+Follow-up update: Added display-specific final UI types:
+`FinalDisplayStationSnapshot` and `FinalDisplaySnapshot`. Brain Display Intent
+now converts accepted worker board rows into a final display snapshot; Phase
+Snapshot Publisher stores/reuses final display snapshots; standby assist,
+overlay wake, runtime final display state, `BrainOrchestrator`, the plugin UI
+handoff, and regression harness display-intent checks now use the display type
+instead of reusing `ModuleBoardSnapshot` as the final UI board. Release build
+passed and full harness passed `234 / 234` for installed hash
+`C23142AFA326A0BF52A562451CB9C53649DC80C6DE70D1092D741DE4C076B07C`.
+
 ### Slice 4: Quarantine Legacy Runtime
 
 - Move old runtime functions into a clearly named legacy/quarantine unit.
@@ -652,6 +667,12 @@ and full harness passed `234 / 234` for installed hash
 - Split candidate facts, accepted completion facts, display intent rows, and UI
   view rows into separate structs.
 - Stop reusing `ModuleBoardSnapshot` as both raw board and final display board.
+
+Status: started. The final UI board now uses `FinalDisplaySnapshot` /
+`FinalDisplayStationSnapshot`, and the live UI path no longer consumes
+`ModuleBoardSnapshot` as final display truth. Remaining work is to split the
+pre-display worker row and display-intent row state so `BoardStationSnapshot`
+does not carry both accepted fact truth and display annotation/relation fields.
 
 ## Guardrails
 

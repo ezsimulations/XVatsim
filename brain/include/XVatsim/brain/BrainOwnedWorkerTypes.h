@@ -143,7 +143,7 @@ BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
 
 struct BrainUiWorkerInput {
     WorkflowStage workflowStage = WorkflowStage::None;
-    ModuleBoardSnapshot finalDisplay;
+    FinalDisplaySnapshot finalDisplay;
     std::string reason;
 };
 

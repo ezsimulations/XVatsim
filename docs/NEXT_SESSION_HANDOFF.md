@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`16D00B1CF1583C29EACCF8B6200FDD97F426F409273509EACACCDF7E67591862`
+`C23142AFA326A0BF52A562451CB9C53649DC80C6DE70D1092D741DE4C076B07C`
 
 Reason for this hash:
 
@@ -217,6 +217,11 @@ Reason for this hash:
 - Removed stale plugin-local departure/arrival/enroute board variables from the
   Engineer 3 refresh shell. The plugin now keeps only the final display board it
   must pass through standby assist and UI rendering.
+- Added explicit final-display structs:
+  `FinalDisplayStationSnapshot` and `FinalDisplaySnapshot`. Brain Display
+  Intent, Phase Snapshot Publisher, standby assist, overlay wake, runtime final
+  display storage, and `BrainOrchestrator` now consume the display-specific
+  snapshot instead of reusing `ModuleBoardSnapshot` as the final UI board.
 
 Regression harness status for this code:
 
@@ -235,7 +240,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`16D00B1CF1583C29EACCF8B6200FDD97F426F409273509EACACCDF7E67591862`
+`C23142AFA326A0BF52A562451CB9C53649DC80C6DE70D1092D741DE4C076B07C`
 
 Rules:
 

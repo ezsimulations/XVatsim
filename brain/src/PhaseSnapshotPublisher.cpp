@@ -19,12 +19,11 @@ const char* ToToken(WorkflowStage stage) {
     return "UNKNOWN";
 }
 
-bool IsDisplayableBoard(const ModuleBoardSnapshot& snapshot) {
-    return snapshot.available && snapshot.displayStations &&
-           !snapshot.stations.empty();
+bool IsDisplayableBoard(const FinalDisplaySnapshot& snapshot) {
+    return snapshot.available && !snapshot.stations.empty();
 }
 
-ModuleBoardSnapshot* MutableSlotForStage(
+FinalDisplaySnapshot* MutableSlotForStage(
     PhaseSnapshotPublisherState* state,
     WorkflowStage stage) {
     if (state == nullptr) {
@@ -43,7 +42,7 @@ ModuleBoardSnapshot* MutableSlotForStage(
     return nullptr;
 }
 
-const ModuleBoardSnapshot* SlotForStage(
+const FinalDisplaySnapshot* SlotForStage(
     const PhaseSnapshotPublisherState& state,
     WorkflowStage stage) {
     switch (stage) {

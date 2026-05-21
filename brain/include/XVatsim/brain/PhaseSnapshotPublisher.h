@@ -10,22 +10,22 @@ struct PhaseSnapshotPublisherState {
     bool hasDeparture = false;
     bool hasEnroute = false;
     bool hasArrival = false;
-    ModuleBoardSnapshot departure;
-    ModuleBoardSnapshot enroute;
-    ModuleBoardSnapshot arrival;
+    FinalDisplaySnapshot departure;
+    FinalDisplaySnapshot enroute;
+    FinalDisplaySnapshot arrival;
 
     void Reset();
 };
 
 struct PhaseSnapshotPublishRequest {
     WorkflowStage stage = WorkflowStage::None;
-    ModuleBoardSnapshot candidate;
+    FinalDisplaySnapshot candidate;
     bool verificationPending = false;
     std::string reason;
 };
 
 struct PhaseSnapshotPublishResult {
-    ModuleBoardSnapshot snapshot;
+    FinalDisplaySnapshot snapshot;
     bool storedNewProven = false;
     bool usedLastProven = false;
     bool verificationPending = false;

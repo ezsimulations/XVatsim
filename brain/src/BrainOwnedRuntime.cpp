@@ -94,13 +94,13 @@ bool IsCtafOrUnicom(const BoardStationSnapshot& station) {
            station.role == StationRole::Unicom;
 }
 
-bool IsLiveRouteCenterStation(const BoardStationSnapshot& station) {
+bool IsLiveRouteCenterStation(const FinalDisplayStationSnapshot& station) {
     return station.role == StationRole::Center &&
            !station.offline &&
            !station.frequency.empty();
 }
 
-bool HasLiveRouteCenters(const ModuleBoardSnapshot& board) {
+bool HasLiveRouteCenters(const FinalDisplaySnapshot& board) {
     return std::any_of(
         board.stations.begin(),
         board.stations.end(),
@@ -184,7 +184,7 @@ std::string StandbyAssistWorkflowKey(
     WorkflowStage workflowStage,
     const std::string& planKey,
     const RadioStateSnapshot& radios,
-    const BoardStationSnapshot& targetStation) {
+    const FinalDisplayStationSnapshot& targetStation) {
     return planKey + "|" +
            std::to_string(static_cast<int>(workflowStage)) + "|" +
            NormalizeFrequency(radios.com1ActiveFrequency) + "|" +
@@ -239,7 +239,7 @@ bool CompletionApprovesStation(
 }
 
 bool CompletionDisplayedInFinalBoard(
-    const ModuleBoardSnapshot& board,
+    const FinalDisplaySnapshot& board,
     const BrainOwnedCandidateCompletion& completion) {
     return std::any_of(
         board.stations.begin(),
@@ -1483,7 +1483,7 @@ DecideBrainOwnedStandbyAssistSideEffect(
     return decision;
 }
 
-ModuleBoardSnapshot ApplyBrainOwnedStandbyAssistResult(
+FinalDisplaySnapshot ApplyBrainOwnedStandbyAssistResult(
     const BrainOwnedStandbyAssistPlanOutput& plan,
     bool standbyLoaded) {
     auto board = plan.board;
@@ -1533,7 +1533,7 @@ BrainOwnedPublisherInput BuildBrainOwnedPublisherInputFromFacts(
 
 void MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
     BrainOwnedRuntimeState* state,
-    const ModuleBoardSnapshot& finalDisplay) {
+    const FinalDisplaySnapshot& finalDisplay) {
     if (state == nullptr) {
         return;
     }
@@ -1642,7 +1642,7 @@ void CommitBrainOwnedPublishedRuntimeFromPublisherOutput(
     const std::string& planKey,
     const RadioReachableControllerSnapshot& gatedRadioSnapshot,
     const BrainOwnedPublisherOutput& publisherOutput,
-    const ModuleBoardSnapshot& finalDisplay) {
+    const FinalDisplaySnapshot& finalDisplay) {
     BrainOwnedPublishedRuntimeInput input;
     input.workflowStage = workflowStage;
     input.planKey = planKey;

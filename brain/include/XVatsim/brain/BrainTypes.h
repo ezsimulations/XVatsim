@@ -327,6 +327,30 @@ struct ModuleBoardSnapshot {
     std::vector<BoardStationSnapshot> stations;
 };
 
+struct FinalDisplayStationSnapshot {
+    StationRole role = StationRole::Other;
+    std::string callsign;
+    std::string frequency;
+    std::string annotation;
+    bool tuned = false;
+    bool next = false;
+    bool standby = false;
+    bool sectorActive = false;
+    bool online = false;
+    bool offline = false;
+    bool hasRouteEntryDistance = false;
+    double routeEntryDistanceNm = 0.0;
+    std::string polygonKey;
+    DisplayRelation displayRelation = DisplayRelation::Unknown;
+};
+
+struct FinalDisplaySnapshot {
+    bool available = false;
+    BoardSource source = BoardSource::None;
+    std::string airportIcao;
+    std::vector<FinalDisplayStationSnapshot> stations;
+};
+
 enum class OverlayTone {
     Normal,
     Active,

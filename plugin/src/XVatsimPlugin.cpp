@@ -584,7 +584,7 @@ void ApplyStandbyRecommendation(
     xvatsim::brain::WorkflowStage workflowStage,
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot,
     const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
-    xvatsim::brain::ModuleBoardSnapshot* boardSnapshot) {
+    xvatsim::brain::FinalDisplaySnapshot* boardSnapshot) {
     if (boardSnapshot == nullptr) {
         return;
     }
@@ -2299,7 +2299,7 @@ void RenderSessionBoundaryFrame(
         xvatsim::brain::NetworkPlanSnapshot{},
         xvatsim::brain::ControllerFeedSnapshot{},
         xvatsim::brain::TransceiverResolutionSnapshot{},
-        xvatsim::brain::ModuleBoardSnapshot{},
+        xvatsim::brain::FinalDisplaySnapshot{},
         xvatsim::brain::ManualQuerySnapshot{});
     overlayModel.headerRightText.clear();
     gOverlayWindow.Update(overlayModel);
@@ -3161,7 +3161,7 @@ void RefreshOverlayFromBrainEngineer3() {
     diagnostics.ctafMs = diagnostics.ctafUs / 1000;
 
     HandoffDecision workflowDecision;
-    xvatsim::brain::ModuleBoardSnapshot finalDisplaySnapshot;
+    xvatsim::brain::FinalDisplaySnapshot finalDisplaySnapshot;
     xvatsim::brain::TransceiverResolutionSnapshot transceiverResolutionSnapshot;
     xvatsim::brain::RadioReachableControllerSnapshot gatedRadioSnapshot;
     xvatsim::brain::BrainOwnedPublisherOutput publisherOutput;
@@ -3495,7 +3495,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
             xvatsim::brain::NetworkPlanSnapshot{},
             xvatsim::brain::ControllerFeedSnapshot{},
             xvatsim::brain::TransceiverResolutionSnapshot{},
-            xvatsim::brain::ModuleBoardSnapshot{},
+            xvatsim::brain::FinalDisplaySnapshot{},
             xvatsim::brain::ManualQuerySnapshot{});
     std::string readyMessage = "[XVatsim] Display ready: " + overlayModel.title + "\n";
     XPLMDebugString(readyMessage.c_str());

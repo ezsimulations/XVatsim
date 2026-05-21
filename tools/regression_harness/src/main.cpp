@@ -525,8 +525,18 @@ std::vector<std::string> ExtractCallsigns(const ModuleBoardSnapshot& board) {
     return callsigns;
 }
 
+std::vector<std::string> ExtractCallsigns(
+    const xvatsim::brain::FinalDisplaySnapshot& board) {
+    std::vector<std::string> callsigns;
+    callsigns.reserve(board.stations.size());
+    for (const auto& station : board.stations) {
+        callsigns.push_back(station.callsign);
+    }
+    return callsigns;
+}
+
 std::vector<std::string> ExtractDisplayIntentRows(
-    const ModuleBoardSnapshot& board) {
+    const xvatsim::brain::FinalDisplaySnapshot& board) {
     std::vector<std::string> rows;
     rows.reserve(board.stations.size());
     for (const auto& station : board.stations) {
@@ -1565,17 +1575,16 @@ xvatsim::brain::RadioReachableVerificationFeed BuildRadioReachableVerifierUnchan
     return xvatsim::brain::BuildRadioReachableVerificationFeed(current, &diff);
 }
 
-xvatsim::brain::ModuleBoardSnapshot MakePhasePublisherBoard(
+xvatsim::brain::FinalDisplaySnapshot MakePhasePublisherBoard(
     BoardSource source,
     StationRole role,
     const std::string& callsign,
     const std::string& frequency) {
-    xvatsim::brain::ModuleBoardSnapshot board;
+    xvatsim::brain::FinalDisplaySnapshot board;
     board.available = true;
-    board.displayStations = true;
     board.source = source;
 
-    xvatsim::brain::BoardStationSnapshot station;
+    xvatsim::brain::FinalDisplayStationSnapshot station;
     station.role = role;
     station.callsign = callsign;
     station.frequency = frequency;

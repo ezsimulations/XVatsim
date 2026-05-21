@@ -89,7 +89,7 @@ struct BrainOwnedRuntimeState {
     ModuleBoardSnapshot relevanceDepartureBoardSnapshot;
     ModuleBoardSnapshot relevanceArrivalBoardSnapshot;
     ModuleBoardSnapshot relevanceEnrouteBoardSnapshot;
-    ModuleBoardSnapshot finalDisplaySnapshot;
+    FinalDisplaySnapshot finalDisplaySnapshot;
     PhaseSnapshotPublisherState phaseSnapshotPublisherState;
     std::uint64_t lastDisplayIntentHash = 0;
     AircraftStateSnapshot lastAircraftStateSnapshot;
@@ -182,14 +182,14 @@ struct BrainOwnedPublishedRuntimeInput {
     ModuleBoardSnapshot departureBoard;
     ModuleBoardSnapshot arrivalBoard;
     ModuleBoardSnapshot enrouteBoard;
-    ModuleBoardSnapshot finalDisplay;
+    FinalDisplaySnapshot finalDisplay;
 };
 
 struct BrainOwnedOverlayWakeInput {
     AircraftStateSnapshot aircraftState;
     XPilotSessionSnapshot xPilotSession;
     WorkflowStage workflowStage = WorkflowStage::None;
-    ModuleBoardSnapshot finalDisplay;
+    FinalDisplaySnapshot finalDisplay;
     BrainOwnedDisplayOverrideMode displayOverrideMode =
         BrainOwnedDisplayOverrideMode::Auto;
     bool manualQueryVisible = false;
@@ -301,13 +301,13 @@ struct BrainOwnedStandbyAssistPlanInput {
     WorkflowStage workflowStage = WorkflowStage::None;
     std::string planKey;
     RadioStateSnapshot radios;
-    ModuleBoardSnapshot board;
+    FinalDisplaySnapshot board;
 };
 
 struct BrainOwnedStandbyAssistPlanOutput {
     bool hasTarget = false;
     WorkflowStage workflowStage = WorkflowStage::None;
-    ModuleBoardSnapshot board;
+    FinalDisplaySnapshot board;
     std::size_t targetStationIndex = 0;
     std::string targetFrequency;
     std::string latchKey;
@@ -394,7 +394,7 @@ struct BrainOwnedPublisherOutput {
     ModuleBoardSnapshot departureBoard;
     ModuleBoardSnapshot arrivalBoard;
     ModuleBoardSnapshot enrouteBoard;
-    ModuleBoardSnapshot finalDisplay;
+    FinalDisplaySnapshot finalDisplay;
     BrainDisplayIntentOutput displayIntent;
     PhaseSnapshotPublishResult phasePublish;
     std::string phasePublisherStateSummary;
@@ -619,7 +619,7 @@ DecideBrainOwnedStandbyAssistSideEffect(
     const BrainOwnedStandbyAssistPlanOutput& plan,
     bool standbyAssistEnabled);
 
-ModuleBoardSnapshot ApplyBrainOwnedStandbyAssistResult(
+FinalDisplaySnapshot ApplyBrainOwnedStandbyAssistResult(
     const BrainOwnedStandbyAssistPlanOutput& plan,
     bool standbyLoaded);
 
@@ -629,7 +629,7 @@ BrainOwnedPublisherInput BuildBrainOwnedPublisherInputFromFacts(
 
 void MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
     BrainOwnedRuntimeState* state,
-    const ModuleBoardSnapshot& finalDisplay);
+    const FinalDisplaySnapshot& finalDisplay);
 
 BrainOwnedPublisherOutput RunBrainOwnedPublisher(
     BrainOwnedRuntimeState* state,
@@ -641,7 +641,7 @@ void CommitBrainOwnedPublishedRuntimeFromPublisherOutput(
     const std::string& planKey,
     const RadioReachableControllerSnapshot& gatedRadioSnapshot,
     const BrainOwnedPublisherOutput& publisherOutput,
-    const ModuleBoardSnapshot& finalDisplay);
+    const FinalDisplaySnapshot& finalDisplay);
 
 bool BrainOwnedCandidatesCompleteForCurrentBoard(
     const BrainOwnedRuntimeState& state,

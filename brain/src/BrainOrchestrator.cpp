@@ -277,8 +277,8 @@ std::string RoleLabel(StationRole role) {
     }
 }
 
-std::vector<BoardStationSnapshot> OrderStations(
-    const ModuleBoardSnapshot& boardSnapshot) {
+std::vector<FinalDisplayStationSnapshot> OrderStations(
+    const FinalDisplaySnapshot& boardSnapshot) {
     auto orderedStations = boardSnapshot.stations;
     if (boardSnapshot.source == BoardSource::Enroute) {
         std::stable_sort(
@@ -338,7 +338,7 @@ std::vector<BoardStationSnapshot> OrderStations(
 }
 
 OverlayTextLine FormatBoardLine(
-    const BoardStationSnapshot& station,
+    const FinalDisplayStationSnapshot& station,
     BoardSource boardSource) {
     OverlayTextLine line;
     const auto isEnrouteCenter = station.role == StationRole::Center;
@@ -432,7 +432,7 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
     const NetworkPlanSnapshot& networkPlanSnapshot,
     const ControllerFeedSnapshot& controllerFeedSnapshot,
     const TransceiverResolutionSnapshot& transceiverResolutionSnapshot,
-    const ModuleBoardSnapshot& finalDisplaySnapshot,
+    const FinalDisplaySnapshot& finalDisplaySnapshot,
     const ManualQuerySnapshot& manualQuerySnapshot) {
     (void)controllerFeedSnapshot;
 
@@ -447,7 +447,7 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
         {FormatXPilotLine(xPilotSessionSnapshot), OverlayTone::Normal},
     };
 
-    if (finalDisplaySnapshot.available || finalDisplaySnapshot.displayStations) {
+    if (finalDisplaySnapshot.available || !finalDisplaySnapshot.stations.empty()) {
         const auto orderedStations = OrderStations(finalDisplaySnapshot);
         const auto countToDisplay =
             std::min(orderedStations.size(), kMaxDisplayedStations);

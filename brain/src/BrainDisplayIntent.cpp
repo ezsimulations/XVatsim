@@ -69,6 +69,12 @@ std::string StationKey(const BoardStationSnapshot& station) {
            NormalizeKey(station.frequency);
 }
 
+std::string StationKey(const FinalDisplayStationSnapshot& station) {
+    return std::to_string(static_cast<int>(station.role)) + "|" +
+           NormalizeKey(station.callsign) + "|" +
+           NormalizeKey(station.frequency);
+}
+
 std::string FormatDistanceAnnotation(double distanceNm) {
     const auto rounded =
         static_cast<int>(std::round(std::max(0.0, distanceNm)));
@@ -86,6 +92,39 @@ void AppendUnique(
         board->stations.push_back(station);
         board->available = true;
         board->displayStations = true;
+    }
+}
+
+FinalDisplayStationSnapshot ToFinalDisplayStation(
+    const BoardStationSnapshot& station) {
+    FinalDisplayStationSnapshot displayStation;
+    displayStation.role = station.role;
+    displayStation.callsign = station.callsign;
+    displayStation.frequency = station.frequency;
+    displayStation.annotation = station.annotation;
+    displayStation.tuned = station.tuned;
+    displayStation.next = station.next;
+    displayStation.standby = station.standby;
+    displayStation.sectorActive = station.sectorActive;
+    displayStation.online = station.online;
+    displayStation.offline = station.offline;
+    displayStation.hasRouteEntryDistance = station.hasRouteEntryDistance;
+    displayStation.routeEntryDistanceNm = station.routeEntryDistanceNm;
+    displayStation.polygonKey = station.polygonKey;
+    displayStation.displayRelation = station.displayRelation;
+    return displayStation;
+}
+
+void AppendUnique(
+    const FinalDisplayStationSnapshot& station,
+    FinalDisplaySnapshot* board,
+    std::unordered_set<std::string>* keys) {
+    if (board == nullptr || keys == nullptr) {
+        return;
+    }
+    if (keys->insert(StationKey(station)).second) {
+        board->stations.push_back(station);
+        board->available = true;
     }
 }
 
@@ -161,7 +200,7 @@ BoardStationSnapshot BuildDisplayStation(
 
 void AddBoardStations(
     const ModuleBoardSnapshot& source,
-    ModuleBoardSnapshot* target,
+    FinalDisplaySnapshot* target,
     std::unordered_set<std::string>* keys) {
     if (target == nullptr || keys == nullptr) {
         return;
@@ -170,27 +209,25 @@ void AddBoardStations(
         if (!IsDisplayableStation(station)) {
             continue;
         }
-        AppendUnique(station, target, keys);
+        AppendUnique(ToFinalDisplayStation(station), target, keys);
     }
 }
 
-ModuleBoardSnapshot MakeDisplayShell(
+FinalDisplaySnapshot MakeDisplayShell(
     const ModuleBoardSnapshot& source,
     BoardSource boardSource) {
-    auto display = source;
+    FinalDisplaySnapshot display;
     display.source = boardSource;
-    display.stations.clear();
-    display.available = false;
-    display.displayStations = false;
+    display.airportIcao = source.airportIcao;
     return display;
 }
 
-ModuleBoardSnapshot BuildDisplayBoard(
+FinalDisplaySnapshot BuildDisplayBoard(
     WorkflowStage stage,
     const ModuleBoardSnapshot& departureBoard,
     const ModuleBoardSnapshot& arrivalBoard,
     const ModuleBoardSnapshot& enrouteBoard) {
-    ModuleBoardSnapshot display;
+    FinalDisplaySnapshot display;
     std::unordered_set<std::string> keys;
 
     if (stage == WorkflowStage::Arrival) {
@@ -208,7 +245,7 @@ ModuleBoardSnapshot BuildDisplayBoard(
         for (const auto& station : enrouteBoard.stations) {
             if (station.displayRelation == DisplayRelation::CurrentPolygon &&
                 IsDisplayableStation(station)) {
-                AppendUnique(station, &display, &keys);
+                AppendUnique(ToFinalDisplayStation(station), &display, &keys);
             }
         }
         return display;
@@ -302,7 +339,26 @@ void HashStation(std::uint64_t* hash, const BoardStationSnapshot& station) {
     }
 }
 
-std::uint64_t HashBoard(const ModuleBoardSnapshot& board) {
+void HashStation(std::uint64_t* hash, const FinalDisplayStationSnapshot& station) {
+    HashCombine(hash, static_cast<std::uint64_t>(station.role));
+    HashCombine(hash, station.callsign);
+    HashCombine(hash, station.frequency);
+    HashCombine(hash, station.annotation);
+    HashCombine(hash, station.polygonKey);
+    HashCombine(hash, static_cast<std::uint64_t>(station.displayRelation));
+    HashCombine(hash, static_cast<std::uint64_t>(station.tuned ? 1u : 0u));
+    HashCombine(hash, static_cast<std::uint64_t>(station.next ? 1u : 0u));
+    HashCombine(hash, static_cast<std::uint64_t>(station.standby ? 1u : 0u));
+    HashCombine(hash, static_cast<std::uint64_t>(station.sectorActive ? 1u : 0u));
+    HashCombine(hash, static_cast<std::uint64_t>(station.online ? 1u : 0u));
+    HashCombine(hash, static_cast<std::uint64_t>(station.offline ? 1u : 0u));
+    HashCombine(hash, static_cast<std::uint64_t>(station.hasRouteEntryDistance ? 1u : 0u));
+    if (station.hasRouteEntryDistance) {
+        HashCombine(hash, station.routeEntryDistanceNm);
+    }
+}
+
+std::uint64_t HashBoard(const FinalDisplaySnapshot& board) {
     std::uint64_t hash = 0;
     HashCombine(&hash, static_cast<std::uint64_t>(board.source));
     HashCombine(&hash, board.airportIcao);

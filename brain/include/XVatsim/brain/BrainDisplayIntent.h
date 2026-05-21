@@ -23,7 +23,7 @@ struct BrainDisplayIntentOutput {
     ModuleBoardSnapshot departureBoard;
     ModuleBoardSnapshot arrivalBoard;
     ModuleBoardSnapshot enrouteBoard;
-    ModuleBoardSnapshot finalDisplay;
+    FinalDisplaySnapshot finalDisplay;
     std::vector<std::string> diagnostics;
     std::string reason;
     std::uint64_t stableHash = 0;
