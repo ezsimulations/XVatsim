@@ -651,4 +651,58 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
     return output;
 }
 
+BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
+    BrainOwnedRuntimeState* state,
+    const BrainControllerRelevanceWorkerInput& input) {
+    BrainOwnedControllerRelevanceRuntimeOutput output;
+    const auto canReuse =
+        state != nullptr &&
+        state->candidatesComplete &&
+        state->hasRadioBoard &&
+        state->lastRadioBoardHash == input.radioBoardHash &&
+        state->routePolygonHash == input.routePolygonHash &&
+        state->lastWorkflowStage == input.workflowStage &&
+        state->currentPolygonKey == input.currentPolygonKey;
+
+    if (canReuse) {
+        output.cacheHit = true;
+        output.cacheStatus = "brain-controller-relevance-cache-hit";
+        output.relevance.available = true;
+        output.relevance.stale = false;
+        output.relevance.reason = "board-unchanged-no-relevance-work";
+        output.relevance.departureBoard =
+            state->relevanceDepartureBoardSnapshot;
+        output.relevance.arrivalBoard =
+            state->relevanceArrivalBoardSnapshot;
+        output.relevance.enrouteBoard =
+            state->relevanceEnrouteBoardSnapshot;
+        output.relevance.completions = state->candidateCompletions;
+        state->lastIdleReason = "board-unchanged-no-relevance-work";
+        return output;
+    }
+
+    output.cacheHit = false;
+    output.cacheStatus = "brain-controller-relevance-ran";
+    output.relevance = RunBrainControllerRelevanceWorker(input);
+
+    if (state == nullptr) {
+        return output;
+    }
+
+    state->relevanceDepartureBoardSnapshot =
+        output.relevance.departureBoard;
+    state->relevanceArrivalBoardSnapshot =
+        output.relevance.arrivalBoard;
+    state->relevanceEnrouteBoardSnapshot =
+        output.relevance.enrouteBoard;
+
+    state->candidateCompletions.clear();
+    for (const auto& completion : output.relevance.completions) {
+        RecordBrainOwnedCandidateCompletion(state, completion);
+    }
+    state->candidatesComplete = true;
+    state->lastIdleReason.clear();
+    return output;
+}
+
 }  // namespace xvatsim::brain

@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`324F7C26689349744423C988E3454911C8B494D690FC59D3AAF0A2E518A30EA5`
+`20866286AEB014965999BA2608D7B8179BF3BFDE75E6BC73138EE8D9CEC29759`
 
 Reason for this hash:
 
@@ -92,7 +92,8 @@ Reason for this hash:
   marking. The plugin supplies facts and diagnostics only.
 - `RunBrainControllerRelevanceWorker` now lives in
   `brain/src/BrainControllerRelevanceWorker.cpp`; the plugin supplies worker
-  input, cache reuse, and diagnostics only.
+  input and diagnostics only. Brain-owned runtime owns relevance cache reuse
+  and candidate completion cache updates.
 
 Regression harness status for this code:
 
@@ -111,7 +112,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`324F7C26689349744423C988E3454911C8B494D690FC59D3AAF0A2E518A30EA5`
+`20866286AEB014965999BA2608D7B8179BF3BFDE75E6BC73138EE8D9CEC29759`
 
 Rules:
 

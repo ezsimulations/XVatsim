@@ -53,8 +53,9 @@ Engineer 3 live flow:
   - `RunBrainPublisher`
 
 This is shrinking toward the correct shape. The plugin still hosts the live
-X-Plane shell, input sampling, cache wrappers, and diagnostics, but controller
-relevance and publisher ownership have moved into brain-owned source files.
+X-Plane shell, input sampling, and diagnostics, but controller relevance,
+relevance cache ownership, and publisher ownership have moved into brain-owned
+source files.
 
 ### Fact Workers
 
@@ -99,7 +100,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`324F7C26689349744423C988E3454911C8B494D690FC59D3AAF0A2E518A30EA5`:
+`20866286AEB014965999BA2608D7B8179BF3BFDE75E6BC73138EE8D9CEC29759`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -121,6 +122,8 @@ by installed hash
   invocation from the plugin shell
 - phase snapshot publisher state and publish invocation from the plugin shell
 - controller relevance worker matching/completion logic from the plugin shell
+- controller relevance cache reuse and candidate completion cache updates from
+  the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -212,10 +215,12 @@ replacement, Brain Display Intent invocation, phase snapshot publish state, and
 final-display completion marking moved out of `plugin/src/XVatsimPlugin.cpp`.
 `RunBrainControllerRelevanceWorker` now lives in
 `brain/src/BrainControllerRelevanceWorker.cpp`, so controller matching and
-accepted/rejected completion facts are brain-owned. The plugin now supplies
-inputs, cache reuse, and diagnostics only. Release build passed and full
-harness passed `234 / 234` for installed hash
-`324F7C26689349744423C988E3454911C8B494D690FC59D3AAF0A2E518A30EA5`.
+accepted/rejected completion facts are brain-owned.
+`RunBrainOwnedControllerRelevance` also owns relevance cache reuse and
+candidate completion cache updates. The plugin now supplies inputs and
+diagnostics only. Release build passed and full harness passed `234 / 234` for
+installed hash
+`20866286AEB014965999BA2608D7B8179BF3BFDE75E6BC73138EE8D9CEC29759`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

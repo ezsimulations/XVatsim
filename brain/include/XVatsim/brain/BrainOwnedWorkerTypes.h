@@ -73,7 +73,17 @@ struct BrainControllerRelevanceWorkerOutput {
     ModuleBoardSnapshot enrouteBoard;
 };
 
+struct BrainOwnedControllerRelevanceRuntimeOutput {
+    BrainControllerRelevanceWorkerOutput relevance;
+    bool cacheHit = false;
+    std::string cacheStatus;
+};
+
 BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
+    const BrainControllerRelevanceWorkerInput& input);
+
+BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
+    BrainOwnedRuntimeState* state,
     const BrainControllerRelevanceWorkerInput& input);
 
 struct BrainUiWorkerInput {

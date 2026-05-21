@@ -1962,72 +1962,25 @@ RefreshBrainControllerRelevance(
     const xvatsim::brain::BrainControllerRelevanceWorkerInput& input,
     const std::string& planKey,
     bool recordDiagnostics) {
-    const auto canReuse =
-        gBrainOwnedRuntimeState.candidatesComplete &&
-        gBrainOwnedRuntimeState.hasRadioBoard &&
-        gBrainOwnedRuntimeState.lastRadioBoardHash == input.radioBoardHash &&
-        gBrainOwnedRuntimeState.routePolygonHash == input.routePolygonHash &&
-        gBrainOwnedRuntimeState.lastWorkflowStage == input.workflowStage &&
-        gBrainOwnedRuntimeState.currentPolygonKey == input.currentPolygonKey;
-
-    if (canReuse) {
-        xvatsim::brain::BrainControllerRelevanceWorkerOutput output;
-        output.available = true;
-        output.stale = false;
-        output.reason = "board-unchanged-no-relevance-work";
-        output.departureBoard =
-            gBrainOwnedRuntimeState.relevanceDepartureBoardSnapshot;
-        output.arrivalBoard =
-            gBrainOwnedRuntimeState.relevanceArrivalBoardSnapshot;
-        output.enrouteBoard =
-            gBrainOwnedRuntimeState.relevanceEnrouteBoardSnapshot;
-        output.completions = gBrainOwnedRuntimeState.candidateCompletions;
-        gBrainOwnedRuntimeState.lastIdleReason =
-            "board-unchanged-no-relevance-work";
-        if (recordDiagnostics) {
-            RecordDiagnosticJob(
-                "BrainControllerRelevanceWorker",
-                output.reason,
-                0,
-                "brain-controller-relevance-cache-hit",
-                SummarizeBrainControllerRelevance(output),
-                {},
-                planKey);
-        }
-        return output;
-    }
-
     const auto started = std::chrono::steady_clock::now();
-    auto output = xvatsim::brain::RunBrainControllerRelevanceWorker(input);
-    const auto elapsedMs = ElapsedMicrosecondsSince(started) / 1000;
-
-    gBrainOwnedRuntimeState.relevanceDepartureBoardSnapshot =
-        output.departureBoard;
-    gBrainOwnedRuntimeState.relevanceArrivalBoardSnapshot =
-        output.arrivalBoard;
-    gBrainOwnedRuntimeState.relevanceEnrouteBoardSnapshot =
-        output.enrouteBoard;
-
-    gBrainOwnedRuntimeState.candidateCompletions.clear();
-    for (const auto& completion : output.completions) {
-        xvatsim::brain::RecordBrainOwnedCandidateCompletion(
+    const auto runtimeOutput =
+        xvatsim::brain::RunBrainOwnedControllerRelevance(
             &gBrainOwnedRuntimeState,
-            completion);
-    }
-    gBrainOwnedRuntimeState.candidatesComplete = true;
-    gBrainOwnedRuntimeState.lastIdleReason.clear();
+            input);
+    const auto elapsedMs =
+        runtimeOutput.cacheHit ? 0 : ElapsedMicrosecondsSince(started) / 1000;
 
     if (recordDiagnostics) {
         RecordDiagnosticJob(
             "BrainControllerRelevanceWorker",
-            output.reason,
+            runtimeOutput.relevance.reason,
             elapsedMs,
-            "brain-controller-relevance-ran",
-            SummarizeBrainControllerRelevance(output),
+            runtimeOutput.cacheStatus,
+            SummarizeBrainControllerRelevance(runtimeOutput.relevance),
             {},
             planKey);
     }
-    return output;
+    return runtimeOutput.relevance;
 }
 
 std::string SummarizeBrainPublisherOutput(
