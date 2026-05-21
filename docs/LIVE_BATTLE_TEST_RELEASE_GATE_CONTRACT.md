@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `43249716748D6035783A1703A8359AF5CF432F425FC743773C7F6A6FBA650D29`
+  `317773ECA22A2706C84AB78CE177396F132756DDFEEA20F48D7780040A04D0C1`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -246,6 +246,9 @@ Only then may XVatsim be treated as store-release ready.
   rendered UI aligned;
   `DecideBrainOwnedOverlayWake` now owns overlay wake/hide/reason decisions
   from shell facts while the plugin only updates the X-Plane overlay window;
+  workflow/recovery implementation now lives in brain-owned source
+  (`brain/src/BrainWorkflow.cpp`) while `core/WorkflowEngine.h` remains only as
+  a compatibility shim;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

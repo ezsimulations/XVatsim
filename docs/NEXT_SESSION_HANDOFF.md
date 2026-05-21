@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`43249716748D6035783A1703A8359AF5CF432F425FC743773C7F6A6FBA650D29`
+`317773ECA22A2706C84AB78CE177396F132756DDFEEA20F48D7780040A04D0C1`
 
 Reason for this hash:
 
@@ -124,6 +124,9 @@ Reason for this hash:
 - `DecideBrainOwnedOverlayWake` now owns overlay wake/hide/reason decisions
   from shell facts. The plugin still updates X-Plane window state, but it no
   longer decides whether the UI should wake.
+- Workflow/recovery implementation now lives in
+  `brain/src/BrainWorkflow.cpp`; `core/WorkflowEngine.h` is only a compatibility
+  shim for existing callers.
 
 Regression harness status for this code:
 
@@ -142,7 +145,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`43249716748D6035783A1703A8359AF5CF432F425FC743773C7F6A6FBA650D29`
+`317773ECA22A2706C84AB78CE177396F132756DDFEEA20F48D7780040A04D0C1`
 
 Rules:
 

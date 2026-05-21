@@ -18,10 +18,10 @@
 #include "XVatsim/brain/BrainDisplayIntent.h"
 #include "XVatsim/brain/BrainOwnedRuntime.h"
 #include "XVatsim/brain/BrainOwnedWorkerTypes.h"
+#include "XVatsim/brain/BrainWorkflow.h"
 #include "XVatsim/brain/RadioReachableSnapshot.h"
 #include "XVatsim/brain/BrainWorkScheduler.h"
 #include "XVatsim/core/PreflightRouteCache.h"
-#include "XVatsim/core/WorkflowEngine.h"
 #include "XVatsim/modules/aircraft_state/AircraftStateSampler.h"
 #include "XVatsim/modules/ctaf_lookup/CtafLookupService.h"
 #include "XVatsim/modules/controller_feed/ControllerFeedClient.h"
@@ -129,8 +129,8 @@ enum class SessionBoundaryResult {
     ResetForCallsignChange,
 };
 
-using FlightContext = xvatsim::core::workflow::FlightContext;
-using HandoffDecision = xvatsim::core::workflow::HandoffDecision;
+using FlightContext = xvatsim::brain::workflow::FlightContext;
+using HandoffDecision = xvatsim::brain::workflow::HandoffDecision;
 
 struct PendingControllerMessageState {
     bool primed = false;
@@ -932,18 +932,18 @@ bool ApplyAuthoritativeAirportCoordinates(
 }
 
 bool IsInsideArrivalWakeDistance(const xvatsim::brain::AircraftStateSnapshot& aircraftState) {
-    xvatsim::core::workflow::WorkflowTuning tuning;
+    xvatsim::brain::workflow::WorkflowTuning tuning;
     tuning.arrivalWakeDistanceNm = kArrivalWakeDistanceNm;
-    return xvatsim::core::workflow::IsInsideArrivalWakeDistance(
+    return xvatsim::brain::workflow::IsInsideArrivalWakeDistance(
         aircraftState,
         gFlightContext,
         tuning);
 }
 
 bool IsOnGroundAtDestination(const xvatsim::brain::AircraftStateSnapshot& aircraftState) {
-    xvatsim::core::workflow::WorkflowTuning tuning;
+    xvatsim::brain::workflow::WorkflowTuning tuning;
     tuning.destinationGroundDistanceNm = 5.0;
-    return xvatsim::core::workflow::IsOnGroundAtDestination(
+    return xvatsim::brain::workflow::IsOnGroundAtDestination(
         aircraftState,
         gFlightContext,
         tuning);
@@ -953,9 +953,9 @@ bool CanConfirmDepartureLocation(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     const xvatsim::brain::FlightPlanSnapshot& flightPlanSnapshot,
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
-    xvatsim::core::workflow::WorkflowTuning tuning;
+    xvatsim::brain::workflow::WorkflowTuning tuning;
     tuning.departureConfirmDistanceNm = 10.0;
-    return xvatsim::core::workflow::CanConfirmDepartureLocation(
+    return xvatsim::brain::workflow::CanConfirmDepartureLocation(
         aircraftState,
         flightPlanSnapshot,
         networkPlanSnapshot,
@@ -1284,7 +1284,7 @@ void ClearCurrentFlightForRecoveryBoundary(const char* reason) {
 }
 
 void ApplyCurrentFlightRecoveryDecision(
-    const xvatsim::core::workflow::RecoveryDecision& decision) {
+    const xvatsim::brain::workflow::RecoveryDecision& decision) {
     if (!decision.accepted) {
         return;
     }
@@ -1329,17 +1329,17 @@ bool AttemptCurrentFlightRecovery(
         return false;
     }
 
-    xvatsim::core::workflow::WorkflowTuning tuning;
+    xvatsim::brain::workflow::WorkflowTuning tuning;
     tuning.arrivalWakeDistanceNm = kArrivalWakeDistanceNm;
     tuning.departureConfirmDistanceNm = 10.0;
-    const auto decision = xvatsim::core::workflow::ResolveCurrentFlightRecovery(
+    const auto decision = xvatsim::brain::workflow::ResolveCurrentFlightRecovery(
         aircraftState,
         flightPlanSnapshot,
         networkPlanSnapshot,
         gFlightContext,
         manual
-            ? xvatsim::core::workflow::RecoveryRequestMode::Manual
-            : xvatsim::core::workflow::RecoveryRequestMode::AutomaticReconnect,
+            ? xvatsim::brain::workflow::RecoveryRequestMode::Manual
+            : xvatsim::brain::workflow::RecoveryRequestMode::AutomaticReconnect,
         tuning);
 
     std::ostringstream logLine;
@@ -1421,13 +1421,13 @@ HandoffDecision ResolveWorkflowStage(
     const xvatsim::brain::AirportSectorSnapshot& departureAirportSectorSnapshot,
     const xvatsim::brain::ModuleBoardSnapshot& departureBoardSnapshot,
     const xvatsim::brain::ModuleBoardSnapshot& enrouteBoardSnapshot) {
-    xvatsim::core::workflow::WorkflowState state;
+    xvatsim::brain::workflow::WorkflowState state;
     state.flightContext = gFlightContext;
     state.departureReleasedThisFlight = gDepartureReleasedThisFlight;
     state.arrivalAwakeThisFlight = gArrivalAwakeThisFlight;
     state.airborneSinceSeconds = gAirborneSinceSeconds;
 
-    xvatsim::core::workflow::WorkflowTuning tuning;
+    xvatsim::brain::workflow::WorkflowTuning tuning;
     tuning.arrivalWakeDistanceNm = kArrivalWakeDistanceNm;
     tuning.departureReleaseHoldSeconds = kDepartureReleaseHoldSeconds;
     bool departureTerminalCoverageKnown = false;
@@ -1449,7 +1449,7 @@ HandoffDecision ResolveWorkflowStage(
         }
     }
 
-    const auto decision = xvatsim::core::workflow::ResolveWorkflowStage(
+    const auto decision = xvatsim::brain::workflow::ResolveWorkflowStage(
         aircraftState,
         radioStateSnapshot,
         departureTerminalCoverageKnown,
@@ -1843,17 +1843,17 @@ HandoffDecision ResolveEngineer3WorkflowStage(
     const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
     const xvatsim::brain::ModuleBoardSnapshot& departureBoardSnapshot,
     const xvatsim::brain::ModuleBoardSnapshot& enrouteBoardSnapshot) {
-    xvatsim::core::workflow::WorkflowState state;
+    xvatsim::brain::workflow::WorkflowState state;
     state.flightContext = gFlightContext;
     state.departureReleasedThisFlight = gDepartureReleasedThisFlight;
     state.arrivalAwakeThisFlight = gArrivalAwakeThisFlight;
     state.airborneSinceSeconds = gAirborneSinceSeconds;
 
-    xvatsim::core::workflow::WorkflowTuning tuning;
+    xvatsim::brain::workflow::WorkflowTuning tuning;
     tuning.arrivalWakeDistanceNm = kArrivalWakeDistanceNm;
     tuning.departureReleaseHoldSeconds = kDepartureReleaseHoldSeconds;
 
-    const auto decision = xvatsim::core::workflow::ResolveWorkflowStage(
+    const auto decision = xvatsim::brain::workflow::ResolveWorkflowStage(
         aircraftState,
         radioStateSnapshot,
         false,

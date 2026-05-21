@@ -1,10 +1,12 @@
-#include "XVatsim/core/WorkflowEngine.h"
+#include "XVatsim/brain/BrainWorkflow.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 
-namespace xvatsim::core::workflow {
+namespace xvatsim::brain::workflow {
+
+namespace brain = ::xvatsim::brain;
 
 namespace {
 
@@ -514,4 +516,4 @@ HandoffDecision ResolveWorkflowStage(
     return decision;
 }
 
-}  // namespace xvatsim::core::workflow
+}  // namespace xvatsim::brain::workflow

@@ -55,8 +55,14 @@ Engineer 3 live flow:
 This is shrinking toward the correct shape. The plugin still hosts the live
 X-Plane shell, input sampling, module fact adapters, and diagnostics, but
 radio-board cache ownership, route-polygon runtime/cache ownership, controller
-relevance, relevance cache ownership, and publisher ownership have moved into
-brain-owned source files.
+relevance, relevance cache ownership, publisher ownership, overlay wake
+decisions, and workflow/recovery ownership have moved into brain-owned source
+files.
+
+- `brain/src/BrainWorkflow.cpp`
+  - Owns workflow phase and current-flight recovery decisions.
+  - `core/WorkflowEngine.h` remains only as a compatibility shim for existing
+    callers.
 
 ### Fact Workers
 
@@ -118,7 +124,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`43249716748D6035783A1703A8359AF5CF432F425FC743773C7F6A6FBA650D29`:
+`317773ECA22A2706C84AB78CE177396F132756DDFEEA20F48D7780040A04D0C1`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -159,6 +165,7 @@ by installed hash
   shell
 - final published runtime input shaping from the plugin shell
 - overlay wake/hide/reason decisions from the plugin shell
+- workflow/recovery implementation from `core/src/WorkflowEngine.cpp`
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -299,6 +306,13 @@ presence. The plugin still performs X-Plane window updates and tracks shell
 state, but no longer decides whether the UI should wake. Release build passed
 and full harness passed `234 / 234` for installed hash
 `43249716748D6035783A1703A8359AF5CF432F425FC743773C7F6A6FBA650D29`.
+
+Follow-up update: Workflow and current-flight recovery implementation moved
+from `core/src/WorkflowEngine.cpp` into `brain/src/BrainWorkflow.cpp`. The
+plugin now includes `BrainWorkflow.h` directly, and `core/WorkflowEngine.h` is
+only a compatibility shim. Release build passed and full harness passed
+`234 / 234` for installed hash
+`317773ECA22A2706C84AB78CE177396F132756DDFEEA20F48D7780040A04D0C1`.
 
 ### Slice 4: Quarantine Legacy Runtime
 
