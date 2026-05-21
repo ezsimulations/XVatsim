@@ -831,6 +831,83 @@ std::string BuildBrainOwnedCruiseTargetHeaderText(
     return FormatCruiseTargetText(state.activeCruiseTargetFt);
 }
 
+void ResetBrainOwnedWorkflowProgress(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+
+    state->departureReleasedThisFlight = false;
+    state->arrivalAwakeThisFlight = false;
+    state->airborneSinceSeconds = -1.0;
+}
+
+void ResetBrainOwnedWorkflowArrivalWake(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+
+    state->arrivalAwakeThisFlight = false;
+}
+
+workflow::WorkflowState BuildBrainOwnedWorkflowState(
+    const BrainOwnedRuntimeState& state,
+    const workflow::FlightContext& flightContext) {
+    workflow::WorkflowState workflowState;
+    workflowState.flightContext = flightContext;
+    workflowState.departureReleasedThisFlight =
+        state.departureReleasedThisFlight;
+    workflowState.arrivalAwakeThisFlight = state.arrivalAwakeThisFlight;
+    workflowState.airborneSinceSeconds = state.airborneSinceSeconds;
+    return workflowState;
+}
+
+void CommitBrainOwnedWorkflowState(
+    BrainOwnedRuntimeState* state,
+    const workflow::WorkflowState& workflowState) {
+    if (state == nullptr) {
+        return;
+    }
+
+    state->departureReleasedThisFlight =
+        workflowState.departureReleasedThisFlight;
+    state->arrivalAwakeThisFlight = workflowState.arrivalAwakeThisFlight;
+    state->airborneSinceSeconds = workflowState.airborneSinceSeconds;
+}
+
+void ApplyBrainOwnedWorkflowRecoveryStage(
+    BrainOwnedRuntimeState* state,
+    WorkflowStage stage,
+    double nowSeconds) {
+    if (state == nullptr) {
+        return;
+    }
+
+    switch (stage) {
+        case WorkflowStage::Departure:
+            state->departureReleasedThisFlight = false;
+            state->arrivalAwakeThisFlight = false;
+            state->airborneSinceSeconds = -1.0;
+            break;
+        case WorkflowStage::Enroute:
+            state->departureReleasedThisFlight = true;
+            state->arrivalAwakeThisFlight = false;
+            if (state->airborneSinceSeconds < 0.0) {
+                state->airborneSinceSeconds = nowSeconds;
+            }
+            break;
+        case WorkflowStage::Arrival:
+            state->departureReleasedThisFlight = true;
+            state->arrivalAwakeThisFlight = true;
+            if (state->airborneSinceSeconds < 0.0) {
+                state->airborneSinceSeconds = nowSeconds;
+            }
+            break;
+        case WorkflowStage::None:
+        default:
+            break;
+    }
+}
+
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     const BrainOwnedStandbyAssistPlanInput& input) {
     BrainOwnedStandbyAssistPlanOutput output;

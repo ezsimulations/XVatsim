@@ -247,9 +247,6 @@ bool gFlightLoopRegistered = false;
 bool gPluginRuntimeEnabled = false;
 DisplayOverrideMode gDisplayOverrideMode = DisplayOverrideMode::Auto;
 bool gSawXPilotConnectedThisFlight = false;
-bool gDepartureReleasedThisFlight = false;
-bool gArrivalAwakeThisFlight = false;
-float gAirborneSinceSeconds = -1.0f;
 FlightContext gFlightContext;
 xvatsim::brain::AircraftStateSnapshot gLastAircraftStateSnapshot;
 xvatsim::brain::PilotIdentitySnapshot gLastPilotIdentitySnapshot;
@@ -819,10 +816,9 @@ void ResetEnrouteInitialDisplayHold() {
 }
 
 void ResetFlightProgressStateForNewContext() {
-    gDepartureReleasedThisFlight = false;
-    gArrivalAwakeThisFlight = false;
-    gAirborneSinceSeconds = -1.0f;
     ResetBrainOwnedRuntimeCache();
+    xvatsim::brain::ResetBrainOwnedWorkflowProgress(
+        &gBrainOwnedRuntimeState);
     ResetEnrouteInitialDisplayHold();
 }
 
@@ -857,7 +853,8 @@ void RetargetFlightContextToPlan(
 
     gFlightContext = output.flightContext;
     if (output.shouldResetArrivalWake) {
-        gArrivalAwakeThisFlight = false;
+        xvatsim::brain::ResetBrainOwnedWorkflowArrivalWake(
+            &gBrainOwnedRuntimeState);
     }
     if (output.shouldResetEnrouteInitialDisplayHold) {
         ResetEnrouteInitialDisplayHold();
@@ -971,31 +968,13 @@ void ApplyCurrentFlightRecoveryDecision(
     }
 
     gFlightContext = decision.flightContext;
-    switch (decision.stage) {
-        case xvatsim::brain::WorkflowStage::Departure:
-            gDepartureReleasedThisFlight = false;
-            gArrivalAwakeThisFlight = false;
-            gAirborneSinceSeconds = -1.0f;
-            break;
-        case xvatsim::brain::WorkflowStage::Enroute:
-            gDepartureReleasedThisFlight = true;
-            gArrivalAwakeThisFlight = false;
-            if (gAirborneSinceSeconds < 0.0f) {
-                gAirborneSinceSeconds = XPLMGetElapsedTime();
-            }
-            ResetEnrouteInitialDisplayHold();
-            break;
-        case xvatsim::brain::WorkflowStage::Arrival:
-            gDepartureReleasedThisFlight = true;
-            gArrivalAwakeThisFlight = true;
-            if (gAirborneSinceSeconds < 0.0f) {
-                gAirborneSinceSeconds = XPLMGetElapsedTime();
-            }
-            ResetEnrouteInitialDisplayHold();
-            break;
-        case xvatsim::brain::WorkflowStage::None:
-        default:
-            break;
+    xvatsim::brain::ApplyBrainOwnedWorkflowRecoveryStage(
+        &gBrainOwnedRuntimeState,
+        decision.stage,
+        XPLMGetElapsedTime());
+    if (decision.stage == xvatsim::brain::WorkflowStage::Enroute ||
+        decision.stage == xvatsim::brain::WorkflowStage::Arrival) {
+        ResetEnrouteInitialDisplayHold();
     }
 
     InvalidateFlightContextPresentationCaches();
@@ -1450,11 +1429,10 @@ HandoffDecision ResolveEngineer3WorkflowStage(
     const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
     const xvatsim::brain::ModuleBoardSnapshot& departureBoardSnapshot,
     const xvatsim::brain::ModuleBoardSnapshot& enrouteBoardSnapshot) {
-    xvatsim::brain::workflow::WorkflowState state;
-    state.flightContext = gFlightContext;
-    state.departureReleasedThisFlight = gDepartureReleasedThisFlight;
-    state.arrivalAwakeThisFlight = gArrivalAwakeThisFlight;
-    state.airborneSinceSeconds = gAirborneSinceSeconds;
+    auto state =
+        xvatsim::brain::BuildBrainOwnedWorkflowState(
+            gBrainOwnedRuntimeState,
+            gFlightContext);
 
     xvatsim::brain::workflow::WorkflowTuning tuning;
     tuning.arrivalWakeDistanceNm = kArrivalWakeDistanceNm;
@@ -1471,9 +1449,9 @@ HandoffDecision ResolveEngineer3WorkflowStage(
         &state,
         tuning);
 
-    gDepartureReleasedThisFlight = state.departureReleasedThisFlight;
-    gArrivalAwakeThisFlight = state.arrivalAwakeThisFlight;
-    gAirborneSinceSeconds = static_cast<float>(state.airborneSinceSeconds);
+    xvatsim::brain::CommitBrainOwnedWorkflowState(
+        &gBrainOwnedRuntimeState,
+        state);
     return decision;
 }
 

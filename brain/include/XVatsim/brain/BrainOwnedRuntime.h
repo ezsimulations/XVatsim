@@ -7,6 +7,7 @@
 
 #include "XVatsim/brain/BrainDisplayIntent.h"
 #include "XVatsim/brain/BrainTypes.h"
+#include "XVatsim/brain/BrainWorkflow.h"
 #include "XVatsim/brain/PhaseSnapshotPublisher.h"
 #include "XVatsim/brain/RadioReachableSnapshot.h"
 
@@ -80,6 +81,9 @@ struct BrainOwnedRuntimeState {
     double activeCruiseTargetFt = 0.0;
     double cruiseGateSatisfiedSinceSeconds = -1.0;
     std::string cruiseTargetSourceKey;
+    bool departureReleasedThisFlight = false;
+    bool arrivalAwakeThisFlight = false;
+    double airborneSinceSeconds = -1.0;
 
     WorkflowStage lastWorkflowStage = WorkflowStage::None;
     std::string lastPlanKey;
@@ -377,6 +381,23 @@ void UpdateBrainOwnedCruiseTargetProgress(
 
 std::string BuildBrainOwnedCruiseTargetHeaderText(
     const BrainOwnedRuntimeState& state);
+
+void ResetBrainOwnedWorkflowProgress(BrainOwnedRuntimeState* state);
+
+void ResetBrainOwnedWorkflowArrivalWake(BrainOwnedRuntimeState* state);
+
+workflow::WorkflowState BuildBrainOwnedWorkflowState(
+    const BrainOwnedRuntimeState& state,
+    const workflow::FlightContext& flightContext);
+
+void CommitBrainOwnedWorkflowState(
+    BrainOwnedRuntimeState* state,
+    const workflow::WorkflowState& workflowState);
+
+void ApplyBrainOwnedWorkflowRecoveryStage(
+    BrainOwnedRuntimeState* state,
+    WorkflowStage stage,
+    double nowSeconds);
 
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     const BrainOwnedStandbyAssistPlanInput& input);

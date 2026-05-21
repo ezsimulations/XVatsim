@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`49C96E697904C9332B7752E03E3C3F0F63FEDC2AFB71A49DB8CD3071171CF3AC`
+`D4AF05D53321D4A97B776138609FB0EAE24A2F8F1FCC00DF3733407851DC6143`
 
 Reason for this hash:
 
@@ -154,6 +154,9 @@ Reason for this hash:
 - Brain-owned runtime now owns cruise target state, filed/current target
   command decisions, source-plan invalidation, gate dwell/reached tracking, and
   cruise header text. The plugin only handles command/status side effects.
+- Brain-owned runtime now owns workflow progress latches for departure release,
+  arrival wake, and airborne-since timing. The plugin only builds/commits
+  workflow state through brain helpers.
 
 Regression harness status for this code:
 
@@ -172,7 +175,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`49C96E697904C9332B7752E03E3C3F0F63FEDC2AFB71A49DB8CD3071171CF3AC`
+`D4AF05D53321D4A97B776138609FB0EAE24A2F8F1FCC00DF3733407851DC6143`
 
 Rules:
 

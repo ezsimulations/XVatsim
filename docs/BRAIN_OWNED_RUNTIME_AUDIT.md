@@ -118,6 +118,8 @@ brain-owned source files.
   - Owns cruise target state, filed/current target command decisions,
     source-plan invalidation, gate dwell/reached tracking, and cruise header
     text.
+  - Owns workflow progress latches for departure release, arrival wake, and
+    airborne-since timing.
 
 ### UI Renderer
 
@@ -190,6 +192,8 @@ by installed hash
 - cruise target state, filed/current target command decisions, source-plan
   invalidation, gate dwell/reached tracking, and cruise header text from the
   plugin shell
+- workflow progress latches for departure release, arrival wake, and
+  airborne-since timing from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -401,6 +405,13 @@ gate dwell/reached tracking, and cruise header text. The plugin keeps only the
 command/status side effects. Release build passed and full harness passed
 `234 / 234` for installed hash
 `49C96E697904C9332B7752E03E3C3F0F63FEDC2AFB71A49DB8CD3071171CF3AC`.
+
+Follow-up update: Brain-owned runtime now owns workflow progress latches for
+departure release, arrival wake, and airborne-since timing. The plugin builds
+and commits workflow state through brain helpers instead of carrying those
+latches as plugin globals. Release build passed and full harness passed
+`234 / 234` for installed hash
+`D4AF05D53321D4A97B776138609FB0EAE24A2F8F1FCC00DF3733407851DC6143`.
 
 ### Slice 4: Quarantine Legacy Runtime
 
