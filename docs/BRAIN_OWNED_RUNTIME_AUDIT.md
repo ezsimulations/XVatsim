@@ -102,6 +102,9 @@ Plugin diagnostics timing/log throttle state is grouped under one shell-owned
     board assembly.
   - Publishes final UI rows as `FinalDisplaySnapshot`, not as a raw
     `ModuleBoardSnapshot`.
+  - Keeps accepted module boards raw in its output; UI-only annotation and
+    remaining-distance formatting are applied only to the local display board
+    used to assemble `FinalDisplaySnapshot`.
 - `brain/src/PhaseSnapshotPublisher.cpp`
   - Owns last-proven final display snapshot reuse.
 - `brain/src/BrainOwnedRuntime.cpp`
@@ -650,6 +653,15 @@ instead of reusing `ModuleBoardSnapshot` as the final UI board. Release build
 passed and full harness passed `234 / 234` for installed hash
 `C23142AFA326A0BF52A562451CB9C53649DC80C6DE70D1092D741DE4C076B07C`.
 
+Follow-up update: Brain Display Intent no longer publishes display-mutated
+enroute rows back into `BrainDisplayIntentOutput::enrouteBoard`. It now keeps
+accepted module boards raw in its output and uses a local display-only enroute
+board to build `FinalDisplaySnapshot`, so remaining-distance annotations and
+current/next UI shaping cannot overwrite publisher/runtime module board
+snapshots. Release build passed and full harness passed `234 / 234` for
+installed hash
+`52FC2B8E92151FE8B56B3B70C62EBF131A498FDAE0278B3836A7011300F36363`.
+
 ### Slice 4: Quarantine Legacy Runtime
 
 - Move old runtime functions into a clearly named legacy/quarantine unit.
@@ -668,11 +680,13 @@ passed and full harness passed `234 / 234` for installed hash
   view rows into separate structs.
 - Stop reusing `ModuleBoardSnapshot` as both raw board and final display board.
 
-Status: started. The final UI board now uses `FinalDisplaySnapshot` /
-`FinalDisplayStationSnapshot`, and the live UI path no longer consumes
-`ModuleBoardSnapshot` as final display truth. Remaining work is to split the
-pre-display worker row and display-intent row state so `BoardStationSnapshot`
-does not carry both accepted fact truth and display annotation/relation fields.
+Status: active. The final UI board now uses `FinalDisplaySnapshot` /
+`FinalDisplayStationSnapshot`, the live UI path no longer consumes
+`ModuleBoardSnapshot` as final display truth, and Display Intent no longer
+publishes display-mutated enroute rows back into runtime module board state.
+Remaining work is to split the pre-display worker row and display-intent row
+state so `BoardStationSnapshot` does not carry both accepted fact truth and
+display annotation/relation fields.
 
 ## Guardrails
 

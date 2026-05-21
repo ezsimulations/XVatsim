@@ -396,10 +396,11 @@ BrainDisplayIntentOutput RunBrainDisplayIntentWorker(
     output.departureBoard = input.departureBoard;
     output.arrivalBoard = input.arrivalBoard;
     output.enrouteBoard = input.enrouteBoard;
-    output.enrouteBoard.stations.clear();
-    output.enrouteBoard.available = false;
-    output.enrouteBoard.displayStations = false;
 
+    auto displayEnrouteBoard = input.enrouteBoard;
+    displayEnrouteBoard.stations.clear();
+    displayEnrouteBoard.available = false;
+    displayEnrouteBoard.displayStations = false;
     std::unordered_set<std::string> enrouteKeys;
     for (const auto& station : input.enrouteBoard.stations) {
         if (!IsCenter(station)) {
@@ -424,7 +425,7 @@ BrainDisplayIntentOutput RunBrainDisplayIntentWorker(
         }
 
         auto displayStation = BuildDisplayStation(station, relation, input);
-        AppendUnique(displayStation, &output.enrouteBoard, &enrouteKeys);
+        AppendUnique(displayStation, &displayEnrouteBoard, &enrouteKeys);
         ++output.displayed;
         AddDiagnostic(
             displayStation,
@@ -433,13 +434,13 @@ BrainDisplayIntentOutput RunBrainDisplayIntentWorker(
             &output.diagnostics);
     }
 
-    SortEnrouteStations(&output.enrouteBoard);
+    SortEnrouteStations(&displayEnrouteBoard);
 
     output.finalDisplay = BuildDisplayBoard(
         input.workflowStage,
         output.departureBoard,
         output.arrivalBoard,
-        output.enrouteBoard);
+        displayEnrouteBoard);
     output.stableHash = HashBoard(output.finalDisplay);
 
     return output;
