@@ -86,6 +86,11 @@ struct BrainOwnedRuntimeState {
     double airborneSinceSeconds = -1.0;
     bool sawXPilotConnectedThisFlight = false;
     workflow::FlightContext flightContext;
+    workflow::XPilotSessionBoundaryState xPilotSessionBoundaryState;
+    bool coldDarkResetApplied = false;
+    bool aircraftStateInvalidBoundaryActive = false;
+    bool pendingAutomaticFlightRecovery = false;
+    bool manualFlightRecoveryRequested = false;
 
     WorkflowStage lastWorkflowStage = WorkflowStage::None;
     std::string lastPlanKey;
@@ -322,6 +327,33 @@ void CommitBrainOwnedFlightContext(
     const workflow::FlightContext& flightContext);
 
 void ClearBrainOwnedFlightContext(BrainOwnedRuntimeState* state);
+
+void ClearBrainOwnedXPilotConnectionTracking(BrainOwnedRuntimeState* state);
+
+void ClearBrainOwnedFlightRecoveryRequests(BrainOwnedRuntimeState* state);
+
+void SetBrainOwnedAutomaticFlightRecoveryPending(
+    BrainOwnedRuntimeState* state,
+    bool pending);
+
+void SetBrainOwnedManualFlightRecoveryRequested(
+    BrainOwnedRuntimeState* state,
+    bool requested);
+
+void SetBrainOwnedColdDarkResetApplied(
+    BrainOwnedRuntimeState* state,
+    bool applied);
+
+void ClearBrainOwnedAircraftStateInvalidBoundary(
+    BrainOwnedRuntimeState* state);
+
+void ApplyBrainOwnedXPilotSessionBoundaryDecision(
+    BrainOwnedRuntimeState* state,
+    const workflow::XPilotSessionBoundaryDecision& decision);
+
+void ApplyBrainOwnedAircraftRuntimeBoundaryDecision(
+    BrainOwnedRuntimeState* state,
+    const workflow::AircraftRuntimeBoundaryDecision& decision);
 
 std::string ToString(BrainOwnedCandidateDecision decision);
 

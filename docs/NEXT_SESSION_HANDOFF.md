@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`A16D4BA7CA20709A211C3D8624CBABC059FE86940737740D8EA803A1E7CA3A1C`
+`7541089D7D7EA2104C9A94BE571E00716F74B580C3EA004DD20876D7EFCB8F40`
 
 Reason for this hash:
 
@@ -165,6 +165,9 @@ Reason for this hash:
 - Brain-owned runtime now has a cache-reset helper that preserves the active
   flight context, so new-context runtime cache clears do not erase the locked
   flight.
+- Brain-owned runtime now owns xPilot session boundary state,
+  current-flight recovery request latches, and aircraft cold/dark/invalid-state
+  boundary latches. The plugin no longer carries those as separate globals.
 
 Regression harness status for this code:
 
@@ -183,7 +186,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`A16D4BA7CA20709A211C3D8624CBABC059FE86940737740D8EA803A1E7CA3A1C`
+`7541089D7D7EA2104C9A94BE571E00716F74B580C3EA004DD20876D7EFCB8F40`
 
 Rules:
 

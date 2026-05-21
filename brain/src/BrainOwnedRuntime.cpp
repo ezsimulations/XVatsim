@@ -359,6 +359,88 @@ void ClearBrainOwnedFlightContext(BrainOwnedRuntimeState* state) {
     state->flightContext = {};
 }
 
+void ClearBrainOwnedXPilotConnectionTracking(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->xPilotSessionBoundaryState.lastXPilotConnected = false;
+    state->xPilotSessionBoundaryState.lastConnectedPilotCallsign.clear();
+}
+
+void ClearBrainOwnedFlightRecoveryRequests(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->xPilotSessionBoundaryState.disconnectedPilotCallsign.clear();
+    state->pendingAutomaticFlightRecovery = false;
+    state->manualFlightRecoveryRequested = false;
+}
+
+void SetBrainOwnedAutomaticFlightRecoveryPending(
+    BrainOwnedRuntimeState* state,
+    bool pending) {
+    if (state == nullptr) {
+        return;
+    }
+    state->pendingAutomaticFlightRecovery = pending;
+}
+
+void SetBrainOwnedManualFlightRecoveryRequested(
+    BrainOwnedRuntimeState* state,
+    bool requested) {
+    if (state == nullptr) {
+        return;
+    }
+    state->manualFlightRecoveryRequested = requested;
+}
+
+void SetBrainOwnedColdDarkResetApplied(
+    BrainOwnedRuntimeState* state,
+    bool applied) {
+    if (state == nullptr) {
+        return;
+    }
+    state->coldDarkResetApplied = applied;
+}
+
+void ClearBrainOwnedAircraftStateInvalidBoundary(
+    BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->aircraftStateInvalidBoundaryActive = false;
+}
+
+void ApplyBrainOwnedXPilotSessionBoundaryDecision(
+    BrainOwnedRuntimeState* state,
+    const workflow::XPilotSessionBoundaryDecision& decision) {
+    if (state == nullptr) {
+        return;
+    }
+    state->xPilotSessionBoundaryState = decision.nextState;
+    if (decision.shouldClearPendingRecoveryRequests) {
+        state->pendingAutomaticFlightRecovery = false;
+        state->manualFlightRecoveryRequested = false;
+    }
+    if (decision.shouldQueueAutomaticRecovery) {
+        state->pendingAutomaticFlightRecovery = true;
+    }
+    if (decision.sawXPilotConnectedThisFlight) {
+        state->sawXPilotConnectedThisFlight = true;
+    }
+}
+
+void ApplyBrainOwnedAircraftRuntimeBoundaryDecision(
+    BrainOwnedRuntimeState* state,
+    const workflow::AircraftRuntimeBoundaryDecision& decision) {
+    if (state == nullptr) {
+        return;
+    }
+    state->coldDarkResetApplied = decision.nextColdDarkResetApplied;
+    state->aircraftStateInvalidBoundaryActive =
+        decision.nextAircraftStateInvalidBoundaryActive;
+}
+
 std::string ToString(BrainOwnedCandidateDecision decision) {
     switch (decision) {
         case BrainOwnedCandidateDecision::Pending:

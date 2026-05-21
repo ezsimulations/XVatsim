@@ -257,13 +257,6 @@ long long gLastDiagnosticsSlowRefreshSeconds = 0;
 long long gLastDiagnosticsSummarySeconds = 0;
 bool gHasLastDiagnosticsAuthorityHash = false;
 std::size_t gLastDiagnosticsAuthorityHash = 0;
-bool gLastXPilotConnected = false;
-bool gColdDarkResetApplied = false;
-bool gAircraftStateInvalidBoundaryActive = false;
-std::string gLastConnectedPilotCallsign;
-std::string gDisconnectedPilotCallsign;
-bool gPendingAutomaticFlightRecovery = false;
-bool gManualFlightRecoveryRequested = false;
 std::string gDiversionOverrideSourceKey;
 PendingTextEntryMode gPendingTextEntryMode = PendingTextEntryMode::None;
 PendingControllerMessageState gPendingControllerMessage;
@@ -518,7 +511,9 @@ void ResetPluginRuntimeState(bool resetVatsimFeed, bool resetColdDarkLatch) {
     ResetSessionRuntimeCaches(resetVatsimFeed);
     ResetPresentationStateForColdDark();
     if (resetColdDarkLatch) {
-        gColdDarkResetApplied = false;
+        xvatsim::brain::SetBrainOwnedColdDarkResetApplied(
+            &gBrainOwnedRuntimeState,
+            false);
     }
 }
 
@@ -821,14 +816,13 @@ void ResetFlightProgressStateForNewContext() {
 }
 
 void ClearXPilotConnectionTracking() {
-    gLastXPilotConnected = false;
-    gLastConnectedPilotCallsign.clear();
+    xvatsim::brain::ClearBrainOwnedXPilotConnectionTracking(
+        &gBrainOwnedRuntimeState);
 }
 
 void ClearFlightRecoveryState() {
-    gDisconnectedPilotCallsign.clear();
-    gPendingAutomaticFlightRecovery = false;
-    gManualFlightRecoveryRequested = false;
+    xvatsim::brain::ClearBrainOwnedFlightRecoveryRequests(
+        &gBrainOwnedRuntimeState);
 }
 
 void InvalidateFlightContextPresentationCaches();
@@ -1031,8 +1025,12 @@ bool AttemptCurrentFlightRecovery(
 
     if (decision.accepted) {
         ApplyCurrentFlightRecoveryDecision(decision);
-        gPendingAutomaticFlightRecovery = false;
-        gManualFlightRecoveryRequested = false;
+        xvatsim::brain::SetBrainOwnedAutomaticFlightRecoveryPending(
+            &gBrainOwnedRuntimeState,
+            false);
+        xvatsim::brain::SetBrainOwnedManualFlightRecoveryRequested(
+            &gBrainOwnedRuntimeState,
+            false);
         if (manual) {
             std::string status = "RECOVER ";
             status += RecoveryStageToken(decision.stage);
@@ -1045,13 +1043,19 @@ bool AttemptCurrentFlightRecovery(
 
     if (decision.reason == "route-changed") {
         ClearCurrentFlightForRecoveryBoundary("reconnect plan differs from preserved flight");
-        gPendingAutomaticFlightRecovery = false;
+        xvatsim::brain::SetBrainOwnedAutomaticFlightRecoveryPending(
+            &gBrainOwnedRuntimeState,
+            false);
     } else if (!manual && decision.reason != "plan-unavailable") {
-        gPendingAutomaticFlightRecovery = false;
+        xvatsim::brain::SetBrainOwnedAutomaticFlightRecoveryPending(
+            &gBrainOwnedRuntimeState,
+            false);
     }
 
     if (manual) {
-        gManualFlightRecoveryRequested = false;
+        xvatsim::brain::SetBrainOwnedManualFlightRecoveryRequested(
+            &gBrainOwnedRuntimeState,
+            false);
         std::string status = "RECOVER rejected: ";
         status += decision.reason;
         ShowTransientStatusLine(status);
@@ -1063,14 +1067,14 @@ void AttemptPendingCurrentFlightRecovery(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     const xvatsim::brain::FlightPlanSnapshot& flightPlanSnapshot,
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
-    if (gPendingAutomaticFlightRecovery) {
+    if (gBrainOwnedRuntimeState.pendingAutomaticFlightRecovery) {
         (void)AttemptCurrentFlightRecovery(
             false,
             aircraftState,
             flightPlanSnapshot,
             networkPlanSnapshot);
     }
-    if (gManualFlightRecoveryRequested) {
+    if (gBrainOwnedRuntimeState.manualFlightRecoveryRequested) {
         (void)AttemptCurrentFlightRecovery(
             true,
             aircraftState,
@@ -2298,7 +2302,8 @@ void ResetPresentationStateForColdDark() {
     gLastNetworkPlanSnapshot = {};
     ClearXPilotConnectionTracking();
     ClearFlightRecoveryState();
-    gAircraftStateInvalidBoundaryActive = false;
+    xvatsim::brain::ClearBrainOwnedAircraftStateInvalidBoundary(
+        &gBrainOwnedRuntimeState);
     gPendingControllerMessage = {};
     ResetBrainDisplayPublisherCache();
     ResetStandbyAssistLatch();
@@ -2325,9 +2330,9 @@ void ApplyAircraftRuntimeBoundaryDecision(
         XPLMDebugString(decision.logLine.c_str());
     }
 
-    gColdDarkResetApplied = decision.nextColdDarkResetApplied;
-    gAircraftStateInvalidBoundaryActive =
-        decision.nextAircraftStateInvalidBoundaryActive;
+    xvatsim::brain::ApplyBrainOwnedAircraftRuntimeBoundaryDecision(
+        &gBrainOwnedRuntimeState,
+        decision);
 }
 
 void ResetFlightScopedStateForSessionBoundary(
@@ -2386,9 +2391,7 @@ SessionBoundaryResult HandleXPilotSessionBoundary(
     xvatsim::brain::workflow::XPilotSessionBoundaryInput input;
     input.xPilotSession = xPilotSessionSnapshot;
     input.pilotIdentity = pilotIdentitySnapshot;
-    input.state.lastXPilotConnected = gLastXPilotConnected;
-    input.state.lastConnectedPilotCallsign = gLastConnectedPilotCallsign;
-    input.state.disconnectedPilotCallsign = gDisconnectedPilotCallsign;
+    input.state = gBrainOwnedRuntimeState.xPilotSessionBoundaryState;
 
     const auto decision =
         xvatsim::brain::workflow::ResolveXPilotSessionBoundary(input);
@@ -2401,27 +2404,13 @@ SessionBoundaryResult HandleXPilotSessionBoundary(
             decision.resetReason.c_str(),
             false);
     }
-    if (decision.shouldClearPendingRecoveryRequests) {
-        gPendingAutomaticFlightRecovery = false;
-        gManualFlightRecoveryRequested = false;
-    }
-    if (decision.shouldQueueAutomaticRecovery) {
-        gPendingAutomaticFlightRecovery = true;
-    }
-    if (decision.sawXPilotConnectedThisFlight) {
-        xvatsim::brain::SetBrainOwnedXPilotConnectedSeen(
-            &gBrainOwnedRuntimeState,
-            true);
-    }
     if (!decision.logLine.empty()) {
         XPLMDebugString(decision.logLine.c_str());
     }
 
-    gLastXPilotConnected = decision.nextState.lastXPilotConnected;
-    gLastConnectedPilotCallsign =
-        decision.nextState.lastConnectedPilotCallsign;
-    gDisconnectedPilotCallsign =
-        decision.nextState.disconnectedPilotCallsign;
+    xvatsim::brain::ApplyBrainOwnedXPilotSessionBoundaryDecision(
+        &gBrainOwnedRuntimeState,
+        decision);
     return decision.action;
 }
 
@@ -2725,7 +2714,9 @@ void ReturnDisplayToAuto() {
 
 void RequestCurrentFlightRecovery() {
     DiscardPendingTextEntryState();
-    gManualFlightRecoveryRequested = true;
+    xvatsim::brain::SetBrainOwnedManualFlightRecoveryRequested(
+        &gBrainOwnedRuntimeState,
+        true);
     ShowTransientStatusLine("RECOVER evaluating current flight");
     XPLMDebugString("[XVatsim] Manual current-flight recovery requested.\n");
     RefreshOverlayFromBrain();
@@ -3400,9 +3391,10 @@ void RefreshOverlayFromBrainEngineer3() {
     xvatsim::brain::workflow::AircraftRuntimeBoundaryInput
         aircraftBoundaryInput;
     aircraftBoundaryInput.aircraftState = aircraftState;
-    aircraftBoundaryInput.coldDarkResetApplied = gColdDarkResetApplied;
+    aircraftBoundaryInput.coldDarkResetApplied =
+        gBrainOwnedRuntimeState.coldDarkResetApplied;
     aircraftBoundaryInput.aircraftStateInvalidBoundaryActive =
-        gAircraftStateInvalidBoundaryActive;
+        gBrainOwnedRuntimeState.aircraftStateInvalidBoundaryActive;
     const auto aircraftBoundaryDecision =
         xvatsim::brain::workflow::ResolveAircraftRuntimeBoundary(
             aircraftBoundaryInput);

@@ -125,6 +125,8 @@ context storage have moved into brain-owned source files.
     brain-returned context through brain helpers.
   - Owns the cache-reset path that preserves active flight context while
     clearing derived runtime state for a new context.
+  - Owns xPilot session boundary state, current-flight recovery request
+    latches, and aircraft cold/dark/invalid-state boundary latches.
 
 ### UI Renderer
 
@@ -202,6 +204,8 @@ by installed hash
 - xPilot-seen latch used by overlay wake/disconnect behavior from the plugin
   shell
 - active flight context storage from the plugin shell
+- xPilot session boundary state, current-flight recovery request latches, and
+  aircraft cold/dark/invalid-state boundary latches from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -441,6 +445,16 @@ cache clears use it so a just-locked brain-owned flight context is not erased
 with derived runtime state. Release build passed and full harness passed
 `234 / 234` for installed hash
 `A16D4BA7CA20709A211C3D8624CBABC059FE86940737740D8EA803A1E7CA3A1C`.
+
+Follow-up update: Brain-owned runtime now owns xPilot session boundary state,
+current-flight recovery request latches, and aircraft cold/dark/invalid-state
+boundary latches. The plugin no longer carries those as `gLastXPilotConnected`,
+`gLastConnectedPilotCallsign`, `gDisconnectedPilotCallsign`,
+`gPendingAutomaticFlightRecovery`, `gManualFlightRecoveryRequested`,
+`gColdDarkResetApplied`, or `gAircraftStateInvalidBoundaryActive`; it supplies
+facts and applies brain helper commits. Release build passed and full harness
+passed `234 / 234` for installed hash
+`7541089D7D7EA2104C9A94BE571E00716F74B580C3EA004DD20876D7EFCB8F40`.
 
 ### Slice 4: Quarantine Legacy Runtime
 
