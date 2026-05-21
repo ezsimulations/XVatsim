@@ -59,14 +59,16 @@ bool IsCenter(const BoardStationSnapshot& station) {
     return station.role == StationRole::Center;
 }
 
+bool IsCenter(const FinalDisplayStationSnapshot& station) {
+    return station.role == StationRole::Center;
+}
+
 bool IsDisplayableStation(const BoardStationSnapshot& station) {
     return !station.offline && !station.frequency.empty();
 }
 
-std::string StationKey(const BoardStationSnapshot& station) {
-    return std::to_string(static_cast<int>(station.role)) + "|" +
-           NormalizeKey(station.callsign) + "|" +
-           NormalizeKey(station.frequency);
+bool IsDisplayableStation(const FinalDisplayStationSnapshot& station) {
+    return !station.offline && !station.frequency.empty();
 }
 
 std::string StationKey(const FinalDisplayStationSnapshot& station) {
@@ -79,20 +81,6 @@ std::string FormatDistanceAnnotation(double distanceNm) {
     const auto rounded =
         static_cast<int>(std::round(std::max(0.0, distanceNm)));
     return std::to_string(rounded) + "nm";
-}
-
-void AppendUnique(
-    const BoardStationSnapshot& station,
-    ModuleBoardSnapshot* board,
-    std::unordered_set<std::string>* keys) {
-    if (board == nullptr || keys == nullptr) {
-        return;
-    }
-    if (keys->insert(StationKey(station)).second) {
-        board->stations.push_back(station);
-        board->available = true;
-        board->displayStations = true;
-    }
 }
 
 FinalDisplayStationSnapshot ToFinalDisplayStation(
@@ -154,10 +142,11 @@ DisplayRelation InferCenterRelation(
     return DisplayRelation::Hidden;
 }
 
-BoardStationSnapshot BuildDisplayStation(
-    BoardStationSnapshot station,
+FinalDisplayStationSnapshot BuildFinalDisplayStation(
+    const BoardStationSnapshot& sourceStation,
     DisplayRelation relation,
     const BrainDisplayIntentInput& input) {
+    auto station = ToFinalDisplayStation(sourceStation);
     station.displayRelation = relation;
     station.next = false;
     station.standby = false;
@@ -213,6 +202,21 @@ void AddBoardStations(
     }
 }
 
+void AddFinalDisplayStations(
+    const FinalDisplaySnapshot& source,
+    FinalDisplaySnapshot* target,
+    std::unordered_set<std::string>* keys) {
+    if (target == nullptr || keys == nullptr) {
+        return;
+    }
+    for (const auto& station : source.stations) {
+        if (!IsDisplayableStation(station)) {
+            continue;
+        }
+        AppendUnique(station, target, keys);
+    }
+}
+
 FinalDisplaySnapshot MakeDisplayShell(
     const ModuleBoardSnapshot& source,
     BoardSource boardSource) {
@@ -226,7 +230,7 @@ FinalDisplaySnapshot BuildDisplayBoard(
     WorkflowStage stage,
     const ModuleBoardSnapshot& departureBoard,
     const ModuleBoardSnapshot& arrivalBoard,
-    const ModuleBoardSnapshot& enrouteBoard) {
+    const FinalDisplaySnapshot& enrouteBoard) {
     FinalDisplaySnapshot display;
     std::unordered_set<std::string> keys;
 
@@ -234,7 +238,7 @@ FinalDisplaySnapshot BuildDisplayBoard(
         display = MakeDisplayShell(arrivalBoard, BoardSource::Arrival);
         keys.reserve(arrivalBoard.stations.size() + enrouteBoard.stations.size());
         AddBoardStations(arrivalBoard, &display, &keys);
-        AddBoardStations(enrouteBoard, &display, &keys);
+        AddFinalDisplayStations(enrouteBoard, &display, &keys);
         return display;
     }
 
@@ -245,23 +249,20 @@ FinalDisplaySnapshot BuildDisplayBoard(
         for (const auto& station : enrouteBoard.stations) {
             if (station.displayRelation == DisplayRelation::CurrentPolygon &&
                 IsDisplayableStation(station)) {
-                AppendUnique(ToFinalDisplayStation(station), &display, &keys);
+                AppendUnique(station, &display, &keys);
             }
         }
         return display;
     }
 
     if (stage == WorkflowStage::Enroute) {
-        display = MakeDisplayShell(enrouteBoard, BoardSource::Enroute);
-        keys.reserve(enrouteBoard.stations.size());
-        AddBoardStations(enrouteBoard, &display, &keys);
-        return display;
+        return enrouteBoard;
     }
 
     return display;
 }
 
-void SortEnrouteStations(ModuleBoardSnapshot* board) {
+void SortEnrouteStations(FinalDisplaySnapshot* board) {
     if (board == nullptr) {
         return;
     }
@@ -298,8 +299,9 @@ void SortEnrouteStations(ModuleBoardSnapshot* board) {
         });
 }
 
+template <typename StationSnapshot>
 void AddDiagnostic(
-    const BoardStationSnapshot& station,
+    const StationSnapshot& station,
     DisplayRelation relation,
     const char* action,
     std::vector<std::string>* diagnostics) {
@@ -318,25 +320,6 @@ void AddDiagnostic(
                << static_cast<int>(std::round(station.routeEntryDistanceNm));
     }
     diagnostics->push_back(stream.str());
-}
-
-void HashStation(std::uint64_t* hash, const BoardStationSnapshot& station) {
-    HashCombine(hash, static_cast<std::uint64_t>(station.role));
-    HashCombine(hash, station.callsign);
-    HashCombine(hash, station.frequency);
-    HashCombine(hash, station.annotation);
-    HashCombine(hash, station.polygonKey);
-    HashCombine(hash, static_cast<std::uint64_t>(station.displayRelation));
-    HashCombine(hash, static_cast<std::uint64_t>(station.tuned ? 1u : 0u));
-    HashCombine(hash, static_cast<std::uint64_t>(station.next ? 1u : 0u));
-    HashCombine(hash, static_cast<std::uint64_t>(station.standby ? 1u : 0u));
-    HashCombine(hash, static_cast<std::uint64_t>(station.sectorActive ? 1u : 0u));
-    HashCombine(hash, static_cast<std::uint64_t>(station.online ? 1u : 0u));
-    HashCombine(hash, static_cast<std::uint64_t>(station.offline ? 1u : 0u));
-    HashCombine(hash, static_cast<std::uint64_t>(station.hasRouteEntryDistance ? 1u : 0u));
-    if (station.hasRouteEntryDistance) {
-        HashCombine(hash, station.routeEntryDistanceNm);
-    }
 }
 
 void HashStation(std::uint64_t* hash, const FinalDisplayStationSnapshot& station) {
@@ -397,10 +380,8 @@ BrainDisplayIntentOutput RunBrainDisplayIntentWorker(
     output.arrivalBoard = input.arrivalBoard;
     output.enrouteBoard = input.enrouteBoard;
 
-    auto displayEnrouteBoard = input.enrouteBoard;
-    displayEnrouteBoard.stations.clear();
-    displayEnrouteBoard.available = false;
-    displayEnrouteBoard.displayStations = false;
+    auto displayEnrouteBoard =
+        MakeDisplayShell(input.enrouteBoard, BoardSource::Enroute);
     std::unordered_set<std::string> enrouteKeys;
     for (const auto& station : input.enrouteBoard.stations) {
         if (!IsCenter(station)) {
@@ -424,7 +405,8 @@ BrainDisplayIntentOutput RunBrainDisplayIntentWorker(
             continue;
         }
 
-        auto displayStation = BuildDisplayStation(station, relation, input);
+        auto displayStation =
+            BuildFinalDisplayStation(station, relation, input);
         AppendUnique(displayStation, &displayEnrouteBoard, &enrouteKeys);
         ++output.displayed;
         AddDiagnostic(

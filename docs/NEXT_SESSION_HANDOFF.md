@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`52FC2B8E92151FE8B56B3B70C62EBF131A498FDAE0278B3836A7011300F36363`
+`4898FEBA40F2E48F40907D6B20FE920363B8D05C3E8F49D31E0889290B62CA63`
 
 Reason for this hash:
 
@@ -223,9 +223,12 @@ Reason for this hash:
   display storage, and `BrainOrchestrator` now consume the display-specific
   snapshot instead of reusing `ModuleBoardSnapshot` as the final UI board.
 - Brain Display Intent now keeps accepted module boards raw in its output and
-  uses a local display-only enroute board to assemble `FinalDisplaySnapshot`.
-  UI annotations and remaining-distance formatting no longer overwrite the
-  publisher/runtime module board snapshots.
+  assembles `FinalDisplaySnapshot` separately. UI annotations and
+  remaining-distance formatting no longer overwrite the publisher/runtime
+  module board snapshots.
+- Brain Display Intent now builds enroute display rows directly as
+  `FinalDisplayStationSnapshot` entries, so display shaping no longer stages
+  through a temporary `ModuleBoardSnapshot`.
 
 Regression harness status for this code:
 
@@ -244,7 +247,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`52FC2B8E92151FE8B56B3B70C62EBF131A498FDAE0278B3836A7011300F36363`
+`4898FEBA40F2E48F40907D6B20FE920363B8D05C3E8F49D31E0889290B62CA63`
 
 Rules:
 

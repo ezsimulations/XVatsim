@@ -103,8 +103,8 @@ Plugin diagnostics timing/log throttle state is grouped under one shell-owned
   - Publishes final UI rows as `FinalDisplaySnapshot`, not as a raw
     `ModuleBoardSnapshot`.
   - Keeps accepted module boards raw in its output; UI-only annotation and
-    remaining-distance formatting are applied only to the local display board
-    used to assemble `FinalDisplaySnapshot`.
+    remaining-distance formatting are applied directly to
+    `FinalDisplayStationSnapshot` rows while assembling `FinalDisplaySnapshot`.
 - `brain/src/PhaseSnapshotPublisher.cpp`
   - Owns last-proven final display snapshot reuse.
 - `brain/src/BrainOwnedRuntime.cpp`
@@ -259,6 +259,8 @@ by installed hash
   runtime name
 - unused plugin-local departure/arrival/enroute board variables from the
   Engineer 3 refresh shell
+- temporary display-mutated `ModuleBoardSnapshot` staging inside Brain Display
+  Intent
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -288,13 +290,13 @@ Their CMake target names are now explicitly harness legacy:
    next cleanup step is to rename/extract them as explicit fact-only workers or
    retire the unused libraries.
 
-3. `BoardStationSnapshot` still mixes worker fact state and display-intent
-   state before the final display boundary.
-   The final UI board is now split into `FinalDisplaySnapshot` /
-   `FinalDisplayStationSnapshot`, but route-entry distance, display relation,
-   annotation, active/next flags, and online/tuned facts still share the worker
-   board row before Display Intent. This was the class of issue behind the OAK
-   `0nm` failure.
+3. `BoardStationSnapshot` still carries some pre-display relation fields.
+   The final UI board is split into `FinalDisplaySnapshot` /
+   `FinalDisplayStationSnapshot`, and Brain Display Intent no longer creates
+   display-mutated `BoardStationSnapshot` rows. Remaining cleanup is to split
+   accepted fact truth from relation/annotation fields before Display Intent so
+   fact rows cannot drift back into UI state. This was the class of issue
+   behind the OAK `0nm` failure.
 
 4. Workflow selection still depends on provisional relevance.
    The provisional pass now lives behind the explicit brain-owned
@@ -662,6 +664,14 @@ snapshots. Release build passed and full harness passed `234 / 234` for
 installed hash
 `52FC2B8E92151FE8B56B3B70C62EBF131A498FDAE0278B3836A7011300F36363`.
 
+Follow-up update: Brain Display Intent now builds enroute display rows directly
+as `FinalDisplayStationSnapshot` entries and sorts/dedupes them as
+`FinalDisplaySnapshot`, instead of staging display-shaped rows through a
+temporary `ModuleBoardSnapshot`. Accepted departure/arrival/enroute output
+boards remain raw module facts. Release build passed and full harness passed
+`234 / 234` for installed hash
+`4898FEBA40F2E48F40907D6B20FE920363B8D05C3E8F49D31E0889290B62CA63`.
+
 ### Slice 4: Quarantine Legacy Runtime
 
 - Move old runtime functions into a clearly named legacy/quarantine unit.
@@ -683,10 +693,9 @@ installed hash
 Status: active. The final UI board now uses `FinalDisplaySnapshot` /
 `FinalDisplayStationSnapshot`, the live UI path no longer consumes
 `ModuleBoardSnapshot` as final display truth, and Display Intent no longer
-publishes display-mutated enroute rows back into runtime module board state.
-Remaining work is to split the pre-display worker row and display-intent row
-state so `BoardStationSnapshot` does not carry both accepted fact truth and
-display annotation/relation fields.
+publishes or stages display-mutated enroute rows as runtime module board state.
+Remaining work is to split accepted worker fact truth from pre-display relation
+and annotation fields before Display Intent.
 
 ## Guardrails
 
