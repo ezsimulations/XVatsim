@@ -195,8 +195,7 @@ std::string StandbyAssistWorkflowKey(
 std::string StationKey(const BoardStationSnapshot& station) {
     return std::to_string(static_cast<int>(station.role)) + "|" +
            NormalizeCallsign(station.callsign) + "|" +
-           NormalizeFrequency(station.frequency) + "|" +
-           station.annotation;
+           NormalizeFrequency(station.frequency);
 }
 
 void RemoveCtafStations(ModuleBoardSnapshot* board) {
@@ -272,7 +271,6 @@ bool BuildCtafStationFromLookupFact(
         station->tuned = FrequencyTuned(kUnicomFallbackFrequency, radios);
     } else {
         station->role = StationRole::Ctaf;
-        station->annotation = "lookup";
     }
     return true;
 }

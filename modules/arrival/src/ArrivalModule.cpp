@@ -153,7 +153,6 @@ brain::ModuleBoardSnapshot ArrivalModule::Collect(
         } else {
             ctafStation.role = brain::StationRole::Ctaf;
             ctafStation.callsign = arrivalAirportIcao;
-            ctafStation.annotation = "lookup";
         }
         AppendStation(ctafStation, &snapshot.stations, &insertedKeys);
     }

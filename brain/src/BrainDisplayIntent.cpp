@@ -89,7 +89,6 @@ FinalDisplayStationSnapshot ToFinalDisplayStation(
     displayStation.role = station.role;
     displayStation.callsign = station.callsign;
     displayStation.frequency = station.frequency;
-    displayStation.annotation = station.annotation;
     displayStation.tuned = station.tuned;
     displayStation.sectorActive = station.sectorActive;
     displayStation.online = station.online;

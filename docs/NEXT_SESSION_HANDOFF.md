@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`02944C4FF9541CF3B045F11FD6D8FE1F633F575C6507E4A458E121E93E36BAA7`
+`41094E64705B00113F08D0FAD390357E2A4BC4D0734B049E68589769A3D27277`
 
 Reason for this hash:
 
@@ -231,6 +231,8 @@ Reason for this hash:
   through a temporary `ModuleBoardSnapshot`.
 - Raw `BoardStationSnapshot` no longer carries `next` or `standby`; those
   UI-only flags now live only on `FinalDisplayStationSnapshot`.
+- Raw `BoardStationSnapshot` no longer carries `annotation`; UI text
+  annotations now live only on `FinalDisplayStationSnapshot`.
 
 Regression harness status for this code:
 
@@ -249,7 +251,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`02944C4FF9541CF3B045F11FD6D8FE1F633F575C6507E4A458E121E93E36BAA7`
+`41094E64705B00113F08D0FAD390357E2A4BC4D0734B049E68589769A3D27277`
 
 Rules:
 

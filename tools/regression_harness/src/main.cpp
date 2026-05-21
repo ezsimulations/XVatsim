@@ -3029,7 +3029,8 @@ bool AddStation(ModuleBoardSnapshot* board, const std::string& value) {
         } else if (field == "frequency") {
             station.frequency = fieldValue;
         } else if (field == "annotation") {
-            station.annotation = fieldValue;
+            // Legacy scenarios may still specify raw-board display text.
+            // Raw module boards no longer own annotations.
         } else if (field == "polygonKey") {
             station.polygonKey = fieldValue;
         } else if (field == "displayRelation") {

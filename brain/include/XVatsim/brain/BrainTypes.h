@@ -306,7 +306,6 @@ struct BoardStationSnapshot {
     StationRole role = StationRole::Other;
     std::string callsign;
     std::string frequency;
-    std::string annotation;
     bool tuned = false;
     bool sectorActive = false;
     bool online = false;

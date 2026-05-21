@@ -263,6 +263,7 @@ by installed hash
   Intent
 - raw module-board `next` and `standby` display flags from
   `BoardStationSnapshot`
+- raw module-board `annotation` display text from `BoardStationSnapshot`
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -296,10 +297,10 @@ Their CMake target names are now explicitly harness legacy:
    The final UI board is split into `FinalDisplaySnapshot` /
    `FinalDisplayStationSnapshot`, Brain Display Intent no longer creates
    display-mutated `BoardStationSnapshot` rows, and raw board rows no longer
-   carry `next` or `standby`. Remaining cleanup is to split accepted fact truth
-   from relation/annotation fields before Display Intent so fact rows cannot
-   drift back into UI state. This was the class of issue behind the OAK `0nm`
-   failure.
+   carry `next`, `standby`, or `annotation`. Remaining cleanup is to split
+   accepted fact truth from pre-display relation fields before Display Intent
+   so fact rows cannot drift back into UI state. This was the class of issue
+   behind the OAK `0nm` failure.
 
 4. Workflow selection still depends on provisional relevance.
    The provisional pass now lives behind the explicit brain-owned
@@ -682,6 +683,14 @@ syntax for those fields only as ignored legacy input. Release build passed and
 full harness passed `234 / 234` for installed hash
 `02944C4FF9541CF3B045F11FD6D8FE1F633F575C6507E4A458E121E93E36BAA7`.
 
+Follow-up update: Removed raw-board `annotation` display text from
+`BoardStationSnapshot`. Brain Display Intent still writes orange distance and
+other UI annotations onto `FinalDisplayStationSnapshot`, while legacy
+departure/arrival/enroute collectors and harness station parsing no longer
+store annotations on module fact rows. Release build passed and full harness
+passed `234 / 234` for installed hash
+`41094E64705B00113F08D0FAD390357E2A4BC4D0734B049E68589769A3D27277`.
+
 ### Slice 4: Quarantine Legacy Runtime
 
 - Move old runtime functions into a clearly named legacy/quarantine unit.
@@ -705,8 +714,9 @@ Status: active. The final UI board now uses `FinalDisplaySnapshot` /
 `ModuleBoardSnapshot` as final display truth, and Display Intent no longer
 publishes or stages display-mutated enroute rows as runtime module board state.
 Raw worker board rows also no longer carry `next` or `standby` display flags.
-Remaining work is to split accepted worker fact truth from pre-display relation
-and annotation fields before Display Intent.
+Raw worker board rows also no longer carry `annotation` display text. Remaining
+work is to split accepted worker fact truth from pre-display relation fields
+before Display Intent.
 
 ## Guardrails
 

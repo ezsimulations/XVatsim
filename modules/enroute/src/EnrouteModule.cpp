@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -93,12 +92,6 @@ void AppendUnique(
     stations->push_back(station);
 }
 
-std::string FormatRouteDistanceAnnotation(double distanceNm) {
-    const auto roundedDistanceNm =
-        std::max(0, static_cast<int>(std::round(distanceNm)));
-    return std::to_string(roundedDistanceNm) + "nm";
-}
-
 void AppendAuthorityController(
     const brain::RelevantAuthoritySnapshot& authority,
     const brain::RadioStateSnapshot& radioStateSnapshot,
@@ -125,9 +118,6 @@ void AppendAuthorityController(
     station.online = false;
     station.hasRouteEntryDistance = true;
     station.routeEntryDistanceNm = std::max(0.0, authority.routeEntryDistanceNm);
-    if (!sectorActive) {
-        station.annotation = FormatRouteDistanceAnnotation(authority.routeEntryDistanceNm);
-    }
 
     AppendUnique(
         station,
