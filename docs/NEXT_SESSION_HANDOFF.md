@@ -1,6 +1,6 @@
 # Next Session Handoff
 
-Date noted: 2026-05-20
+Date noted: 2026-05-21
 
 ## Read First
 
@@ -26,6 +26,47 @@ No module may:
 - reprocess completed work when its input hash has not changed
 
 If any proposed change violates this, stop and realign before coding.
+
+## Immediate Next Session Objective
+
+The next session is live testing, not broad architecture cleanup.
+
+The repo is now a single Engineer 3 live core:
+
+- The active runtime is brain-owned.
+- Modules produce facts.
+- The brain decides workflow, relevance, display intent, idle/cadence, and
+  fallback eligibility.
+- The UI renders only the final brain-approved display snapshot.
+
+Remaining repo debt is not in the ordinary live decision path:
+
+- `plugin/src/XVatsimPlugin.cpp` is still large and can shrink later.
+- Harness-only legacy departure/arrival/enroute modules still exist for
+  regression coverage.
+- Broad route-sector authority proof still exists only as the explicitly named
+  `ResolveBrainScheduledAuthorityVerification` verifier API.
+
+Do not continue speculative cleanup before live testing. The next work is to
+tail the live logs while Darron flies, compare what the plugin displays against
+what xPilot and the pilot see, classify the failing Engineer 3 block, then fix
+only that block.
+
+Live log paths:
+
+- `C:\X-Plane 12\Resources\plugins\XVatsim\logs\xvatsim_diagnostics.log`
+- `C:\X-Plane 12\Log.txt`
+
+Live test focus:
+
+- Any reachable frequency that belongs to the current flight must appear once
+  the brain identifies it.
+- Current-polygon center should display as current/green.
+- Next-polygon center should display as next/orange with remaining distance.
+- OAK Center / OAK_62_CTR behavior is an important first retest target because
+  previous live testing exposed empty UI / distance ambiguity there.
+- No ordinary UI refresh may trigger heavy authority proof.
+- Unchanged board/route/phase/completions should go idle.
 
 ## Current Runtime Direction
 
