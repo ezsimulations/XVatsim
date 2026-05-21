@@ -261,6 +261,8 @@ by installed hash
   Engineer 3 refresh shell
 - temporary display-mutated `ModuleBoardSnapshot` staging inside Brain Display
   Intent
+- raw module-board `next` and `standby` display flags from
+  `BoardStationSnapshot`
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -292,11 +294,12 @@ Their CMake target names are now explicitly harness legacy:
 
 3. `BoardStationSnapshot` still carries some pre-display relation fields.
    The final UI board is split into `FinalDisplaySnapshot` /
-   `FinalDisplayStationSnapshot`, and Brain Display Intent no longer creates
-   display-mutated `BoardStationSnapshot` rows. Remaining cleanup is to split
-   accepted fact truth from relation/annotation fields before Display Intent so
-   fact rows cannot drift back into UI state. This was the class of issue
-   behind the OAK `0nm` failure.
+   `FinalDisplayStationSnapshot`, Brain Display Intent no longer creates
+   display-mutated `BoardStationSnapshot` rows, and raw board rows no longer
+   carry `next` or `standby`. Remaining cleanup is to split accepted fact truth
+   from relation/annotation fields before Display Intent so fact rows cannot
+   drift back into UI state. This was the class of issue behind the OAK `0nm`
+   failure.
 
 4. Workflow selection still depends on provisional relevance.
    The provisional pass now lives behind the explicit brain-owned
@@ -672,6 +675,13 @@ boards remain raw module facts. Release build passed and full harness passed
 `234 / 234` for installed hash
 `4898FEBA40F2E48F40907D6B20FE920363B8D05C3E8F49D31E0889290B62CA63`.
 
+Follow-up update: Removed raw-board `next` and `standby` display flags from
+`BoardStationSnapshot`. Those UI-only flags now exist only on
+`FinalDisplayStationSnapshot`, and the regression harness accepts old scenario
+syntax for those fields only as ignored legacy input. Release build passed and
+full harness passed `234 / 234` for installed hash
+`02944C4FF9541CF3B045F11FD6D8FE1F633F575C6507E4A458E121E93E36BAA7`.
+
 ### Slice 4: Quarantine Legacy Runtime
 
 - Move old runtime functions into a clearly named legacy/quarantine unit.
@@ -694,6 +704,7 @@ Status: active. The final UI board now uses `FinalDisplaySnapshot` /
 `FinalDisplayStationSnapshot`, the live UI path no longer consumes
 `ModuleBoardSnapshot` as final display truth, and Display Intent no longer
 publishes or stages display-mutated enroute rows as runtime module board state.
+Raw worker board rows also no longer carry `next` or `standby` display flags.
 Remaining work is to split accepted worker fact truth from pre-display relation
 and annotation fields before Display Intent.
 

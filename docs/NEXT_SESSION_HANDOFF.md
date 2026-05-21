@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`4898FEBA40F2E48F40907D6B20FE920363B8D05C3E8F49D31E0889290B62CA63`
+`02944C4FF9541CF3B045F11FD6D8FE1F633F575C6507E4A458E121E93E36BAA7`
 
 Reason for this hash:
 
@@ -229,6 +229,8 @@ Reason for this hash:
 - Brain Display Intent now builds enroute display rows directly as
   `FinalDisplayStationSnapshot` entries, so display shaping no longer stages
   through a temporary `ModuleBoardSnapshot`.
+- Raw `BoardStationSnapshot` no longer carries `next` or `standby`; those
+  UI-only flags now live only on `FinalDisplayStationSnapshot`.
 
 Regression harness status for this code:
 
@@ -247,7 +249,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`4898FEBA40F2E48F40907D6B20FE920363B8D05C3E8F49D31E0889290B62CA63`
+`02944C4FF9541CF3B045F11FD6D8FE1F633F575C6507E4A458E121E93E36BAA7`
 
 Rules:
 

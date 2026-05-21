@@ -308,8 +308,6 @@ struct BoardStationSnapshot {
     std::string frequency;
     std::string annotation;
     bool tuned = false;
-    bool next = false;
-    bool standby = false;
     bool sectorActive = false;
     bool online = false;
     bool offline = false;

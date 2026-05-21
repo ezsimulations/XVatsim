@@ -77,8 +77,6 @@ void HashBoardStation(
     HashCombine(hash, station.polygonKey);
     HashCombine(hash, static_cast<std::uint64_t>(station.displayRelation));
     HashCombine(hash, static_cast<std::uint64_t>(station.tuned ? 1u : 0u));
-    HashCombine(hash, static_cast<std::uint64_t>(station.next ? 1u : 0u));
-    HashCombine(hash, static_cast<std::uint64_t>(station.standby ? 1u : 0u));
     HashCombine(hash, static_cast<std::uint64_t>(station.sectorActive ? 1u : 0u));
     HashCombine(hash, static_cast<std::uint64_t>(station.online ? 1u : 0u));
     HashCombine(hash, static_cast<std::uint64_t>(station.offline ? 1u : 0u));

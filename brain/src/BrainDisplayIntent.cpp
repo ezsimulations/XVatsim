@@ -91,8 +91,6 @@ FinalDisplayStationSnapshot ToFinalDisplayStation(
     displayStation.frequency = station.frequency;
     displayStation.annotation = station.annotation;
     displayStation.tuned = station.tuned;
-    displayStation.next = station.next;
-    displayStation.standby = station.standby;
     displayStation.sectorActive = station.sectorActive;
     displayStation.online = station.online;
     displayStation.offline = station.offline;
@@ -126,7 +124,7 @@ DisplayRelation InferCenterRelation(
         KeysEqual(station.polygonKey, input.currentPolygonKey)) {
         return DisplayRelation::CurrentPolygon;
     }
-    if (station.next || KeysEqual(station.polygonKey, input.nextPolygonKey)) {
+    if (KeysEqual(station.polygonKey, input.nextPolygonKey)) {
         return DisplayRelation::NextPolygon;
     }
     if (KeysEqual(station.polygonKey, input.arrivalPolygonKey)) {

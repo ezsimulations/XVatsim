@@ -121,8 +121,6 @@ void AppendAuthorityController(
     station.callsign = authority.callsign;
     station.frequency = authority.frequency;
     station.tuned = tuned;
-    station.next = false;
-    station.standby = false;
     station.sectorActive = sectorActive;
     station.online = false;
     station.hasRouteEntryDistance = true;

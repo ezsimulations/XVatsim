@@ -1208,20 +1208,11 @@ xvatsim::brain::ModuleBoardSnapshot MakeBrainDepartureBoard() {
     board.displayStations = true;
     board.source = xvatsim::brain::BoardSource::Departure;
     board.airportIcao = "KAAA";
-    board.stations.push_back({
-        xvatsim::brain::StationRole::Departure,
-        "AAA_DEP",
-        "123.450",
-        {},
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        0.0,
-    });
+    xvatsim::brain::BoardStationSnapshot station;
+    station.role = xvatsim::brain::StationRole::Departure;
+    station.callsign = "AAA_DEP";
+    station.frequency = "123.450";
+    board.stations.push_back(std::move(station));
     return board;
 }
 
@@ -3052,11 +3043,13 @@ bool AddStation(ModuleBoardSnapshot* board, const std::string& value) {
                 return false;
             }
         } else if (field == "next") {
-            if (!ParseBool(fieldValue, &station.next)) {
+            bool ignoredDisplayFlag = false;
+            if (!ParseBool(fieldValue, &ignoredDisplayFlag)) {
                 return false;
             }
         } else if (field == "standby") {
-            if (!ParseBool(fieldValue, &station.standby)) {
+            bool ignoredDisplayFlag = false;
+            if (!ParseBool(fieldValue, &ignoredDisplayFlag)) {
                 return false;
             }
         } else if (field == "sectorActive") {

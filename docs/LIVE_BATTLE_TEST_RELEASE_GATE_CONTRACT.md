@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `4898FEBA40F2E48F40907D6B20FE920363B8D05C3E8F49D31E0889290B62CA63`
+  `02944C4FF9541CF3B045F11FD6D8FE1F633F575C6507E4A458E121E93E36BAA7`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -323,7 +323,8 @@ Only then may XVatsim be treated as store-release ready.
   annotations only while building `FinalDisplaySnapshot`; Brain Display Intent
   now builds enroute display rows directly as `FinalDisplayStationSnapshot`
   entries instead of staging display-shaped rows through a temporary
-  `ModuleBoardSnapshot`;
+  `ModuleBoardSnapshot`; raw `BoardStationSnapshot` no longer carries `next`
+  or `standby`, leaving those UI-only flags on `FinalDisplayStationSnapshot`;
   brain-owned runtime audit map updated.
 - Active live streak: remains `0`; the next valid live test is Battle Test #1
   for this installed hash.

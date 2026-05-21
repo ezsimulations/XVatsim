@@ -575,8 +575,6 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                         station.displayRelation ==
                             DisplayRelation::CurrentPolygon ||
                         station.tuned;
-                    station.next =
-                        station.displayRelation == DisplayRelation::NextPolygon;
                     station.hasRouteEntryDistance =
                         routeMatch.matched &&
                         routeMatch.displayRelation ==
