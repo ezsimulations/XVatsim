@@ -251,6 +251,14 @@ BrainOwnedPublisherOutput RunBrainOwnedPublisher(
     BrainOwnedRuntimeState* state,
     const BrainOwnedPublisherInput& input);
 
+void CommitBrainOwnedPublishedRuntimeFromPublisherOutput(
+    BrainOwnedRuntimeState* state,
+    WorkflowStage workflowStage,
+    const std::string& planKey,
+    const RadioReachableControllerSnapshot& gatedRadioSnapshot,
+    const BrainOwnedPublisherOutput& publisherOutput,
+    const ModuleBoardSnapshot& finalDisplay);
+
 bool BrainOwnedCandidatesCompleteForCurrentBoard(
     const BrainOwnedRuntimeState& state,
     const RadioReachableControllerSnapshot& radioSnapshot,

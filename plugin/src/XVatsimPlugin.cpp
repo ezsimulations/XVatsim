@@ -4102,6 +4102,9 @@ void RefreshOverlayFromBrainEngineer3() {
     xvatsim::brain::ModuleBoardSnapshot enrouteBoardSnapshot;
     xvatsim::brain::ModuleBoardSnapshot activeBoardSnapshot;
     xvatsim::brain::TransceiverResolutionSnapshot transceiverResolutionSnapshot;
+    xvatsim::brain::RadioReachableControllerSnapshot gatedRadioSnapshot;
+    xvatsim::brain::BrainOwnedPublisherOutput publisherOutput;
+    bool hasPublisherOutput = false;
     const auto planKey = BuildNetworkPlanIdentityKey(effectiveNetworkPlanSnapshot);
 
     if (gFlightContext.active) {
@@ -4147,7 +4150,7 @@ void RefreshOverlayFromBrainEngineer3() {
         diagnostics.stage = WorkflowStageToken(workflowDecision.stage);
         diagnostics.stageReason = workflowDecision.reason;
 
-        const auto gatedRadioSnapshot =
+        gatedRadioSnapshot =
             xvatsim::brain::RunBrainOwnedRadioPhaseGate(
                 &gBrainOwnedRuntimeState,
                 radioSnapshot,
@@ -4170,29 +4173,18 @@ void RefreshOverlayFromBrainEngineer3() {
                 relevanceInput,
                 planKey,
                 true);
-        const auto publisherOutput = RunBrainPublisher(
+        publisherOutput = RunBrainPublisher(
             workflowDecision.stage,
             relevanceOutput,
             departureCtafLookup,
             arrivalCtafLookup,
             radioStateSnapshot,
             planKey);
+        hasPublisherOutput = true;
         departureBoardSnapshot = publisherOutput.departureBoard;
         arrivalBoardSnapshot = publisherOutput.arrivalBoard;
         enrouteBoardSnapshot = publisherOutput.enrouteBoard;
         activeBoardSnapshot = publisherOutput.finalDisplay;
-
-        xvatsim::brain::BrainOwnedPublishedRuntimeInput publishedRuntime;
-        publishedRuntime.workflowStage = workflowDecision.stage;
-        publishedRuntime.planKey = planKey;
-        publishedRuntime.gatedRadioSnapshot = gatedRadioSnapshot;
-        publishedRuntime.departureBoard = departureBoardSnapshot;
-        publishedRuntime.arrivalBoard = arrivalBoardSnapshot;
-        publishedRuntime.enrouteBoard = enrouteBoardSnapshot;
-        publishedRuntime.finalDisplay = activeBoardSnapshot;
-        xvatsim::brain::CommitBrainOwnedPublishedRuntime(
-            &gBrainOwnedRuntimeState,
-            publishedRuntime);
 
         RecordDiagnosticJob(
             "Engineer3Runtime",
@@ -4218,6 +4210,16 @@ void RefreshOverlayFromBrainEngineer3() {
         radioStateSnapshot,
         &activeBoardSnapshot);
     diagnostics.standbyAssistUs = ElapsedMicrosecondsSince(timingStarted);
+
+    if (hasPublisherOutput) {
+        xvatsim::brain::CommitBrainOwnedPublishedRuntimeFromPublisherOutput(
+            &gBrainOwnedRuntimeState,
+            workflowDecision.stage,
+            planKey,
+            gatedRadioSnapshot,
+            publisherOutput,
+            activeBoardSnapshot);
+    }
 
     timingStarted = std::chrono::steady_clock::now();
     const auto autoWake = ShouldAutoWakeOverlay(

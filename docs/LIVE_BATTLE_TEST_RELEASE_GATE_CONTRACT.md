@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `C1EF7EEAB8B64A5092B00AA8EB12F9C58155DD34FF5D1E417850F711EC9B10F8`
+  `B107DCF4ADA2D99F00036D1E3BFAAC172EB38F98C0675A4BBF5BF0444ADA610A`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -240,6 +240,10 @@ Only then may XVatsim be treated as store-release ready.
   brain-owned runtime now owns standby-assist target selection and display flag
   application while the plugin only performs the COM1 standby radio-write side
   effect and feeds the result back to the brain;
+  final published runtime commits now happen through
+  `CommitBrainOwnedPublishedRuntimeFromPublisherOutput` after the
+  standby-assisted final display board is available, keeping runtime state and
+  rendered UI aligned;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

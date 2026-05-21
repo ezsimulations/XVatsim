@@ -99,6 +99,8 @@ brain-owned source files.
   - Owns CTAF/UNICOM station shaping and tuned-state decisions from CTAF lookup
     facts plus radio state.
   - Owns standby-assist target selection and display flag application.
+  - Owns final published runtime commit shaping from Brain Publisher output and
+    the final standby-assisted display board.
 
 ### UI Renderer
 
@@ -115,7 +117,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`C1EF7EEAB8B64A5092B00AA8EB12F9C58155DD34FF5D1E417850F711EC9B10F8`:
+`B107DCF4ADA2D99F00036D1E3BFAAC172EB38F98C0675A4BBF5BF0444ADA610A`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -154,6 +156,7 @@ by installed hash
 - CTAF/UNICOM station shaping and tuned-state decisions from the plugin shell
 - standby-assist target selection and display flag application from the plugin
   shell
+- final published runtime input shaping from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -278,6 +281,14 @@ and display flag application. The plugin only performs the X-Plane COM1
 standby write side effect and feeds the result back to the brain. Release build
 passed and full harness passed `234 / 234` for installed hash
 `C1EF7EEAB8B64A5092B00AA8EB12F9C58155DD34FF5D1E417850F711EC9B10F8`.
+
+Follow-up update: Final published runtime commits now happen through
+`CommitBrainOwnedPublishedRuntimeFromPublisherOutput` after the
+standby-assisted final display board is available. The plugin no longer
+hand-assembles `BrainOwnedPublishedRuntimeInput`, and runtime state now matches
+the rendered UI board. Release build passed and full harness passed
+`234 / 234` for installed hash
+`B107DCF4ADA2D99F00036D1E3BFAAC172EB38F98C0675A4BBF5BF0444ADA610A`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

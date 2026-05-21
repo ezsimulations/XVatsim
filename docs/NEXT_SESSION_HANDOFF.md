@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`C1EF7EEAB8B64A5092B00AA8EB12F9C58155DD34FF5D1E417850F711EC9B10F8`
+`B107DCF4ADA2D99F00036D1E3BFAAC172EB38F98C0675A4BBF5BF0444ADA610A`
 
 Reason for this hash:
 
@@ -118,6 +118,9 @@ Reason for this hash:
 - Brain-owned runtime now owns standby-assist target selection and display flag
   application. The plugin only performs the X-Plane COM1 standby write side
   effect, then feeds the result back to the brain.
+- `CommitBrainOwnedPublishedRuntimeFromPublisherOutput` now commits the final
+  brain-approved board after standby assist has been applied, so runtime state
+  and the rendered UI snapshot stay aligned.
 
 Regression harness status for this code:
 
@@ -136,7 +139,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`C1EF7EEAB8B64A5092B00AA8EB12F9C58155DD34FF5D1E417850F711EC9B10F8`
+`B107DCF4ADA2D99F00036D1E3BFAAC172EB38F98C0675A4BBF5BF0444ADA610A`
 
 Rules:
 

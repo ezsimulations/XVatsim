@@ -698,6 +698,24 @@ BrainOwnedPublisherOutput RunBrainOwnedPublisher(
     return output;
 }
 
+void CommitBrainOwnedPublishedRuntimeFromPublisherOutput(
+    BrainOwnedRuntimeState* state,
+    WorkflowStage workflowStage,
+    const std::string& planKey,
+    const RadioReachableControllerSnapshot& gatedRadioSnapshot,
+    const BrainOwnedPublisherOutput& publisherOutput,
+    const ModuleBoardSnapshot& finalDisplay) {
+    BrainOwnedPublishedRuntimeInput input;
+    input.workflowStage = workflowStage;
+    input.planKey = planKey;
+    input.gatedRadioSnapshot = gatedRadioSnapshot;
+    input.departureBoard = publisherOutput.departureBoard;
+    input.arrivalBoard = publisherOutput.arrivalBoard;
+    input.enrouteBoard = publisherOutput.enrouteBoard;
+    input.finalDisplay = finalDisplay;
+    CommitBrainOwnedPublishedRuntime(state, input);
+}
+
 bool BrainOwnedCandidatesCompleteForCurrentBoard(
     const BrainOwnedRuntimeState& state,
     const RadioReachableControllerSnapshot& radioSnapshot,
