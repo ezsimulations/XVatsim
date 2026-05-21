@@ -2079,10 +2079,8 @@ HandoffDecision ResolveEngineer3WorkflowStage(
 xvatsim::brain::BrainRadioRangeWorkerOutput RunBrainRadioRangeWorker(
     const xvatsim::brain::BrainRadioRangeWorkerInput& input,
     RefreshDiagnosticsFrame* diagnostics) {
-    xvatsim::brain::BrainRadioRangeWorkerOutput output;
-
     const auto started = std::chrono::steady_clock::now();
-    output.transceivers =
+    const auto transceivers =
         gTransceiverResolver.Resolve(input.aircraft, input.controllerFeed);
     const auto resolveUs = ElapsedMicrosecondsSince(started);
     if (diagnostics != nullptr) {
@@ -2090,22 +2088,10 @@ xvatsim::brain::BrainRadioRangeWorkerOutput RunBrainRadioRangeWorker(
         diagnostics->activeTransceiverResolveMs = resolveUs / 1000;
     }
 
-    xvatsim::brain::RadioReachableBuildOptions options;
-    options.available = output.transceivers.available;
-    options.stale = output.transceivers.stale;
-    options.generation = input.controllerFeed.generation;
-    options.source = xvatsim::brain::RadioReachableSource::AFVRadioRange;
-    options.changeReason = "brain-radio-range-worker";
-    options.nowSeconds = static_cast<double>(CurrentTickSeconds());
-    output.radioBoard =
-        xvatsim::brain::BuildRadioReachableControllerSnapshotFromTransceivers(
-            output.transceivers,
-            input.controllerFeed,
-            options);
-    output.available = output.radioBoard.available;
-    output.stale = output.radioBoard.stale;
-    output.reason = output.radioBoard.statusLine;
-    return output;
+    return xvatsim::brain::BuildBrainRadioRangeWorkerOutput(
+        input,
+        transceivers,
+        static_cast<double>(CurrentTickSeconds()));
 }
 
 xvatsim::brain::RadioReachableControllerSnapshot BuildEngineer3RadioSnapshot(

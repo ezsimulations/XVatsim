@@ -63,6 +63,8 @@ brain-owned source files.
 - `modules/transceiver_resolver`
   - Radio reachability facts.
   - Must not decide route ownership or UI display.
+- `brain/src/BrainRadioRangeWorker.cpp`
+  - Radio range worker output shaping.
 - `modules/route_sector`
   - Route polygon facts and route-scoped authority facts.
   - Heavy authority proof must remain explicitly brain-scheduled only.
@@ -105,7 +107,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`F967706501628F5E226A209D2693B4F11EE654379079C42A8F72A4093CD981FE`:
+`017BF7FC53201806E7AFF8AA4E59A5C74D5B0928A53653A765DDED9C27253AA3`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -136,6 +138,7 @@ by installed hash
 - route-polygon cache reuse, pending retry decisions, transition application,
   route-state commit, wake reason, and relevance invalidation from the plugin
   shell
+- radio range worker output shaping from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -237,9 +240,11 @@ transceiver module as a fact producer. `BrainRoutePolygonWorker.cpp` now owns
 route-sector hashing, route-polygon worker output shaping, route cache reuse,
 pending retry decisions, transition application, route-state commit, wake
 reason, and relevance invalidation; the plugin runs the route-sector resolver
-as a fact producer. Release build passed and full harness passed `234 / 234` for
+as a fact producer. `BrainRadioRangeWorker.cpp` now owns radio range worker
+output shaping; the plugin runs the transceiver resolver as a fact producer.
+Release build passed and full harness passed `234 / 234` for
 installed hash
-`F967706501628F5E226A209D2693B4F11EE654379079C42A8F72A4093CD981FE`.
+`017BF7FC53201806E7AFF8AA4E59A5C74D5B0928A53653A765DDED9C27253AA3`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

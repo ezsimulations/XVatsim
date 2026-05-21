@@ -26,6 +26,11 @@ struct BrainRadioRangeWorkerOutput {
     RadioReachableCandidateDiff diff;
 };
 
+BrainRadioRangeWorkerOutput BuildBrainRadioRangeWorkerOutput(
+    const BrainRadioRangeWorkerInput& input,
+    const TransceiverResolutionSnapshot& transceivers,
+    double nowSeconds);
+
 struct BrainRoutePolygonWorkerInput {
     AircraftStateSnapshot aircraft;
     NetworkPlanSnapshot networkPlan;
