@@ -110,6 +110,7 @@ brain-owned source files.
   - Owns final published runtime commit shaping from Brain Publisher output and
     the final standby-assisted display board.
   - Owns overlay wake/hide/reason decisions from shell-provided UI facts.
+  - Owns enroute initial display-hold state and timing.
 
 ### UI Renderer
 
@@ -172,6 +173,7 @@ by installed hash
 - normal flight-context lock/refresh decisions from the plugin shell
 - manual diversion/revert flight-context retarget decisions from the plugin
   shell
+- enroute initial display-hold state and timing from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -341,6 +343,13 @@ diversion/revert flight-context retarget decisions inside
 only the brain-returned context plus reset/invalidate side effects. Release
 build passed and full harness passed `234 / 234` for installed hash
 `B8E94F2EF29981D674175FCAD14A634B751374F783DED9DE201BBAEEA53B67F7`.
+
+Follow-up update: Brain-owned runtime now owns enroute initial display-hold
+state and timing through `UpdateBrainOwnedEnrouteInitialHold`. The plugin
+supplies current time/hold duration and passes the brain-returned active flag
+into overlay wake. Release build passed and full harness passed `234 / 234` for
+installed hash
+`540BA95C15B3E85F703E2E2711CB548C2DB4BDCA3350FB2D4FFAA3FE361BE312`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

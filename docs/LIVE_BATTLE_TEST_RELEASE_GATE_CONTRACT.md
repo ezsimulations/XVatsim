@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `B8E94F2EF29981D674175FCAD14A634B751374F783DED9DE201BBAEEA53B67F7`
+  `540BA95C15B3E85F703E2E2711CB548C2DB4BDCA3350FB2D4FFAA3FE361BE312`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -256,7 +256,10 @@ Only then may XVatsim be treated as store-release ready.
   side effects; manual diversion/revert flight-context retarget decisions now
   live in `brain/src/BrainWorkflow.cpp` through
   `RetargetFlightContextToNetworkPlan`, while the plugin only applies the
-  returned context and reset/invalidate side effects;
+  returned context and reset/invalidate side effects; brain-owned runtime now
+  owns enroute initial display-hold state and timing while the plugin supplies
+  current time/hold duration and passes the returned active flag into overlay
+  wake;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

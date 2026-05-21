@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`B8E94F2EF29981D674175FCAD14A634B751374F783DED9DE201BBAEEA53B67F7`
+`540BA95C15B3E85F703E2E2711CB548C2DB4BDCA3350FB2D4FFAA3FE361BE312`
 
 Reason for this hash:
 
@@ -137,6 +137,9 @@ Reason for this hash:
 - `RetargetFlightContextToNetworkPlan` now owns manual diversion/revert
   flight-context retarget decisions. The plugin only applies the returned
   context and reset/invalidate side effects.
+- Brain-owned runtime now owns enroute initial display-hold state and timing.
+  The plugin supplies current time/hold duration and passes the returned active
+  flag into brain overlay wake.
 
 Regression harness status for this code:
 
@@ -155,7 +158,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`B8E94F2EF29981D674175FCAD14A634B751374F783DED9DE201BBAEEA53B67F7`
+`540BA95C15B3E85F703E2E2711CB548C2DB4BDCA3350FB2D4FFAA3FE361BE312`
 
 Rules:
 

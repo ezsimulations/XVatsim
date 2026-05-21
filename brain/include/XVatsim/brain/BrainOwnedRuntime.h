@@ -82,6 +82,8 @@ struct BrainOwnedRuntimeState {
     bool candidatesComplete = false;
     bool heavyFallbackRequested = false;
     bool heavyFallbackRunning = false;
+    bool enrouteInitialHoldStarted = false;
+    double enrouteInitialHoldUntilSeconds = -1.0;
     std::vector<BrainOwnedCandidateCompletion> candidateCompletions;
 };
 
@@ -153,6 +155,18 @@ struct BrainOwnedOverlayWakeDecision {
     bool hideUntilXpilotConnect = false;
     bool xPilotDisconnectedAlert = false;
     std::string reason;
+};
+
+struct BrainOwnedEnrouteInitialHoldInput {
+    WorkflowStage workflowStage = WorkflowStage::None;
+    double nowSeconds = 0.0;
+    double holdSeconds = 0.0;
+};
+
+struct BrainOwnedEnrouteInitialHoldOutput {
+    bool active = false;
+    bool started = false;
+    double holdUntilSeconds = -1.0;
 };
 
 struct BrainOwnedStandbyAssistPlanInput {
@@ -261,6 +275,12 @@ void CommitBrainOwnedPublishedRuntime(
 
 BrainOwnedOverlayWakeDecision DecideBrainOwnedOverlayWake(
     const BrainOwnedOverlayWakeInput& input);
+
+void ResetBrainOwnedEnrouteInitialHold(BrainOwnedRuntimeState* state);
+
+BrainOwnedEnrouteInitialHoldOutput UpdateBrainOwnedEnrouteInitialHold(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedEnrouteInitialHoldInput& input);
 
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     const BrainOwnedStandbyAssistPlanInput& input);

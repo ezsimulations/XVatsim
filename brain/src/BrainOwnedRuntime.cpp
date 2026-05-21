@@ -546,6 +546,37 @@ BrainOwnedOverlayWakeDecision DecideBrainOwnedOverlayWake(
     return decision;
 }
 
+void ResetBrainOwnedEnrouteInitialHold(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+
+    state->enrouteInitialHoldStarted = false;
+    state->enrouteInitialHoldUntilSeconds = -1.0;
+}
+
+BrainOwnedEnrouteInitialHoldOutput UpdateBrainOwnedEnrouteInitialHold(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedEnrouteInitialHoldInput& input) {
+    BrainOwnedEnrouteInitialHoldOutput output;
+    if (state == nullptr) {
+        return output;
+    }
+
+    if (input.workflowStage == WorkflowStage::Enroute &&
+        !state->enrouteInitialHoldStarted) {
+        state->enrouteInitialHoldStarted = true;
+        state->enrouteInitialHoldUntilSeconds =
+            input.nowSeconds + input.holdSeconds;
+        output.started = true;
+    }
+
+    output.holdUntilSeconds = state->enrouteInitialHoldUntilSeconds;
+    output.active =
+        state->enrouteInitialHoldUntilSeconds >= input.nowSeconds;
+    return output;
+}
+
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     const BrainOwnedStandbyAssistPlanInput& input) {
     BrainOwnedStandbyAssistPlanOutput output;

@@ -258,8 +258,6 @@ bool gSawXPilotConnectedThisFlight = false;
 bool gDepartureReleasedThisFlight = false;
 bool gArrivalAwakeThisFlight = false;
 float gAirborneSinceSeconds = -1.0f;
-bool gEnrouteInitialDisplayStarted = false;
-float gEnrouteInitialDisplayUntilSeconds = -1.0f;
 FlightContext gFlightContext;
 xvatsim::brain::AircraftStateSnapshot gLastAircraftStateSnapshot;
 xvatsim::brain::PilotIdentitySnapshot gLastPilotIdentitySnapshot;
@@ -867,8 +865,8 @@ void ResetFlightScopedManualPlanState() {
 }
 
 void ResetEnrouteInitialDisplayHold() {
-    gEnrouteInitialDisplayStarted = false;
-    gEnrouteInitialDisplayUntilSeconds = -1.0f;
+    xvatsim::brain::ResetBrainOwnedEnrouteInitialHold(
+        &gBrainOwnedRuntimeState);
 }
 
 void ResetFlightProgressStateForNewContext() {
@@ -1149,18 +1147,17 @@ void AttemptPendingCurrentFlightRecovery(
     }
 }
 
-void UpdateEnrouteInitialDisplayHold(xvatsim::brain::WorkflowStage workflowStage) {
-    if (workflowStage != xvatsim::brain::WorkflowStage::Enroute) {
-        return;
-    }
+bool UpdateEnrouteInitialDisplayHold(xvatsim::brain::WorkflowStage workflowStage) {
+    xvatsim::brain::BrainOwnedEnrouteInitialHoldInput input;
+    input.workflowStage = workflowStage;
+    input.nowSeconds = XPLMGetElapsedTime();
+    input.holdSeconds = kEnrouteInitialDisplaySeconds;
 
-    if (gEnrouteInitialDisplayStarted) {
-        return;
-    }
-
-    gEnrouteInitialDisplayStarted = true;
-    gEnrouteInitialDisplayUntilSeconds =
-        XPLMGetElapsedTime() + kEnrouteInitialDisplaySeconds;
+    const auto output =
+        xvatsim::brain::UpdateBrainOwnedEnrouteInitialHold(
+            &gBrainOwnedRuntimeState,
+            input);
+    return output.active;
 }
 
 const char* WorkflowStageToken(xvatsim::brain::WorkflowStage workflowStage) {
@@ -3850,7 +3847,8 @@ void RefreshOverlayFromBrainEngineer3() {
         diagnostics.stage = WorkflowStageToken(workflowStage);
         diagnostics.stageReason = workflowDecision.reason;
     }
-    UpdateEnrouteInitialDisplayHold(workflowStage);
+    const auto enrouteInitialHoldActive =
+        UpdateEnrouteInitialDisplayHold(workflowStage);
 
     timingStarted = std::chrono::steady_clock::now();
     ApplyStandbyRecommendation(
@@ -3890,8 +3888,7 @@ void RefreshOverlayFromBrainEngineer3() {
     wakeInput.textEntryActive = textEntryActive;
     wakeInput.controllerMessageVisible = controllerMessageVisible;
     wakeInput.sawXPilotConnectedThisFlight = gSawXPilotConnectedThisFlight;
-    wakeInput.enrouteInitialHoldActive =
-        gEnrouteInitialDisplayUntilSeconds >= XPLMGetElapsedTime();
+    wakeInput.enrouteInitialHoldActive = enrouteInitialHoldActive;
     const auto wakeDecision =
         xvatsim::brain::DecideBrainOwnedOverlayWake(wakeInput);
     diagnostics.shouldWake = wakeDecision.shouldWake;
