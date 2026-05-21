@@ -306,6 +306,38 @@ BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
     return output;
 }
 
+RadioReachableControllerSnapshot RunBrainOwnedRadioPhaseGate(
+    BrainOwnedRuntimeState* state,
+    const RadioReachableControllerSnapshot& radioSnapshot,
+    WorkflowStage workflowStage,
+    const std::string& reason) {
+    RadioReachablePhaseGateOptions gateOptions;
+    gateOptions.stage = workflowStage;
+    gateOptions.reason = reason;
+    const auto gatedRadioSnapshot =
+        ApplyRadioReachablePhaseGate(radioSnapshot, gateOptions);
+    if (state != nullptr) {
+        state->gatedRadioSnapshot = gatedRadioSnapshot;
+    }
+    return gatedRadioSnapshot;
+}
+
+void CommitBrainOwnedPublishedRuntime(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedPublishedRuntimeInput& input) {
+    if (state == nullptr) {
+        return;
+    }
+    state->departureBoardSnapshot = input.departureBoard;
+    state->arrivalBoardSnapshot = input.arrivalBoard;
+    state->enrouteBoardSnapshot = input.enrouteBoard;
+    state->activeBoardSnapshot = input.finalDisplay;
+    state->finalDisplaySnapshot = input.finalDisplay;
+    state->lastWorkflowStage = input.workflowStage;
+    state->lastPlanKey = input.planKey;
+    state->lastRadioBoardHash = input.gatedRadioSnapshot.stableHash;
+}
+
 void MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
     BrainOwnedRuntimeState* state,
     const ModuleBoardSnapshot& finalDisplay) {

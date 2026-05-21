@@ -117,6 +117,16 @@ struct BrainOwnedRadioBoardCommitOutput {
     std::string cacheStatus;
 };
 
+struct BrainOwnedPublishedRuntimeInput {
+    WorkflowStage workflowStage = WorkflowStage::None;
+    std::string planKey;
+    RadioReachableControllerSnapshot gatedRadioSnapshot;
+    ModuleBoardSnapshot departureBoard;
+    ModuleBoardSnapshot arrivalBoard;
+    ModuleBoardSnapshot enrouteBoard;
+    ModuleBoardSnapshot finalDisplay;
+};
+
 struct BrainOwnedPublisherInput {
     WorkflowStage workflowStage = WorkflowStage::None;
     double routeProgressDistanceNm = 0.0;
@@ -173,6 +183,16 @@ BrainOwnedRadioBoardReuseOutput TryReuseBrainOwnedRadioBoard(
 BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
     BrainOwnedRuntimeState* state,
     const BrainOwnedRadioBoardCommitInput& input);
+
+RadioReachableControllerSnapshot RunBrainOwnedRadioPhaseGate(
+    BrainOwnedRuntimeState* state,
+    const RadioReachableControllerSnapshot& radioSnapshot,
+    WorkflowStage workflowStage,
+    const std::string& reason);
+
+void CommitBrainOwnedPublishedRuntime(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedPublishedRuntimeInput& input);
 
 void MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
     BrainOwnedRuntimeState* state,

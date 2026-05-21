@@ -4347,14 +4347,12 @@ void RefreshOverlayFromBrainEngineer3() {
         diagnostics.stage = WorkflowStageToken(workflowDecision.stage);
         diagnostics.stageReason = workflowDecision.reason;
 
-        xvatsim::brain::RadioReachablePhaseGateOptions gateOptions;
-        gateOptions.stage = workflowDecision.stage;
-        gateOptions.reason = "engineer3-clean-runtime";
         const auto gatedRadioSnapshot =
-            xvatsim::brain::ApplyRadioReachablePhaseGate(
+            xvatsim::brain::RunBrainOwnedRadioPhaseGate(
+                &gBrainOwnedRuntimeState,
                 radioSnapshot,
-                gateOptions);
-        gBrainOwnedRuntimeState.gatedRadioSnapshot = gatedRadioSnapshot;
+                workflowDecision.stage,
+                "engineer3-clean-runtime");
 
         xvatsim::brain::BrainControllerRelevanceWorkerInput relevanceInput;
         relevanceInput.workflowStage = workflowDecision.stage;
@@ -4395,14 +4393,17 @@ void RefreshOverlayFromBrainEngineer3() {
         enrouteBoardSnapshot = publisherOutput.enrouteBoard;
         activeBoardSnapshot = publisherOutput.finalDisplay;
 
-        gBrainOwnedRuntimeState.departureBoardSnapshot = departureBoardSnapshot;
-        gBrainOwnedRuntimeState.arrivalBoardSnapshot = arrivalBoardSnapshot;
-        gBrainOwnedRuntimeState.enrouteBoardSnapshot = enrouteBoardSnapshot;
-        gBrainOwnedRuntimeState.activeBoardSnapshot = activeBoardSnapshot;
-        gBrainOwnedRuntimeState.finalDisplaySnapshot = activeBoardSnapshot;
-        gBrainOwnedRuntimeState.lastWorkflowStage = workflowDecision.stage;
-        gBrainOwnedRuntimeState.lastPlanKey = planKey;
-        gBrainOwnedRuntimeState.lastRadioBoardHash = gatedRadioSnapshot.stableHash;
+        xvatsim::brain::BrainOwnedPublishedRuntimeInput publishedRuntime;
+        publishedRuntime.workflowStage = workflowDecision.stage;
+        publishedRuntime.planKey = planKey;
+        publishedRuntime.gatedRadioSnapshot = gatedRadioSnapshot;
+        publishedRuntime.departureBoard = departureBoardSnapshot;
+        publishedRuntime.arrivalBoard = arrivalBoardSnapshot;
+        publishedRuntime.enrouteBoard = enrouteBoardSnapshot;
+        publishedRuntime.finalDisplay = activeBoardSnapshot;
+        xvatsim::brain::CommitBrainOwnedPublishedRuntime(
+            &gBrainOwnedRuntimeState,
+            publishedRuntime);
 
         RecordDiagnosticJob(
             "Engineer3Runtime",
