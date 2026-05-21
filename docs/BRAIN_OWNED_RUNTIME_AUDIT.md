@@ -249,6 +249,9 @@ Still contract debt outside the live Engineer 3 path:
 
 Some of this code may remain temporarily for harness coverage or future
 fallback APIs, but none of it may be reachable from ordinary live UI refresh.
+The CMake build graph now gates these old board modules behind
+`XVATSIM_BUILD_REGRESSION_HARNESS`, so plugin-only builds do not compile them as
+part of the live module stack.
 
 ## Known Contract Risks
 
@@ -567,6 +570,14 @@ Follow-up update: `BrainOrchestrator::BuildOverlayViewModel` is now a stateless
 brain API and the plugin no longer carries a global `gBrain` object. Release
 build passed and full harness passed `234 / 234` for installed hash
 `C00D070DE02ADD449A0881FE340D98DF6B67A6C43140EB3319FC80496C4B5CA4`.
+
+Follow-up update: The CMake build graph now gates the old
+departure/arrival/enroute board modules behind `XVATSIM_BUILD_REGRESSION_HARNESS`.
+They still build for regression coverage, but plugin-only builds no longer
+compile them as part of the live Engineer 3 module stack. Release build passed
+and full harness passed `234 / 234`; installed hash remained
+`C00D070DE02ADD449A0881FE340D98DF6B67A6C43140EB3319FC80496C4B5CA4` because the
+plugin binary was unchanged.
 
 ### Slice 4: Quarantine Legacy Runtime
 

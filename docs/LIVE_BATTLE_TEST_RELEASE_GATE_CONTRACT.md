@@ -304,7 +304,9 @@ Only then may XVatsim be treated as store-release ready.
   hash/active-transceiver helpers from retired board and radio refresh paths
   have been removed; `BrainOrchestrator::BuildOverlayViewModel` is now a
   stateless brain API and the plugin no longer carries a global `gBrain`
-  object;
+  object; old departure/arrival/enroute board modules are now gated behind
+  `XVATSIM_BUILD_REGRESSION_HARNESS` so plugin-only builds do not compile them
+  as part of the live module stack;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

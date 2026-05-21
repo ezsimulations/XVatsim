@@ -11,12 +11,15 @@ option(XVATSIM_BUILD_REGRESSION_HARNESS "Build the offline regression harness" O
 option(XVATSIM_BUILD_PREFLIGHT_BUILDER "Build the XVatsim Preflight Builder desktop app" ON)
 option(XVATSIM_ENABLE_CONTROLLER_MESSAGES "Enable experimental controller/private message overlay UI" OFF)
 
+if (XVATSIM_BUILD_PLUGIN OR XVATSIM_BUILD_REGRESSION_HARNESS)
+    add_subdirectory(modules)
+endif()
+
 if (XVATSIM_BUILD_PLUGIN)
     if (NOT EXISTS "${XPLANE_SDK_ROOT}/CHeaders/XPLM/XPLMPlugin.h")
         message(FATAL_ERROR "XPLANE_SDK_ROOT must point to a valid X-Plane SDK root.")
     endif()
 
-    add_subdirectory(modules)
     add_subdirectory(plugin)
 endif()
 

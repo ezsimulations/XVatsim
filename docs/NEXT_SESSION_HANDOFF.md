@@ -196,6 +196,10 @@ Reason for this hash:
   from the retired board and radio refresh paths.
 - `BrainOrchestrator::BuildOverlayViewModel` is now a stateless brain API, and
   the plugin no longer carries a global `gBrain` object.
+- The old departure/arrival/enroute board modules are now gated behind
+  `XVATSIM_BUILD_REGRESSION_HARNESS` in CMake. They still build for harness
+  coverage, but plugin-only builds no longer compile them as part of the live
+  module stack.
 
 Regression harness status for this code:
 
