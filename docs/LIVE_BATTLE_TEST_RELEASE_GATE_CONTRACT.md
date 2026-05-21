@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `EAE5412D7B2F3735B7B414FEF1E4788E45AD03817929B74988192D24A99AF30C`
+  `2B75CB720DA95F939072401DABE5402C1790F71113E5F6B55B0A3AB3C33E3292`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -221,6 +221,9 @@ Only then may XVatsim be treated as store-release ready.
   completion cache updates while the plugin supplies input and diagnostics only;
   brain-owned runtime now owns radio-board reuse and commit state while the
   plugin runs the transceiver module as a fact producer;
+  `brain/src/BrainRoutePolygonWorker.cpp` now owns route-sector hashing and
+  route-polygon worker output shaping while the plugin runs the route-sector
+  resolver as a fact producer;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

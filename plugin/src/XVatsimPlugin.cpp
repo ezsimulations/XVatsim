@@ -416,45 +416,6 @@ void HashCombineDouble(std::size_t* seed, double value) {
     HashCombine(seed, std::hash<double>{}(value));
 }
 
-std::size_t HashRouteSectorMatch(const xvatsim::brain::RouteSectorMatchSnapshot& match) {
-    std::size_t hash = 0;
-    HashCombineString(&hash, match.identifier);
-    HashCombineDouble(&hash, match.entryDistanceNm);
-    for (const auto& token : match.matchTokens) {
-        HashCombineString(&hash, token);
-    }
-    for (const auto& pattern : match.controllerCallsignPatterns) {
-        HashCombineString(&hash, pattern);
-    }
-    for (const auto& prefix : match.controllerPrefixes) {
-        HashCombineString(&hash, prefix);
-    }
-    HashCombineBool(&hash, match.centerCoverage);
-    HashCombineBool(&hash, match.terminalCoverage);
-    return hash;
-}
-
-std::size_t HashRouteSectorSnapshot(const xvatsim::brain::RouteSectorSnapshot& snapshot) {
-    std::size_t hash = 0;
-    HashCombineBool(&hash, snapshot.available);
-    HashCombineBool(&hash, snapshot.stale);
-    HashCombineBool(&hash, snapshot.routeResolved);
-    HashCombineString(&hash, snapshot.statusLine);
-    HashCombine(&hash, snapshot.centerBoundaryGeneration);
-    HashCombine(&hash, snapshot.authorityCatalogGeneration);
-    HashCombineString(&hash, snapshot.departureIcao);
-    HashCombineString(&hash, snapshot.destinationIcao);
-    HashCombine(&hash, snapshot.currentSectors.size());
-    for (const auto& sector : snapshot.currentSectors) {
-        HashCombine(&hash, HashRouteSectorMatch(sector));
-    }
-    HashCombine(&hash, snapshot.nextSectors.size());
-    for (const auto& sector : snapshot.nextSectors) {
-        HashCombine(&hash, HashRouteSectorMatch(sector));
-    }
-    return hash;
-}
-
 std::size_t HashRelevantAuthority(
     const xvatsim::brain::RelevantAuthoritySnapshot& authority) {
     std::size_t hash = 0;
@@ -2227,37 +2188,6 @@ std::string BuildRadioBoardRouteRuntimeKey(
     return planKey + "|route=" + networkPlanSnapshot.routeText;
 }
 
-std::string FirstRoutePolygonKey(
-    const std::vector<xvatsim::brain::RouteSectorMatchSnapshot>& sectors) {
-    for (const auto& sector : sectors) {
-        if (!sector.identifier.empty()) {
-            return sector.identifier;
-        }
-    }
-    return {};
-}
-
-std::string LastRoutePolygonKey(
-    const xvatsim::brain::RouteSectorSnapshot& route) {
-    std::string lastKey = FirstRoutePolygonKey(route.currentSectors);
-    double lastEntryDistanceNm = -1.0;
-    for (const auto& sector : route.currentSectors) {
-        if (!sector.identifier.empty() &&
-            sector.entryDistanceNm >= lastEntryDistanceNm) {
-            lastKey = sector.identifier;
-            lastEntryDistanceNm = sector.entryDistanceNm;
-        }
-    }
-    for (const auto& sector : route.nextSectors) {
-        if (!sector.identifier.empty() &&
-            sector.entryDistanceNm >= lastEntryDistanceNm) {
-            lastKey = sector.identifier;
-            lastEntryDistanceNm = sector.entryDistanceNm;
-        }
-    }
-    return lastKey;
-}
-
 bool ApplyRoutePolygonTransitionToOutput(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     const std::string& routeRuntimeKey,
@@ -2277,7 +2207,7 @@ bool ApplyRoutePolygonTransitionToOutput(
     if (transition.available && transition.routeResolved) {
         output->route = transition.route;
         output->routePolygonHash =
-            static_cast<std::uint64_t>(HashRouteSectorSnapshot(output->route));
+            xvatsim::brain::HashBrainRouteSectorSnapshot(output->route);
         output->currentPolygonIndex = transition.currentPolygonIndex;
         output->currentPolygonKey = transition.currentPolygonKey;
         output->nextPolygonKey = transition.nextPolygonKey;
@@ -2331,28 +2261,16 @@ xvatsim::brain::BrainRoutePolygonWorkerOutput RunBrainRoutePolygonWorker(
     ApplyPreflightRouteCacheForPlanIfNeeded(input.networkPlan);
 
     const auto timingStarted = std::chrono::steady_clock::now();
-    output.route =
+    const auto route =
         gRouteSectorResolver.Resolve(input.aircraft, input.networkPlan);
     const auto routeResolveUs = ElapsedMicrosecondsSince(timingStarted);
+    output = xvatsim::brain::BuildBrainRoutePolygonWorkerOutput(route);
     if (diagnostics != nullptr) {
         diagnostics->routeResolveUs = routeResolveUs;
         diagnostics->routeResolveMs = routeResolveUs / 1000;
         diagnostics->routeResolved = output.route.routeResolved;
         diagnostics->routeStatus = output.route.statusLine;
     }
-
-    output.available = output.route.available;
-    output.stale = output.route.stale;
-    output.routePolygonHash =
-        static_cast<std::uint64_t>(HashRouteSectorSnapshot(output.route));
-    output.currentPolygonIndex = output.route.currentSectors.empty() ? 0 : 1;
-    output.currentPolygonKey = FirstRoutePolygonKey(output.route.currentSectors);
-    output.nextPolygonKey = FirstRoutePolygonKey(output.route.nextSectors);
-    output.arrivalPolygonKey = LastRoutePolygonKey(output.route);
-    output.finalRoutePolygonKey = output.arrivalPolygonKey;
-    output.reason = output.route.diagnosticReason.empty()
-                        ? "route-polygon-worker"
-                        : output.route.diagnosticReason;
     return output;
 }
 

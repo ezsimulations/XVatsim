@@ -45,6 +45,12 @@ struct BrainRoutePolygonWorkerOutput {
     std::string finalRoutePolygonKey;
 };
 
+std::uint64_t HashBrainRouteSectorSnapshot(
+    const RouteSectorSnapshot& snapshot);
+
+BrainRoutePolygonWorkerOutput BuildBrainRoutePolygonWorkerOutput(
+    const RouteSectorSnapshot& route);
+
 struct BrainControllerRelevanceWorkerInput {
     WorkflowStage workflowStage = WorkflowStage::None;
     std::uint64_t radioBoardHash = 0;

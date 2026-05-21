@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`EAE5412D7B2F3735B7B414FEF1E4788E45AD03817929B74988192D24A99AF30C`
+`2B75CB720DA95F939072401DABE5402C1790F71113E5F6B55B0A3AB3C33E3292`
 
 Reason for this hash:
 
@@ -97,6 +97,9 @@ Reason for this hash:
 - Brain-owned runtime owns radio-board reuse and commit state through
   `TryReuseBrainOwnedRadioBoard` and `CommitBrainOwnedRadioBoardRefresh`; the
   plugin still runs the transceiver module as a fact producer.
+- `brain/src/BrainRoutePolygonWorker.cpp` now owns route-sector hashing and
+  route-polygon worker output shaping; the plugin still runs the route-sector
+  resolver as a fact producer.
 
 Regression harness status for this code:
 
@@ -115,7 +118,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`EAE5412D7B2F3735B7B414FEF1E4788E45AD03817929B74988192D24A99AF30C`
+`2B75CB720DA95F939072401DABE5402C1790F71113E5F6B55B0A3AB3C33E3292`
 
 Rules:
 
