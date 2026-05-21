@@ -224,8 +224,6 @@ xvatsim::modules::transceiver_resolver::TransceiverResolver gTransceiverResolver
 xvatsim::modules::vatsim_data_feed::VatsimDataFeedClient gVatsimDataFeedClient;
 xvatsim::modules::xpilot_bridge::XPilotBridge gXPilotBridge;
 xvatsim::modules::settings_store::PluginSettings gPluginSettings;
-xvatsim::brain::ManualQuerySnapshot gManualQuerySnapshot;
-long long gManualQueryVisibleUntilSeconds = 0;
 XPLMCommandRef gManualCtafCommand = nullptr;
 XPLMCommandRef gDisplayOpenCommand = nullptr;
 XPLMCommandRef gDisplayCloseCommand = nullptr;
@@ -493,8 +491,7 @@ void ResetSessionRuntimeCaches(bool resetVatsimFeed) {
 
 void ResetPluginRuntimeState(bool resetVatsimFeed, bool resetColdDarkLatch) {
     DiscardPendingTextEntryState();
-    gManualQuerySnapshot = {};
-    gManualQueryVisibleUntilSeconds = 0;
+    xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
     ClearFlightRecoveryState();
     ResetSessionRuntimeCaches(resetVatsimFeed);
     ResetPresentationStateForColdDark();
@@ -506,16 +503,10 @@ void ResetPluginRuntimeState(bool resetVatsimFeed, bool resetColdDarkLatch) {
 }
 
 void ShowTransientStatusLine(const std::string& line) {
-    gManualQuerySnapshot = {};
-    if (line.empty()) {
-        gManualQueryVisibleUntilSeconds = 0;
-        return;
-    }
-
-    gManualQuerySnapshot.visible = true;
-    gManualQuerySnapshot.line = line;
-    gManualQueryVisibleUntilSeconds =
-        CurrentTickSeconds() + kManualQueryVisibleSeconds;
+    xvatsim::brain::ShowBrainOwnedManualQueryLine(
+        &gBrainOwnedRuntimeState,
+        line,
+        CurrentTickSeconds() + kManualQueryVisibleSeconds);
 }
 
 void ClearControllerMessage() {
@@ -2281,8 +2272,7 @@ std::string SummarizeAuthorityGapSectors(
 
 void ResetPresentationStateForColdDark() {
     DiscardPendingTextEntryState();
-    gManualQuerySnapshot = {};
-    gManualQueryVisibleUntilSeconds = 0;
+    xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
     ResetFlightScopedManualPlanState();
     ResetFlightProgressStateForNewContext();
     xvatsim::brain::ClearBrainOwnedFlightContext(&gBrainOwnedRuntimeState);
@@ -2295,6 +2285,7 @@ void ResetPresentationStateForColdDark() {
     xvatsim::brain::ClearBrainOwnedAircraftStateInvalidBoundary(
         &gBrainOwnedRuntimeState);
     gPendingControllerMessage = {};
+    xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
     ResetBrainDisplayPublisherCache();
     ResetStandbyAssistLatch();
 }
@@ -2406,8 +2397,7 @@ SessionBoundaryResult HandleXPilotSessionBoundary(
 
 void BeginManualCtafEntry() {
     DiscardPendingTextEntryState();
-    gManualQuerySnapshot = {};
-    gManualQueryVisibleUntilSeconds = 0;
+    xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
     gPendingTextEntryMode = PendingTextEntryMode::ManualCtaf;
     ShowTransientStatusLine("CTAF enter ICAO and press Enter");
     gOverlayWindow.BeginTextEntry(".ctaf ");
@@ -2780,8 +2770,7 @@ void BeginDiversionEntry() {
         return;
     }
 
-    gManualQuerySnapshot = {};
-    gManualQueryVisibleUntilSeconds = 0;
+    xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
     gPendingTextEntryMode = PendingTextEntryMode::DiversionAirport;
     ShowTransientStatusLine("DIVERT enter ICAO and press Enter");
     gOverlayWindow.BeginTextEntry("");
@@ -2876,16 +2865,9 @@ void RevertToVatsimFlightPlan() {
 }
 
 void ClearManualQueryIfExpired() {
-    if (!gManualQuerySnapshot.visible) {
-        return;
-    }
-
-    if (CurrentTickSeconds() < gManualQueryVisibleUntilSeconds) {
-        return;
-    }
-
-    gManualQuerySnapshot = {};
-    gManualQueryVisibleUntilSeconds = 0;
+    xvatsim::brain::ExpireBrainOwnedManualQuery(
+        &gBrainOwnedRuntimeState,
+        CurrentTickSeconds());
 }
 
 void RefreshManualQueryState() {
@@ -2916,11 +2898,10 @@ void RefreshManualQueryState() {
         submittedCommand = ".ctaf " + submittedCommand;
     }
 
-    gManualQuerySnapshot = gCtafLookupService.RunManualCtafQuery(submittedCommand);
-    if (gManualQuerySnapshot.visible) {
-        gManualQueryVisibleUntilSeconds =
-            CurrentTickSeconds() + kManualQueryVisibleSeconds;
-    }
+    xvatsim::brain::CommitBrainOwnedManualQuerySnapshot(
+        &gBrainOwnedRuntimeState,
+        gCtafLookupService.RunManualCtafQuery(submittedCommand),
+        CurrentTickSeconds() + kManualQueryVisibleSeconds);
 }
 
 void UpdateOverlayWakeTracking(
@@ -3666,7 +3647,7 @@ void RefreshOverlayFromBrainEngineer3() {
     const auto controllerMessageVisible =
         kControllerMessageUiEnabled &&
         gPendingControllerMessage.visible &&
-        !gManualQuerySnapshot.visible &&
+        !gBrainOwnedRuntimeState.manualQuerySnapshot.visible &&
         gPendingTextEntryMode == PendingTextEntryMode::None;
     const auto textEntryActive = gPendingTextEntryMode != PendingTextEntryMode::None;
     xvatsim::brain::BrainOwnedOverlayWakeInput wakeInput;
@@ -3675,7 +3656,8 @@ void RefreshOverlayFromBrainEngineer3() {
     wakeInput.workflowStage = workflowStage;
     wakeInput.finalDisplay = activeBoardSnapshot;
     wakeInput.displayOverrideMode = gBrainOwnedRuntimeState.displayOverrideMode;
-    wakeInput.manualQueryVisible = gManualQuerySnapshot.visible;
+    wakeInput.manualQueryVisible =
+        gBrainOwnedRuntimeState.manualQuerySnapshot.visible;
     wakeInput.textEntryActive = textEntryActive;
     wakeInput.controllerMessageVisible = controllerMessageVisible;
     wakeInput.sawXPilotConnectedThisFlight =
@@ -3744,7 +3726,7 @@ void RefreshOverlayFromBrainEngineer3() {
         controllerFeedSnapshot,
         transceiverResolutionSnapshot,
         activeBoardSnapshot,
-        gManualQuerySnapshot);
+        gBrainOwnedRuntimeState.manualQuerySnapshot);
     diagnostics.overlayBuildUs = ElapsedMicrosecondsSince(timingStarted);
     diagnostics.overlayBuildMs = diagnostics.overlayBuildUs / 1000;
     RecordDiagnosticJob(
@@ -3767,7 +3749,7 @@ void RefreshOverlayFromBrainEngineer3() {
         kControllerMessageUiEnabled &&
         !controllerMessageVisible &&
         gPendingControllerMessage.cachedAvailable &&
-        !gManualQuerySnapshot.visible &&
+        !gBrainOwnedRuntimeState.manualQuerySnapshot.visible &&
         gPendingTextEntryMode == PendingTextEntryMode::None;
     if (kControllerMessageUiEnabled && controllerMessageVisible) {
         ApplyControllerMessageCard(gPendingControllerMessage, &overlayModel);

@@ -135,6 +135,7 @@ context storage have moved into brain-owned source files.
     validate, or apply the route resolver cache.
   - Owns display override mode (`Auto`, forced open, forced sleep) and
     preserves it across runtime resets.
+  - Owns manual query/transient status display state and expiry timing.
 
 ### UI Renderer
 
@@ -221,6 +222,8 @@ by installed hash
 - preflight route-cache applied-plan state and clear/validate/apply decision
   from the plugin shell
 - display override mode from the plugin shell
+- manual query/transient status display state and expiry timing from the plugin
+  shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -500,6 +503,13 @@ command/menu/settings layer only sets the brain-owned mode and performs overlay
 window side effects. Release build passed and full harness passed `234 / 234`
 for installed hash
 `0A0A7A626DF447E43BB834885929C043F199FE487F93EE053836C8AC132427F9`.
+
+Follow-up update: Brain-owned runtime now owns manual query/transient status
+display state and expiry timing. The plugin supplies manual CTAF query results
+and user-command status lines as facts, while overlay wake/build reads the
+brain-owned snapshot. Release build passed and full harness passed `234 / 234`
+for installed hash
+`4D7AAB367D3F2A30BCB58EF984660781374180170C032BBDDCEDB6CAA7D79ACE`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

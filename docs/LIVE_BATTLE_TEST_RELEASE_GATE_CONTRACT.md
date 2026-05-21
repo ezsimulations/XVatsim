@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `0A0A7A626DF447E43BB834885929C043F199FE487F93EE053836C8AC132427F9`
+  `4D7AAB367D3F2A30BCB58EF984660781374180170C032BBDDCEDB6CAA7D79ACE`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -290,6 +290,8 @@ Only then may XVatsim be treated as store-release ready.
   now owns preflight route-cache applied-plan state and decides when the plugin
   should clear, validate, or apply the route resolver cache; brain-owned
   runtime now owns display override mode and preserves it across runtime resets;
+  brain-owned runtime now owns manual query/transient status display state and
+  expiry timing;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

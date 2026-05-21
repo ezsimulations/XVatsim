@@ -93,6 +93,8 @@ struct BrainOwnedRuntimeState {
     std::string preflightRouteCacheAppliedPlanKey;
     BrainOwnedDisplayOverrideMode displayOverrideMode =
         BrainOwnedDisplayOverrideMode::Auto;
+    ManualQuerySnapshot manualQuerySnapshot;
+    long long manualQueryVisibleUntilSeconds = 0;
     bool departureReleasedThisFlight = false;
     bool arrivalAwakeThisFlight = false;
     double airborneSinceSeconds = -1.0;
@@ -417,6 +419,22 @@ void ClearBrainOwnedPreflightRouteCacheApplication(
 void SetBrainOwnedDisplayOverrideMode(
     BrainOwnedRuntimeState* state,
     BrainOwnedDisplayOverrideMode mode);
+
+void ClearBrainOwnedManualQuery(BrainOwnedRuntimeState* state);
+
+void ShowBrainOwnedManualQueryLine(
+    BrainOwnedRuntimeState* state,
+    const std::string& line,
+    long long visibleUntilSeconds);
+
+void CommitBrainOwnedManualQuerySnapshot(
+    BrainOwnedRuntimeState* state,
+    ManualQuerySnapshot snapshot,
+    long long visibleUntilSeconds);
+
+void ExpireBrainOwnedManualQuery(
+    BrainOwnedRuntimeState* state,
+    long long nowSeconds);
 
 BrainOwnedPreflightRouteCacheDecision BeginBrainOwnedPreflightRouteCacheApplication(
     BrainOwnedRuntimeState* state,

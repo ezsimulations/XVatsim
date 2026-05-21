@@ -5,6 +5,7 @@
 #include <cmath>
 #include <sstream>
 #include <unordered_set>
+#include <utility>
 
 namespace xvatsim::brain {
 namespace {
@@ -505,6 +506,55 @@ void SetBrainOwnedDisplayOverrideMode(
         return;
     }
     state->displayOverrideMode = mode;
+}
+
+void ClearBrainOwnedManualQuery(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->manualQuerySnapshot = {};
+    state->manualQueryVisibleUntilSeconds = 0;
+}
+
+void ShowBrainOwnedManualQueryLine(
+    BrainOwnedRuntimeState* state,
+    const std::string& line,
+    long long visibleUntilSeconds) {
+    if (state == nullptr) {
+        return;
+    }
+    state->manualQuerySnapshot = {};
+    if (line.empty()) {
+        state->manualQueryVisibleUntilSeconds = 0;
+        return;
+    }
+    state->manualQuerySnapshot.visible = true;
+    state->manualQuerySnapshot.line = line;
+    state->manualQueryVisibleUntilSeconds = visibleUntilSeconds;
+}
+
+void CommitBrainOwnedManualQuerySnapshot(
+    BrainOwnedRuntimeState* state,
+    ManualQuerySnapshot snapshot,
+    long long visibleUntilSeconds) {
+    if (state == nullptr) {
+        return;
+    }
+    state->manualQuerySnapshot = std::move(snapshot);
+    state->manualQueryVisibleUntilSeconds =
+        state->manualQuerySnapshot.visible ? visibleUntilSeconds : 0;
+}
+
+void ExpireBrainOwnedManualQuery(
+    BrainOwnedRuntimeState* state,
+    long long nowSeconds) {
+    if (state == nullptr || !state->manualQuerySnapshot.visible) {
+        return;
+    }
+    if (nowSeconds < state->manualQueryVisibleUntilSeconds) {
+        return;
+    }
+    ClearBrainOwnedManualQuery(state);
 }
 
 BrainOwnedPreflightRouteCacheDecision BeginBrainOwnedPreflightRouteCacheApplication(
