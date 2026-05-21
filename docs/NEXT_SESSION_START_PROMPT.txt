@@ -36,7 +36,11 @@ Last verified state:
 
 - Release build passed.
 - Full regression harness passed: 234 / 234.
-- Git worktree was clean after commit 293c6b2, "Use workflow signals for phase selection".
+- Installed runtime hash remains
+  1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456.
+- A docs-only post-flight handoff was added after the UPS3511 validation
+  review; the next thread should verify `git status --short` before doing
+  anything else.
 
 What was fixed in the last cleanup session:
 
@@ -50,10 +54,27 @@ What was fixed in the last cleanup session:
 
 Next session goal:
 
-Do live testing with me inside the simulator. I will tell you what xPilot shows,
-what XVatsim displays, and how I expect the plugin to behave. You will tail the
-logs, correlate my observation to diagnostics, classify the failing Engineer 3
-block, and fix only that block.
+Do live testing with me inside the simulator when true active ATC coverage is
+available. I will tell you what xPilot shows, what XVatsim displays, and how I
+expect the plugin to behave. You will tail the logs, correlate my observation
+to diagnostics, classify any failing Engineer 3 block, and fix only that block.
+
+Most recent post-flight review:
+
+- UPS3511 KPDX -> KONT on 2026-05-21 was an INVALID / NON-COUNTING validation
+  because no true live ATC coverage was available.
+- The review is documented in:
+  battle_tests\2026-05-21_UPS3511_KPDX_KONT_INVALID.log
+- Health looked good: route resolved, DEP -> ENR -> ARR worked, empty enroute
+  slept, KPDX/KONT CTAF display behavior matched expectations, no connected
+  heavy authority proof fired, and slow refreshes were isolated.
+- Diagnostic caveat: current summary diagnostics prove aggregate radio-board
+  candidate counts and rejected completion counts, but they do not preserve
+  exact active-flight raw candidate callsigns/frequencies for rejected rows.
+- If exact raw candidate proof is needed from logs alone, add only a narrow
+  diagnostics-only Engineer 3 trace for radio-board candidate diffs and
+  candidate completion results. Do not treat that as permission for runtime
+  refactor or old authority-path cleanup.
 
 Live logs to watch:
 
@@ -64,6 +85,9 @@ Live behavior contract:
 
 - Any reachable frequency that belongs to our current flight should display once
   the brain identifies it.
+- Any reachable frequency that does not belong to our current flight should be
+  captured by the radio board, processed by relevance, marked complete, and
+  rejected with enough diagnostic detail to prove why it stayed off the UI.
 - If the controller belongs to the current polygon, display it as current/green.
 - If the controller belongs to a future/next polygon, display it as next/orange
   with remaining distance.

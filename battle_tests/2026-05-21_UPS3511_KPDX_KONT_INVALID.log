@@ -1,0 +1,67 @@
+Date: 2026-05-21
+Callsign: UPS3511
+Route: KPDX -> KONT
+Filed route: CASCD4 JUDAH Q7 JAGWA TTE ZIGGY8
+Installed hash: 1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456
+Verdict: INVALID / NON-COUNTING VALIDATION
+
+Reason:
+- No true live ATC coverage was available for a valid battle test.
+- The flight still provided useful health evidence for the Engineer 3
+  brain-owned runtime, but it does not increment the active live streak.
+
+Pilot observations:
+- XVatsim received the VATSIM flight plan at KPDX.
+- The UI displayed the KPDX CTAF frequency correctly.
+- After takeoff, departure mode passed to enroute mode.
+- Enroute mode displayed no ATC along route and slept in its shell.
+- xPilot later showed DEN Center and SLC Center frequencies on its board.
+- XVatsim did not wake to display those center frequencies.
+- At the 200nm arrival gate, XVatsim woke and displayed the KONT CTAF
+  frequency correctly.
+- No visible heavy CPU spikes were observed by the pilot.
+- Nothing else changed before landing and VATSIM disconnect.
+
+Log review:
+- Current-session diagnostics span approximately ticks 277951 through 286098.
+- Route resolved cleanly as KPDX -> KONT with 6 points and exact traversal.
+- Route polygon context resolved as KZSE current, KZOA next, KZLA final.
+- Workflow transitioned through DEP, ENR, and ARR as expected.
+- First ARR wake occurred at progressNm=553.1 on a 754nm route, matching the
+  intended 200nm arrival gate behavior.
+- During connected flight, radio-board candidate lines were present and
+  relevance rejected all candidate completions:
+  radioCandidateLines=191, rejectionLines=191, acceptedLines=0,
+  displayedCandidateLines=0.
+- No connected-flight heavy authority proof fired:
+  authorityProofEvents=0, authorityProofRuntimeNonzero=0,
+  runtimeNoHeavyFallbackFalse=0.
+- Slow refreshes were isolated and explainable:
+  startup 170ms, route build 929ms, enroute wake 95ms, arrival wake 101ms.
+- Overlay dormant lines appeared during empty enroute state, matching the
+  sleeping-shell behavior.
+
+Important diagnostic caveat:
+- The current summary diagnostics prove aggregate radio-board candidate counts,
+  relevance completion counts, rejected completion counts, display counts,
+  and no-heavy-fallback behavior.
+- They do not preserve exact active-flight raw candidate callsigns/frequencies
+  in the summary result fields for rejected candidates.
+- The only exact DEN_17_CTR text in the current-session diagnostics appeared
+  after xPilot disconnect, when the callsign was already blank and route input
+  was unavailable. Treat that as a disconnect-edge artifact, not as proof that
+  DEN Center was displayed in flight.
+- Therefore, this flight confirms module health at an aggregate level, but it
+  cannot prove from logs alone that the in-flight DEN/SLC xPilot rows were the
+  exact raw candidates processed and rejected by XVatsim.
+
+Next action:
+- Next live session should be flown with active ATC coverage while Codex tails
+  logs live.
+- If exact raw candidate callsign/frequency proof is still needed from logs
+  alone, add a small diagnostics-only Engineer 3 compliant trace that records
+  radio-board candidate diffs and candidate completion results:
+  callsign, frequency, facility group, input hash, phase, current/next polygon,
+  accepted/rejected, rejection reason, displayed/hidden.
+- Do not make broad architecture changes for this; keep any logging amendment
+  brain-owned and fact-only.

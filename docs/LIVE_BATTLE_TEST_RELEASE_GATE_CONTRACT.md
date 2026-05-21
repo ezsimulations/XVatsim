@@ -35,6 +35,15 @@ Contract has been implemented and installed as hash
 active consecutive pass count remains `0`; the next live battle test is Battle
 Test #1 for this hash.
 
+Non-counting validation update 2026-05-21: UPS3511 KPDX -> KONT on installed
+hash `1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456`
+is logged as `INVALID / NON-COUNTING VALIDATION` because no true live ATC
+coverage was available. The flight showed healthy Engineer 3 behavior:
+flight-plan receipt, route-polygon resolution, DEP -> ENR -> ARR workflow,
+empty-enroute sleep, CTAF display at KPDX/KONT, no connected heavy authority
+proof, and isolated refresh costs. The active consecutive pass count remains
+`0`; the next valid live battle test is still Battle Test #1 for this hash.
+
 ## Purpose
 
 XVatsim is not release-ready because a single test works. It is release-ready

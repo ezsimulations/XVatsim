@@ -29,7 +29,8 @@ If any proposed change violates this, stop and realign before coding.
 
 ## Immediate Next Session Objective
 
-The next session is live testing, not broad architecture cleanup.
+The next session is live testing with real active ATC coverage, not broad
+architecture cleanup.
 
 The repo is now a single Engineer 3 live core:
 
@@ -61,12 +62,71 @@ Live test focus:
 
 - Any reachable frequency that belongs to the current flight must appear once
   the brain identifies it.
+- Any reachable frequency that does not belong to the current flight should be
+  captured by the radio board, processed by relevance, marked complete, and
+  rejected with enough diagnostic detail to prove why it stayed off the UI.
 - Current-polygon center should display as current/green.
 - Next-polygon center should display as next/orange with remaining distance.
 - OAK Center / OAK_62_CTR behavior is an important first retest target because
   previous live testing exposed empty UI / distance ambiguity there.
 - No ordinary UI refresh may trigger heavy authority proof.
 - Unchanged board/route/phase/completions should go idle.
+
+## Most Recent Post-Flight Review
+
+Non-counting validation flight:
+
+- Date: 2026-05-21
+- Callsign: UPS3511
+- Route: KPDX -> KONT
+- Filed route: `CASCD4 JUDAH Q7 JAGWA TTE ZIGGY8`
+- Battle-test record:
+  `battle_tests/2026-05-21_UPS3511_KPDX_KONT_INVALID.log`
+- Verdict: `INVALID / NON-COUNTING VALIDATION`
+
+Reason:
+
+- No true live ATC coverage was available, so this flight does not increment
+  the active live battle-test streak.
+- It still provided useful health evidence for Engineer 3.
+
+Observed and confirmed from logs:
+
+- XVatsim received and resolved the VATSIM flight plan.
+- Route resolved cleanly as KPDX -> KONT with 6 points and exact traversal.
+- Route polygon context resolved as KZSE current, KZOA next, KZLA final.
+- Workflow transitioned through DEP, ENR, and ARR as expected.
+- The UI showed KPDX CTAF on the ground, slept in empty ENR, and woke at the
+  arrival-distance gate to show KONT CTAF.
+- Arrival wake occurred at progressNm=553.1 on a 754nm route, matching the
+  intended 200nm arrival rule.
+- During connected flight, radio-board candidate lines were present and
+  relevance rejected all candidate completions:
+  `radioCandidateLines=191`, `rejectionLines=191`, `acceptedLines=0`,
+  `displayedCandidateLines=0`.
+- No connected-flight heavy authority proof fired:
+  `authorityProofEvents=0`, `authorityProofRuntimeNonzero=0`,
+  `runtimeNoHeavyFallbackFalse=0`.
+- Slow refreshes were isolated and explainable:
+  startup 170ms, route build 929ms, enroute wake 95ms, arrival wake 101ms.
+
+Important diagnostic caveat:
+
+- The current summary diagnostics prove aggregate radio-board candidate counts,
+  relevance completion counts, rejected completion counts, display counts, and
+  no-heavy-fallback behavior.
+- They do not preserve exact active-flight raw candidate callsigns/frequencies
+  in the summary result fields for rejected candidates.
+- Therefore, the UPS3511 review confirms module health at an aggregate level,
+  but it cannot prove from logs alone that the in-flight xPilot DEN/SLC rows
+  were the exact raw candidates processed and rejected by XVatsim.
+- If exact raw candidate proof is required before the next formal battle-test
+  verdict, add a narrow diagnostics-only Engineer 3 trace for radio-board
+  candidate diffs and candidate completion results. This should log callsign,
+  frequency, facility group, input hash, phase, current/next polygon,
+  accepted/rejected, rejection reason, and displayed/hidden.
+- Do not use that possible logging improvement as permission for runtime
+  refactor or old authority-path cleanup.
 
 ## Current Runtime Direction
 
