@@ -84,6 +84,7 @@ struct BrainOwnedRuntimeState {
     std::string standbyAssistLatchKey;
     bool standbyAssistWriteConsumed = false;
     std::string diversionOverrideSourceKey;
+    std::string preflightRouteCacheAppliedPlanKey;
     bool departureReleasedThisFlight = false;
     bool arrivalAwakeThisFlight = false;
     double airborneSinceSeconds = -1.0;
@@ -288,6 +289,27 @@ struct BrainOwnedDiversionOverrideDecision {
     std::string logLine;
 };
 
+struct BrainOwnedPreflightRouteCacheInput {
+    std::string planKey;
+    bool hasCandidate = false;
+};
+
+struct BrainOwnedPreflightRouteCacheDecision {
+    bool shouldClearRouteResolverCache = false;
+    bool shouldValidateCandidate = false;
+    std::string logLine;
+};
+
+struct BrainOwnedPreflightRouteCacheValidationInput {
+    bool accepted = false;
+    std::string reason;
+};
+
+struct BrainOwnedPreflightRouteCacheValidationDecision {
+    bool shouldApplyRouteResolverCache = false;
+    std::string logLine;
+};
+
 struct BrainOwnedPublisherInput {
     WorkflowStage workflowStage = WorkflowStage::None;
     double routeProgressDistanceNm = 0.0;
@@ -386,6 +408,17 @@ void SetBrainOwnedDiversionOverrideSourceKey(
 BrainOwnedDiversionOverrideDecision DecideBrainOwnedDiversionOverride(
     const BrainOwnedRuntimeState& state,
     const BrainOwnedDiversionOverrideInput& input);
+
+void ClearBrainOwnedPreflightRouteCacheApplication(
+    BrainOwnedRuntimeState* state);
+
+BrainOwnedPreflightRouteCacheDecision BeginBrainOwnedPreflightRouteCacheApplication(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedPreflightRouteCacheInput& input);
+
+BrainOwnedPreflightRouteCacheValidationDecision
+DecideBrainOwnedPreflightRouteCacheValidation(
+    const BrainOwnedPreflightRouteCacheValidationInput& input);
 
 std::string ToString(BrainOwnedCandidateDecision decision);
 

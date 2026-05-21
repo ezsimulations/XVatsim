@@ -131,6 +131,8 @@ context storage have moved into brain-owned source files.
     decision. The plugin performs only the radio write side effect.
   - Owns diversion override source-key state and the decision to use or clear a
     manual diversion override for the current source VATSIM flight plan.
+  - Owns preflight route-cache applied-plan state and the decision to clear,
+    validate, or apply the route resolver cache.
 
 ### UI Renderer
 
@@ -214,6 +216,8 @@ by installed hash
   plugin shell
 - diversion override source-key state and use/clear decision from the plugin
   shell
+- preflight route-cache applied-plan state and clear/validate/apply decision
+  from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -478,6 +482,14 @@ airport lookup and module reset/effective-plan side effects, but it no longer
 carries `gDiversionOverrideSourceKey` or decides override validity. Release
 build passed and full harness passed `234 / 234` for installed hash
 `607D50B58A25E32B96AC4C37D9A9248576FCDBE4F12AB6E6EDC233F52A297EC7`.
+
+Follow-up update: Brain-owned runtime now owns preflight route-cache
+applied-plan state and decides when the plugin should clear, validate, or apply
+the route resolver cache. The plugin still performs cache file IO, core
+validation, and route-resolver cache side effects, but no longer carries
+`gPreflightRouteCacheAppliedPlanKey` or independently decides cache reuse.
+Release build passed and full harness passed `234 / 234` for installed hash
+`2576A86E309F085EC35FF5D638FC378325081C00F8CE93F4D38461F904DBF190`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

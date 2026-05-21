@@ -260,7 +260,6 @@ PendingControllerMessageState gPendingControllerMessage;
 RefreshDiagnosticsFrame gRefreshDiagnosticsFrame;
 std::optional<xvatsim::core::preflight::PreflightRouteCache> gPreflightRouteCacheCandidate;
 std::string gPreflightRouteCachePath;
-std::string gPreflightRouteCacheAppliedPlanKey;
 
 void RefreshOverlayFromBrain();
 void RefreshOverlayFromBrainEngineer3();
@@ -495,7 +494,6 @@ void ResetSessionRuntimeCaches(bool resetVatsimFeed) {
     gRouteSectorResolver.ResetRuntimeState();
     gRouteSectorResolver.ClearPreflightRouteCache();
     ResetBrainOwnedRuntimeCache();
-    gPreflightRouteCacheAppliedPlanKey.clear();
     gTransceiverResolver.Reset();
     ResetBrainDisplayPublisherCache();
 }
@@ -2483,7 +2481,8 @@ std::string ResolvePreflightRouteCachePath() {
 
 void LoadPreflightRouteCacheCandidate() {
     gPreflightRouteCacheCandidate.reset();
-    gPreflightRouteCacheAppliedPlanKey.clear();
+    xvatsim::brain::ClearBrainOwnedPreflightRouteCacheApplication(
+        &gBrainOwnedRuntimeState);
     gRouteSectorResolver.ClearPreflightRouteCache();
 
     gPreflightRouteCachePath = ResolvePreflightRouteCachePath();
@@ -2515,20 +2514,21 @@ void LoadPreflightRouteCacheCandidate() {
 
 void ApplyPreflightRouteCacheForPlanIfNeeded(
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
-    const auto planKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
-    if (planKey.empty()) {
-        return;
-    }
-    if (planKey == gPreflightRouteCacheAppliedPlanKey) {
-        return;
-    }
+    xvatsim::brain::BrainOwnedPreflightRouteCacheInput input;
+    input.planKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
+    input.hasCandidate = gPreflightRouteCacheCandidate.has_value();
+    const auto decision =
+        xvatsim::brain::BeginBrainOwnedPreflightRouteCacheApplication(
+            &gBrainOwnedRuntimeState,
+            input);
 
-    gRouteSectorResolver.ClearPreflightRouteCache();
-    gPreflightRouteCacheAppliedPlanKey = planKey;
-
-    if (!gPreflightRouteCacheCandidate.has_value()) {
-        XPLMDebugString(
-            "[XVatsim] Preflight route cache unavailable; using normal route preparation.\n");
+    if (decision.shouldClearRouteResolverCache) {
+        gRouteSectorResolver.ClearPreflightRouteCache();
+    }
+    if (!decision.logLine.empty()) {
+        XPLMDebugString(decision.logLine.c_str());
+    }
+    if (!decision.shouldValidateCandidate) {
         return;
     }
 
@@ -2537,11 +2537,17 @@ void ApplyPreflightRouteCacheForPlanIfNeeded(
             *gPreflightRouteCacheCandidate,
             networkPlanSnapshot,
             true);
-    if (!validation.accepted) {
-        std::string line =
-            "[XVatsim] Preflight route cache rejected: " + validation.reason +
-            ". Falling back to normal route preparation.\n";
-        XPLMDebugString(line.c_str());
+    xvatsim::brain::BrainOwnedPreflightRouteCacheValidationInput
+        validationInput;
+    validationInput.accepted = validation.accepted;
+    validationInput.reason = validation.reason;
+    const auto validationDecision =
+        xvatsim::brain::DecideBrainOwnedPreflightRouteCacheValidation(
+            validationInput);
+    if (!validationDecision.logLine.empty()) {
+        XPLMDebugString(validationDecision.logLine.c_str());
+    }
+    if (!validationDecision.shouldApplyRouteResolverCache) {
         return;
     }
 

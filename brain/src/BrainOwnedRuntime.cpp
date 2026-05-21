@@ -486,6 +486,52 @@ BrainOwnedDiversionOverrideDecision DecideBrainOwnedDiversionOverride(
     return decision;
 }
 
+void ClearBrainOwnedPreflightRouteCacheApplication(
+    BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->preflightRouteCacheAppliedPlanKey.clear();
+}
+
+BrainOwnedPreflightRouteCacheDecision BeginBrainOwnedPreflightRouteCacheApplication(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedPreflightRouteCacheInput& input) {
+    BrainOwnedPreflightRouteCacheDecision decision;
+    if (state == nullptr || input.planKey.empty()) {
+        return decision;
+    }
+    if (input.planKey == state->preflightRouteCacheAppliedPlanKey) {
+        return decision;
+    }
+
+    state->preflightRouteCacheAppliedPlanKey = input.planKey;
+    decision.shouldClearRouteResolverCache = true;
+    if (!input.hasCandidate) {
+        decision.logLine =
+            "[XVatsim] Preflight route cache unavailable; using normal route preparation.\n";
+        return decision;
+    }
+
+    decision.shouldValidateCandidate = true;
+    return decision;
+}
+
+BrainOwnedPreflightRouteCacheValidationDecision
+DecideBrainOwnedPreflightRouteCacheValidation(
+    const BrainOwnedPreflightRouteCacheValidationInput& input) {
+    BrainOwnedPreflightRouteCacheValidationDecision decision;
+    if (!input.accepted) {
+        decision.logLine =
+            "[XVatsim] Preflight route cache rejected: " + input.reason +
+            ". Falling back to normal route preparation.\n";
+        return decision;
+    }
+
+    decision.shouldApplyRouteResolverCache = true;
+    return decision;
+}
+
 std::string ToString(BrainOwnedCandidateDecision decision) {
     switch (decision) {
         case BrainOwnedCandidateDecision::Pending:

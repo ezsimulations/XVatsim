@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`607D50B58A25E32B96AC4C37D9A9248576FCDBE4F12AB6E6EDC233F52A297EC7`
+`2576A86E309F085EC35FF5D638FC378325081C00F8CE93F4D38461F904DBF190`
 
 Reason for this hash:
 
@@ -173,6 +173,9 @@ Reason for this hash:
 - Brain-owned runtime now owns diversion override source-key state and decides
   whether a manual diversion override still belongs to the current source
   VATSIM flight plan.
+- Brain-owned runtime now owns preflight route-cache applied-plan state and
+  decides when the plugin should clear, validate, or apply the route resolver
+  cache.
 
 Regression harness status for this code:
 
@@ -191,7 +194,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`607D50B58A25E32B96AC4C37D9A9248576FCDBE4F12AB6E6EDC233F52A297EC7`
+`2576A86E309F085EC35FF5D638FC378325081C00F8CE93F4D38461F904DBF190`
 
 Rules:
 
