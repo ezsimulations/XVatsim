@@ -4310,28 +4310,17 @@ void RefreshOverlayFromBrainEngineer3() {
         transceiverResolutionSnapshot =
             gBrainOwnedRuntimeState.transceiverSnapshot;
 
-        xvatsim::brain::BrainControllerRelevanceWorkerInput provisionalInput;
-        provisionalInput.workflowStage = xvatsim::brain::WorkflowStage::None;
-        provisionalInput.radioBoardHash = radioSnapshot.stableHash;
-        provisionalInput.routePolygonHash =
-            gBrainOwnedRuntimeState.routePolygonHash;
-        provisionalInput.currentPolygonIndex =
-            gBrainOwnedRuntimeState.currentPolygonIndex;
-        provisionalInput.currentPolygonKey =
-            gBrainOwnedRuntimeState.currentPolygonKey;
-        provisionalInput.nextPolygonKey = gBrainOwnedRuntimeState.nextPolygonKey;
-        provisionalInput.arrivalPolygonKey =
-            gBrainOwnedRuntimeState.arrivalPolygonKey;
-        provisionalInput.routeProgressDistanceNm =
-            gBrainOwnedRuntimeState.routeProgressDistanceNm;
-        provisionalInput.departureIcao = gFlightContext.departureIcao;
-        provisionalInput.arrivalIcao = gFlightContext.destinationIcao;
-        provisionalInput.radios = radioStateSnapshot;
-        provisionalInput.currentSectors =
-            gBrainOwnedRuntimeState.routePolygonSnapshot.currentSectors;
-        provisionalInput.nextSectors =
-            gBrainOwnedRuntimeState.routePolygonSnapshot.nextSectors;
-        provisionalInput.candidates = radioSnapshot.candidates;
+        xvatsim::brain::BrainOwnedControllerRelevanceInputRequest
+            provisionalRequest;
+        provisionalRequest.workflowStage = xvatsim::brain::WorkflowStage::None;
+        provisionalRequest.radioSnapshot = radioSnapshot;
+        provisionalRequest.departureIcao = gFlightContext.departureIcao;
+        provisionalRequest.arrivalIcao = gFlightContext.destinationIcao;
+        provisionalRequest.radios = radioStateSnapshot;
+        const auto provisionalInput =
+            xvatsim::brain::BuildBrainOwnedControllerRelevanceInput(
+                gBrainOwnedRuntimeState,
+                provisionalRequest);
         const auto provisionalRelevance =
             xvatsim::brain::RunBrainControllerRelevanceWorker(provisionalInput);
         departureBoardSnapshot = provisionalRelevance.departureBoard;
@@ -4354,28 +4343,17 @@ void RefreshOverlayFromBrainEngineer3() {
                 workflowDecision.stage,
                 "engineer3-clean-runtime");
 
-        xvatsim::brain::BrainControllerRelevanceWorkerInput relevanceInput;
-        relevanceInput.workflowStage = workflowDecision.stage;
-        relevanceInput.radioBoardHash = gatedRadioSnapshot.stableHash;
-        relevanceInput.routePolygonHash =
-            gBrainOwnedRuntimeState.routePolygonHash;
-        relevanceInput.currentPolygonIndex =
-            gBrainOwnedRuntimeState.currentPolygonIndex;
-        relevanceInput.currentPolygonKey =
-            gBrainOwnedRuntimeState.currentPolygonKey;
-        relevanceInput.nextPolygonKey = gBrainOwnedRuntimeState.nextPolygonKey;
-        relevanceInput.arrivalPolygonKey =
-            gBrainOwnedRuntimeState.arrivalPolygonKey;
-        relevanceInput.routeProgressDistanceNm =
-            gBrainOwnedRuntimeState.routeProgressDistanceNm;
-        relevanceInput.departureIcao = gFlightContext.departureIcao;
-        relevanceInput.arrivalIcao = gFlightContext.destinationIcao;
-        relevanceInput.radios = radioStateSnapshot;
-        relevanceInput.currentSectors =
-            gBrainOwnedRuntimeState.routePolygonSnapshot.currentSectors;
-        relevanceInput.nextSectors =
-            gBrainOwnedRuntimeState.routePolygonSnapshot.nextSectors;
-        relevanceInput.candidates = gatedRadioSnapshot.candidates;
+        xvatsim::brain::BrainOwnedControllerRelevanceInputRequest
+            relevanceRequest;
+        relevanceRequest.workflowStage = workflowDecision.stage;
+        relevanceRequest.radioSnapshot = gatedRadioSnapshot;
+        relevanceRequest.departureIcao = gFlightContext.departureIcao;
+        relevanceRequest.arrivalIcao = gFlightContext.destinationIcao;
+        relevanceRequest.radios = radioStateSnapshot;
+        const auto relevanceInput =
+            xvatsim::brain::BuildBrainOwnedControllerRelevanceInput(
+                gBrainOwnedRuntimeState,
+                relevanceRequest);
         auto relevanceOutput =
             RefreshBrainControllerRelevance(
                 relevanceInput,

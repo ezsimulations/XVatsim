@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `37CEF56FA348FA17777CCF367DD17F47D3B0007277B93D637C6A33BD7163D6F6`
+  `2FB91E67497D3EA1F0C441B6AE74DE46BEBD3B3B1B06D24DFC43861866636CF1`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -230,6 +230,8 @@ Only then may XVatsim be treated as store-release ready.
   shaping while the plugin runs the transceiver resolver as a fact producer;
   brain-owned runtime now owns radio phase-gate storage and final published
   runtime snapshot commits;
+  brain-owned controller relevance input shaping now comes from the
+  brain-owned route/radio context;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

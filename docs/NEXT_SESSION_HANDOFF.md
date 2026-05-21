@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`37CEF56FA348FA17777CCF367DD17F47D3B0007277B93D637C6A33BD7163D6F6`
+`2FB91E67497D3EA1F0C441B6AE74DE46BEBD3B3B1B06D24DFC43861866636CF1`
 
 Reason for this hash:
 
@@ -108,6 +108,8 @@ Reason for this hash:
 - `brain/src/BrainOwnedRuntime.cpp` owns radio phase-gate storage and final
   published runtime snapshot commits through `RunBrainOwnedRadioPhaseGate` and
   `CommitBrainOwnedPublishedRuntime`.
+- `BuildBrainOwnedControllerRelevanceInput` now shapes Controller Relevance
+  worker inputs from brain-owned route/radio context.
 
 Regression harness status for this code:
 
@@ -126,7 +128,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`37CEF56FA348FA17777CCF367DD17F47D3B0007277B93D637C6A33BD7163D6F6`
+`2FB91E67497D3EA1F0C441B6AE74DE46BEBD3B3B1B06D24DFC43861866636CF1`
 
 Rules:
 

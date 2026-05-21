@@ -79,6 +79,8 @@ brain-owned source files.
 - `brain/src/BrainControllerRelevanceWorker.cpp`
   - Controller relevance matching, accepted/rejected candidate completions, and
     route-polygon display relation facts.
+  - Controller Relevance worker input shaping from brain-owned route/radio
+    context.
 
 ### Brain Publisher / Display Intent
 
@@ -108,7 +110,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`37CEF56FA348FA17777CCF367DD17F47D3B0007277B93D637C6A33BD7163D6F6`:
+`2FB91E67497D3EA1F0C441B6AE74DE46BEBD3B3B1B06D24DFC43861866636CF1`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -142,6 +144,7 @@ by installed hash
 - radio range worker output shaping from the plugin shell
 - radio phase-gate storage and final published runtime snapshot commits from
   the plugin shell
+- Controller Relevance worker input shaping from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -247,9 +250,11 @@ as a fact producer. `BrainRadioRangeWorker.cpp` now owns radio range worker
 output shaping; the plugin runs the transceiver resolver as a fact producer.
 `RunBrainOwnedRadioPhaseGate` and `CommitBrainOwnedPublishedRuntime` now own
 radio phase-gate storage and final published runtime snapshot commits. Release
-build passed and full harness passed `234 / 234` for
+`BuildBrainOwnedControllerRelevanceInput` now shapes Controller Relevance worker
+inputs from brain-owned route/radio context. Release build passed and full
+harness passed `234 / 234` for
 installed hash
-`37CEF56FA348FA17777CCF367DD17F47D3B0007277B93D637C6A33BD7163D6F6`.
+`2FB91E67497D3EA1F0C441B6AE74DE46BEBD3B3B1B06D24DFC43861866636CF1`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

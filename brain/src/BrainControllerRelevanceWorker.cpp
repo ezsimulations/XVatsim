@@ -651,6 +651,27 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
     return output;
 }
 
+BrainControllerRelevanceWorkerInput BuildBrainOwnedControllerRelevanceInput(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedControllerRelevanceInputRequest& request) {
+    BrainControllerRelevanceWorkerInput input;
+    input.workflowStage = request.workflowStage;
+    input.radioBoardHash = request.radioSnapshot.stableHash;
+    input.routePolygonHash = state.routePolygonHash;
+    input.currentPolygonIndex = state.currentPolygonIndex;
+    input.currentPolygonKey = state.currentPolygonKey;
+    input.nextPolygonKey = state.nextPolygonKey;
+    input.arrivalPolygonKey = state.arrivalPolygonKey;
+    input.routeProgressDistanceNm = state.routeProgressDistanceNm;
+    input.departureIcao = request.departureIcao;
+    input.arrivalIcao = request.arrivalIcao;
+    input.radios = request.radios;
+    input.currentSectors = state.routePolygonSnapshot.currentSectors;
+    input.nextSectors = state.routePolygonSnapshot.nextSectors;
+    input.candidates = request.radioSnapshot.candidates;
+    return input;
+}
+
 BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
     BrainOwnedRuntimeState* state,
     const BrainControllerRelevanceWorkerInput& input) {

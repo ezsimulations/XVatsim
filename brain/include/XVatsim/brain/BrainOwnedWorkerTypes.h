@@ -105,6 +105,14 @@ struct BrainControllerRelevanceWorkerInput {
     std::vector<RadioReachableControllerCandidate> candidates;
 };
 
+struct BrainOwnedControllerRelevanceInputRequest {
+    WorkflowStage workflowStage = WorkflowStage::None;
+    RadioReachableControllerSnapshot radioSnapshot;
+    std::string departureIcao;
+    std::string arrivalIcao;
+    RadioStateSnapshot radios;
+};
+
 struct BrainControllerRelevanceWorkerOutput {
     bool available = false;
     bool stale = true;
@@ -124,6 +132,10 @@ struct BrainOwnedControllerRelevanceRuntimeOutput {
 
 BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
     const BrainControllerRelevanceWorkerInput& input);
+
+BrainControllerRelevanceWorkerInput BuildBrainOwnedControllerRelevanceInput(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedControllerRelevanceInputRequest& request);
 
 BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
     BrainOwnedRuntimeState* state,
