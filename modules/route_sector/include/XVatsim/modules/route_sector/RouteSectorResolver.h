@@ -22,15 +22,12 @@ public:
     brain::RouteSectorSnapshot Resolve(
         const brain::AircraftStateSnapshot& aircraftState,
         const brain::NetworkPlanSnapshot& networkPlanSnapshot) const;
-    brain::AuthorityRelevanceSnapshot ResolveAuthorityRelevance(
+    brain::AuthorityRelevanceSnapshot ResolveBrainScheduledAuthorityVerification(
         const brain::AircraftStateSnapshot& aircraftState,
         const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
         const brain::RouteSectorSnapshot& routeSectorSnapshot,
+        const std::string& scheduleReason,
         const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot = nullptr) const;
-    brain::AuthorityRelevanceSnapshot RefreshAcceptedAuthorityProgress(
-        const brain::AircraftStateSnapshot& aircraftState,
-        const brain::RouteSectorSnapshot& routeSectorSnapshot,
-        const brain::AuthorityRelevanceSnapshot& authorityRelevanceSnapshot) const;
     brain::AirportSectorSnapshot ResolveAirportCoverage(
         const std::string& airportIcao,
         bool hasAirportCoordinates,

@@ -4878,10 +4878,11 @@ int main(int argc, char** argv) {
                 resolverRouteSectorSnapshot,
                 1);
         resolverAuthorityRelevanceSnapshot =
-            routeSectorResolver.ResolveAuthorityRelevance(
+            routeSectorResolver.ResolveBrainScheduledAuthorityVerification(
                 scenario.aircraftState,
                 controllerFeedSnapshot,
                 resolverRouteSectorSnapshot,
+                "regression-harness-authority-verifier",
                 (scenario.transceiverResolutionSnapshot.available ||
                  !scenario.transceiverResolutionSnapshot.candidates.empty())
                     ? &scenario.transceiverResolutionSnapshot

@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`FD21EB32A49B734B9CF6F5A843FC3D6707405C2DC64358DFCE98A2EC480253DA`
+`C9150317B9EA79BEDA890A52295E2F72B45BEEFD8C9821B7BA14508ECE210FFA`
 
 Reason for this hash:
 
@@ -244,6 +244,10 @@ Reason for this hash:
   `BuildBrainOwnedPlanIdentityKey` and
   `BuildBrainOwnedNetworkPlanIdentityKey`; the plugin shell only asks the brain
   for the current key.
+- Heavy route-sector authority proof is no longer exposed as ordinary
+  `ResolveAuthorityRelevance`; the remaining route-sector proof entry is
+  explicitly named `ResolveBrainScheduledAuthorityVerification`, requires a
+  schedule reason, and is used by regression coverage only.
 
 Regression harness status for this code:
 
@@ -262,7 +266,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`FD21EB32A49B734B9CF6F5A843FC3D6707405C2DC64358DFCE98A2EC480253DA`
+`C9150317B9EA79BEDA890A52295E2F72B45BEEFD8C9821B7BA14508ECE210FFA`
 
 Rules:
 

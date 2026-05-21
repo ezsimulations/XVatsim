@@ -83,7 +83,8 @@ phase-relevant radio-board candidate that cannot be resolved cheaply.
 The following live-loop calls are explicitly forbidden after the reset unless
 they are behind the `RadioBoardRuntimeV3` one-shot verifier API:
 
-- `ResolveAuthorityRelevance`
+- `ResolveBrainScheduledAuthorityVerification` without an explicit
+  brain-scheduled reason
 - `ResolveAirportCoverage`
 - `CollectEnrouteBoardCached`
 - `CollectArrivalBoardCached`

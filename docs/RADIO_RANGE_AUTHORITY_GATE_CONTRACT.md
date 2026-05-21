@@ -309,9 +309,9 @@ This contract fails if:
 - Status: complete for the live verifier feed. The adapter can build changed
   candidate diffs, can select zero work for unchanged snapshots, and the live
   authority scheduler now uses the phase-gated radio snapshot as the only
-  controller feed passed into `ResolveAuthorityRelevance`. If the radio gate is
-  unavailable or stale, the verifier receives an unavailable empty feed instead
-  of falling back to the full live controller list.
+  controller feed passed into `ResolveBrainScheduledAuthorityVerification`. If
+  the radio gate is unavailable or stale, the verifier receives an unavailable
+  empty feed instead of falling back to the full live controller list.
 
 ### Block 6: Snapshot Publisher
 

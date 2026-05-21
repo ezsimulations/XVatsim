@@ -80,7 +80,9 @@ Plugin diagnostics timing/log throttle state is grouped under one shell-owned
   - Radio range worker output shaping.
 - `modules/route_sector`
   - Route polygon facts and route-scoped authority facts.
-  - Heavy authority proof must remain explicitly brain-scheduled only.
+  - Heavy authority proof must remain explicitly brain-scheduled only; the
+    remaining broad proof entry is
+    `ResolveBrainScheduledAuthorityVerification`.
 - `brain/src/RoutePolygonTransition.cpp`
   - Route progress/current/next polygon transition facts.
 - `brain/src/BrainRoutePolygonWorker.cpp`
@@ -318,9 +320,10 @@ exported only by those harness legacy targets.
    The live Engineer 3 path should not rely on those modules for display truth.
    Their behavior must be converted into fact-only workers or quarantined.
 
-6. Heavy authority proof remains compiled near the runtime.
-   It is guarded, but the final architecture should expose only an explicit
-   brain-scheduled verifier API.
+6. Heavy authority proof remains compiled in the route-sector module for
+   verifier/regression coverage, but it is no longer exposed as ordinary
+   relevance discovery. The remaining public entry is explicitly named
+   `ResolveBrainScheduledAuthorityVerification` and requires a schedule reason.
 
 ## Cleanup Order
 
@@ -737,6 +740,17 @@ harness passed `234 / 234` for installed hash
 - Move old runtime functions into a clearly named legacy/quarantine unit.
 - Remove ordinary live calls.
 - Leave only explicit brain-scheduled fallback entry points where still needed.
+
+Status: active. The broad route-sector authority proof API has been renamed
+from `ResolveAuthorityRelevance` to
+`ResolveBrainScheduledAuthorityVerification`, and it now refuses to run without
+an explicit schedule reason. The unused
+`RefreshAcceptedAuthorityProgress` public API and its progress-only helper code
+were removed. The regression harness still exercises the verifier with an
+explicit harness schedule reason; ordinary live refresh does not call this
+path. Release build passed and full harness passed `234 / 234` for installed
+hash
+`C9150317B9EA79BEDA890A52295E2F72B45BEEFD8C9821B7BA14508ECE210FFA`.
 
 ### Slice 5: Convert Or Retire Old Modules
 

@@ -2488,19 +2488,6 @@ xvatsim::brain::AuthorityRelevanceKind ToBrainAuthorityRelevanceKind(
     return xvatsim::brain::AuthorityRelevanceKind::Center;
 }
 
-xvatsim::core::authority::AuthorityKind ToCoreAuthorityKind(
-    xvatsim::brain::AuthorityRelevanceKind kind) {
-    switch (kind) {
-        case xvatsim::brain::AuthorityRelevanceKind::Terminal:
-            return xvatsim::core::authority::AuthorityKind::Terminal;
-        case xvatsim::brain::AuthorityRelevanceKind::Extension:
-            return xvatsim::core::authority::AuthorityKind::Extension;
-        case xvatsim::brain::AuthorityRelevanceKind::Center:
-            return xvatsim::core::authority::AuthorityKind::Center;
-    }
-    return xvatsim::core::authority::AuthorityKind::Center;
-}
-
 void AppendAuthorityDiagnostic(
     std::vector<std::string>* diagnostics,
     std::string diagnostic) {
@@ -2634,52 +2621,6 @@ std::vector<xvatsim::core::authority::GeoPoint> ClipRoutePointsForAuthorityWindo
     }
 
     return routePoints;
-}
-
-std::vector<xvatsim::core::authority::GeoPoint> BuildAuthorityProgressRoutePoints(
-    const brain::AircraftStateSnapshot& aircraftState,
-    const brain::RouteSectorSnapshot& routeSectorSnapshot) {
-    std::vector<xvatsim::core::authority::GeoPoint> routePoints;
-    if (aircraftState.valid) {
-        routePoints.push_back({
-            aircraftState.latitudeDeg,
-            aircraftState.longitudeDeg,
-        });
-    }
-
-    routePoints.reserve(routePoints.size() + routeSectorSnapshot.waypoints.size());
-    for (std::size_t index = 0; index < routeSectorSnapshot.waypoints.size(); ++index) {
-        const auto& waypoint = routeSectorSnapshot.waypoints[index];
-        if (index == 0 && waypoint.ident == "ACFT") {
-            continue;
-        }
-
-        const xvatsim::core::authority::GeoPoint point{
-            waypoint.latitudeDeg,
-            waypoint.longitudeDeg,
-        };
-        if (!routePoints.empty() &&
-            GreatCircleDistanceNm(
-                routePoints.back().latitudeDeg,
-                routePoints.back().longitudeDeg,
-                point.latitudeDeg,
-                point.longitudeDeg) <= 0.05) {
-            continue;
-        }
-        routePoints.push_back(point);
-    }
-    return routePoints;
-}
-
-std::string AuthorityProgressKey(
-    const std::string& callsign,
-    const std::string& authorityId,
-    const std::string& polygonId,
-    const std::string& matchedPattern) {
-    return xvatsim::core::authority::NormalizeControllerCallsign(callsign) + "|" +
-           xvatsim::core::authority::NormalizeAuthorityToken(authorityId) + "|" +
-           xvatsim::core::authority::NormalizeAuthorityToken(polygonId) + "|" +
-           xvatsim::core::authority::NormalizeAuthorityToken(matchedPattern);
 }
 
 std::vector<brain::RouteWaypointSnapshot> ToRouteWaypointSnapshots(
@@ -9967,12 +9908,28 @@ brain::RouteSectorSnapshot RouteSectorResolver::Resolve(
     return snapshot;
 }
 
-brain::AuthorityRelevanceSnapshot RouteSectorResolver::ResolveAuthorityRelevance(
+brain::AuthorityRelevanceSnapshot RouteSectorResolver::ResolveBrainScheduledAuthorityVerification(
     const brain::AircraftStateSnapshot& aircraftState,
     const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
     const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    const std::string& scheduleReason,
     const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot) const {
     brain::AuthorityRelevanceSnapshot snapshot;
+
+    if (scheduleReason.empty()) {
+        snapshot.available = false;
+        snapshot.stale = true;
+        snapshot.controllerFeedGeneration = controllerFeedSnapshot.generation;
+        snapshot.centerBoundaryGeneration =
+            routeSectorSnapshot.centerBoundaryGeneration;
+        snapshot.authorityCatalogGeneration =
+            routeSectorSnapshot.authorityCatalogGeneration;
+        snapshot.terminalCoverageGeneration = terminalBoundaryGeneration_;
+        snapshot.diagnosticCacheStatus = "not-brain-scheduled";
+        snapshot.diagnosticReason = "missing-schedule-reason";
+        snapshot.statusLine = "AUTHORITY verifier not scheduled";
+        return snapshot;
+    }
 
     if (!routeSectorSnapshot.available ||
         routeSectorSnapshot.stale ||
@@ -10465,122 +10422,6 @@ brain::AuthorityRelevanceSnapshot RouteSectorResolver::ResolveAuthorityRelevance
     lastAuthorityRelevanceProgressRouteSignature_ = routeProgressSignature;
     lastAuthorityRelevanceProgressWindowNm_ = authorityProgressWindowNm_;
     return snapshot;
-}
-
-brain::AuthorityRelevanceSnapshot RouteSectorResolver::RefreshAcceptedAuthorityProgress(
-    const brain::AircraftStateSnapshot& aircraftState,
-    const brain::RouteSectorSnapshot& routeSectorSnapshot,
-    const brain::AuthorityRelevanceSnapshot& authorityRelevanceSnapshot) const {
-    if (!authorityRelevanceSnapshot.available ||
-        authorityRelevanceSnapshot.stale ||
-        authorityRelevanceSnapshot.relevantAuthorities.empty() ||
-        !routeSectorSnapshot.available ||
-        routeSectorSnapshot.stale ||
-        !routeSectorSnapshot.routeResolved) {
-        return authorityRelevanceSnapshot;
-    }
-
-    const auto& authorityPolygonCatalog =
-        GetCachedCoreAuthorityPolygonCatalog(
-            boundaryPayload_,
-            terminalBoundaryPayload_,
-            ownershipPayload_);
-    if (authorityPolygonCatalog.polygons.empty()) {
-        return authorityRelevanceSnapshot;
-    }
-
-    std::unordered_map<std::string, brain::RelevantAuthoritySnapshot> authoritiesByKey;
-    std::vector<xvatsim::core::authority::ActiveAuthorityPolygon> activePolygons;
-    activePolygons.reserve(authorityRelevanceSnapshot.relevantAuthorities.size());
-    authoritiesByKey.reserve(authorityRelevanceSnapshot.relevantAuthorities.size());
-    for (const auto& authority : authorityRelevanceSnapshot.relevantAuthorities) {
-        const auto key =
-            AuthorityProgressKey(
-                authority.callsign,
-                authority.authorityId,
-                authority.polygonId,
-                authority.matchedPattern);
-        if (key == "|||") {
-            continue;
-        }
-
-        authoritiesByKey.emplace(key, authority);
-        activePolygons.push_back({
-            authority.callsign,
-            authority.authorityId,
-            authority.polygonId,
-            authority.polygonKey,
-            authority.matchedPattern,
-            xvatsim::core::authority::AuthoritySource::VatSpyBoundary,
-            ToCoreAuthorityKind(authority.kind),
-            authority.proofSource,
-            authority.proofDetail,
-        });
-    }
-    if (activePolygons.empty()) {
-        return authorityRelevanceSnapshot;
-    }
-
-    const auto routePoints =
-        BuildAuthorityProgressRoutePoints(aircraftState, routeSectorSnapshot);
-    if (routePoints.empty()) {
-        return authorityRelevanceSnapshot;
-    }
-
-    const xvatsim::core::authority::GeoPoint aircraftPosition{
-        aircraftState.latitudeDeg,
-        aircraftState.longitudeDeg,
-    };
-    const auto refreshedPolygons =
-        xvatsim::core::authority::ResolveRelevantAuthorityPolygons(
-            activePolygons,
-            authorityPolygonCatalog,
-            aircraftState.valid,
-            aircraftPosition,
-            routePoints);
-
-    auto refreshedSnapshot = authorityRelevanceSnapshot;
-    refreshedSnapshot.relevantAuthorities.clear();
-    refreshedSnapshot.relevantAuthorities.reserve(refreshedPolygons.size());
-    bool changed = false;
-    for (const auto& refreshedPolygon : refreshedPolygons) {
-        const auto& activePolygon = refreshedPolygon.activePolygon;
-        const auto key =
-            AuthorityProgressKey(
-                activePolygon.callsign,
-                activePolygon.authorityId,
-                activePolygon.polygonId,
-                activePolygon.matchedPattern);
-        const auto authorityIt = authoritiesByKey.find(key);
-        if (authorityIt == authoritiesByKey.end()) {
-            continue;
-        }
-
-        auto authority = authorityIt->second;
-        if (authority.aircraftInside != refreshedPolygon.aircraftInside ||
-            authority.routeIntersects != refreshedPolygon.routeIntersects ||
-            std::fabs(
-                authority.routeEntryDistanceNm -
-                refreshedPolygon.routeEntryDistanceNm) > 0.05) {
-            changed = true;
-        }
-        authority.aircraftInside = refreshedPolygon.aircraftInside;
-        authority.routeIntersects = refreshedPolygon.routeIntersects;
-        authority.routeEntryDistanceNm = refreshedPolygon.routeEntryDistanceNm;
-        refreshedSnapshot.relevantAuthorities.push_back(std::move(authority));
-    }
-
-    if (refreshedSnapshot.relevantAuthorities.size() !=
-        authorityRelevanceSnapshot.relevantAuthorities.size()) {
-        changed = true;
-    }
-    if (!changed) {
-        return authorityRelevanceSnapshot;
-    }
-
-    refreshedSnapshot.diagnosticCacheStatus = "authority-progress-refresh";
-    refreshedSnapshot.diagnosticReason = "accepted-authority-progress-refresh";
-    return refreshedSnapshot;
 }
 
 brain::AirportSectorSnapshot RouteSectorResolver::ResolveAirportCoverage(

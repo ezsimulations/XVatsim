@@ -361,6 +361,11 @@ Fix implemented:
   inside/active status.
 - Controller acceptance/rejection truth rules were not changed.
 
+2026-05-21 Engineer 3 cleanup note: this public
+`RefreshAcceptedAuthorityProgress(...)` API has since been retired while
+quarantining broad authority proof behind
+`ResolveBrainScheduledAuthorityVerification`.
+
 Verification:
 
 - `XVatsimPlugin` release build passed.

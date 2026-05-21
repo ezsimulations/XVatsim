@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `FD21EB32A49B734B9CF6F5A843FC3D6707405C2DC64358DFCE98A2EC480253DA`
+  `C9150317B9EA79BEDA890A52295E2F72B45BEEFD8C9821B7BA14508ECE210FFA`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -332,7 +332,10 @@ Only then may XVatsim be treated as store-release ready.
   longer carries `displayRelation`, leaving relation on candidate completions
   and final display rows; raw `ModuleBoardSnapshot` no longer carries
   `displayStations`; brain-owned runtime now owns network-plan identity-key
-  construction while the plugin shell only consumes the brain-owned key;
+  construction while the plugin shell only consumes the brain-owned key; broad
+  route-sector authority proof is now exposed only as
+  `ResolveBrainScheduledAuthorityVerification`, requires a schedule reason, and
+  is used by regression coverage rather than ordinary live UI refresh;
   brain-owned runtime audit map updated.
 - Active live streak: remains `0`; the next valid live test is Battle Test #1
   for this installed hash.
