@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `74645C49A91A37299894DE2CED33311888E62CF5EF2B399B820042AE472E9908`
+  `324F7C26689349744423C988E3454911C8B494D690FC59D3AAF0A2E518A30EA5`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -216,7 +216,8 @@ Only then may XVatsim be treated as store-release ready.
   `RunBrainOwnedPublisher` now owns publisher assembly, CTAF/UNICOM
   replacement, Brain Display Intent, phase snapshot publish state, and
   displayed-completion marking while the plugin supplies facts and diagnostics
-  only;
+  only; `RunBrainControllerRelevanceWorker` now lives in brain-owned source
+  code while the plugin supplies input, cache reuse, and diagnostics only;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

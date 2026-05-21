@@ -1,5 +1,6 @@
 add_library(XVatsimBrain STATIC
     src/BrainOrchestrator.cpp
+    src/BrainControllerRelevanceWorker.cpp
     src/BrainDisplayIntent.cpp
     src/BrainOwnedRuntime.cpp
     src/PhaseSnapshotPublisher.cpp

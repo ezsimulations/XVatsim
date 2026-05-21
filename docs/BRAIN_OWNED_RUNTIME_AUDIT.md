@@ -52,9 +52,9 @@ Engineer 3 live flow:
   - `RefreshBrainControllerRelevance`
   - `RunBrainPublisher`
 
-This is currently correct in concept but too much brain/runtime code lives in
-the plugin file. The cleanup goal is to move these brain-owned workers and
-publisher seams into brain-owned source files.
+This is shrinking toward the correct shape. The plugin still hosts the live
+X-Plane shell, input sampling, cache wrappers, and diagnostics, but controller
+relevance and publisher ownership have moved into brain-owned source files.
 
 ### Fact Workers
 
@@ -68,6 +68,9 @@ publisher seams into brain-owned source files.
   - Route progress/current/next polygon transition facts.
 - `brain/src/RadioReachableSnapshot.cpp`
   - Radio board grouping, hashes, phase gating, and verification feed shaping.
+- `brain/src/BrainControllerRelevanceWorker.cpp`
+  - Controller relevance matching, accepted/rejected candidate completions, and
+    route-polygon display relation facts.
 
 ### Brain Publisher / Display Intent
 
@@ -76,9 +79,10 @@ publisher seams into brain-owned source files.
     board assembly.
 - `brain/src/PhaseSnapshotPublisher.cpp`
   - Owns last-proven phase snapshot reuse.
-- `plugin/src/XVatsimPlugin.cpp`
-  - `RunBrainPublisher` currently coordinates accepted completion filtering,
-    display intent, phase publish, and displayed completion marking.
+- `brain/src/BrainOwnedRuntime.cpp`
+  - Owns accepted-completion filtering, CTAF/UNICOM replacement, Brain Display
+    Intent invocation, phase snapshot publishing, and displayed-completion
+    marking.
 
 ### UI Renderer
 
@@ -95,7 +99,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`74645C49A91A37299894DE2CED33311888E62CF5EF2B399B820042AE472E9908`:
+`324F7C26689349744423C988E3454911C8B494D690FC59D3AAF0A2E518A30EA5`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -116,6 +120,7 @@ by installed hash
 - publisher assembly, CTAF/UNICOM replacement, and Brain Display Intent
   invocation from the plugin shell
 - phase snapshot publisher state and publish invocation from the plugin shell
+- controller relevance worker matching/completion logic from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -205,9 +210,12 @@ Status: started. `RunBrainOwnedPublisher` now owns publisher assembly inside
 `brain/src/BrainOwnedRuntime.cpp`: accepted-completion filtering, CTAF/UNICOM
 replacement, Brain Display Intent invocation, phase snapshot publish state, and
 final-display completion marking moved out of `plugin/src/XVatsimPlugin.cpp`.
-The plugin now supplies facts and diagnostics only. Release build passed and
-full harness passed `234 / 234` for installed hash
-`74645C49A91A37299894DE2CED33311888E62CF5EF2B399B820042AE472E9908`.
+`RunBrainControllerRelevanceWorker` now lives in
+`brain/src/BrainControllerRelevanceWorker.cpp`, so controller matching and
+accepted/rejected completion facts are brain-owned. The plugin now supplies
+inputs, cache reuse, and diagnostics only. Release build passed and full
+harness passed `234 / 234` for installed hash
+`324F7C26689349744423C988E3454911C8B494D690FC59D3AAF0A2E518A30EA5`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

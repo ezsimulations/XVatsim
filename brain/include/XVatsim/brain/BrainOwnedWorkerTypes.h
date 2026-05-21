@@ -73,6 +73,9 @@ struct BrainControllerRelevanceWorkerOutput {
     ModuleBoardSnapshot enrouteBoard;
 };
 
+BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
+    const BrainControllerRelevanceWorkerInput& input);
+
 struct BrainUiWorkerInput {
     WorkflowStage workflowStage = WorkflowStage::None;
     ModuleBoardSnapshot finalDisplay;
