@@ -3161,9 +3161,6 @@ void RefreshOverlayFromBrainEngineer3() {
     diagnostics.ctafMs = diagnostics.ctafUs / 1000;
 
     HandoffDecision workflowDecision;
-    xvatsim::brain::ModuleBoardSnapshot departureBoardSnapshot;
-    xvatsim::brain::ModuleBoardSnapshot arrivalBoardSnapshot;
-    xvatsim::brain::ModuleBoardSnapshot enrouteBoardSnapshot;
     xvatsim::brain::ModuleBoardSnapshot finalDisplaySnapshot;
     xvatsim::brain::TransceiverResolutionSnapshot transceiverResolutionSnapshot;
     xvatsim::brain::RadioReachableControllerSnapshot gatedRadioSnapshot;
@@ -3203,9 +3200,6 @@ void RefreshOverlayFromBrainEngineer3() {
                 &gBrainOwnedRuntimeState,
                 workflowInput);
         workflowDecision = workflowOutput.decision;
-        departureBoardSnapshot = workflowOutput.departureBoard;
-        arrivalBoardSnapshot = workflowOutput.arrivalBoard;
-        enrouteBoardSnapshot = workflowOutput.enrouteBoard;
         diagnostics.stage = WorkflowStageToken(workflowDecision.stage);
         diagnostics.stageReason = workflowDecision.reason;
 
@@ -3240,9 +3234,6 @@ void RefreshOverlayFromBrainEngineer3() {
             radioStateSnapshot,
             planKey);
         hasPublisherOutput = true;
-        departureBoardSnapshot = publisherOutput.departureBoard;
-        arrivalBoardSnapshot = publisherOutput.arrivalBoard;
-        enrouteBoardSnapshot = publisherOutput.enrouteBoard;
         finalDisplaySnapshot = publisherOutput.finalDisplay;
 
         RecordDiagnosticJob(

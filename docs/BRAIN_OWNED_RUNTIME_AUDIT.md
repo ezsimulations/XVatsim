@@ -252,6 +252,8 @@ by installed hash
 - provisional relevance plus workflow phase selection from the plugin shell
 - duplicate final-display storage under the ambiguous `activeBoardSnapshot`
   runtime name
+- unused plugin-local departure/arrival/enroute board variables from the
+  Engineer 3 refresh shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -625,6 +627,13 @@ renamed the plugin/UI path to pass `finalDisplaySnapshot` into
 has one runtime name: `finalDisplaySnapshot`. Release build passed and full
 harness passed `234 / 234` for installed hash
 `55A6E4F98B7507B30D2BD101F2138E5E8BC124E8E8460EDE716493CD788FC388`.
+
+Follow-up update: Removed stale plugin-local departure/arrival/enroute board
+variables from `RefreshOverlayFromBrainEngineer3`. After brain workflow
+selection and publisher ownership, the plugin keeps only the final display board
+needed for standby assist, commit, wake, and UI rendering. Release build passed
+and full harness passed `234 / 234` for installed hash
+`16D00B1CF1583C29EACCF8B6200FDD97F426F409273509EACACCDF7E67591862`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

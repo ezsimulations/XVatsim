@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`55A6E4F98B7507B30D2BD101F2138E5E8BC124E8E8460EDE716493CD788FC388`
+`16D00B1CF1583C29EACCF8B6200FDD97F426F409273509EACACCDF7E67591862`
 
 Reason for this hash:
 
@@ -214,6 +214,9 @@ Reason for this hash:
 - Removed the duplicate `activeBoardSnapshot` runtime field. Brain-owned
   runtime stores the final brain-approved UI board as `finalDisplaySnapshot`,
   and the plugin/UI path names that board as final display.
+- Removed stale plugin-local departure/arrival/enroute board variables from the
+  Engineer 3 refresh shell. The plugin now keeps only the final display board it
+  must pass through standby assist and UI rendering.
 
 Regression harness status for this code:
 
@@ -232,7 +235,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`55A6E4F98B7507B30D2BD101F2138E5E8BC124E8E8460EDE716493CD788FC388`
+`16D00B1CF1583C29EACCF8B6200FDD97F426F409273509EACACCDF7E67591862`
 
 Rules:
 
