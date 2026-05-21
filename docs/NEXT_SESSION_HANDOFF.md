@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`2FB91E67497D3EA1F0C441B6AE74DE46BEBD3B3B1B06D24DFC43861866636CF1`
+`8A159734EEB1EDE32A54869FA20B634B7798C78ED3376C33BE456E4B480C95F8`
 
 Reason for this hash:
 
@@ -110,6 +110,8 @@ Reason for this hash:
   `CommitBrainOwnedPublishedRuntime`.
 - `BuildBrainOwnedControllerRelevanceInput` now shapes Controller Relevance
   worker inputs from brain-owned route/radio context.
+- `BuildBrainOwnedPublisherInputFromFacts` now shapes Brain Publisher input
+  from brain-owned route context plus plugin-supplied relevance and CTAF facts.
 
 Regression harness status for this code:
 
@@ -128,7 +130,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`2FB91E67497D3EA1F0C441B6AE74DE46BEBD3B3B1B06D24DFC43861866636CF1`
+`8A159734EEB1EDE32A54869FA20B634B7798C78ED3376C33BE456E4B480C95F8`
 
 Rules:
 

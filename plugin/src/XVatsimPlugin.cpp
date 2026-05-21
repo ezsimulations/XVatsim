@@ -1978,32 +1978,29 @@ xvatsim::brain::BrainOwnedPublisherOutput RunBrainPublisher(
     const xvatsim::modules::ctaf_lookup::CtafLookupEntry& arrivalCtafLookup,
     const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
     const std::string& planKey) {
-    xvatsim::brain::BrainOwnedPublisherInput publisherInput;
-    publisherInput.workflowStage = workflowStage;
-    publisherInput.routeProgressDistanceNm =
-        gBrainOwnedRuntimeState.routeProgressDistanceNm;
-    publisherInput.currentPolygonKey =
-        gBrainOwnedRuntimeState.currentPolygonKey;
-    publisherInput.nextPolygonKey = gBrainOwnedRuntimeState.nextPolygonKey;
-    publisherInput.arrivalPolygonKey =
-        gBrainOwnedRuntimeState.arrivalPolygonKey;
-    publisherInput.departureBoard = relevanceOutput.departureBoard;
-    publisherInput.arrivalBoard = relevanceOutput.arrivalBoard;
-    publisherInput.enrouteBoard = relevanceOutput.enrouteBoard;
-    publisherInput.completions = relevanceOutput.completions;
-    publisherInput.publishReason = "brain-owned-ui-publish";
-    publisherInput.hasDepartureCtafStation =
+    xvatsim::brain::BrainOwnedPublisherFactInput publisherFacts;
+    publisherFacts.workflowStage = workflowStage;
+    publisherFacts.departureBoard = relevanceOutput.departureBoard;
+    publisherFacts.arrivalBoard = relevanceOutput.arrivalBoard;
+    publisherFacts.enrouteBoard = relevanceOutput.enrouteBoard;
+    publisherFacts.completions = relevanceOutput.completions;
+    publisherFacts.publishReason = "brain-owned-ui-publish";
+    publisherFacts.hasDepartureCtafStation =
         Engineer3BuildCtafStation(
             gFlightContext.departureIcao,
             departureCtafLookup,
             radioStateSnapshot,
-            &publisherInput.departureCtafStation);
-    publisherInput.hasArrivalCtafStation =
+            &publisherFacts.departureCtafStation);
+    publisherFacts.hasArrivalCtafStation =
         Engineer3BuildCtafStation(
             gFlightContext.destinationIcao,
             arrivalCtafLookup,
             radioStateSnapshot,
-            &publisherInput.arrivalCtafStation);
+            &publisherFacts.arrivalCtafStation);
+    const auto publisherInput =
+        xvatsim::brain::BuildBrainOwnedPublisherInputFromFacts(
+            gBrainOwnedRuntimeState,
+            publisherFacts);
 
     auto output =
         xvatsim::brain::RunBrainOwnedPublisher(
@@ -2025,7 +2022,7 @@ xvatsim::brain::BrainOwnedPublisherOutput RunBrainPublisher(
                        << output.phasePublisherStateSummary;
     RecordDiagnosticJob(
         "PhaseSnapshotPublisher",
-        publisherInput.publishReason,
+        publisherFacts.publishReason,
         0,
         output.phasePublish.usedLastProven ? "ui-last-proven-reused"
                                            : "ui-candidate-published",

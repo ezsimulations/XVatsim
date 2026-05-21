@@ -145,6 +145,20 @@ struct BrainOwnedPublisherInput {
     std::string publishReason;
 };
 
+struct BrainOwnedPublisherFactInput {
+    WorkflowStage workflowStage = WorkflowStage::None;
+    ModuleBoardSnapshot departureBoard;
+    ModuleBoardSnapshot arrivalBoard;
+    ModuleBoardSnapshot enrouteBoard;
+    std::vector<BrainOwnedCandidateCompletion> completions;
+    bool hasDepartureCtafStation = false;
+    BoardStationSnapshot departureCtafStation;
+    bool hasArrivalCtafStation = false;
+    BoardStationSnapshot arrivalCtafStation;
+    bool verificationPending = false;
+    std::string publishReason;
+};
+
 struct BrainOwnedPublisherOutput {
     ModuleBoardSnapshot departureBoard;
     ModuleBoardSnapshot arrivalBoard;
@@ -193,6 +207,10 @@ RadioReachableControllerSnapshot RunBrainOwnedRadioPhaseGate(
 void CommitBrainOwnedPublishedRuntime(
     BrainOwnedRuntimeState* state,
     const BrainOwnedPublishedRuntimeInput& input);
+
+BrainOwnedPublisherInput BuildBrainOwnedPublisherInputFromFacts(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedPublisherFactInput& facts);
 
 void MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
     BrainOwnedRuntimeState* state,

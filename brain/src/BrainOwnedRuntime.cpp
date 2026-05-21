@@ -338,6 +338,28 @@ void CommitBrainOwnedPublishedRuntime(
     state->lastRadioBoardHash = input.gatedRadioSnapshot.stableHash;
 }
 
+BrainOwnedPublisherInput BuildBrainOwnedPublisherInputFromFacts(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedPublisherFactInput& facts) {
+    BrainOwnedPublisherInput input;
+    input.workflowStage = facts.workflowStage;
+    input.routeProgressDistanceNm = state.routeProgressDistanceNm;
+    input.currentPolygonKey = state.currentPolygonKey;
+    input.nextPolygonKey = state.nextPolygonKey;
+    input.arrivalPolygonKey = state.arrivalPolygonKey;
+    input.departureBoard = facts.departureBoard;
+    input.arrivalBoard = facts.arrivalBoard;
+    input.enrouteBoard = facts.enrouteBoard;
+    input.completions = facts.completions;
+    input.hasDepartureCtafStation = facts.hasDepartureCtafStation;
+    input.departureCtafStation = facts.departureCtafStation;
+    input.hasArrivalCtafStation = facts.hasArrivalCtafStation;
+    input.arrivalCtafStation = facts.arrivalCtafStation;
+    input.verificationPending = facts.verificationPending;
+    input.publishReason = facts.publishReason;
+    return input;
+}
+
 void MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
     BrainOwnedRuntimeState* state,
     const ModuleBoardSnapshot& finalDisplay) {
