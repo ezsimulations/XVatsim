@@ -140,6 +140,8 @@ context storage have moved into brain-owned source files.
     visibility, and clear/ack behavior.
   - Owns latest sampled aircraft, pilot identity, flight-plan, and network-plan
     fact snapshots for command-side brain decisions.
+  - Owns pending overlay text-entry mode for manual CTAF and diversion command
+    submissions.
 
 ### UI Renderer
 
@@ -234,6 +236,7 @@ by installed hash
   job names
 - latest sampled aircraft, pilot identity, flight-plan, and network-plan fact
   snapshot cache from the plugin shell
+- pending overlay text-entry mode from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -543,6 +546,13 @@ handlers read those facts from `BrainOwnedRuntimeState`, and the old
 `gLast*Snapshot` plugin globals are gone. Release build passed and full harness
 passed `234 / 234` for installed hash
 `8B5E7DA823D1DDCBA375D9BD39B61E9EC893CC86FD8C9FC2567881AE5690E6FE`.
+
+Follow-up update: Brain-owned runtime now owns pending overlay text-entry mode
+for manual CTAF and diversion command submissions. The plugin opens and reads
+the overlay text box, but it no longer stores `gPendingTextEntryMode`; it sets
+and consumes the brain-owned prompt mode instead. Release build passed and full
+harness passed `234 / 234` for installed hash
+`00AE47855BC49B2CD35152CD2B6771B4EA92546E6B6952D53B3F6A9355925C28`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

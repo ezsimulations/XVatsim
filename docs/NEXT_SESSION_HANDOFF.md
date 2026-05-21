@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`8B5E7DA823D1DDCBA375D9BD39B61E9EC893CC86FD8C9FC2567881AE5690E6FE`
+`00AE47855BC49B2CD35152CD2B6771B4EA92546E6B6952D53B3F6A9355925C28`
 
 Reason for this hash:
 
@@ -189,6 +189,9 @@ Reason for this hash:
   flight-plan, and network-plan fact snapshots. The plugin commits sampled
   facts to the brain and command handlers read them from brain-owned state
   instead of carrying separate `gLast*Snapshot` globals.
+- Brain-owned runtime now owns pending overlay text-entry mode for manual CTAF
+  and diversion prompts. The plugin opens/reads the text box, while the brain
+  stores and consumes which command the submission belongs to.
 
 Regression harness status for this code:
 
@@ -207,7 +210,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`8B5E7DA823D1DDCBA375D9BD39B61E9EC893CC86FD8C9FC2567881AE5690E6FE`
+`00AE47855BC49B2CD35152CD2B6771B4EA92546E6B6952D53B3F6A9355925C28`
 
 Rules:
 

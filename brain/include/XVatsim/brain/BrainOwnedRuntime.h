@@ -26,6 +26,12 @@ enum class BrainOwnedDisplayOverrideMode {
     ForcedSleep,
 };
 
+enum class BrainOwnedTextEntryMode {
+    None,
+    ManualCtaf,
+    DiversionAirport,
+};
+
 struct BrainOwnedCandidateCompletion {
     std::uint64_t radioBoardHash = 0;
     std::uint64_t routePolygonHash = 0;
@@ -106,6 +112,8 @@ struct BrainOwnedRuntimeState {
     std::string preflightRouteCacheAppliedPlanKey;
     BrainOwnedDisplayOverrideMode displayOverrideMode =
         BrainOwnedDisplayOverrideMode::Auto;
+    BrainOwnedTextEntryMode pendingTextEntryMode =
+        BrainOwnedTextEntryMode::None;
     ManualQuerySnapshot manualQuerySnapshot;
     long long manualQueryVisibleUntilSeconds = 0;
     BrainOwnedControllerMessageState controllerMessageState;
@@ -444,6 +452,17 @@ void SetBrainOwnedDisplayOverrideMode(
     BrainOwnedDisplayOverrideMode mode);
 
 void ClearBrainOwnedManualQuery(BrainOwnedRuntimeState* state);
+
+void SetBrainOwnedPendingTextEntryMode(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedTextEntryMode mode);
+
+void ClearBrainOwnedPendingTextEntryMode(BrainOwnedRuntimeState* state);
+
+BrainOwnedTextEntryMode ConsumeBrainOwnedPendingTextEntryMode(
+    BrainOwnedRuntimeState* state);
+
+bool HasBrainOwnedPendingTextEntry(const BrainOwnedRuntimeState& state);
 
 void ShowBrainOwnedManualQueryLine(
     BrainOwnedRuntimeState* state,

@@ -111,12 +111,6 @@ constexpr long long kRadioBoardPendingRouteRetrySeconds = 2;
 constexpr long long kActiveFlightPlanSampleCadenceSeconds = 15;
 constexpr long long kEngineer3RadioBoardRefreshSeconds = 5;
 
-enum class PendingTextEntryMode {
-    None,
-    ManualCtaf,
-    DiversionAirport,
-};
-
 using HandoffDecision = xvatsim::brain::workflow::HandoffDecision;
 using SessionBoundaryResult =
     xvatsim::brain::workflow::XPilotSessionBoundaryAction;
@@ -233,7 +227,6 @@ long long gLastDiagnosticsSlowRefreshSeconds = 0;
 long long gLastDiagnosticsSummarySeconds = 0;
 bool gHasLastDiagnosticsAuthorityHash = false;
 std::size_t gLastDiagnosticsAuthorityHash = 0;
-PendingTextEntryMode gPendingTextEntryMode = PendingTextEntryMode::None;
 RefreshDiagnosticsFrame gRefreshDiagnosticsFrame;
 std::optional<xvatsim::core::preflight::PreflightRouteCache> gPreflightRouteCacheCandidate;
 std::string gPreflightRouteCachePath;
@@ -455,7 +448,8 @@ void DiscardPendingTextEntryState() {
     gOverlayWindow.CancelTextEntry();
     std::string discardedSubmission;
     (void)gOverlayWindow.ConsumeSubmittedText(&discardedSubmission);
-    gPendingTextEntryMode = PendingTextEntryMode::None;
+    xvatsim::brain::ClearBrainOwnedPendingTextEntryMode(
+        &gBrainOwnedRuntimeState);
 }
 
 void ResetSessionRuntimeCaches(bool resetVatsimFeed) {
@@ -2073,7 +2067,9 @@ SessionBoundaryResult HandleXPilotSessionBoundary(
 void BeginManualCtafEntry() {
     DiscardPendingTextEntryState();
     xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
-    gPendingTextEntryMode = PendingTextEntryMode::ManualCtaf;
+    xvatsim::brain::SetBrainOwnedPendingTextEntryMode(
+        &gBrainOwnedRuntimeState,
+        xvatsim::brain::BrainOwnedTextEntryMode::ManualCtaf);
     ShowTransientStatusLine("CTAF enter ICAO and press Enter");
     gOverlayWindow.BeginTextEntry(".ctaf ");
     RefreshOverlayFromBrain();
@@ -2456,7 +2452,9 @@ void BeginDiversionEntry() {
     }
 
     xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
-    gPendingTextEntryMode = PendingTextEntryMode::DiversionAirport;
+    xvatsim::brain::SetBrainOwnedPendingTextEntryMode(
+        &gBrainOwnedRuntimeState,
+        xvatsim::brain::BrainOwnedTextEntryMode::DiversionAirport);
     ShowTransientStatusLine("DIVERT enter ICAO and press Enter");
     gOverlayWindow.BeginTextEntry("");
 }
@@ -2577,21 +2575,22 @@ void RefreshManualQueryState() {
         return;
     }
 
-    const auto pendingMode = gPendingTextEntryMode;
-    gPendingTextEntryMode = PendingTextEntryMode::None;
+    const auto pendingMode =
+        xvatsim::brain::ConsumeBrainOwnedPendingTextEntryMode(
+            &gBrainOwnedRuntimeState);
 
-    if (pendingMode == PendingTextEntryMode::None) {
+    if (pendingMode == xvatsim::brain::BrainOwnedTextEntryMode::None) {
         XPLMDebugString(
             "[XVatsim] Ignored submitted overlay text with no active prompt.\n");
         return;
     }
 
-    if (pendingMode == PendingTextEntryMode::DiversionAirport) {
+    if (pendingMode == xvatsim::brain::BrainOwnedTextEntryMode::DiversionAirport) {
         ApplyDiversionFromSubmittedText(submittedCommand);
         return;
     }
 
-    if (pendingMode == PendingTextEntryMode::ManualCtaf &&
+    if (pendingMode == xvatsim::brain::BrainOwnedTextEntryMode::ManualCtaf &&
         submittedCommand.find(".ctaf") != 0 &&
         submittedCommand.find("ctaf") != 0) {
         submittedCommand = ".ctaf " + submittedCommand;
@@ -3349,8 +3348,9 @@ void RefreshOverlayFromBrainEngineer3() {
         kControllerMessageUiEnabled &&
         gBrainOwnedRuntimeState.controllerMessageState.visible &&
         !gBrainOwnedRuntimeState.manualQuerySnapshot.visible &&
-        gPendingTextEntryMode == PendingTextEntryMode::None;
-    const auto textEntryActive = gPendingTextEntryMode != PendingTextEntryMode::None;
+        !xvatsim::brain::HasBrainOwnedPendingTextEntry(gBrainOwnedRuntimeState);
+    const auto textEntryActive =
+        xvatsim::brain::HasBrainOwnedPendingTextEntry(gBrainOwnedRuntimeState);
     xvatsim::brain::BrainOwnedOverlayWakeInput wakeInput;
     wakeInput.aircraftState = aircraftState;
     wakeInput.xPilotSession = xPilotSessionSnapshot;
@@ -3451,7 +3451,7 @@ void RefreshOverlayFromBrainEngineer3() {
         !controllerMessageVisible &&
         gBrainOwnedRuntimeState.controllerMessageState.cachedAvailable &&
         !gBrainOwnedRuntimeState.manualQuerySnapshot.visible &&
-        gPendingTextEntryMode == PendingTextEntryMode::None;
+        !xvatsim::brain::HasBrainOwnedPendingTextEntry(gBrainOwnedRuntimeState);
     if (kControllerMessageUiEnabled && controllerMessageVisible) {
         ApplyControllerMessageCard(
             gBrainOwnedRuntimeState.controllerMessageState,

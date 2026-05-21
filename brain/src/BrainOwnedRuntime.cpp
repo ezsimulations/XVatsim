@@ -336,6 +336,7 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     }
     const auto flightContext = state->flightContext;
     const auto displayOverrideMode = state->displayOverrideMode;
+    const auto pendingTextEntryMode = state->pendingTextEntryMode;
     const auto lastAircraftStateSnapshot = state->lastAircraftStateSnapshot;
     const auto lastPilotIdentitySnapshot = state->lastPilotIdentitySnapshot;
     const auto lastFlightPlanSnapshot = state->lastFlightPlanSnapshot;
@@ -343,6 +344,7 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     *state = {};
     state->flightContext = flightContext;
     state->displayOverrideMode = displayOverrideMode;
+    state->pendingTextEntryMode = pendingTextEntryMode;
     state->lastAircraftStateSnapshot = lastAircraftStateSnapshot;
     state->lastPilotIdentitySnapshot = lastPilotIdentitySnapshot;
     state->lastFlightPlanSnapshot = lastFlightPlanSnapshot;
@@ -547,6 +549,33 @@ void ClearBrainOwnedManualQuery(BrainOwnedRuntimeState* state) {
     }
     state->manualQuerySnapshot = {};
     state->manualQueryVisibleUntilSeconds = 0;
+}
+
+void SetBrainOwnedPendingTextEntryMode(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedTextEntryMode mode) {
+    if (state == nullptr) {
+        return;
+    }
+    state->pendingTextEntryMode = mode;
+}
+
+void ClearBrainOwnedPendingTextEntryMode(BrainOwnedRuntimeState* state) {
+    SetBrainOwnedPendingTextEntryMode(state, BrainOwnedTextEntryMode::None);
+}
+
+BrainOwnedTextEntryMode ConsumeBrainOwnedPendingTextEntryMode(
+    BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return BrainOwnedTextEntryMode::None;
+    }
+    const auto mode = state->pendingTextEntryMode;
+    state->pendingTextEntryMode = BrainOwnedTextEntryMode::None;
+    return mode;
+}
+
+bool HasBrainOwnedPendingTextEntry(const BrainOwnedRuntimeState& state) {
+    return state.pendingTextEntryMode != BrainOwnedTextEntryMode::None;
 }
 
 void ShowBrainOwnedManualQueryLine(
