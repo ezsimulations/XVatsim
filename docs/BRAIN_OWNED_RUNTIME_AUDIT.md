@@ -182,6 +182,8 @@ by installed hash
   state from the plugin shell
 - xPilot disconnect/reconnect/callsign boundary decisions from the plugin shell
 - invalid-aircraft-state and cold/dark boundary decisions from the plugin shell
+- unused plugin-side `LegacyAuthorityRuntimeAllowed`, `RadioBoardDiffChanged`,
+  and `IsRadioBoardRouteMapReady` helpers
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -380,6 +382,12 @@ reset/latch flags, then hides or renders the X-Plane overlay as the shell side
 effect. Release build passed and full harness passed `234 / 234` for installed
 hash
 `A0350D5D203EE9AC614A6B71C13D63D3C10318D2164D8EFFE1580E310AFBA756`.
+
+Follow-up update: Removed unused plugin-side `LegacyAuthorityRuntimeAllowed`,
+`RadioBoardDiffChanged`, and `IsRadioBoardRouteMapReady` helpers from
+`plugin/src/XVatsimPlugin.cpp`. Release build passed and full harness passed
+`234 / 234` for installed hash
+`A2B155710708B2393BCF47EF7202CA3BED2D85D132272DE046DBC77179EA06FF`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

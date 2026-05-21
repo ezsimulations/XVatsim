@@ -1320,28 +1320,6 @@ void RecordDiagnosticJob(
     gRefreshDiagnosticsFrame.jobs.push_back(std::move(job));
 }
 
-bool LegacyAuthorityRuntimeAllowed(
-    const char* caller,
-    const std::string& planKey) {
-    std::ostringstream result;
-    result << "allowed=0"
-           << ",engineer3Live=1"
-           << ",legacyEnabled=0"
-           << ",heavyFallbackRequested="
-           << (gBrainOwnedRuntimeState.heavyFallbackRequested ? 1 : 0)
-           << ",heavyFallbackRunning="
-           << (gBrainOwnedRuntimeState.heavyFallbackRunning ? 1 : 0);
-    RecordDiagnosticJob(
-        "LegacyAuthorityQuarantine",
-        caller == nullptr ? "legacy-authority-runtime" : caller,
-        0,
-        "old-authority-quarantined",
-        result.str(),
-        {},
-        planKey);
-    return false;
-}
-
 xvatsim::brain::BrainOwnedCtafLookupFact BuildBrainOwnedCtafLookupFact(
     const std::string& airportIcao,
     const xvatsim::modules::ctaf_lookup::CtafLookupEntry& ctafLookup) {
@@ -1783,27 +1761,6 @@ xvatsim::brain::FlightPlanSnapshot SampleFlightPlanForRuntime(
         commitInput);
     return snapshot;
 }
-
-bool RadioBoardDiffChanged(
-    const xvatsim::brain::RadioReachableCandidateDiff& diff,
-    bool firstSnapshot) {
-    return firstSnapshot ||
-           diff.previousHash != diff.currentHash ||
-           diff.added > 0 ||
-           diff.removed > 0;
-}
-
-bool IsRadioBoardRouteMapReady(
-    const xvatsim::brain::RouteSectorSnapshot& routeSectorSnapshot,
-    const xvatsim::brain::RouteAuthorityPlan& routeAuthorityPlan) {
-    return routeSectorSnapshot.available &&
-           !routeSectorSnapshot.stale &&
-           routeSectorSnapshot.routeResolved &&
-           routeAuthorityPlan.available &&
-           !routeAuthorityPlan.stale &&
-           routeAuthorityPlan.routeResolved;
-}
-
 
 std::string SummarizeDiagnosticJobs(
     const RefreshDiagnosticsFrame& frame,

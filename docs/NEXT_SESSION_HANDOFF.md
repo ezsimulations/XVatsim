@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`A0350D5D203EE9AC614A6B71C13D63D3C10318D2164D8EFFE1580E310AFBA756`
+`A2B155710708B2393BCF47EF7202CA3BED2D85D132272DE046DBC77179EA06FF`
 
 Reason for this hash:
 
@@ -149,6 +149,8 @@ Reason for this hash:
 - `ResolveAircraftRuntimeBoundary` now owns invalid-aircraft-state and
   cold/dark boundary decisions. The plugin applies the brain-returned reset and
   latch flags, then hides/renders the X-Plane overlay.
+- Removed unused plugin-side legacy authority quarantine and old radio-board
+  readiness helpers.
 
 Regression harness status for this code:
 
@@ -167,7 +169,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`A0350D5D203EE9AC614A6B71C13D63D3C10318D2164D8EFFE1580E310AFBA756`
+`A2B155710708B2393BCF47EF7202CA3BED2D85D132272DE046DBC77179EA06FF`
 
 Rules:
 
