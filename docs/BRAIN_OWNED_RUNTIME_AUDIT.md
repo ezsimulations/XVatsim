@@ -53,9 +53,9 @@ Engineer 3 live flow:
   - `RunBrainPublisher`
 
 This is shrinking toward the correct shape. The plugin still hosts the live
-X-Plane shell, input sampling, and diagnostics, but controller relevance,
-relevance cache ownership, and publisher ownership have moved into brain-owned
-source files.
+X-Plane shell, input sampling, module fact adapters, and diagnostics, but
+radio-board cache ownership, controller relevance, relevance cache ownership,
+and publisher ownership have moved into brain-owned source files.
 
 ### Fact Workers
 
@@ -100,7 +100,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`20866286AEB014965999BA2608D7B8179BF3BFDE75E6BC73138EE8D9CEC29759`:
+`EAE5412D7B2F3735B7B414FEF1E4788E45AD03817929B74988192D24A99AF30C`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -124,6 +124,8 @@ by installed hash
 - controller relevance worker matching/completion logic from the plugin shell
 - controller relevance cache reuse and candidate completion cache updates from
   the plugin shell
+- radio-board reuse, commit state, diff storage, wake reason, and relevance
+  invalidation from the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -218,9 +220,13 @@ final-display completion marking moved out of `plugin/src/XVatsimPlugin.cpp`.
 accepted/rejected completion facts are brain-owned.
 `RunBrainOwnedControllerRelevance` also owns relevance cache reuse and
 candidate completion cache updates. The plugin now supplies inputs and
-diagnostics only. Release build passed and full harness passed `234 / 234` for
+diagnostics only. `TryReuseBrainOwnedRadioBoard` and
+`CommitBrainOwnedRadioBoardRefresh` now own radio-board reuse, commit state,
+diff storage, wake reason, and relevance invalidation; the plugin runs the
+transceiver module as a fact producer. Release build passed and full harness
+passed `234 / 234` for
 installed hash
-`20866286AEB014965999BA2608D7B8179BF3BFDE75E6BC73138EE8D9CEC29759`.
+`EAE5412D7B2F3735B7B414FEF1E4788E45AD03817929B74988192D24A99AF30C`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

@@ -245,6 +245,67 @@ BrainOwnedBoardFilterOutput FilterBrainOwnedBoardByAcceptedCompletions(
     return output;
 }
 
+BrainOwnedRadioBoardReuseOutput TryReuseBrainOwnedRadioBoard(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedRadioBoardReuseInput& input) {
+    BrainOwnedRadioBoardReuseOutput output;
+    output.canReuse =
+        state.hasRadioBoard &&
+        state.lastControllerGeneration == input.controllerGeneration &&
+        (input.nowSeconds - state.lastRadioBoardRefreshSeconds) <
+            input.refreshIntervalSeconds;
+    if (!output.canReuse) {
+        return output;
+    }
+
+    output.radioSnapshot = state.radioSnapshot;
+    output.reason = "board-unchanged-no-authority-work";
+    output.cacheStatus = "clean-runtime-cache-hit";
+    return output;
+}
+
+BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedRadioBoardCommitInput& input) {
+    BrainOwnedRadioBoardCommitOutput output;
+    output.radioSnapshot = input.radioSnapshot;
+    const auto previousRadioSnapshot =
+        state != nullptr ? state->radioSnapshot
+                         : RadioReachableControllerSnapshot{};
+    output.diff =
+        DiffRadioReachableSnapshots(
+            previousRadioSnapshot,
+            input.radioSnapshot);
+    output.boardChanged =
+        state == nullptr ||
+        !state->hasRadioBoard ||
+        previousRadioSnapshot.stableHash != input.radioSnapshot.stableHash;
+    output.reason =
+        output.boardChanged ? "radio-board-changed"
+                            : "board-unchanged-no-authority-work";
+    output.cacheStatus =
+        output.boardChanged ? "clean-runtime-board-refresh"
+                            : "radio-board-runtime-idle";
+
+    if (state == nullptr) {
+        return output;
+    }
+
+    state->hasRadioBoard = true;
+    state->lastRadioBoardRefreshSeconds = input.nowSeconds;
+    state->lastControllerGeneration = input.controllerGeneration;
+    state->transceiverSnapshot = input.transceiverSnapshot;
+    state->radioSnapshot = input.radioSnapshot;
+    state->radioDiff = output.diff;
+    state->lastWakeReason =
+        output.boardChanged ? "radio-board-changed" : "radio-board-refresh";
+    if (output.boardChanged) {
+        state->candidateCompletions.clear();
+        state->candidatesComplete = false;
+    }
+    return output;
+}
+
 void MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
     BrainOwnedRuntimeState* state,
     const ModuleBoardSnapshot& finalDisplay) {

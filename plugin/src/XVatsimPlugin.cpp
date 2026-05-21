@@ -2161,26 +2161,28 @@ xvatsim::brain::RadioReachableControllerSnapshot BuildEngineer3RadioSnapshot(
     const std::string& planKey,
     RefreshDiagnosticsFrame* diagnostics) {
     const auto nowSeconds = CurrentTickSeconds();
-    const auto canReuse =
-        gBrainOwnedRuntimeState.hasRadioBoard &&
-        gBrainOwnedRuntimeState.lastControllerGeneration ==
-            controllerFeedSnapshot.generation &&
-        (nowSeconds - gBrainOwnedRuntimeState.lastRadioBoardRefreshSeconds) <
-            kEngineer3RadioBoardRefreshSeconds;
-    if (canReuse) {
+    xvatsim::brain::BrainOwnedRadioBoardReuseInput reuseInput;
+    reuseInput.nowSeconds = nowSeconds;
+    reuseInput.refreshIntervalSeconds = kEngineer3RadioBoardRefreshSeconds;
+    reuseInput.controllerGeneration = controllerFeedSnapshot.generation;
+    const auto reuseOutput =
+        xvatsim::brain::TryReuseBrainOwnedRadioBoard(
+            gBrainOwnedRuntimeState,
+            reuseInput);
+    if (reuseOutput.canReuse) {
         if (diagnostics != nullptr) {
             diagnostics->activeTransceiverResolveUs = 0;
             diagnostics->activeTransceiverResolveMs = 0;
         }
         RecordDiagnosticJob(
             "Engineer3RadioBoard",
-            "board-unchanged-no-authority-work",
+            reuseOutput.reason,
             0,
-            "clean-runtime-cache-hit",
-            gBrainOwnedRuntimeState.radioSnapshot.statusLine,
+            reuseOutput.cacheStatus,
+            reuseOutput.radioSnapshot.statusLine,
             {},
             planKey);
-        return gBrainOwnedRuntimeState.radioSnapshot;
+        return reuseOutput.radioSnapshot;
     }
 
     xvatsim::brain::BrainRadioRangeWorkerInput workerInput;
@@ -2191,41 +2193,28 @@ xvatsim::brain::RadioReachableControllerSnapshot BuildEngineer3RadioSnapshot(
         RunBrainRadioRangeWorker(workerInput, diagnostics);
     const auto radioSnapshot = workerOutput.radioBoard;
 
-    const auto previousRadioSnapshot = gBrainOwnedRuntimeState.radioSnapshot;
-    const auto diff =
-        xvatsim::brain::DiffRadioReachableSnapshots(
-            previousRadioSnapshot,
-            radioSnapshot);
-    const auto boardChanged =
-        !gBrainOwnedRuntimeState.hasRadioBoard ||
-        previousRadioSnapshot.stableHash != radioSnapshot.stableHash;
-
-    gBrainOwnedRuntimeState.hasRadioBoard = true;
-    gBrainOwnedRuntimeState.lastRadioBoardRefreshSeconds = nowSeconds;
-    gBrainOwnedRuntimeState.lastControllerGeneration =
-        controllerFeedSnapshot.generation;
-    gBrainOwnedRuntimeState.transceiverSnapshot = workerOutput.transceivers;
-    gBrainOwnedRuntimeState.radioSnapshot = radioSnapshot;
-    gBrainOwnedRuntimeState.radioDiff = diff;
-    gBrainOwnedRuntimeState.lastWakeReason =
-        boardChanged ? "radio-board-changed" : "radio-board-refresh";
-    if (boardChanged) {
-        gBrainOwnedRuntimeState.candidateCompletions.clear();
-        gBrainOwnedRuntimeState.candidatesComplete = false;
-    }
+    xvatsim::brain::BrainOwnedRadioBoardCommitInput commitInput;
+    commitInput.nowSeconds = nowSeconds;
+    commitInput.controllerGeneration = controllerFeedSnapshot.generation;
+    commitInput.transceiverSnapshot = workerOutput.transceivers;
+    commitInput.radioSnapshot = radioSnapshot;
+    const auto commitOutput =
+        xvatsim::brain::CommitBrainOwnedRadioBoardRefresh(
+            &gBrainOwnedRuntimeState,
+            commitInput);
 
     std::ostringstream result;
-    result << radioSnapshot.statusLine << "," << diff.statusLine;
+    result << commitOutput.radioSnapshot.statusLine << ","
+           << commitOutput.diff.statusLine;
     RecordDiagnosticJob(
         "Engineer3RadioBoard",
-        boardChanged ? "radio-board-changed" : "board-unchanged-no-authority-work",
+        commitOutput.reason,
         diagnostics != nullptr ? diagnostics->activeTransceiverResolveMs : 0,
-        boardChanged ? "clean-runtime-board-refresh"
-                     : "radio-board-runtime-idle",
+        commitOutput.cacheStatus,
         result.str(),
         {},
         planKey);
-    return radioSnapshot;
+    return commitOutput.radioSnapshot;
 }
 
 

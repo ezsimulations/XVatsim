@@ -89,6 +89,34 @@ struct BrainOwnedBoardFilterOutput {
     int rejectedUnapprovedStations = 0;
 };
 
+struct BrainOwnedRadioBoardReuseInput {
+    long long nowSeconds = 0;
+    long long refreshIntervalSeconds = 0;
+    std::uint64_t controllerGeneration = 0;
+};
+
+struct BrainOwnedRadioBoardReuseOutput {
+    bool canReuse = false;
+    RadioReachableControllerSnapshot radioSnapshot;
+    std::string reason;
+    std::string cacheStatus;
+};
+
+struct BrainOwnedRadioBoardCommitInput {
+    long long nowSeconds = 0;
+    std::uint64_t controllerGeneration = 0;
+    TransceiverResolutionSnapshot transceiverSnapshot;
+    RadioReachableControllerSnapshot radioSnapshot;
+};
+
+struct BrainOwnedRadioBoardCommitOutput {
+    RadioReachableControllerSnapshot radioSnapshot;
+    RadioReachableCandidateDiff diff;
+    bool boardChanged = false;
+    std::string reason;
+    std::string cacheStatus;
+};
+
 struct BrainOwnedPublisherInput {
     WorkflowStage workflowStage = WorkflowStage::None;
     double routeProgressDistanceNm = 0.0;
@@ -137,6 +165,14 @@ void RecordBrainOwnedCandidateCompletion(
 BrainOwnedBoardFilterOutput FilterBrainOwnedBoardByAcceptedCompletions(
     const ModuleBoardSnapshot& board,
     const std::vector<BrainOwnedCandidateCompletion>& completions);
+
+BrainOwnedRadioBoardReuseOutput TryReuseBrainOwnedRadioBoard(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedRadioBoardReuseInput& input);
+
+BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedRadioBoardCommitInput& input);
 
 void MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
     BrainOwnedRuntimeState* state,
