@@ -54,7 +54,7 @@ Engineer 3 live flow:
 
 This is shrinking toward the correct shape. The plugin still hosts the live
 X-Plane shell, input sampling, module fact adapters, and diagnostics, but
-radio-board cache ownership, route-polygon output shaping, controller
+radio-board cache ownership, route-polygon runtime/cache ownership, controller
 relevance, relevance cache ownership, and publisher ownership have moved into
 brain-owned source files.
 
@@ -69,7 +69,9 @@ brain-owned source files.
 - `brain/src/RoutePolygonTransition.cpp`
   - Route progress/current/next polygon transition facts.
 - `brain/src/BrainRoutePolygonWorker.cpp`
-  - Route-sector hashing and route-polygon worker output shaping.
+  - Route-sector hashing, route-polygon worker output shaping, cache reuse,
+    pending retry decisions, transition application, route-state commit, wake
+    reason, and relevance invalidation.
 - `brain/src/RadioReachableSnapshot.cpp`
   - Radio board grouping, hashes, phase gating, and verification feed shaping.
 - `brain/src/BrainControllerRelevanceWorker.cpp`
@@ -103,7 +105,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`2B75CB720DA95F939072401DABE5402C1790F71113E5F6B55B0A3AB3C33E3292`:
+`F967706501628F5E226A209D2693B4F11EE654379079C42A8F72A4093CD981FE`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -130,6 +132,9 @@ by installed hash
 - radio-board reuse, commit state, diff storage, wake reason, and relevance
   invalidation from the plugin shell
 - route-sector hashing and route-polygon worker output shaping from the plugin
+  shell
+- route-polygon cache reuse, pending retry decisions, transition application,
+  route-state commit, wake reason, and relevance invalidation from the plugin
   shell
 
 Still contract debt outside the live Engineer 3 path:
@@ -229,11 +234,12 @@ diagnostics only. `TryReuseBrainOwnedRadioBoard` and
 `CommitBrainOwnedRadioBoardRefresh` now own radio-board reuse, commit state,
 diff storage, wake reason, and relevance invalidation; the plugin runs the
 transceiver module as a fact producer. `BrainRoutePolygonWorker.cpp` now owns
-route-sector hashing and route-polygon worker output shaping; the plugin runs
-the route-sector resolver as a fact producer. Release build passed and full
-harness passed `234 / 234` for
+route-sector hashing, route-polygon worker output shaping, route cache reuse,
+pending retry decisions, transition application, route-state commit, wake
+reason, and relevance invalidation; the plugin runs the route-sector resolver
+as a fact producer. Release build passed and full harness passed `234 / 234` for
 installed hash
-`2B75CB720DA95F939072401DABE5402C1790F71113E5F6B55B0A3AB3C33E3292`.
+`F967706501628F5E226A209D2693B4F11EE654379079C42A8F72A4093CD981FE`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

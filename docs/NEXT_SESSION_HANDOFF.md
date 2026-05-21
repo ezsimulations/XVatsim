@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`2B75CB720DA95F939072401DABE5402C1790F71113E5F6B55B0A3AB3C33E3292`
+`F967706501628F5E226A209D2693B4F11EE654379079C42A8F72A4093CD981FE`
 
 Reason for this hash:
 
@@ -100,6 +100,9 @@ Reason for this hash:
 - `brain/src/BrainRoutePolygonWorker.cpp` now owns route-sector hashing and
   route-polygon worker output shaping; the plugin still runs the route-sector
   resolver as a fact producer.
+- `brain/src/BrainRoutePolygonWorker.cpp` also owns route-polygon cache reuse,
+  pending retry decisions, transition application, route-state commit, wake
+  reason, and relevance invalidation.
 
 Regression harness status for this code:
 
@@ -118,7 +121,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`2B75CB720DA95F939072401DABE5402C1790F71113E5F6B55B0A3AB3C33E3292`
+`F967706501628F5E226A209D2693B4F11EE654379079C42A8F72A4093CD981FE`
 
 Rules:
 

@@ -45,11 +45,43 @@ struct BrainRoutePolygonWorkerOutput {
     std::string finalRoutePolygonKey;
 };
 
+struct BrainOwnedRoutePolygonRefreshInput {
+    AircraftStateSnapshot aircraft;
+    std::string routeRuntimeKey;
+    long long nowSeconds = 0;
+    long long pendingRetrySeconds = 0;
+};
+
+struct BrainOwnedRoutePolygonRuntimeOutput {
+    BrainRoutePolygonWorkerOutput route;
+    bool needsWorker = false;
+    bool routeChanged = false;
+    bool transitionChanged = false;
+    bool transitionEvaluated = false;
+    bool cacheHit = false;
+    bool reset = false;
+    std::string reason;
+    std::string cacheStatus;
+    std::string diagnosticResult;
+    std::string transitionReason;
+    std::string transitionCacheStatus;
+    std::string transitionDiagnosticResult;
+};
+
 std::uint64_t HashBrainRouteSectorSnapshot(
     const RouteSectorSnapshot& snapshot);
 
 BrainRoutePolygonWorkerOutput BuildBrainRoutePolygonWorkerOutput(
     const RouteSectorSnapshot& route);
+
+BrainOwnedRoutePolygonRuntimeOutput BeginBrainOwnedRoutePolygonRefresh(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedRoutePolygonRefreshInput& input);
+
+BrainOwnedRoutePolygonRuntimeOutput CommitBrainOwnedRoutePolygonRefresh(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedRoutePolygonRefreshInput& input,
+    const BrainRoutePolygonWorkerOutput& workerOutput);
 
 struct BrainControllerRelevanceWorkerInput {
     WorkflowStage workflowStage = WorkflowStage::None;

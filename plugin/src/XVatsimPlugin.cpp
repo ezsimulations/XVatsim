@@ -6,7 +6,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <iomanip>
 #include <limits>
 #include <optional>
 #include <sstream>
@@ -21,7 +20,6 @@
 #include "XVatsim/brain/BrainOwnedWorkerTypes.h"
 #include "XVatsim/brain/RadioReachableSnapshot.h"
 #include "XVatsim/brain/BrainWorkScheduler.h"
-#include "XVatsim/brain/RoutePolygonTransition.h"
 #include "XVatsim/core/PreflightRouteCache.h"
 #include "XVatsim/core/WorkflowEngine.h"
 #include "XVatsim/modules/aircraft_state/AircraftStateSampler.h"
@@ -133,12 +131,6 @@ enum class SessionBoundaryResult {
 
 using FlightContext = xvatsim::core::workflow::FlightContext;
 using HandoffDecision = xvatsim::core::workflow::HandoffDecision;
-
-std::string FormatFixed(double value, int precision) {
-    std::ostringstream stream;
-    stream << std::fixed << std::setprecision(precision) << value;
-    return stream.str();
-}
 
 struct PendingControllerMessageState {
     bool primed = false;
@@ -2188,67 +2180,6 @@ std::string BuildRadioBoardRouteRuntimeKey(
     return planKey + "|route=" + networkPlanSnapshot.routeText;
 }
 
-bool ApplyRoutePolygonTransitionToOutput(
-    const xvatsim::brain::AircraftStateSnapshot& aircraftState,
-    const std::string& routeRuntimeKey,
-    xvatsim::brain::BrainRoutePolygonWorkerOutput* output) {
-    if (output == nullptr || !output->route.available ||
-        output->route.stale || !output->route.routeResolved) {
-        return false;
-    }
-
-    xvatsim::brain::RoutePolygonTransitionWorkerInput input;
-    input.aircraft = aircraftState;
-    input.route = output->route;
-    input.previousPolygonKey = gBrainOwnedRuntimeState.currentPolygonKey;
-    const auto transition =
-        xvatsim::brain::RunRoutePolygonTransitionWorker(input);
-
-    if (transition.available && transition.routeResolved) {
-        output->route = transition.route;
-        output->routePolygonHash =
-            xvatsim::brain::HashBrainRouteSectorSnapshot(output->route);
-        output->currentPolygonIndex = transition.currentPolygonIndex;
-        output->currentPolygonKey = transition.currentPolygonKey;
-        output->nextPolygonKey = transition.nextPolygonKey;
-        output->arrivalPolygonKey = transition.finalRoutePolygonKey.empty()
-                                        ? output->arrivalPolygonKey
-                                        : transition.finalRoutePolygonKey;
-        output->finalRoutePolygonKey = transition.finalRoutePolygonKey;
-        gBrainOwnedRuntimeState.routeProgressDistanceNm =
-            transition.progressDistanceNm;
-        gBrainOwnedRuntimeState.finalRoutePolygonKey =
-            transition.finalRoutePolygonKey;
-        gBrainOwnedRuntimeState.lastRoutePolygonTransitionReason =
-            transition.reason;
-        gBrainOwnedRuntimeState.lastRoutePolygonTransitionChanged =
-            transition.changed;
-    }
-
-    std::ostringstream result;
-    result << "available=" << (transition.available ? 1 : 0)
-           << ",stale=" << (transition.stale ? 1 : 0)
-           << ",resolved=" << (transition.routeResolved ? 1 : 0)
-           << ",changed=" << (transition.changed ? 1 : 0)
-           << ",wakeUi=" << (transition.shouldWakeUi ? 1 : 0)
-           << ",final=" << (transition.enteredFinalRoutePolygon ? 1 : 0)
-           << ",progressNm=" << FormatFixed(transition.progressDistanceNm, 1)
-           << ",previous=" << transition.previousPolygonKey
-           << ",current=" << transition.currentPolygonKey
-           << ",next=" << transition.nextPolygonKey
-           << ",finalKey=" << transition.finalRoutePolygonKey;
-    RecordDiagnosticJob(
-        "BrainRoutePolygonTransitionWorker",
-        transition.reason,
-        0,
-        transition.changed ? "route-polygon-transition"
-                           : "route-polygon-stable",
-        result.str(),
-        {},
-        routeRuntimeKey);
-    return transition.changed;
-}
-
 xvatsim::brain::BrainRoutePolygonWorkerOutput RunBrainRoutePolygonWorker(
     const xvatsim::brain::BrainRoutePolygonWorkerInput& input,
     RefreshDiagnosticsFrame* diagnostics) {
@@ -2278,181 +2209,84 @@ xvatsim::brain::BrainRoutePolygonWorkerOutput RefreshBrainRoutePolygonSnapshot(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot,
     RefreshDiagnosticsFrame* diagnostics) {
-    xvatsim::brain::BrainRoutePolygonWorkerOutput output;
     const auto planKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
     const auto routeRuntimeKey = BuildRadioBoardRouteRuntimeKey(networkPlanSnapshot);
-    if (routeRuntimeKey.empty()) {
-        gBrainOwnedRuntimeState.hasRoutePolygonSnapshot = false;
-        gBrainOwnedRuntimeState.routePlanKey.clear();
-        gBrainOwnedRuntimeState.routePolygonSnapshot = {};
-        gBrainOwnedRuntimeState.routePolygonHash = 0;
-        gBrainOwnedRuntimeState.currentPolygonIndex = 0;
-        gBrainOwnedRuntimeState.currentPolygonKey.clear();
-        gBrainOwnedRuntimeState.nextPolygonKey.clear();
-        gBrainOwnedRuntimeState.arrivalPolygonKey.clear();
-        gBrainOwnedRuntimeState.finalRoutePolygonKey.clear();
-        gBrainOwnedRuntimeState.routeProgressDistanceNm = 0.0;
-        gBrainOwnedRuntimeState.lastRoutePolygonTransitionReason.clear();
-        gBrainOwnedRuntimeState.lastRoutePolygonTransitionChanged = false;
+
+    xvatsim::brain::BrainOwnedRoutePolygonRefreshInput refreshInput;
+    refreshInput.aircraft = aircraftState;
+    refreshInput.routeRuntimeKey = routeRuntimeKey;
+    refreshInput.nowSeconds = CurrentTickSeconds();
+    refreshInput.pendingRetrySeconds = kRadioBoardPendingRouteRetrySeconds;
+
+    auto runtimeOutput =
+        xvatsim::brain::BeginBrainOwnedRoutePolygonRefresh(
+            &gBrainOwnedRuntimeState,
+            refreshInput);
+
+    if (runtimeOutput.reset) {
         RecordDiagnosticJob(
             "BrainRoutePolygonWorker",
-            "route-plan-unavailable",
+            runtimeOutput.reason,
             0,
-            "route-polygon-input-unavailable",
-            "available=0,stale=1,resolved=0",
+            runtimeOutput.cacheStatus,
+            runtimeOutput.diagnosticResult,
             {},
             planKey);
-        return output;
+        return runtimeOutput.route;
     }
 
-    const auto nowSeconds = CurrentTickSeconds();
-    const auto sameRoute =
-        gBrainOwnedRuntimeState.hasRoutePolygonSnapshot &&
-        gBrainOwnedRuntimeState.routePlanKey == routeRuntimeKey;
-    const auto cachedRouteUsable =
-        sameRoute &&
-        gBrainOwnedRuntimeState.routePolygonSnapshot.available &&
-        !gBrainOwnedRuntimeState.routePolygonSnapshot.stale &&
-        gBrainOwnedRuntimeState.routePolygonSnapshot.routeResolved;
-    const auto pendingRetryDue =
-        sameRoute &&
-        !cachedRouteUsable &&
-        (nowSeconds - gBrainOwnedRuntimeState.lastRoutePolygonRefreshSeconds) >=
-            kRadioBoardPendingRouteRetrySeconds;
-    if (sameRoute && (cachedRouteUsable || !pendingRetryDue)) {
-        output.available = gBrainOwnedRuntimeState.routePolygonSnapshot.available;
-        output.stale = gBrainOwnedRuntimeState.routePolygonSnapshot.stale;
-        output.route = gBrainOwnedRuntimeState.routePolygonSnapshot;
-        output.routePolygonHash = gBrainOwnedRuntimeState.routePolygonHash;
-        output.currentPolygonIndex = gBrainOwnedRuntimeState.currentPolygonIndex;
-        output.currentPolygonKey = gBrainOwnedRuntimeState.currentPolygonKey;
-        output.nextPolygonKey = gBrainOwnedRuntimeState.nextPolygonKey;
-        output.arrivalPolygonKey = gBrainOwnedRuntimeState.arrivalPolygonKey;
-        output.finalRoutePolygonKey = gBrainOwnedRuntimeState.finalRoutePolygonKey;
-        output.reason = cachedRouteUsable ? "route-polygon-unchanged"
-                                          : "route-polygon-pending-retry";
-        const auto previousPolygonKey =
-            gBrainOwnedRuntimeState.currentPolygonKey;
-        const auto transitionChanged = cachedRouteUsable &&
-            ApplyRoutePolygonTransitionToOutput(
-                aircraftState,
-                routeRuntimeKey,
-                &output);
+    const auto recordTransitionDiagnostic =
+        [&](const xvatsim::brain::BrainOwnedRoutePolygonRuntimeOutput& record) {
+            if (!record.transitionEvaluated) {
+                return;
+            }
+            RecordDiagnosticJob(
+                "BrainRoutePolygonTransitionWorker",
+                record.transitionReason,
+                0,
+                record.transitionCacheStatus,
+                record.transitionDiagnosticResult,
+                {},
+                routeRuntimeKey);
+        };
 
-        if (transitionChanged) {
-            gBrainOwnedRuntimeState.routePolygonSnapshot = output.route;
-            gBrainOwnedRuntimeState.routePolygonHash = output.routePolygonHash;
-            gBrainOwnedRuntimeState.currentPolygonIndex =
-                output.currentPolygonIndex;
-            gBrainOwnedRuntimeState.currentPolygonKey = output.currentPolygonKey;
-            gBrainOwnedRuntimeState.nextPolygonKey = output.nextPolygonKey;
-            gBrainOwnedRuntimeState.arrivalPolygonKey = output.arrivalPolygonKey;
-            gBrainOwnedRuntimeState.lastRoutePolygonHash =
-                output.routePolygonHash;
-            gBrainOwnedRuntimeState.candidateCompletions.clear();
-            gBrainOwnedRuntimeState.candidatesComplete = false;
-            gBrainOwnedRuntimeState.lastWakeReason =
-                output.currentPolygonKey == output.finalRoutePolygonKey
-                    ? "route-polygon-transition-final"
-                    : "route-polygon-transition";
-        }
-
+    if (!runtimeOutput.needsWorker) {
         if (diagnostics != nullptr) {
-            diagnostics->routeResolved =
-                gBrainOwnedRuntimeState.routePolygonSnapshot.routeResolved;
-            diagnostics->routeStatus =
-                gBrainOwnedRuntimeState.routePolygonSnapshot.statusLine;
+            diagnostics->routeResolved = runtimeOutput.route.route.routeResolved;
+            diagnostics->routeStatus = runtimeOutput.route.route.statusLine;
         }
-
-        std::ostringstream result;
-        result << "available=" << (output.available ? 1 : 0)
-               << ",stale=" << (output.stale ? 1 : 0)
-               << ",resolved="
-               << (output.route.routeResolved ? 1 : 0)
-               << ",current=" << output.currentPolygonKey
-               << ",next=" << output.nextPolygonKey
-               << ",final=" << output.finalRoutePolygonKey
-               << ",hash=" << output.routePolygonHash
-               << ",transition=" << (transitionChanged ? 1 : 0)
-               << ",previous=" << previousPolygonKey
-               << ",progressNm="
-               << FormatFixed(gBrainOwnedRuntimeState.routeProgressDistanceNm, 1);
+        recordTransitionDiagnostic(runtimeOutput);
         RecordDiagnosticJob(
             "BrainRoutePolygonWorker",
-            transitionChanged ? "route-polygon-transition-applied"
-                              : output.reason,
+            runtimeOutput.reason,
             0,
-            cachedRouteUsable ? "route-polygon-cache-hit"
-                              : "route-polygon-cache-wait",
-            result.str(),
+            runtimeOutput.cacheStatus,
+            runtimeOutput.diagnosticResult,
             {},
             routeRuntimeKey);
-        return output;
+        return runtimeOutput.route;
     }
 
     xvatsim::brain::BrainRoutePolygonWorkerInput input;
     input.aircraft = aircraftState;
     input.networkPlan = networkPlanSnapshot;
     input.planKey = planKey;
-    output = RunBrainRoutePolygonWorker(input, diagnostics);
-    const auto transitionChanged =
-        ApplyRoutePolygonTransitionToOutput(
-            aircraftState,
-            routeRuntimeKey,
-            &output);
-
-    const auto routeChanged =
-        !gBrainOwnedRuntimeState.hasRoutePolygonSnapshot ||
-        gBrainOwnedRuntimeState.routePlanKey != routeRuntimeKey ||
-        gBrainOwnedRuntimeState.routePolygonHash != output.routePolygonHash ||
-        gBrainOwnedRuntimeState.currentPolygonKey != output.currentPolygonKey ||
-        transitionChanged;
-
-    gBrainOwnedRuntimeState.hasRoutePolygonSnapshot = true;
-    gBrainOwnedRuntimeState.lastRoutePolygonRefreshSeconds = nowSeconds;
-    gBrainOwnedRuntimeState.routePlanKey = routeRuntimeKey;
-    gBrainOwnedRuntimeState.routePolygonSnapshot = output.route;
-    gBrainOwnedRuntimeState.routePolygonHash = output.routePolygonHash;
-    gBrainOwnedRuntimeState.currentPolygonIndex = output.currentPolygonIndex;
-    gBrainOwnedRuntimeState.currentPolygonKey = output.currentPolygonKey;
-    gBrainOwnedRuntimeState.nextPolygonKey = output.nextPolygonKey;
-    gBrainOwnedRuntimeState.arrivalPolygonKey = output.arrivalPolygonKey;
-    gBrainOwnedRuntimeState.finalRoutePolygonKey = output.finalRoutePolygonKey;
-    gBrainOwnedRuntimeState.lastRoutePolygonHash = output.routePolygonHash;
-    if (routeChanged) {
-        gBrainOwnedRuntimeState.candidateCompletions.clear();
-        gBrainOwnedRuntimeState.candidatesComplete = false;
-        gBrainOwnedRuntimeState.lastWakeReason =
-            transitionChanged
-                ? (output.currentPolygonKey == output.finalRoutePolygonKey
-                       ? "route-polygon-transition-final"
-                       : "route-polygon-transition")
-                : "route-polygon-changed";
-    }
-
-    std::ostringstream result;
-    result << "available=" << (output.available ? 1 : 0)
-           << ",stale=" << (output.stale ? 1 : 0)
-           << ",resolved=" << (output.route.routeResolved ? 1 : 0)
-           << ",current=" << output.currentPolygonKey
-           << ",next=" << output.nextPolygonKey
-           << ",final=" << output.finalRoutePolygonKey
-           << ",hash=" << output.routePolygonHash
-           << ",changed=" << (routeChanged ? 1 : 0)
-           << ",transition=" << (transitionChanged ? 1 : 0)
-           << ",progressNm="
-           << FormatFixed(gBrainOwnedRuntimeState.routeProgressDistanceNm, 1);
+    const auto workerOutput = RunBrainRoutePolygonWorker(input, diagnostics);
+    runtimeOutput =
+        xvatsim::brain::CommitBrainOwnedRoutePolygonRefresh(
+            &gBrainOwnedRuntimeState,
+            refreshInput,
+            workerOutput);
+    recordTransitionDiagnostic(runtimeOutput);
     RecordDiagnosticJob(
         "BrainRoutePolygonWorker",
-        output.reason,
+        runtimeOutput.reason,
         diagnostics != nullptr ? diagnostics->routeResolveMs : 0,
-        output.route.diagnosticCacheStatus.empty()
-            ? "route-polygon-worker"
-            : output.route.diagnosticCacheStatus,
-        result.str(),
+        runtimeOutput.cacheStatus,
+        runtimeOutput.diagnosticResult,
         {},
         routeRuntimeKey);
-    return output;
+    return runtimeOutput.route;
 }
 
 xvatsim::brain::FlightPlanSnapshot SampleFlightPlanForRuntime(
