@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `317773ECA22A2706C84AB78CE177396F132756DDFEEA20F48D7780040A04D0C1`
+  `078CF4DC56990C61E4EF60F4192F6B900C20B438BC4426F32165312AEEEBCF1F`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -249,6 +249,8 @@ Only then may XVatsim be treated as store-release ready.
   workflow/recovery implementation now lives in brain-owned source
   (`brain/src/BrainWorkflow.cpp`) while `core/WorkflowEngine.h` remains only as
   a compatibility shim;
+  the unused pre-Engineer-3 plugin workflow wrapper and unused distance wrappers
+  have been removed;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

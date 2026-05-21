@@ -124,7 +124,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`317773ECA22A2706C84AB78CE177396F132756DDFEEA20F48D7780040A04D0C1`:
+`078CF4DC56990C61E4EF60F4192F6B900C20B438BC4426F32165312AEEEBCF1F`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -166,6 +166,7 @@ by installed hash
 - final published runtime input shaping from the plugin shell
 - overlay wake/hide/reason decisions from the plugin shell
 - workflow/recovery implementation from `core/src/WorkflowEngine.cpp`
+- unused pre-Engineer-3 plugin workflow wrapper and unused distance wrappers
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -313,6 +314,13 @@ plugin now includes `BrainWorkflow.h` directly, and `core/WorkflowEngine.h` is
 only a compatibility shim. Release build passed and full harness passed
 `234 / 234` for installed hash
 `317773ECA22A2706C84AB78CE177396F132756DDFEEA20F48D7780040A04D0C1`.
+
+Follow-up update: The unused pre-Engineer-3 plugin workflow wrapper and unused
+distance wrappers were removed from `plugin/src/XVatsimPlugin.cpp`, leaving the
+live path to call `brain::workflow::ResolveWorkflowStage` through the Engineer
+3 wrapper only. Release build passed and full harness passed `234 / 234` for
+installed hash
+`078CF4DC56990C61E4EF60F4192F6B900C20B438BC4426F32165312AEEEBCF1F`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

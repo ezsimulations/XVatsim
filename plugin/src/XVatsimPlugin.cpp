@@ -931,24 +931,6 @@ bool ApplyAuthoritativeAirportCoordinates(
     return true;
 }
 
-bool IsInsideArrivalWakeDistance(const xvatsim::brain::AircraftStateSnapshot& aircraftState) {
-    xvatsim::brain::workflow::WorkflowTuning tuning;
-    tuning.arrivalWakeDistanceNm = kArrivalWakeDistanceNm;
-    return xvatsim::brain::workflow::IsInsideArrivalWakeDistance(
-        aircraftState,
-        gFlightContext,
-        tuning);
-}
-
-bool IsOnGroundAtDestination(const xvatsim::brain::AircraftStateSnapshot& aircraftState) {
-    xvatsim::brain::workflow::WorkflowTuning tuning;
-    tuning.destinationGroundDistanceNm = 5.0;
-    return xvatsim::brain::workflow::IsOnGroundAtDestination(
-        aircraftState,
-        gFlightContext,
-        tuning);
-}
-
 bool CanConfirmDepartureLocation(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     const xvatsim::brain::FlightPlanSnapshot& flightPlanSnapshot,
@@ -1413,57 +1395,6 @@ void AttemptPendingCurrentFlightRecovery(
             flightPlanSnapshot,
             networkPlanSnapshot);
     }
-}
-
-HandoffDecision ResolveWorkflowStage(
-    const xvatsim::brain::AircraftStateSnapshot& aircraftState,
-    const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
-    const xvatsim::brain::AirportSectorSnapshot& departureAirportSectorSnapshot,
-    const xvatsim::brain::ModuleBoardSnapshot& departureBoardSnapshot,
-    const xvatsim::brain::ModuleBoardSnapshot& enrouteBoardSnapshot) {
-    xvatsim::brain::workflow::WorkflowState state;
-    state.flightContext = gFlightContext;
-    state.departureReleasedThisFlight = gDepartureReleasedThisFlight;
-    state.arrivalAwakeThisFlight = gArrivalAwakeThisFlight;
-    state.airborneSinceSeconds = gAirborneSinceSeconds;
-
-    xvatsim::brain::workflow::WorkflowTuning tuning;
-    tuning.arrivalWakeDistanceNm = kArrivalWakeDistanceNm;
-    tuning.departureReleaseHoldSeconds = kDepartureReleaseHoldSeconds;
-    bool departureTerminalCoverageKnown = false;
-    bool insideDepartureTerminalCoverage = false;
-    const auto departureTerminalGeometryCanAffectDecision =
-        !aircraftState.onGround &&
-        !gArrivalAwakeThisFlight &&
-        !gDepartureReleasedThisFlight;
-    if (departureTerminalGeometryCanAffectDecision) {
-        departureTerminalCoverageKnown =
-            gRouteSectorResolver.CanEvaluateAirportTerminalCoverage(
-                departureAirportSectorSnapshot);
-        if (departureTerminalCoverageKnown) {
-            insideDepartureTerminalCoverage =
-                gRouteSectorResolver.IsInsideAirportTerminalCoverage(
-                    departureAirportSectorSnapshot,
-                    aircraftState.latitudeDeg,
-                    aircraftState.longitudeDeg);
-        }
-    }
-
-    const auto decision = xvatsim::brain::workflow::ResolveWorkflowStage(
-        aircraftState,
-        radioStateSnapshot,
-        departureTerminalCoverageKnown,
-        insideDepartureTerminalCoverage,
-        departureBoardSnapshot,
-        enrouteBoardSnapshot,
-        XPLMGetElapsedTime(),
-        &state,
-        tuning);
-
-    gDepartureReleasedThisFlight = state.departureReleasedThisFlight;
-    gArrivalAwakeThisFlight = state.arrivalAwakeThisFlight;
-    gAirborneSinceSeconds = static_cast<float>(state.airborneSinceSeconds);
-    return decision;
 }
 
 void UpdateEnrouteInitialDisplayHold(xvatsim::brain::WorkflowStage workflowStage) {

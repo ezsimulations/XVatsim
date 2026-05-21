@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`317773ECA22A2706C84AB78CE177396F132756DDFEEA20F48D7780040A04D0C1`
+`078CF4DC56990C61E4EF60F4192F6B900C20B438BC4426F32165312AEEEBCF1F`
 
 Reason for this hash:
 
@@ -127,6 +127,8 @@ Reason for this hash:
 - Workflow/recovery implementation now lives in
   `brain/src/BrainWorkflow.cpp`; `core/WorkflowEngine.h` is only a compatibility
   shim for existing callers.
+- The unused pre-Engineer-3 plugin workflow wrapper and unused distance wrappers
+  have been removed from `plugin/src/XVatsimPlugin.cpp`.
 
 Regression harness status for this code:
 
@@ -145,7 +147,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`317773ECA22A2706C84AB78CE177396F132756DDFEEA20F48D7780040A04D0C1`
+`078CF4DC56990C61E4EF60F4192F6B900C20B438BC4426F32165312AEEEBCF1F`
 
 Rules:
 
