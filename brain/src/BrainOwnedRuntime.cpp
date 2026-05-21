@@ -333,6 +333,22 @@ void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state) {
     state->phaseSnapshotPublisherState.Reset();
 }
 
+void CommitBrainOwnedFlightContext(
+    BrainOwnedRuntimeState* state,
+    const workflow::FlightContext& flightContext) {
+    if (state == nullptr) {
+        return;
+    }
+    state->flightContext = flightContext;
+}
+
+void ClearBrainOwnedFlightContext(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->flightContext = {};
+}
+
 std::string ToString(BrainOwnedCandidateDecision decision) {
     switch (decision) {
         case BrainOwnedCandidateDecision::Pending:
@@ -850,10 +866,9 @@ void ResetBrainOwnedWorkflowArrivalWake(BrainOwnedRuntimeState* state) {
 }
 
 workflow::WorkflowState BuildBrainOwnedWorkflowState(
-    const BrainOwnedRuntimeState& state,
-    const workflow::FlightContext& flightContext) {
+    const BrainOwnedRuntimeState& state) {
     workflow::WorkflowState workflowState;
-    workflowState.flightContext = flightContext;
+    workflowState.flightContext = state.flightContext;
     workflowState.departureReleasedThisFlight =
         state.departureReleasedThisFlight;
     workflowState.arrivalAwakeThisFlight = state.arrivalAwakeThisFlight;
@@ -872,6 +887,7 @@ void CommitBrainOwnedWorkflowState(
         workflowState.departureReleasedThisFlight;
     state->arrivalAwakeThisFlight = workflowState.arrivalAwakeThisFlight;
     state->airborneSinceSeconds = workflowState.airborneSinceSeconds;
+    state->flightContext = workflowState.flightContext;
 }
 
 void ApplyBrainOwnedWorkflowRecoveryStage(

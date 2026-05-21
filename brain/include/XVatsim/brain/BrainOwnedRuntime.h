@@ -85,6 +85,7 @@ struct BrainOwnedRuntimeState {
     bool arrivalAwakeThisFlight = false;
     double airborneSinceSeconds = -1.0;
     bool sawXPilotConnectedThisFlight = false;
+    workflow::FlightContext flightContext;
 
     WorkflowStage lastWorkflowStage = WorkflowStage::None;
     std::string lastPlanKey;
@@ -314,6 +315,12 @@ struct BrainOwnedPublisherOutput {
 void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state);
 void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state);
 
+void CommitBrainOwnedFlightContext(
+    BrainOwnedRuntimeState* state,
+    const workflow::FlightContext& flightContext);
+
+void ClearBrainOwnedFlightContext(BrainOwnedRuntimeState* state);
+
 std::string ToString(BrainOwnedCandidateDecision decision);
 
 std::string BuildBrainOwnedCandidateCompletionKey(
@@ -388,8 +395,7 @@ void ResetBrainOwnedWorkflowProgress(BrainOwnedRuntimeState* state);
 void ResetBrainOwnedWorkflowArrivalWake(BrainOwnedRuntimeState* state);
 
 workflow::WorkflowState BuildBrainOwnedWorkflowState(
-    const BrainOwnedRuntimeState& state,
-    const workflow::FlightContext& flightContext);
+    const BrainOwnedRuntimeState& state);
 
 void CommitBrainOwnedWorkflowState(
     BrainOwnedRuntimeState* state,

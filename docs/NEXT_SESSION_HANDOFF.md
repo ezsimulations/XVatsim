@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`7B207FB40740A44D7B1CBDF441B68FC1080A087FCBC9EB713DB77A70735C5C80`
+`0271DCFB0667726B5DFEE0ADBE430704629DF3ED775C07B2BD45273AF5FAA513`
 
 Reason for this hash:
 
@@ -159,6 +159,9 @@ Reason for this hash:
   workflow state through brain helpers.
 - Brain-owned runtime now owns the xPilot-seen latch used by overlay
   wake/disconnect behavior.
+- Brain-owned runtime now owns the active flight context storage. The plugin
+  commits and clears brain-returned context through brain helpers instead of
+  carrying `gFlightContext` as separate shell state.
 
 Regression harness status for this code:
 
@@ -177,7 +180,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`7B207FB40740A44D7B1CBDF441B68FC1080A087FCBC9EB713DB77A70735C5C80`
+`0271DCFB0667726B5DFEE0ADBE430704629DF3ED775C07B2BD45273AF5FAA513`
 
 Rules:
 

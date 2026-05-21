@@ -123,7 +123,6 @@ enum class PendingTextEntryMode {
     DiversionAirport,
 };
 
-using FlightContext = xvatsim::brain::workflow::FlightContext;
 using HandoffDecision = xvatsim::brain::workflow::HandoffDecision;
 using SessionBoundaryResult =
     xvatsim::brain::workflow::XPilotSessionBoundaryAction;
@@ -246,7 +245,6 @@ int gPluginMenuItemIndex = -1;
 bool gFlightLoopRegistered = false;
 bool gPluginRuntimeEnabled = false;
 DisplayOverrideMode gDisplayOverrideMode = DisplayOverrideMode::Auto;
-FlightContext gFlightContext;
 xvatsim::brain::AircraftStateSnapshot gLastAircraftStateSnapshot;
 xvatsim::brain::PilotIdentitySnapshot gLastPilotIdentitySnapshot;
 xvatsim::brain::FlightPlanSnapshot gLastFlightPlanSnapshot;
@@ -786,7 +784,7 @@ void ResetCruiseTargetState() {
 void SyncCruiseTargetFromNetworkPlan(
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
     xvatsim::brain::BrainOwnedCruiseTargetPlanInput input;
-    input.flightContextActive = gFlightContext.active;
+    input.flightContextActive = gBrainOwnedRuntimeState.flightContext.active;
     input.planKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
     input.networkPlan = networkPlanSnapshot;
 
@@ -839,7 +837,7 @@ void RetargetFlightContextToPlan(
     const xvatsim::brain::FlightPlanSnapshot& flightPlanSnapshot,
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
     xvatsim::brain::workflow::FlightContextRetargetInput input;
-    input.currentContext = gFlightContext;
+    input.currentContext = gBrainOwnedRuntimeState.flightContext;
     input.pilotIdentity = pilotIdentitySnapshot;
     input.flightPlan = flightPlanSnapshot;
     input.networkPlan = networkPlanSnapshot;
@@ -850,7 +848,9 @@ void RetargetFlightContextToPlan(
         return;
     }
 
-    gFlightContext = output.flightContext;
+    xvatsim::brain::CommitBrainOwnedFlightContext(
+        &gBrainOwnedRuntimeState,
+        output.flightContext);
     if (output.shouldResetArrivalWake) {
         xvatsim::brain::ResetBrainOwnedWorkflowArrivalWake(
             &gBrainOwnedRuntimeState);
@@ -903,7 +903,7 @@ void UpdateFlightContextIfNeeded(
     const xvatsim::brain::FlightPlanSnapshot& flightPlanSnapshot,
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
     xvatsim::brain::workflow::FlightContextUpdateInput input;
-    input.currentContext = gFlightContext;
+    input.currentContext = gBrainOwnedRuntimeState.flightContext;
     input.aircraftState = aircraftState;
     input.pilotIdentity = pilotIdentitySnapshot;
     input.flightPlan = flightPlanSnapshot;
@@ -916,7 +916,9 @@ void UpdateFlightContextIfNeeded(
         return;
     }
 
-    gFlightContext = output.flightContext;
+    xvatsim::brain::CommitBrainOwnedFlightContext(
+        &gBrainOwnedRuntimeState,
+        output.flightContext);
     if (output.shouldResetFlightScopedState) {
         ResetFlightScopedManualPlanState();
         ResetFlightProgressStateForNewContext();
@@ -945,7 +947,7 @@ const char* RecoveryStageToken(xvatsim::brain::WorkflowStage stage) {
 }
 
 void ClearCurrentFlightForRecoveryBoundary(const char* reason) {
-    gFlightContext = {};
+    xvatsim::brain::ClearBrainOwnedFlightContext(&gBrainOwnedRuntimeState);
     ResetFlightScopedManualPlanState();
     ResetFlightProgressStateForNewContext();
     ResetBrainDisplayPublisherCache();
@@ -966,7 +968,9 @@ void ApplyCurrentFlightRecoveryDecision(
         return;
     }
 
-    gFlightContext = decision.flightContext;
+    xvatsim::brain::CommitBrainOwnedFlightContext(
+        &gBrainOwnedRuntimeState,
+        decision.flightContext);
     xvatsim::brain::ApplyBrainOwnedWorkflowRecoveryStage(
         &gBrainOwnedRuntimeState,
         decision.stage,
@@ -995,7 +999,7 @@ bool AttemptCurrentFlightRecovery(
         aircraftState,
         flightPlanSnapshot,
         networkPlanSnapshot,
-        gFlightContext,
+        gBrainOwnedRuntimeState.flightContext,
         manual
             ? xvatsim::brain::workflow::RecoveryRequestMode::Manual
             : xvatsim::brain::workflow::RecoveryRequestMode::AutomaticReconnect,
@@ -1371,13 +1375,14 @@ xvatsim::brain::BrainOwnedPublisherOutput RunBrainPublisher(
     publisherFacts.enrouteBoard = relevanceOutput.enrouteBoard;
     publisherFacts.completions = relevanceOutput.completions;
     publisherFacts.publishReason = "brain-owned-ui-publish";
+    const auto& flightContext = gBrainOwnedRuntimeState.flightContext;
     publisherFacts.departureCtaf =
         BuildBrainOwnedCtafLookupFact(
-            gFlightContext.departureIcao,
+            flightContext.departureIcao,
             departureCtafLookup);
     publisherFacts.arrivalCtaf =
         BuildBrainOwnedCtafLookupFact(
-            gFlightContext.destinationIcao,
+            flightContext.destinationIcao,
             arrivalCtafLookup);
     const auto publisherInput =
         xvatsim::brain::BuildBrainOwnedPublisherInputFromFacts(
@@ -1430,8 +1435,7 @@ HandoffDecision ResolveEngineer3WorkflowStage(
     const xvatsim::brain::ModuleBoardSnapshot& enrouteBoardSnapshot) {
     auto state =
         xvatsim::brain::BuildBrainOwnedWorkflowState(
-            gBrainOwnedRuntimeState,
-            gFlightContext);
+            gBrainOwnedRuntimeState);
 
     xvatsim::brain::workflow::WorkflowTuning tuning;
     tuning.arrivalWakeDistanceNm = kArrivalWakeDistanceNm;
@@ -1657,8 +1661,9 @@ xvatsim::brain::FlightPlanSnapshot SampleFlightPlanForRuntime(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     RefreshDiagnosticsFrame* diagnostics) {
     const auto nowSeconds = CurrentTickSeconds();
+    const auto& flightContext = gBrainOwnedRuntimeState.flightContext;
     xvatsim::brain::BrainOwnedFlightPlanSampleInput decisionInput;
-    decisionInput.flightContextActive = gFlightContext.active;
+    decisionInput.flightContextActive = flightContext.active;
     decisionInput.nowSeconds = nowSeconds;
     decisionInput.sampleCadenceSeconds = kActiveFlightPlanSampleCadenceSeconds;
     const auto decision =
@@ -1677,7 +1682,8 @@ xvatsim::brain::FlightPlanSnapshot SampleFlightPlanForRuntime(
             "flight-plan-cache-hit",
             "sample=skipped",
             {},
-            gFlightContext.departureIcao + "->" + gFlightContext.destinationIcao);
+            flightContext.departureIcao + "->" +
+                flightContext.destinationIcao);
         return decision.cachedSnapshot;
     }
 
@@ -2284,7 +2290,7 @@ void ResetPresentationStateForColdDark() {
     gManualQueryVisibleUntilSeconds = 0;
     ResetFlightScopedManualPlanState();
     ResetFlightProgressStateForNewContext();
-    gFlightContext = {};
+    xvatsim::brain::ClearBrainOwnedFlightContext(&gBrainOwnedRuntimeState);
     gLastAircraftStateSnapshot = {};
     gLastPilotIdentitySnapshot = {};
     gLastFlightPlanSnapshot = {};
@@ -2350,19 +2356,20 @@ void PreserveFlightStateForNetworkDisconnect() {
     ResetBrainDisplayPublisherCache();
     ResetStandbyAssistLatch();
 
+    const auto& flightContext = gBrainOwnedRuntimeState.flightContext;
     std::string line = "[XVatsim] xPilot disconnected; ";
-    if (gFlightContext.active) {
+    if (flightContext.active) {
         line += "current flight context preserved for reconnect recovery";
-        if (!gFlightContext.departureIcao.empty() ||
-            !gFlightContext.destinationIcao.empty()) {
+        if (!flightContext.departureIcao.empty() ||
+            !flightContext.destinationIcao.empty()) {
             line += " (";
-            line += gFlightContext.departureIcao.empty()
+            line += flightContext.departureIcao.empty()
                         ? "----"
-                        : gFlightContext.departureIcao;
+                        : flightContext.departureIcao;
             line += " -> ";
-            line += gFlightContext.destinationIcao.empty()
+            line += flightContext.destinationIcao.empty()
                         ? "----"
-                        : gFlightContext.destinationIcao;
+                        : flightContext.destinationIcao;
             line += ")";
         }
     } else {
@@ -2726,7 +2733,7 @@ void RequestCurrentFlightRecovery() {
 void ApplyCruiseTargetFromCurrentAltitude() {
     xvatsim::brain::BrainOwnedCruiseTargetCommandInput input;
     input.command = xvatsim::brain::BrainOwnedCruiseTargetCommand::CurrentAltitude;
-    input.flightContextActive = gFlightContext.active;
+    input.flightContextActive = gBrainOwnedRuntimeState.flightContext.active;
     input.planKey = BuildNetworkPlanIdentityKey(gLastNetworkPlanSnapshot);
     input.aircraftState = gLastAircraftStateSnapshot;
     input.networkPlan = gLastNetworkPlanSnapshot;
@@ -2746,7 +2753,7 @@ void ApplyCruiseTargetFromCurrentAltitude() {
 void ResetCruiseTargetToFiledAltitude() {
     xvatsim::brain::BrainOwnedCruiseTargetCommandInput input;
     input.command = xvatsim::brain::BrainOwnedCruiseTargetCommand::FiledAltitude;
-    input.flightContextActive = gFlightContext.active;
+    input.flightContextActive = gBrainOwnedRuntimeState.flightContext.active;
     input.planKey = BuildNetworkPlanIdentityKey(gLastNetworkPlanSnapshot);
     input.aircraftState = gLastAircraftStateSnapshot;
     input.networkPlan = gLastNetworkPlanSnapshot;
@@ -2765,7 +2772,7 @@ void ResetCruiseTargetToFiledAltitude() {
 
 void BeginDiversionEntry() {
     DiscardPendingTextEntryState();
-    if (!gFlightContext.active) {
+    if (!gBrainOwnedRuntimeState.flightContext.active) {
         ShowTransientStatusLine("DIVERT unavailable without active flight");
         RefreshOverlayFromBrain();
         return;
@@ -2785,7 +2792,7 @@ void BeginDiversionEntry() {
 }
 
 void ApplyDiversionFromSubmittedText(const std::string& submittedText) {
-    if (!gFlightContext.active || !gLastAircraftStateSnapshot.valid) {
+    if (!gBrainOwnedRuntimeState.flightContext.active || !gLastAircraftStateSnapshot.valid) {
         ShowTransientStatusLine("DIVERT unavailable without active flight");
         return;
     }
@@ -3497,22 +3504,26 @@ void RefreshOverlayFromBrainEngineer3() {
         aircraftState,
         flightPlanSnapshot,
         effectiveNetworkPlanSnapshot);
+    const auto& flightContext = gBrainOwnedRuntimeState.flightContext;
     diagnostics.flightContextUs = ElapsedMicrosecondsSince(timingStarted);
-    diagnostics.flightContextActive = gFlightContext.active;
-    if (gFlightContext.active) {
+    diagnostics.flightContextActive = flightContext.active;
+    if (flightContext.active) {
         diagnostics.route =
-            gFlightContext.departureIcao + "->" + gFlightContext.destinationIcao;
+            flightContext.departureIcao + "->" +
+                flightContext.destinationIcao;
     }
 
     xvatsim::modules::ctaf_lookup::CtafLookupEntry departureCtafLookup;
     xvatsim::modules::ctaf_lookup::CtafLookupEntry arrivalCtafLookup;
     timingStarted = std::chrono::steady_clock::now();
-    if (gFlightContext.active) {
-        if (!gFlightContext.departureIcao.empty()) {
-            departureCtafLookup = gCtafLookupService.Lookup(gFlightContext.departureIcao);
+    if (flightContext.active) {
+        if (!flightContext.departureIcao.empty()) {
+            departureCtafLookup =
+                gCtafLookupService.Lookup(flightContext.departureIcao);
         }
-        if (!gFlightContext.destinationIcao.empty()) {
-            arrivalCtafLookup = gCtafLookupService.Lookup(gFlightContext.destinationIcao);
+        if (!flightContext.destinationIcao.empty()) {
+            arrivalCtafLookup =
+                gCtafLookupService.Lookup(flightContext.destinationIcao);
         }
     }
     diagnostics.ctafUs = ElapsedMicrosecondsSince(timingStarted);
@@ -3529,7 +3540,7 @@ void RefreshOverlayFromBrainEngineer3() {
     bool hasPublisherOutput = false;
     const auto planKey = BuildNetworkPlanIdentityKey(effectiveNetworkPlanSnapshot);
 
-    if (gFlightContext.active) {
+    if (flightContext.active) {
         const auto routePolygonOutput =
             RefreshBrainRoutePolygonSnapshot(
                 aircraftState,
@@ -3550,8 +3561,8 @@ void RefreshOverlayFromBrainEngineer3() {
             provisionalRequest;
         provisionalRequest.workflowStage = xvatsim::brain::WorkflowStage::None;
         provisionalRequest.radioSnapshot = radioSnapshot;
-        provisionalRequest.departureIcao = gFlightContext.departureIcao;
-        provisionalRequest.arrivalIcao = gFlightContext.destinationIcao;
+        provisionalRequest.departureIcao = flightContext.departureIcao;
+        provisionalRequest.arrivalIcao = flightContext.destinationIcao;
         provisionalRequest.radios = radioStateSnapshot;
         const auto provisionalInput =
             xvatsim::brain::BuildBrainOwnedControllerRelevanceInput(
@@ -3583,8 +3594,8 @@ void RefreshOverlayFromBrainEngineer3() {
             relevanceRequest;
         relevanceRequest.workflowStage = workflowDecision.stage;
         relevanceRequest.radioSnapshot = gatedRadioSnapshot;
-        relevanceRequest.departureIcao = gFlightContext.departureIcao;
-        relevanceRequest.arrivalIcao = gFlightContext.destinationIcao;
+        relevanceRequest.departureIcao = flightContext.departureIcao;
+        relevanceRequest.arrivalIcao = flightContext.destinationIcao;
         relevanceRequest.radios = radioStateSnapshot;
         const auto relevanceInput =
             xvatsim::brain::BuildBrainOwnedControllerRelevanceInput(
