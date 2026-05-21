@@ -309,8 +309,10 @@ Only then may XVatsim be treated as store-release ready.
   as part of the live module stack; those harness-only legacy board libraries
   are now named `XVatsimHarnessLegacyArrival`,
   `XVatsimHarnessLegacyDeparture`, and `XVatsimHarnessLegacyEnroute` so they are
-  not mistaken for live plugin modules; plugin diagnostics state is now grouped
-  under one shell-owned `PluginDiagnosticsState`, and refresh timing logs say
+  not mistaken for live plugin modules; old departure/arrival/enroute board
+  headers now require `XVATSIM_ENABLE_HARNESS_LEGACY_BOARD_MODULES`, so
+  accidental live includes fail at compile time; plugin diagnostics state is now
+  grouped under one shell-owned `PluginDiagnosticsState`, and refresh timing logs say
   `radioRange` instead of `activeTx`; brain-owned runtime now owns provisional
   relevance plus workflow phase selection through
   `ResolveBrainOwnedWorkflowSelection`; duplicate final-display runtime storage

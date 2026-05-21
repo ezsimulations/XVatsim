@@ -281,6 +281,9 @@ part of the live module stack.
 Their CMake target names are now explicitly harness legacy:
 `XVatsimHarnessLegacyArrival`, `XVatsimHarnessLegacyDeparture`, and
 `XVatsimHarnessLegacyEnroute`.
+Their public headers also require the explicit
+`XVATSIM_ENABLE_HARNESS_LEGACY_BOARD_MODULES` compile definition, which is
+exported only by those harness legacy targets.
 
 ## Known Contract Risks
 
@@ -617,6 +620,16 @@ Follow-up update: The harness-only legacy board libraries were renamed to
 harness-only legacy coverage rather than live plugin modules. Release build
 passed and full harness passed `234 / 234`; installed hash remained
 `C00D070DE02ADD449A0881FE340D98DF6B67A6C43140EB3319FC80496C4B5CA4` because the
+plugin binary was unchanged.
+
+Follow-up update: The harness-only legacy board headers now require
+`XVATSIM_ENABLE_HARNESS_LEGACY_BOARD_MODULES`, and only the
+`XVatsimHarnessLegacyArrival`, `XVatsimHarnessLegacyDeparture`, and
+`XVatsimHarnessLegacyEnroute` targets export that definition. This turns any
+accidental live include of those old board modules into a compile-time failure.
+Release build passed and full harness passed `234 / 234`; installed hash
+remained
+`CEF8BFF73D2436F7B251CC1F15BB7ED44A76D33B3440AC05682AD2134A3C0C50` because the
 plugin binary was unchanged.
 
 Follow-up update: Plugin diagnostics state is now grouped under

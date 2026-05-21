@@ -203,6 +203,9 @@ Reason for this hash:
   `XVatsimHarnessLegacyArrival`, `XVatsimHarnessLegacyDeparture`, and
   `XVatsimHarnessLegacyEnroute`. They are harness legacy coverage targets, not
   live Engineer 3 modules.
+- The old departure/arrival/enroute board headers now require
+  `XVATSIM_ENABLE_HARNESS_LEGACY_BOARD_MODULES`; accidental live includes fail
+  at compile time.
 - Plugin diagnostics state is now grouped under one shell-owned
   `PluginDiagnosticsState`, and refresh timing logs say `radioRange` instead of
   the older `activeTx` label.
