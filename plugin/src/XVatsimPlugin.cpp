@@ -797,10 +797,6 @@ std::string NormalizeIcao(std::string airportIcao) {
     return normalized;
 }
 
-bool AirportsMatch(const std::string& left, const std::string& right) {
-    return !left.empty() && !right.empty() && NormalizeIcao(left) == NormalizeIcao(right);
-}
-
 std::string BuildPlanIdentityKey(
     std::string callsign,
     std::string departureIcao,
@@ -900,48 +896,28 @@ void RetargetFlightContextToPlan(
     const xvatsim::brain::PilotIdentitySnapshot& pilotIdentitySnapshot,
     const xvatsim::brain::FlightPlanSnapshot& flightPlanSnapshot,
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
-    if (!gFlightContext.active) {
+    xvatsim::brain::workflow::FlightContextRetargetInput input;
+    input.currentContext = gFlightContext;
+    input.pilotIdentity = pilotIdentitySnapshot;
+    input.flightPlan = flightPlanSnapshot;
+    input.networkPlan = networkPlanSnapshot;
+
+    const auto output =
+        xvatsim::brain::workflow::RetargetFlightContextToNetworkPlan(input);
+    if (!output.retargeted) {
         return;
     }
 
-    FlightContext nextFlightContext = gFlightContext;
-    nextFlightContext.callsign =
-        pilotIdentitySnapshot.callsign.empty()
-            ? gFlightContext.callsign
-            : pilotIdentitySnapshot.callsign;
-    nextFlightContext.routeText = networkPlanSnapshot.routeText;
-
-    if (!networkPlanSnapshot.departureIcao.empty()) {
-        nextFlightContext.departureIcao = networkPlanSnapshot.departureIcao;
+    gFlightContext = output.flightContext;
+    if (output.shouldResetArrivalWake) {
+        gArrivalAwakeThisFlight = false;
     }
-    if (networkPlanSnapshot.hasDepartureCoordinates) {
-        nextFlightContext.departureLatDeg = networkPlanSnapshot.departureLatDeg;
-        nextFlightContext.departureLonDeg = networkPlanSnapshot.departureLonDeg;
-        nextFlightContext.hasDepartureCoordinates = true;
-    } else if (!nextFlightContext.hasDepartureCoordinates &&
-               AirportsMatch(flightPlanSnapshot.departureIcao, nextFlightContext.departureIcao) &&
-               flightPlanSnapshot.hasDepartureCoordinates) {
-        nextFlightContext.departureLatDeg = flightPlanSnapshot.departureLatDeg;
-        nextFlightContext.departureLonDeg = flightPlanSnapshot.departureLonDeg;
-        nextFlightContext.hasDepartureCoordinates = true;
+    if (output.shouldResetEnrouteInitialDisplayHold) {
+        ResetEnrouteInitialDisplayHold();
     }
-
-    nextFlightContext.destinationIcao = networkPlanSnapshot.destinationIcao;
-    nextFlightContext.destinationLatDeg = networkPlanSnapshot.destinationLatDeg;
-    nextFlightContext.destinationLonDeg = networkPlanSnapshot.destinationLonDeg;
-    nextFlightContext.hasDestinationCoordinates = networkPlanSnapshot.hasDestinationCoordinates;
-    if (!nextFlightContext.hasDestinationCoordinates &&
-        AirportsMatch(flightPlanSnapshot.destinationIcao, nextFlightContext.destinationIcao) &&
-        flightPlanSnapshot.hasDestinationCoordinates) {
-        nextFlightContext.destinationLatDeg = flightPlanSnapshot.destinationLatDeg;
-        nextFlightContext.destinationLonDeg = flightPlanSnapshot.destinationLonDeg;
-        nextFlightContext.hasDestinationCoordinates = true;
+    if (output.shouldInvalidatePresentation) {
+        InvalidateFlightContextPresentationCaches();
     }
-
-    gFlightContext = std::move(nextFlightContext);
-    gArrivalAwakeThisFlight = false;
-    ResetEnrouteInitialDisplayHold();
-    InvalidateFlightContextPresentationCaches();
 }
 
 xvatsim::brain::NetworkPlanSnapshot BuildEffectiveNetworkPlanSnapshot(

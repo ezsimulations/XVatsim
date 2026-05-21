@@ -71,6 +71,21 @@ struct FlightContextUpdateOutput {
     bool shouldInvalidatePresentation = false;
 };
 
+struct FlightContextRetargetInput {
+    FlightContext currentContext;
+    PilotIdentitySnapshot pilotIdentity;
+    FlightPlanSnapshot flightPlan;
+    NetworkPlanSnapshot networkPlan;
+};
+
+struct FlightContextRetargetOutput {
+    FlightContext flightContext;
+    bool retargeted = false;
+    bool shouldResetArrivalWake = false;
+    bool shouldResetEnrouteInitialDisplayHold = false;
+    bool shouldInvalidatePresentation = false;
+};
+
 double DistanceToDestinationNm(
     const AircraftStateSnapshot& aircraftState,
     const FlightContext& flightContext);
@@ -101,6 +116,9 @@ RecoveryDecision ResolveCurrentFlightRecovery(
 
 FlightContextUpdateOutput UpdateFlightContextFromNetworkPlan(
     const FlightContextUpdateInput& input);
+
+FlightContextRetargetOutput RetargetFlightContextToNetworkPlan(
+    const FlightContextRetargetInput& input);
 
 HandoffDecision ResolveWorkflowStage(
     const AircraftStateSnapshot& aircraftState,

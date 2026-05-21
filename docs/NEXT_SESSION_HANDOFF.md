@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`A7C23053B5172C9533A8EFFE846F531F2E921A8A1190114AA998C952DFA6C139`
+`B8E94F2EF29981D674175FCAD14A634B751374F783DED9DE201BBAEEA53B67F7`
 
 Reason for this hash:
 
@@ -134,6 +134,9 @@ Reason for this hash:
   change relock, route text refresh, and authoritative/missing airport
   coordinate refresh. The plugin only applies the brain output and performs
   reset/invalidate side effects.
+- `RetargetFlightContextToNetworkPlan` now owns manual diversion/revert
+  flight-context retarget decisions. The plugin only applies the returned
+  context and reset/invalidate side effects.
 
 Regression harness status for this code:
 
@@ -152,7 +155,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`A7C23053B5172C9533A8EFFE846F531F2E921A8A1190114AA998C952DFA6C139`
+`B8E94F2EF29981D674175FCAD14A634B751374F783DED9DE201BBAEEA53B67F7`
 
 Rules:
 

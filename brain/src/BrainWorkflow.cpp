@@ -671,6 +671,64 @@ FlightContextUpdateOutput UpdateFlightContextFromNetworkPlan(
     return output;
 }
 
+FlightContextRetargetOutput RetargetFlightContextToNetworkPlan(
+    const FlightContextRetargetInput& input) {
+    FlightContextRetargetOutput output;
+    output.flightContext = input.currentContext;
+
+    if (!input.currentContext.active) {
+        return output;
+    }
+
+    auto nextContext = input.currentContext;
+    nextContext.callsign =
+        input.pilotIdentity.callsign.empty()
+            ? input.currentContext.callsign
+            : input.pilotIdentity.callsign;
+    nextContext.routeText = input.networkPlan.routeText;
+
+    if (!input.networkPlan.departureIcao.empty()) {
+        nextContext.departureIcao = input.networkPlan.departureIcao;
+    }
+    if (input.networkPlan.hasDepartureCoordinates) {
+        nextContext.departureLatDeg = input.networkPlan.departureLatDeg;
+        nextContext.departureLonDeg = input.networkPlan.departureLonDeg;
+        nextContext.hasDepartureCoordinates = true;
+    } else {
+        ApplyMissingAirportCoordinates(
+            nextContext.departureIcao,
+            input.flightPlan.departureIcao,
+            input.flightPlan.hasDepartureCoordinates,
+            input.flightPlan.departureLatDeg,
+            input.flightPlan.departureLonDeg,
+            &nextContext.departureLatDeg,
+            &nextContext.departureLonDeg,
+            &nextContext.hasDepartureCoordinates);
+    }
+
+    nextContext.destinationIcao = input.networkPlan.destinationIcao;
+    nextContext.destinationLatDeg = input.networkPlan.destinationLatDeg;
+    nextContext.destinationLonDeg = input.networkPlan.destinationLonDeg;
+    nextContext.hasDestinationCoordinates =
+        input.networkPlan.hasDestinationCoordinates;
+    ApplyMissingAirportCoordinates(
+        nextContext.destinationIcao,
+        input.flightPlan.destinationIcao,
+        input.flightPlan.hasDestinationCoordinates,
+        input.flightPlan.destinationLatDeg,
+        input.flightPlan.destinationLonDeg,
+        &nextContext.destinationLatDeg,
+        &nextContext.destinationLonDeg,
+        &nextContext.hasDestinationCoordinates);
+
+    output.flightContext = std::move(nextContext);
+    output.retargeted = true;
+    output.shouldResetArrivalWake = true;
+    output.shouldResetEnrouteInitialDisplayHold = true;
+    output.shouldInvalidatePresentation = true;
+    return output;
+}
+
 HandoffDecision ResolveWorkflowStage(
     const brain::AircraftStateSnapshot& aircraftState,
     const brain::RadioStateSnapshot& radioStateSnapshot,

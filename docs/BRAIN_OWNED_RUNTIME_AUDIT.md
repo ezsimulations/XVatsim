@@ -56,12 +56,13 @@ This is shrinking toward the correct shape. The plugin still hosts the live
 X-Plane shell, input sampling, module fact adapters, and diagnostics, but
 radio-board cache ownership, route-polygon runtime/cache ownership, controller
 relevance, relevance cache ownership, publisher ownership, overlay wake
-decisions, workflow/recovery ownership, and normal flight-context update
-decisions have moved into brain-owned source files.
+decisions, workflow/recovery ownership, normal flight-context update decisions,
+and manual diversion/revert flight-context retarget decisions have moved into
+brain-owned source files.
 
 - `brain/src/BrainWorkflow.cpp`
   - Owns workflow phase, current-flight recovery decisions, and normal
-    flight-context lock/refresh decisions.
+    flight-context lock/refresh and retarget decisions.
   - `core/WorkflowEngine.h` remains only as a compatibility shim for existing
     callers.
 
@@ -169,6 +170,8 @@ by installed hash
 - workflow/recovery implementation from `core/src/WorkflowEngine.cpp`
 - unused pre-Engineer-3 plugin workflow wrapper and unused distance wrappers
 - normal flight-context lock/refresh decisions from the plugin shell
+- manual diversion/revert flight-context retarget decisions from the plugin
+  shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -331,6 +334,13 @@ refresh, and authoritative/missing airport coordinate refresh. The plugin only
 applies the brain output context and performs reset/invalidate side effects.
 Release build passed and full harness passed `234 / 234` for installed hash
 `A7C23053B5172C9533A8EFFE846F531F2E921A8A1190114AA998C952DFA6C139`.
+
+Follow-up update: `RetargetFlightContextToNetworkPlan` now owns manual
+diversion/revert flight-context retarget decisions inside
+`brain/src/BrainWorkflow.cpp`. The plugin keeps the command/UI shell and applies
+only the brain-returned context plus reset/invalidate side effects. Release
+build passed and full harness passed `234 / 234` for installed hash
+`B8E94F2EF29981D674175FCAD14A634B751374F783DED9DE201BBAEEA53B67F7`.
 
 ### Slice 4: Quarantine Legacy Runtime
 
