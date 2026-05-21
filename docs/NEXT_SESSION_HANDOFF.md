@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`7C98DFC78E850CFB2166A55A67E84AFB4A16B32E880E8E9A0954E00ED5E9AD1A`
+`5A95D1167766F48CEEE38640B9F45F9DA2A21654141B36652D438CF79464EA6B`
 
 Reason for this hash:
 
@@ -84,6 +84,8 @@ Reason for this hash:
 - Legacy departure/arrival/enroute collectors no longer assert
   `displayStations`; they may produce fact rows for harness coverage, but only
   Brain Display Intent marks a final board displayable.
+- Accepted-completion board filtering and final-display completion marking now
+  live in `brain/src/BrainOwnedRuntime.cpp`, not the plugin shell.
 
 Regression harness status for this code:
 
@@ -102,7 +104,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`7C98DFC78E850CFB2166A55A67E84AFB4A16B32E880E8E9A0954E00ED5E9AD1A`
+`5A95D1167766F48CEEE38640B9F45F9DA2A21654141B36652D438CF79464EA6B`
 
 Rules:
 

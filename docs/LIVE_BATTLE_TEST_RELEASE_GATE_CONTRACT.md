@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `7C98DFC78E850CFB2166A55A67E84AFB4A16B32E880E8E9A0954E00ED5E9AD1A`
+  `5A95D1167766F48CEEE38640B9F45F9DA2A21654141B36652D438CF79464EA6B`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -211,6 +211,8 @@ Only then may XVatsim be treated as store-release ready.
   owner and filters offline/no-frequency rows from the final UI snapshot;
   legacy departure/arrival/enroute collectors and plugin intermediate publisher
   boards no longer assert display ownership through `displayStations`;
+  accepted-completion board filtering and final-display completion marking now
+  live in brain-owned runtime code instead of the plugin shell;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

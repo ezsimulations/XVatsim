@@ -2119,39 +2119,6 @@ std::string BrainControllerCandidateStableKey(
            std::to_string(static_cast<int>(candidate.group));
 }
 
-std::string BrainBoardStationKey(
-    const xvatsim::brain::BoardStationSnapshot& station) {
-    return std::to_string(static_cast<int>(station.role)) + "|" +
-           NormalizeCallsign(station.callsign) + "|" +
-           NormalizeFrequency(station.frequency);
-}
-
-bool BrainControllerStationDisplayed(
-    const xvatsim::brain::ModuleBoardSnapshot& board,
-    const xvatsim::brain::BoardStationSnapshot& station) {
-    const auto expectedKey = BrainBoardStationKey(station);
-    return std::any_of(
-        board.stations.begin(),
-        board.stations.end(),
-        [&](const auto& displayedStation) {
-            return BrainBoardStationKey(displayedStation) == expectedKey;
-        });
-}
-
-bool BrainCompletionDisplayedInFinalBoard(
-    const xvatsim::brain::ModuleBoardSnapshot& board,
-    const xvatsim::brain::BrainOwnedCandidateCompletion& completion) {
-    return std::any_of(
-        board.stations.begin(),
-        board.stations.end(),
-        [&](const auto& displayedStation) {
-            return NormalizeCallsign(displayedStation.callsign) ==
-                       NormalizeCallsign(completion.callsign) &&
-                   NormalizeFrequency(displayedStation.frequency) ==
-                       NormalizeFrequency(completion.frequency);
-        });
-}
-
 void BrainRecordCandidateDecision(
     const xvatsim::brain::BrainControllerRelevanceWorkerInput& input,
     const xvatsim::brain::RadioReachableControllerCandidate& candidate,
@@ -2735,66 +2702,6 @@ struct BrainPublisherOutput {
     int displayIntentHidden = 0;
 };
 
-bool BrainStationRequiresCompletion(
-    const xvatsim::brain::BoardStationSnapshot& station) {
-    return station.role != xvatsim::brain::StationRole::Ctaf &&
-           station.role != xvatsim::brain::StationRole::Unicom;
-}
-
-bool BrainCompletionApprovesStation(
-    const xvatsim::brain::BrainOwnedCandidateCompletion& completion,
-    const xvatsim::brain::BoardStationSnapshot& station) {
-    return completion.decision ==
-               xvatsim::brain::BrainOwnedCandidateDecision::Accepted &&
-           NormalizeCallsign(completion.callsign) ==
-               NormalizeCallsign(station.callsign) &&
-           NormalizeFrequency(completion.frequency) ==
-               NormalizeFrequency(station.frequency);
-}
-
-void BrainMarkDisplayedCompletionsFromFinalDisplay(
-    const xvatsim::brain::ModuleBoardSnapshot& finalDisplay) {
-    for (auto& completion : gBrainOwnedRuntimeState.candidateCompletions) {
-        if (completion.decision !=
-            xvatsim::brain::BrainOwnedCandidateDecision::Accepted) {
-            completion.displayed = false;
-            continue;
-        }
-
-        completion.displayed =
-            BrainCompletionDisplayedInFinalBoard(finalDisplay, completion);
-    }
-}
-
-xvatsim::brain::ModuleBoardSnapshot BrainFilterBoardByAcceptedCompletions(
-    const xvatsim::brain::ModuleBoardSnapshot& board,
-    const std::vector<xvatsim::brain::BrainOwnedCandidateCompletion>& completions,
-    int* rejectedUnapprovedStations) {
-    auto filtered = board;
-    filtered.stations.clear();
-    for (const auto& station : board.stations) {
-        if (!BrainStationRequiresCompletion(station)) {
-            filtered.stations.push_back(station);
-            continue;
-        }
-
-        const auto approved = std::any_of(
-            completions.begin(),
-            completions.end(),
-            [&](const auto& completion) {
-                return BrainCompletionApprovesStation(completion, station);
-            });
-        if (approved) {
-            filtered.stations.push_back(station);
-        } else if (rejectedUnapprovedStations != nullptr) {
-            ++(*rejectedUnapprovedStations);
-        }
-    }
-
-    filtered.available = filtered.available || !filtered.stations.empty();
-    return filtered;
-}
-
 std::string SummarizeBrainPublisherOutput(
     const BrainPublisherOutput& output,
     const xvatsim::brain::BrainControllerRelevanceWorkerOutput& relevanceOutput) {
@@ -2838,18 +2745,29 @@ BrainPublisherOutput RunBrainPublisher(
     const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
     const std::string& planKey) {
     BrainPublisherOutput output;
-    output.departureBoard = BrainFilterBoardByAcceptedCompletions(
-        relevanceOutput.departureBoard,
-        relevanceOutput.completions,
-        &output.rejectedUnapprovedStations);
-    output.arrivalBoard = BrainFilterBoardByAcceptedCompletions(
-        relevanceOutput.arrivalBoard,
-        relevanceOutput.completions,
-        &output.rejectedUnapprovedStations);
-    output.enrouteBoard = BrainFilterBoardByAcceptedCompletions(
-        relevanceOutput.enrouteBoard,
-        relevanceOutput.completions,
-        &output.rejectedUnapprovedStations);
+    const auto departureFilter =
+        xvatsim::brain::FilterBrainOwnedBoardByAcceptedCompletions(
+            relevanceOutput.departureBoard,
+            relevanceOutput.completions);
+    output.departureBoard = departureFilter.board;
+    output.rejectedUnapprovedStations +=
+        departureFilter.rejectedUnapprovedStations;
+
+    const auto arrivalFilter =
+        xvatsim::brain::FilterBrainOwnedBoardByAcceptedCompletions(
+            relevanceOutput.arrivalBoard,
+            relevanceOutput.completions);
+    output.arrivalBoard = arrivalFilter.board;
+    output.rejectedUnapprovedStations +=
+        arrivalFilter.rejectedUnapprovedStations;
+
+    const auto enrouteFilter =
+        xvatsim::brain::FilterBrainOwnedBoardByAcceptedCompletions(
+            relevanceOutput.enrouteBoard,
+            relevanceOutput.completions);
+    output.enrouteBoard = enrouteFilter.board;
+    output.rejectedUnapprovedStations +=
+        enrouteFilter.rejectedUnapprovedStations;
 
     Engineer3RemoveCtafStations(&output.departureBoard);
     Engineer3RemoveCtafStations(&output.arrivalBoard);
@@ -2890,7 +2808,9 @@ BrainPublisherOutput RunBrainPublisher(
     output.displayIntentHidden = displayIntentOutput.hidden;
     gBrainOwnedRuntimeState.lastDisplayIntentHash =
         displayIntentOutput.stableHash;
-    BrainMarkDisplayedCompletionsFromFinalDisplay(output.finalDisplay);
+    xvatsim::brain::MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
+        &gBrainOwnedRuntimeState,
+        output.finalDisplay);
 
     RecordDiagnosticJob(
         "BrainDisplayIntentWorker",

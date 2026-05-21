@@ -95,7 +95,7 @@ These paths are not the Engineer 3 live engine and must be removed or isolated:
 
 Removed from `plugin/src/XVatsimPlugin.cpp` and the old core display surface
 by installed hash
-`7C98DFC78E850CFB2166A55A67E84AFB4A16B32E880E8E9A0954E00ED5E9AD1A`:
+`5A95D1167766F48CEEE38640B9F45F9DA2A21654141B36652D438CF79464EA6B`:
 
 - the old body that had been quarantined below `RefreshOverlayFromBrain`
 - `CollectDepartureBoardCached`
@@ -111,6 +111,8 @@ by installed hash
 - stale plugin display-decision/board logging caches from the retired path
 - `displayStations` ownership from legacy departure/arrival/enroute collectors
   and plugin intermediate publisher boards
+- accepted-completion board filtering and final-display completion marking from
+  the plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -195,6 +197,12 @@ Display Intent sets that flag while assembling the final display board.
 - Extract controller relevance worker.
 - Extract brain publisher.
 - Keep plugin file as X-Plane shell and command/event host.
+
+Status: started. Accepted-completion filtering and final-display completion
+marking moved from `plugin/src/XVatsimPlugin.cpp` into
+`brain/src/BrainOwnedRuntime.cpp`. Release build passed and full harness passed
+`234 / 234` for installed hash
+`5A95D1167766F48CEEE38640B9F45F9DA2A21654141B36652D438CF79464EA6B`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

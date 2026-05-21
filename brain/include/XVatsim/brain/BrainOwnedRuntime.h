@@ -81,6 +81,11 @@ struct BrainOwnedRuntimeState {
     std::vector<BrainOwnedCandidateCompletion> candidateCompletions;
 };
 
+struct BrainOwnedBoardFilterOutput {
+    ModuleBoardSnapshot board;
+    int rejectedUnapprovedStations = 0;
+};
+
 void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state);
 
 std::string ToString(BrainOwnedCandidateDecision decision);
@@ -95,6 +100,14 @@ std::string BuildBrainOwnedCandidateCompletionKey(
 void RecordBrainOwnedCandidateCompletion(
     BrainOwnedRuntimeState* state,
     BrainOwnedCandidateCompletion completion);
+
+BrainOwnedBoardFilterOutput FilterBrainOwnedBoardByAcceptedCompletions(
+    const ModuleBoardSnapshot& board,
+    const std::vector<BrainOwnedCandidateCompletion>& completions);
+
+void MarkBrainOwnedDisplayedCompletionsFromFinalDisplay(
+    BrainOwnedRuntimeState* state,
+    const ModuleBoardSnapshot& finalDisplay);
 
 bool BrainOwnedCandidatesCompleteForCurrentBoard(
     const BrainOwnedRuntimeState& state,
