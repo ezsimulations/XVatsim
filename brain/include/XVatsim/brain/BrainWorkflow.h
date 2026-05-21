@@ -39,6 +39,14 @@ struct HandoffDecision {
     std::string reason = "no-flight-context";
 };
 
+struct WorkflowSignals {
+    bool departureTerminalCoverageKnown = false;
+    bool insideDepartureTerminalCoverage = false;
+    bool hasLiveDepartureTerminalController = false;
+    bool com1TunedDepartureTerminalController = false;
+    bool com1TunedLiveRouteCenter = false;
+};
+
 enum class RecoveryRequestMode {
     AutomaticReconnect,
     Manual,
@@ -172,6 +180,14 @@ FlightContextUpdateOutput UpdateFlightContextFromNetworkPlan(
 
 FlightContextRetargetOutput RetargetFlightContextToNetworkPlan(
     const FlightContextRetargetInput& input);
+
+HandoffDecision ResolveWorkflowStageFromSignals(
+    const AircraftStateSnapshot& aircraftState,
+    const RadioStateSnapshot& radioStateSnapshot,
+    const WorkflowSignals& signals,
+    double nowSeconds,
+    WorkflowState* state,
+    const WorkflowTuning& tuning = {});
 
 HandoffDecision ResolveWorkflowStage(
     const AircraftStateSnapshot& aircraftState,

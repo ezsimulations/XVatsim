@@ -34,7 +34,8 @@ Engineer 3 live flow:
 2. Update brain-owned flight context.
 3. Brain runs the Route Polygon Worker.
 4. Brain runs the Radio Range Worker.
-5. Brain performs provisional relevance only to support workflow selection.
+5. Brain builds narrow workflow signals from radio facts and decides the
+   workflow phase.
 6. Brain phase-gates the radio board.
 7. Brain runs Controller Relevance Worker for accepted/rejected candidate facts.
 8. Brain Publisher filters accepted completions, runs Display Intent, publishes
@@ -155,8 +156,9 @@ Plugin diagnostics timing/log throttle state is grouped under one shell-owned
   - Owns network-plan identity-key construction used by flight-context,
     diversion, preflight-route-cache, radio-route, standby-assist, and command
     decisions.
-  - Owns provisional relevance plus workflow phase selection through
-    `ResolveBrainOwnedWorkflowSelection`.
+  - Owns workflow phase selection through `ResolveBrainOwnedWorkflowSelection`,
+    using `WorkflowSignals` derived from radio facts instead of provisional
+    relevance boards.
   - Stores the final brain-approved UI board only as `finalDisplaySnapshot`;
     the duplicate `activeBoardSnapshot` runtime field is gone.
 
@@ -310,11 +312,10 @@ exported only by those harness legacy targets.
    carry `next`, `standby`, `annotation`, or `displayRelation`, and raw module
    boards no longer carry `displayStations`.
 
-4. Workflow selection still depends on provisional relevance.
-   The provisional pass now lives behind the explicit brain-owned
-   `ResolveBrainOwnedWorkflowSelection` helper instead of plugin-side glue. The
-   remaining architectural target is to make workflow phase facts independent
-   from provisional board building where practical.
+4. Workflow selection is now independent from Controller Relevance board
+   building. `ResolveBrainOwnedWorkflowSelection` derives narrow
+   `WorkflowSignals` from radio facts and passes them to
+   `ResolveWorkflowStageFromSignals`.
 
 5. Old modules can still create display boards from authority snapshots.
    The live Engineer 3 path should not rely on those modules for display truth.
@@ -647,10 +648,10 @@ Engineer 3 worker boundary. Release build passed and full harness passed
 `234 / 234` for installed hash
 `1E0B9DB0BF9920B26D3E77E17B9005F1349E82AC358B8D1941387015F4C37A07`.
 
-Follow-up update: Brain-owned runtime now owns the provisional relevance pass
-used for workflow phase selection through `ResolveBrainOwnedWorkflowSelection`.
-The plugin supplies aircraft/radio/radio-board facts and receives the
-brain-owned phase decision plus provisional departure/arrival/enroute boards.
+Historical follow-up update: Brain-owned runtime first took ownership of the
+provisional relevance pass used for workflow phase selection through
+`ResolveBrainOwnedWorkflowSelection`. A later cleanup replaced this with narrow
+`WorkflowSignals`; this entry remains as slice history.
 Release build passed and full harness passed `234 / 234` for installed hash
 `56AE27E03BF2048CF4A32DAA8BDCF0677DF792D8F66F07A9BDEB272559A84361`.
 
@@ -752,6 +753,14 @@ path. Release build passed and full harness passed `234 / 234` for installed
 hash
 `C9150317B9EA79BEDA890A52295E2F72B45BEEFD8C9821B7BA14508ECE210FFA`.
 
+Follow-up update: Workflow selection no longer runs Controller Relevance as a
+provisional board builder. `ResolveBrainOwnedWorkflowSelection` now derives
+`WorkflowSignals` directly from radio facts and calls
+`ResolveWorkflowStageFromSignals`, so phase decisions use narrow workflow facts
+instead of departure/enroute board snapshots. Release build passed and full
+harness passed `234 / 234` for installed hash
+`1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456`.
+
 ### Slice 5: Convert Or Retire Old Modules
 
 - Convert departure/arrival/enroute modules to fact-only workers, or remove
@@ -771,9 +780,9 @@ publishes or stages display-mutated enroute rows as runtime module board state.
 Raw worker board rows also no longer carry `next` or `standby` display flags.
 Raw worker board rows also no longer carry `annotation` display text or
 `displayRelation` state, and raw module boards no longer carry
-`displayStations`. Remaining work is in the broader legacy module quarantine,
-plugin-shell reduction, heavy-proof audit, and workflow/provisional-relevance
-cleanup.
+`displayStations`. Workflow selection also no longer borrows provisional
+relevance boards; remaining work is in the broader legacy module quarantine and
+plugin-shell reduction.
 
 ## Guardrails
 

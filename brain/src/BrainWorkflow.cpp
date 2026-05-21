@@ -830,13 +830,10 @@ FlightContextRetargetOutput RetargetFlightContextToNetworkPlan(
     return output;
 }
 
-HandoffDecision ResolveWorkflowStage(
+HandoffDecision ResolveWorkflowStageFromSignals(
     const brain::AircraftStateSnapshot& aircraftState,
     const brain::RadioStateSnapshot& radioStateSnapshot,
-    bool departureTerminalCoverageKnown,
-    bool insideDepartureTerminalCoverage,
-    const brain::ModuleBoardSnapshot& departureBoardSnapshot,
-    const brain::ModuleBoardSnapshot& enrouteBoardSnapshot,
+    const WorkflowSignals& signals,
     double nowSeconds,
     WorkflowState* state,
     const WorkflowTuning& tuning) {
@@ -877,24 +874,25 @@ HandoffDecision ResolveWorkflowStage(
         return decision;
     }
 
-    if (HasCom1TunedLiveRouteCenter(enrouteBoardSnapshot, radioStateSnapshot)) {
+    (void)radioStateSnapshot;
+
+    if (signals.com1TunedLiveRouteCenter) {
         state->departureReleasedThisFlight = true;
         decision.stage = brain::WorkflowStage::Enroute;
         decision.reason = "center-radio-active";
         return decision;
     }
 
-    const auto hasLiveDepartureTerminalController =
-        HasLiveDepartureTerminalController(departureBoardSnapshot);
-    if (hasLiveDepartureTerminalController &&
-        departureTerminalCoverageKnown &&
-        insideDepartureTerminalCoverage) {
+    if (signals.hasLiveDepartureTerminalController &&
+        signals.departureTerminalCoverageKnown &&
+        signals.insideDepartureTerminalCoverage) {
         decision.stage = brain::WorkflowStage::Departure;
         decision.reason = "departure-terminal-airspace";
         return decision;
     }
 
-    if (departureTerminalCoverageKnown && !insideDepartureTerminalCoverage) {
+    if (signals.departureTerminalCoverageKnown &&
+        !signals.insideDepartureTerminalCoverage) {
         state->departureReleasedThisFlight = true;
         decision.stage = brain::WorkflowStage::Enroute;
         decision.reason = "departure-terminal-exited";
@@ -907,9 +905,7 @@ HandoffDecision ResolveWorkflowStage(
         return decision;
     }
 
-    if (HasCom1TunedDepartureTerminalController(
-            departureBoardSnapshot,
-            radioStateSnapshot)) {
+    if (signals.com1TunedDepartureTerminalController) {
         decision.stage = brain::WorkflowStage::Departure;
         decision.reason = "departure-terminal-radio";
         return decision;
@@ -919,6 +915,37 @@ HandoffDecision ResolveWorkflowStage(
     decision.stage = brain::WorkflowStage::Enroute;
     decision.reason = "departure-released";
     return decision;
+}
+
+HandoffDecision ResolveWorkflowStage(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::RadioStateSnapshot& radioStateSnapshot,
+    bool departureTerminalCoverageKnown,
+    bool insideDepartureTerminalCoverage,
+    const brain::ModuleBoardSnapshot& departureBoardSnapshot,
+    const brain::ModuleBoardSnapshot& enrouteBoardSnapshot,
+    double nowSeconds,
+    WorkflowState* state,
+    const WorkflowTuning& tuning) {
+    WorkflowSignals signals;
+    signals.departureTerminalCoverageKnown = departureTerminalCoverageKnown;
+    signals.insideDepartureTerminalCoverage = insideDepartureTerminalCoverage;
+    signals.hasLiveDepartureTerminalController =
+        HasLiveDepartureTerminalController(departureBoardSnapshot);
+    signals.com1TunedDepartureTerminalController =
+        HasCom1TunedDepartureTerminalController(
+            departureBoardSnapshot,
+            radioStateSnapshot);
+    signals.com1TunedLiveRouteCenter =
+        HasCom1TunedLiveRouteCenter(enrouteBoardSnapshot, radioStateSnapshot);
+
+    return ResolveWorkflowStageFromSignals(
+        aircraftState,
+        radioStateSnapshot,
+        signals,
+        nowSeconds,
+        state,
+        tuning);
 }
 
 }  // namespace xvatsim::brain::workflow

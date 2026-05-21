@@ -247,9 +247,6 @@ struct BrainOwnedWorkflowSelectionInput {
 
 struct BrainOwnedWorkflowSelectionOutput {
     workflow::HandoffDecision decision;
-    ModuleBoardSnapshot departureBoard;
-    ModuleBoardSnapshot arrivalBoard;
-    ModuleBoardSnapshot enrouteBoard;
 };
 
 struct BrainOwnedCruiseTargetTuning {

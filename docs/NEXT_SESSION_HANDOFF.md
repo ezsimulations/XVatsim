@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`C9150317B9EA79BEDA890A52295E2F72B45BEEFD8C9821B7BA14508ECE210FFA`
+`1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456`
 
 Reason for this hash:
 
@@ -209,10 +209,10 @@ Reason for this hash:
 - Plugin diagnostics state is now grouped under one shell-owned
   `PluginDiagnosticsState`, and refresh timing logs say `radioRange` instead of
   the older `activeTx` label.
-- Brain-owned runtime now owns the provisional relevance pass used for workflow
-  phase selection through `ResolveBrainOwnedWorkflowSelection`. The plugin
-  supplies facts and receives the brain-owned phase decision plus provisional
-  boards.
+- Brain-owned runtime now owns workflow phase selection through
+  `ResolveBrainOwnedWorkflowSelection`, using narrow `WorkflowSignals` derived
+  from radio facts instead of a provisional relevance board pass. The plugin
+  supplies facts and receives only the brain-owned phase decision.
 - Removed the duplicate `activeBoardSnapshot` runtime field. Brain-owned
   runtime stores the final brain-approved UI board as `finalDisplaySnapshot`,
   and the plugin/UI path names that board as final display.
@@ -248,6 +248,9 @@ Reason for this hash:
   `ResolveAuthorityRelevance`; the remaining route-sector proof entry is
   explicitly named `ResolveBrainScheduledAuthorityVerification`, requires a
   schedule reason, and is used by regression coverage only.
+- Workflow selection no longer runs a provisional Controller Relevance pass.
+  Brain-owned runtime builds narrow `WorkflowSignals` from radio facts, then
+  `ResolveWorkflowStageFromSignals` decides the phase.
 
 Regression harness status for this code:
 
@@ -266,7 +269,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`C9150317B9EA79BEDA890A52295E2F72B45BEEFD8C9821B7BA14508ECE210FFA`
+`1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456`
 
 Rules:
 

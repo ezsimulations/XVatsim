@@ -126,6 +126,56 @@ bool IsBlockedControllerFrequency(const std::string& frequency) {
     return normalizedFrequency == "121500" || normalizedFrequency == "199998";
 }
 
+bool IsCom1TunedToFrequency(
+    const RadioStateSnapshot& radios,
+    const std::string& frequency) {
+    const auto normalizedTarget = NormalizeFrequency(frequency);
+    if (normalizedTarget.empty()) {
+        return false;
+    }
+
+    return NormalizeFrequency(radios.com1ActiveFrequency) == normalizedTarget;
+}
+
+bool IsDepartureTerminalCandidate(
+    const RadioReachableControllerCandidate& candidate) {
+    return candidate.group == RadioReachableFacilityGroup::AppDep;
+}
+
+bool IsRouteCenterCandidate(
+    const RadioReachableControllerCandidate& candidate) {
+    return candidate.group == RadioReachableFacilityGroup::Center;
+}
+
+workflow::WorkflowSignals BuildBrainOwnedWorkflowSignals(
+    const BrainOwnedWorkflowSelectionInput& input) {
+    workflow::WorkflowSignals signals;
+
+    for (const auto& candidate : input.radioSnapshot.candidates) {
+        if (candidate.frequency.empty() ||
+            IsBlockedControllerFrequency(candidate.frequency)) {
+            continue;
+        }
+
+        if (IsRouteCenterCandidate(candidate) &&
+            IsCom1TunedToFrequency(input.radios, candidate.frequency)) {
+            signals.com1TunedLiveRouteCenter = true;
+            continue;
+        }
+
+        if (!IsDepartureTerminalCandidate(candidate)) {
+            continue;
+        }
+
+        signals.hasLiveDepartureTerminalController = true;
+        if (IsCom1TunedToFrequency(input.radios, candidate.frequency)) {
+            signals.com1TunedDepartureTerminalController = true;
+        }
+    }
+
+    return signals;
+}
+
 bool IsStandbyEligibleRole(StationRole role) {
     switch (role) {
         case StationRole::Delivery:
@@ -1311,32 +1361,11 @@ BrainOwnedWorkflowSelectionOutput ResolveBrainOwnedWorkflowSelection(
         return output;
     }
 
-    BrainOwnedControllerRelevanceInputRequest provisionalRequest;
-    provisionalRequest.workflowStage = WorkflowStage::None;
-    provisionalRequest.radioSnapshot = input.radioSnapshot;
-    provisionalRequest.departureIcao = input.departureIcao;
-    provisionalRequest.arrivalIcao = input.arrivalIcao;
-    provisionalRequest.radios = input.radios;
-
-    const auto provisionalInput =
-        BuildBrainOwnedControllerRelevanceInput(
-            *state,
-            provisionalRequest);
-    const auto provisionalRelevance =
-        RunBrainControllerRelevanceWorker(provisionalInput);
-
-    output.departureBoard = provisionalRelevance.departureBoard;
-    output.arrivalBoard = provisionalRelevance.arrivalBoard;
-    output.enrouteBoard = provisionalRelevance.enrouteBoard;
-
     auto workflowState = BuildBrainOwnedWorkflowState(*state);
-    output.decision = workflow::ResolveWorkflowStage(
+    output.decision = workflow::ResolveWorkflowStageFromSignals(
         input.aircraft,
         input.radios,
-        false,
-        false,
-        output.departureBoard,
-        output.enrouteBoard,
+        BuildBrainOwnedWorkflowSignals(input),
         input.nowSeconds,
         &workflowState,
         input.tuning);

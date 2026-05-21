@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `C9150317B9EA79BEDA890A52295E2F72B45BEEFD8C9821B7BA14508ECE210FFA`
+  `1A22A8262A39F6C1FD510FD62A96B5EDB8F55E1E176C4ECC9699B99F60501456`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -313,9 +313,10 @@ Only then may XVatsim be treated as store-release ready.
   headers now require `XVATSIM_ENABLE_HARNESS_LEGACY_BOARD_MODULES`, so
   accidental live includes fail at compile time; plugin diagnostics state is now
   grouped under one shell-owned `PluginDiagnosticsState`, and refresh timing logs say
-  `radioRange` instead of `activeTx`; brain-owned runtime now owns provisional
-  relevance plus workflow phase selection through
-  `ResolveBrainOwnedWorkflowSelection`; duplicate final-display runtime storage
+  `radioRange` instead of `activeTx`; brain-owned runtime now owns workflow
+  phase selection through `ResolveBrainOwnedWorkflowSelection`, using
+  `WorkflowSignals` from radio facts instead of provisional relevance boards;
+  duplicate final-display runtime storage
   under `activeBoardSnapshot` has been removed, leaving
   `finalDisplaySnapshot` as the single final UI board state; stale plugin-local
   departure/arrival/enroute board variables have been removed from the Engineer
@@ -335,7 +336,8 @@ Only then may XVatsim be treated as store-release ready.
   construction while the plugin shell only consumes the brain-owned key; broad
   route-sector authority proof is now exposed only as
   `ResolveBrainScheduledAuthorityVerification`, requires a schedule reason, and
-  is used by regression coverage rather than ordinary live UI refresh;
+  is used by regression coverage rather than ordinary live UI refresh; workflow
+  selection no longer runs a provisional Controller Relevance pass;
   brain-owned runtime audit map updated.
 - Active live streak: remains `0`; the next valid live test is Battle Test #1
   for this installed hash.
