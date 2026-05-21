@@ -246,10 +246,6 @@ int gPluginMenuItemIndex = -1;
 bool gFlightLoopRegistered = false;
 bool gPluginRuntimeEnabled = false;
 DisplayOverrideMode gDisplayOverrideMode = DisplayOverrideMode::Auto;
-bool gCruiseAltitudeReachedThisFlight = false;
-bool gCruiseTargetManualOverride = false;
-bool gHasActiveCruiseTarget = false;
-double gActiveCruiseTargetFt = 0.0;
 bool gSawXPilotConnectedThisFlight = false;
 bool gDepartureReleasedThisFlight = false;
 bool gArrivalAwakeThisFlight = false;
@@ -260,7 +256,6 @@ xvatsim::brain::PilotIdentitySnapshot gLastPilotIdentitySnapshot;
 xvatsim::brain::FlightPlanSnapshot gLastFlightPlanSnapshot;
 xvatsim::brain::NetworkPlanSnapshot gLastNetworkPlanSnapshot;
 xvatsim::brain::BrainOwnedRuntimeState gBrainOwnedRuntimeState;
-float gCruiseGateSatisfiedSinceSeconds = -1.0f;
 std::string gStandbyAssistLatchKey;
 bool gStandbyAssistWriteConsumed = false;
 long long gLastFlightLoopPerfWarningSeconds = 0;
@@ -275,7 +270,6 @@ std::string gLastConnectedPilotCallsign;
 std::string gDisconnectedPilotCallsign;
 bool gPendingAutomaticFlightRecovery = false;
 bool gManualFlightRecoveryRequested = false;
-std::string gCruiseTargetSourceKey;
 std::string gDiversionOverrideSourceKey;
 PendingTextEntryMode gPendingTextEntryMode = PendingTextEntryMode::None;
 PendingControllerMessageState gPendingControllerMessage;
@@ -742,37 +736,6 @@ void ApplyStandbyRecommendation(
             standbyLoaded);
 }
 
-double ResolveCruiseComparisonAltitudeFt(
-    const xvatsim::brain::AircraftStateSnapshot& aircraftState,
-    double cruiseTargetFt) {
-    auto comparisonAltitudeFt = aircraftState.altitudeOperationalFt;
-    if (cruiseTargetFt >= 18000.0 && aircraftState.hasAltimeterSetting) {
-        comparisonAltitudeFt += (29.92 - aircraftState.altimeterSettingInHg) * 1000.0;
-    }
-    return comparisonAltitudeFt;
-}
-
-double NormalizeCruiseAltitudeFt(double altitudeFt) {
-    if (altitudeFt <= 0.0) {
-        return 0.0;
-    }
-    return std::round(altitudeFt / 100.0) * 100.0;
-}
-
-std::string FormatCruiseTargetText(double altitudeFt) {
-    const auto normalizedAltitudeFt = NormalizeCruiseAltitudeFt(altitudeFt);
-    if (normalizedAltitudeFt <= 0.0) {
-        return {};
-    }
-
-    const auto roundedAltitudeFt = static_cast<int>(normalizedAltitudeFt);
-    if (roundedAltitudeFt >= 18000) {
-        return "FL" + std::to_string(roundedAltitudeFt / 100);
-    }
-
-    return std::to_string(roundedAltitudeFt);
-}
-
 std::string NormalizeIcao(std::string airportIcao) {
     std::string normalized;
     normalized.reserve(airportIcao.size());
@@ -820,30 +783,24 @@ bool HasFreshMatchedNetworkPlan(
 }
 
 void ResetCruiseTargetState() {
-    gCruiseAltitudeReachedThisFlight = false;
-    gCruiseTargetManualOverride = false;
-    gHasActiveCruiseTarget = false;
-    gActiveCruiseTargetFt = 0.0;
-    gCruiseGateSatisfiedSinceSeconds = -1.0f;
-    gCruiseTargetSourceKey.clear();
+    xvatsim::brain::ResetBrainOwnedCruiseTarget(
+        &gBrainOwnedRuntimeState);
 }
 
-void ClearCruiseTargetIfSourceInvalid(
+void SyncCruiseTargetFromNetworkPlan(
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
-    if (!gHasActiveCruiseTarget && gCruiseTargetSourceKey.empty()) {
-        return;
-    }
+    xvatsim::brain::BrainOwnedCruiseTargetPlanInput input;
+    input.flightContextActive = gFlightContext.active;
+    input.planKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
+    input.networkPlan = networkPlanSnapshot;
 
-    const auto sourcePlanKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
-    if (!sourcePlanKey.empty() &&
-        !gCruiseTargetSourceKey.empty() &&
-        sourcePlanKey == gCruiseTargetSourceKey) {
-        return;
+    const auto output =
+        xvatsim::brain::SyncBrainOwnedCruiseTargetFromNetworkPlan(
+            &gBrainOwnedRuntimeState,
+            input);
+    if (!output.logLine.empty()) {
+        XPLMDebugString(output.logLine.c_str());
     }
-
-    ResetCruiseTargetState();
-    XPLMDebugString(
-        "[XVatsim] Cruise target cleared because source VATSIM flight plan was stale, unmatched, or changed.\n");
 }
 
 void ClearDiversionOverrideState() {
@@ -2786,133 +2743,43 @@ void RequestCurrentFlightRecovery() {
     RefreshOverlayFromBrain();
 }
 
-void SyncCruiseTargetFromNetworkPlan(
-    const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
-    if (gCruiseTargetManualOverride) {
-        return;
-    }
-
-    if (!gFlightContext.active) {
-        return;
-    }
-
-    const auto sourcePlanKey = BuildNetworkPlanIdentityKey(networkPlanSnapshot);
-    if (sourcePlanKey.empty()) {
-        return;
-    }
-
-    if (!networkPlanSnapshot.hasFiledCruiseAltitude) {
-        return;
-    }
-
-    const auto normalizedAltitudeFt =
-        NormalizeCruiseAltitudeFt(networkPlanSnapshot.filedCruiseAltitudeFt);
-    if (normalizedAltitudeFt <= 0.0) {
-        return;
-    }
-
-    gActiveCruiseTargetFt = normalizedAltitudeFt;
-    gHasActiveCruiseTarget = true;
-    gCruiseTargetSourceKey = sourcePlanKey;
-}
-
 void ApplyCruiseTargetFromCurrentAltitude() {
-    if (!gFlightContext.active) {
-        ShowTransientStatusLine("CRUISE unavailable without active flight");
-        RefreshOverlayFromBrain();
-        return;
-    }
+    xvatsim::brain::BrainOwnedCruiseTargetCommandInput input;
+    input.command = xvatsim::brain::BrainOwnedCruiseTargetCommand::CurrentAltitude;
+    input.flightContextActive = gFlightContext.active;
+    input.planKey = BuildNetworkPlanIdentityKey(gLastNetworkPlanSnapshot);
+    input.aircraftState = gLastAircraftStateSnapshot;
+    input.networkPlan = gLastNetworkPlanSnapshot;
+    input.nowSeconds = XPLMGetElapsedTime();
+    input.tuning.gateToleranceFt = kCruiseGateToleranceFt;
+    input.tuning.stableVerticalSpeedFpm = kCruiseGateStableVsFpm;
+    input.tuning.gateDwellSeconds = kCruiseGateDwellSeconds;
 
-    if (!gLastAircraftStateSnapshot.valid) {
-        ShowTransientStatusLine("CRUISE unavailable without aircraft state");
-        RefreshOverlayFromBrain();
-        return;
-    }
-
-    const auto sourcePlanKey = BuildNetworkPlanIdentityKey(gLastNetworkPlanSnapshot);
-    if (sourcePlanKey.empty()) {
-        ResetCruiseTargetState();
-        ShowTransientStatusLine("CRUISE unavailable until VATSIM plan matched");
-        RefreshOverlayFromBrain();
-        return;
-    }
-
-    const auto normalizedAltitudeFt =
-        NormalizeCruiseAltitudeFt(
-            ResolveCruiseComparisonAltitudeFt(
-                gLastAircraftStateSnapshot,
-                gLastAircraftStateSnapshot.altitudeOperationalFt));
-    if (normalizedAltitudeFt <= 0.0) {
-        ResetCruiseTargetState();
-        ShowTransientStatusLine("CRUISE invalid altitude");
-        RefreshOverlayFromBrain();
-        return;
-    }
-
-    gActiveCruiseTargetFt = normalizedAltitudeFt;
-    gHasActiveCruiseTarget = true;
-    gCruiseTargetManualOverride = true;
-    gCruiseTargetSourceKey = sourcePlanKey;
-    gCruiseAltitudeReachedThisFlight =
-        std::fabs(
-            ResolveCruiseComparisonAltitudeFt(
-                gLastAircraftStateSnapshot,
-                gActiveCruiseTargetFt) - gActiveCruiseTargetFt) <=
-        kCruiseGateToleranceFt;
-    gCruiseGateSatisfiedSinceSeconds = gCruiseAltitudeReachedThisFlight ? XPLMGetElapsedTime() : -1.0f;
-    ShowTransientStatusLine("CRUISE target " + FormatCruiseTargetText(gActiveCruiseTargetFt) + " current");
+    const auto output =
+        xvatsim::brain::ApplyBrainOwnedCruiseTargetCommand(
+            &gBrainOwnedRuntimeState,
+            input);
+    ShowTransientStatusLine(output.statusLine);
     RefreshOverlayFromBrain();
 }
 
 void ResetCruiseTargetToFiledAltitude() {
-    if (!gFlightContext.active) {
-        ShowTransientStatusLine("CRUISE unavailable without active flight");
-        RefreshOverlayFromBrain();
-        return;
-    }
+    xvatsim::brain::BrainOwnedCruiseTargetCommandInput input;
+    input.command = xvatsim::brain::BrainOwnedCruiseTargetCommand::FiledAltitude;
+    input.flightContextActive = gFlightContext.active;
+    input.planKey = BuildNetworkPlanIdentityKey(gLastNetworkPlanSnapshot);
+    input.aircraftState = gLastAircraftStateSnapshot;
+    input.networkPlan = gLastNetworkPlanSnapshot;
+    input.nowSeconds = XPLMGetElapsedTime();
+    input.tuning.gateToleranceFt = kCruiseGateToleranceFt;
+    input.tuning.stableVerticalSpeedFpm = kCruiseGateStableVsFpm;
+    input.tuning.gateDwellSeconds = kCruiseGateDwellSeconds;
 
-    const auto sourcePlanKey = BuildNetworkPlanIdentityKey(gLastNetworkPlanSnapshot);
-    if (sourcePlanKey.empty()) {
-        ResetCruiseTargetState();
-        ShowTransientStatusLine("CRUISE unavailable until VATSIM plan matched");
-        RefreshOverlayFromBrain();
-        return;
-    }
-
-    if (!gLastNetworkPlanSnapshot.hasFiledCruiseAltitude) {
-        ResetCruiseTargetState();
-        ShowTransientStatusLine("CRUISE filed altitude unavailable");
-        RefreshOverlayFromBrain();
-        return;
-    }
-
-    const auto normalizedAltitudeFt =
-        NormalizeCruiseAltitudeFt(gLastNetworkPlanSnapshot.filedCruiseAltitudeFt);
-    if (normalizedAltitudeFt <= 0.0) {
-        ResetCruiseTargetState();
-        ShowTransientStatusLine("CRUISE invalid filed altitude");
-        RefreshOverlayFromBrain();
-        return;
-    }
-
-    gActiveCruiseTargetFt = normalizedAltitudeFt;
-    gHasActiveCruiseTarget = true;
-    gCruiseTargetManualOverride = false;
-    gCruiseTargetSourceKey = sourcePlanKey;
-    if (gLastAircraftStateSnapshot.valid) {
-        const auto comparisonAltitudeFt = ResolveCruiseComparisonAltitudeFt(
-            gLastAircraftStateSnapshot,
-            gActiveCruiseTargetFt);
-        gCruiseAltitudeReachedThisFlight =
-            std::fabs(comparisonAltitudeFt - gActiveCruiseTargetFt) <=
-            kCruiseGateToleranceFt;
-        gCruiseGateSatisfiedSinceSeconds =
-            gCruiseAltitudeReachedThisFlight ? XPLMGetElapsedTime() : -1.0f;
-    } else {
-        gCruiseAltitudeReachedThisFlight = false;
-        gCruiseGateSatisfiedSinceSeconds = -1.0f;
-    }
-    ShowTransientStatusLine("CRUISE target " + FormatCruiseTargetText(gActiveCruiseTargetFt) + " filed");
+    const auto output =
+        xvatsim::brain::ApplyBrainOwnedCruiseTargetCommand(
+            &gBrainOwnedRuntimeState,
+            input);
+    ShowTransientStatusLine(output.statusLine);
     RefreshOverlayFromBrain();
 }
 
@@ -3073,28 +2940,15 @@ void UpdateOverlayWakeTracking(
         gSawXPilotConnectedThisFlight = true;
     }
 
-    if (gHasActiveCruiseTarget && !gCruiseAltitudeReachedThisFlight) {
-        const auto comparisonAltitudeFt = ResolveCruiseComparisonAltitudeFt(
-            aircraftState,
-            gActiveCruiseTargetFt);
-        const auto withinCruiseBand =
-            std::fabs(comparisonAltitudeFt - gActiveCruiseTargetFt) <=
-            kCruiseGateToleranceFt;
-        const auto verticallyStable =
-            std::fabs(aircraftState.verticalSpeedFpm) <= kCruiseGateStableVsFpm;
-        const auto nowSeconds = XPLMGetElapsedTime();
-
-        if (withinCruiseBand && verticallyStable) {
-            if (gCruiseGateSatisfiedSinceSeconds < 0.0f) {
-                gCruiseGateSatisfiedSinceSeconds = nowSeconds;
-            } else if ((nowSeconds - gCruiseGateSatisfiedSinceSeconds) >=
-                       kCruiseGateDwellSeconds) {
-                gCruiseAltitudeReachedThisFlight = true;
-            }
-        } else {
-            gCruiseGateSatisfiedSinceSeconds = -1.0f;
-        }
-    }
+    xvatsim::brain::BrainOwnedCruiseTargetProgressInput input;
+    input.aircraftState = aircraftState;
+    input.nowSeconds = XPLMGetElapsedTime();
+    input.tuning.gateToleranceFt = kCruiseGateToleranceFt;
+    input.tuning.stableVerticalSpeedFpm = kCruiseGateStableVsFpm;
+    input.tuning.gateDwellSeconds = kCruiseGateDwellSeconds;
+    xvatsim::brain::UpdateBrainOwnedCruiseTargetProgress(
+        &gBrainOwnedRuntimeState,
+        input);
 }
 
 bool ShouldHandleCommandBegin(XPLMCommandPhase phase) {
@@ -3622,7 +3476,6 @@ void RefreshOverlayFromBrainEngineer3() {
     gLastPilotIdentitySnapshot = pilotIdentitySnapshot;
     gLastFlightPlanSnapshot = flightPlanSnapshot;
     gLastNetworkPlanSnapshot = networkPlanSnapshot;
-    ClearCruiseTargetIfSourceInvalid(networkPlanSnapshot);
     SyncCruiseTargetFromNetworkPlan(networkPlanSnapshot);
 
     timingStarted = std::chrono::steady_clock::now();
@@ -3904,8 +3757,11 @@ void RefreshOverlayFromBrainEngineer3() {
         std::string("mode=") + WorkflowStageToken(workflowStage),
         {},
         diagnostics.route);
-    if (gHasActiveCruiseTarget) {
-        overlayModel.headerRightText = FormatCruiseTargetText(gActiveCruiseTargetFt);
+    const auto cruiseHeaderText =
+        xvatsim::brain::BuildBrainOwnedCruiseTargetHeaderText(
+            gBrainOwnedRuntimeState);
+    if (!cruiseHeaderText.empty()) {
+        overlayModel.headerRightText = cruiseHeaderText;
     }
     overlayModel.showMessageAcknowledge =
         kControllerMessageUiEnabled && controllerMessageVisible;

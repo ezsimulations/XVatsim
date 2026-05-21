@@ -115,6 +115,9 @@ brain-owned source files.
   - Owns enroute initial display-hold state and timing.
   - Owns active-flight flight-plan sampling cadence and cached flight-plan
     snapshot state.
+  - Owns cruise target state, filed/current target command decisions,
+    source-plan invalidation, gate dwell/reached tracking, and cruise header
+    text.
 
 ### UI Renderer
 
@@ -184,6 +187,9 @@ by installed hash
 - invalid-aircraft-state and cold/dark boundary decisions from the plugin shell
 - unused plugin-side `LegacyAuthorityRuntimeAllowed`, `RadioBoardDiffChanged`,
   and `IsRadioBoardRouteMapReady` helpers
+- cruise target state, filed/current target command decisions, source-plan
+  invalidation, gate dwell/reached tracking, and cruise header text from the
+  plugin shell
 
 Still contract debt outside the live Engineer 3 path:
 
@@ -388,6 +394,13 @@ Follow-up update: Removed unused plugin-side `LegacyAuthorityRuntimeAllowed`,
 `plugin/src/XVatsimPlugin.cpp`. Release build passed and full harness passed
 `234 / 234` for installed hash
 `A2B155710708B2393BCF47EF7202CA3BED2D85D132272DE046DBC77179EA06FF`.
+
+Follow-up update: Brain-owned runtime now owns cruise target state,
+filed/current target command decisions, source-plan invalidation,
+gate dwell/reached tracking, and cruise header text. The plugin keeps only the
+command/status side effects. Release build passed and full harness passed
+`234 / 234` for installed hash
+`49C96E697904C9332B7752E03E3C3F0F63FEDC2AFB71A49DB8CD3071171CF3AC`.
 
 ### Slice 4: Quarantine Legacy Runtime
 

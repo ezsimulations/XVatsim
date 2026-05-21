@@ -55,7 +55,7 @@ Installed X-Plane plugin:
 
 Current installed SHA256:
 
-`A2B155710708B2393BCF47EF7202CA3BED2D85D132272DE046DBC77179EA06FF`
+`49C96E697904C9332B7752E03E3C3F0F63FEDC2AFB71A49DB8CD3071171CF3AC`
 
 Reason for this hash:
 
@@ -151,6 +151,9 @@ Reason for this hash:
   latch flags, then hides/renders the X-Plane overlay.
 - Removed unused plugin-side legacy authority quarantine and old radio-board
   readiness helpers.
+- Brain-owned runtime now owns cruise target state, filed/current target
+  command decisions, source-plan invalidation, gate dwell/reached tracking, and
+  cruise header text. The plugin only handles command/status side effects.
 
 Regression harness status for this code:
 
@@ -169,7 +172,7 @@ Active live streak for the current installed hash:
 
 Next valid live test is Battle Test #1 for hash:
 
-`A2B155710708B2393BCF47EF7202CA3BED2D85D132272DE046DBC77179EA06FF`
+`49C96E697904C9332B7752E03E3C3F0F63FEDC2AFB71A49DB8CD3071171CF3AC`
 
 Rules:
 

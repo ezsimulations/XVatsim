@@ -199,7 +199,7 @@ Only then may XVatsim be treated as store-release ready.
 
 - Date: 2026-05-21
 - Installed `XVatsim.xpl` SHA256:
-  `A2B155710708B2393BCF47EF7202CA3BED2D85D132272DE046DBC77179EA06FF`
+  `49C96E697904C9332B7752E03E3C3F0F63FEDC2AFB71A49DB8CD3071171CF3AC`
 - Reason: Engineer 3 locked as the unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
   not overwritten by remaining-distance UI annotation; old plugin refresh,
@@ -268,7 +268,10 @@ Only then may XVatsim be treated as store-release ready.
   invalid-aircraft-state and cold/dark boundary decisions while the plugin
   applies the returned reset/latch flags and hides/renders the X-Plane overlay;
   unused plugin-side legacy authority quarantine and old radio-board readiness
-  helpers have been removed;
+  helpers have been removed; brain-owned runtime now owns cruise target state,
+  filed/current target command decisions, source-plan invalidation, gate
+  dwell/reached tracking, and cruise header text while the plugin only handles
+  command/status side effects;
   brain-owned runtime audit map updated.
 - Active live streak: reset to `0` because runtime authority/display boundary
   code changed.

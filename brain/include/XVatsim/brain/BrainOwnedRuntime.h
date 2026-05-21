@@ -74,6 +74,12 @@ struct BrainOwnedRuntimeState {
     bool hasFlightPlanSnapshot = false;
     FlightPlanSnapshot flightPlanSnapshot;
     long long lastFlightPlanSampleSeconds = 0;
+    bool hasActiveCruiseTarget = false;
+    bool cruiseTargetManualOverride = false;
+    bool cruiseAltitudeReachedThisFlight = false;
+    double activeCruiseTargetFt = 0.0;
+    double cruiseGateSatisfiedSinceSeconds = -1.0;
+    std::string cruiseTargetSourceKey;
 
     WorkflowStage lastWorkflowStage = WorkflowStage::None;
     std::string lastPlanKey;
@@ -187,6 +193,51 @@ struct BrainOwnedFlightPlanSampleDecision {
 struct BrainOwnedFlightPlanSampleCommitInput {
     long long nowSeconds = 0;
     FlightPlanSnapshot snapshot;
+};
+
+struct BrainOwnedCruiseTargetTuning {
+    double gateToleranceFt = 1000.0;
+    double stableVerticalSpeedFpm = 800.0;
+    double gateDwellSeconds = 10.0;
+};
+
+struct BrainOwnedCruiseTargetPlanInput {
+    bool flightContextActive = false;
+    std::string planKey;
+    NetworkPlanSnapshot networkPlan;
+};
+
+struct BrainOwnedCruiseTargetPlanOutput {
+    bool changed = false;
+    std::string logLine;
+};
+
+enum class BrainOwnedCruiseTargetCommand {
+    CurrentAltitude,
+    FiledAltitude,
+};
+
+struct BrainOwnedCruiseTargetCommandInput {
+    BrainOwnedCruiseTargetCommand command =
+        BrainOwnedCruiseTargetCommand::FiledAltitude;
+    bool flightContextActive = false;
+    std::string planKey;
+    AircraftStateSnapshot aircraftState;
+    NetworkPlanSnapshot networkPlan;
+    double nowSeconds = 0.0;
+    BrainOwnedCruiseTargetTuning tuning;
+};
+
+struct BrainOwnedCruiseTargetCommandOutput {
+    bool accepted = false;
+    bool changed = false;
+    std::string statusLine;
+};
+
+struct BrainOwnedCruiseTargetProgressInput {
+    AircraftStateSnapshot aircraftState;
+    double nowSeconds = 0.0;
+    BrainOwnedCruiseTargetTuning tuning;
 };
 
 struct BrainOwnedStandbyAssistPlanInput {
@@ -309,6 +360,23 @@ BrainOwnedFlightPlanSampleDecision DecideBrainOwnedFlightPlanSample(
 void CommitBrainOwnedFlightPlanSample(
     BrainOwnedRuntimeState* state,
     const BrainOwnedFlightPlanSampleCommitInput& input);
+
+void ResetBrainOwnedCruiseTarget(BrainOwnedRuntimeState* state);
+
+BrainOwnedCruiseTargetPlanOutput SyncBrainOwnedCruiseTargetFromNetworkPlan(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedCruiseTargetPlanInput& input);
+
+BrainOwnedCruiseTargetCommandOutput ApplyBrainOwnedCruiseTargetCommand(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedCruiseTargetCommandInput& input);
+
+void UpdateBrainOwnedCruiseTargetProgress(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedCruiseTargetProgressInput& input);
+
+std::string BuildBrainOwnedCruiseTargetHeaderText(
+    const BrainOwnedRuntimeState& state);
 
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     const BrainOwnedStandbyAssistPlanInput& input);

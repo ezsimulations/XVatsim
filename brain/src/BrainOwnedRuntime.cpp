@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <sstream>
 #include <unordered_set>
 
@@ -271,6 +272,49 @@ bool BuildCtafStationFromLookupFact(
         station->annotation = "lookup";
     }
     return true;
+}
+
+double ResolveCruiseComparisonAltitudeFt(
+    const AircraftStateSnapshot& aircraftState,
+    double cruiseTargetFt) {
+    auto comparisonAltitudeFt = aircraftState.altitudeOperationalFt;
+    if (cruiseTargetFt >= 18000.0 && aircraftState.hasAltimeterSetting) {
+        comparisonAltitudeFt +=
+            (29.92 - aircraftState.altimeterSettingInHg) * 1000.0;
+    }
+    return comparisonAltitudeFt;
+}
+
+double NormalizeCruiseAltitudeFt(double altitudeFt) {
+    if (altitudeFt <= 0.0) {
+        return 0.0;
+    }
+    return std::round(altitudeFt / 100.0) * 100.0;
+}
+
+std::string FormatCruiseTargetText(double altitudeFt) {
+    const auto normalizedAltitudeFt = NormalizeCruiseAltitudeFt(altitudeFt);
+    if (normalizedAltitudeFt <= 0.0) {
+        return {};
+    }
+
+    const auto roundedAltitudeFt = static_cast<int>(normalizedAltitudeFt);
+    if (roundedAltitudeFt >= 18000) {
+        return "FL" + std::to_string(roundedAltitudeFt / 100);
+    }
+
+    return std::to_string(roundedAltitudeFt);
+}
+
+bool AircraftWithinCruiseTargetBand(
+    const AircraftStateSnapshot& aircraftState,
+    double cruiseTargetFt,
+    const BrainOwnedCruiseTargetTuning& tuning) {
+    return std::fabs(
+               ResolveCruiseComparisonAltitudeFt(
+                   aircraftState,
+                   cruiseTargetFt) -
+               cruiseTargetFt) <= tuning.gateToleranceFt;
 }
 
 }  // namespace
@@ -605,6 +649,186 @@ void CommitBrainOwnedFlightPlanSample(
     state->hasFlightPlanSnapshot = true;
     state->flightPlanSnapshot = input.snapshot;
     state->lastFlightPlanSampleSeconds = input.nowSeconds;
+}
+
+void ResetBrainOwnedCruiseTarget(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) {
+        return;
+    }
+
+    state->cruiseAltitudeReachedThisFlight = false;
+    state->cruiseTargetManualOverride = false;
+    state->hasActiveCruiseTarget = false;
+    state->activeCruiseTargetFt = 0.0;
+    state->cruiseGateSatisfiedSinceSeconds = -1.0;
+    state->cruiseTargetSourceKey.clear();
+}
+
+BrainOwnedCruiseTargetPlanOutput SyncBrainOwnedCruiseTargetFromNetworkPlan(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedCruiseTargetPlanInput& input) {
+    BrainOwnedCruiseTargetPlanOutput output;
+    if (state == nullptr) {
+        return output;
+    }
+
+    if (state->hasActiveCruiseTarget ||
+        !state->cruiseTargetSourceKey.empty()) {
+        if (input.planKey.empty() ||
+            (!state->cruiseTargetSourceKey.empty() &&
+             state->cruiseTargetSourceKey != input.planKey)) {
+            ResetBrainOwnedCruiseTarget(state);
+            output.changed = true;
+            output.logLine =
+                "[XVatsim] Cruise target cleared because source VATSIM flight plan was stale, unmatched, or changed.\n";
+            return output;
+        }
+    }
+
+    if (state->cruiseTargetManualOverride ||
+        !input.flightContextActive ||
+        input.planKey.empty() ||
+        !input.networkPlan.hasFiledCruiseAltitude) {
+        return output;
+    }
+
+    const auto normalizedAltitudeFt =
+        NormalizeCruiseAltitudeFt(input.networkPlan.filedCruiseAltitudeFt);
+    if (normalizedAltitudeFt <= 0.0) {
+        return output;
+    }
+
+    output.changed =
+        !state->hasActiveCruiseTarget ||
+        state->activeCruiseTargetFt != normalizedAltitudeFt ||
+        state->cruiseTargetSourceKey != input.planKey;
+    state->activeCruiseTargetFt = normalizedAltitudeFt;
+    state->hasActiveCruiseTarget = true;
+    state->cruiseTargetSourceKey = input.planKey;
+    return output;
+}
+
+BrainOwnedCruiseTargetCommandOutput ApplyBrainOwnedCruiseTargetCommand(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedCruiseTargetCommandInput& input) {
+    BrainOwnedCruiseTargetCommandOutput output;
+    if (state == nullptr) {
+        return output;
+    }
+
+    if (!input.flightContextActive) {
+        output.statusLine = "CRUISE unavailable without active flight";
+        return output;
+    }
+
+    if (input.command == BrainOwnedCruiseTargetCommand::CurrentAltitude &&
+        !input.aircraftState.valid) {
+        output.statusLine = "CRUISE unavailable without aircraft state";
+        return output;
+    }
+
+    if (input.planKey.empty()) {
+        ResetBrainOwnedCruiseTarget(state);
+        output.changed = true;
+        output.statusLine = "CRUISE unavailable until VATSIM plan matched";
+        return output;
+    }
+
+    double normalizedAltitudeFt = 0.0;
+    if (input.command == BrainOwnedCruiseTargetCommand::CurrentAltitude) {
+        normalizedAltitudeFt =
+            NormalizeCruiseAltitudeFt(
+                ResolveCruiseComparisonAltitudeFt(
+                    input.aircraftState,
+                    input.aircraftState.altitudeOperationalFt));
+    } else {
+        if (!input.networkPlan.hasFiledCruiseAltitude) {
+            ResetBrainOwnedCruiseTarget(state);
+            output.changed = true;
+            output.statusLine = "CRUISE filed altitude unavailable";
+            return output;
+        }
+        normalizedAltitudeFt =
+            NormalizeCruiseAltitudeFt(input.networkPlan.filedCruiseAltitudeFt);
+    }
+
+    if (normalizedAltitudeFt <= 0.0) {
+        ResetBrainOwnedCruiseTarget(state);
+        output.changed = true;
+        output.statusLine =
+            input.command == BrainOwnedCruiseTargetCommand::CurrentAltitude
+                ? "CRUISE invalid altitude"
+                : "CRUISE invalid filed altitude";
+        return output;
+    }
+
+    state->activeCruiseTargetFt = normalizedAltitudeFt;
+    state->hasActiveCruiseTarget = true;
+    state->cruiseTargetManualOverride =
+        input.command == BrainOwnedCruiseTargetCommand::CurrentAltitude;
+    state->cruiseTargetSourceKey = input.planKey;
+    if (input.aircraftState.valid) {
+        state->cruiseAltitudeReachedThisFlight =
+            AircraftWithinCruiseTargetBand(
+                input.aircraftState,
+                state->activeCruiseTargetFt,
+                input.tuning);
+        state->cruiseGateSatisfiedSinceSeconds =
+            state->cruiseAltitudeReachedThisFlight
+                ? input.nowSeconds
+                : -1.0;
+    } else {
+        state->cruiseAltitudeReachedThisFlight = false;
+        state->cruiseGateSatisfiedSinceSeconds = -1.0;
+    }
+
+    output.accepted = true;
+    output.changed = true;
+    output.statusLine =
+        "CRUISE target " +
+        FormatCruiseTargetText(state->activeCruiseTargetFt) +
+        (state->cruiseTargetManualOverride ? " current" : " filed");
+    return output;
+}
+
+void UpdateBrainOwnedCruiseTargetProgress(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedCruiseTargetProgressInput& input) {
+    if (state == nullptr ||
+        !state->hasActiveCruiseTarget ||
+        state->cruiseAltitudeReachedThisFlight) {
+        return;
+    }
+
+    const auto withinCruiseBand =
+        AircraftWithinCruiseTargetBand(
+            input.aircraftState,
+            state->activeCruiseTargetFt,
+            input.tuning);
+    const auto verticallyStable =
+        std::fabs(input.aircraftState.verticalSpeedFpm) <=
+        input.tuning.stableVerticalSpeedFpm;
+
+    if (withinCruiseBand && verticallyStable) {
+        if (state->cruiseGateSatisfiedSinceSeconds < 0.0) {
+            state->cruiseGateSatisfiedSinceSeconds = input.nowSeconds;
+        } else if (
+            (input.nowSeconds - state->cruiseGateSatisfiedSinceSeconds) >=
+            input.tuning.gateDwellSeconds) {
+            state->cruiseAltitudeReachedThisFlight = true;
+        }
+    } else {
+        state->cruiseGateSatisfiedSinceSeconds = -1.0;
+    }
+}
+
+std::string BuildBrainOwnedCruiseTargetHeaderText(
+    const BrainOwnedRuntimeState& state) {
+    if (!state.hasActiveCruiseTarget) {
+        return {};
+    }
+
+    return FormatCruiseTargetText(state.activeCruiseTargetFt);
 }
 
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
