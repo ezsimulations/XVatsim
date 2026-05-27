@@ -15,9 +15,10 @@ The expected order is:
 
 1. Complete the runtime/repo hygiene audit.
 2. Confirm any dirty source files are intentional release source.
-3. Build a fresh store kit from the current Release payload.
-4. Run the final release gate against that generated kit.
-5. Prepare the store email and submission materials.
+3. Confirm the customer license/EULA and proof-of-purchase policy.
+4. Build a fresh store kit from the current Release payload.
+5. Run the final release gate against that generated kit.
+6. Prepare the store email and submission materials.
 
 To build a fresh X-Plane.org Store kit from the current Release payload:
 
@@ -37,6 +38,7 @@ The final gate verifies:
 - Every saved scenario in `tools\regression_harness\scenarios`
 - Active source text for old bootstrap/user-agent wording
 - Customer package file set and forbidden debug/test artifacts
+- Customer package license/EULA presence
 - Customer package text for beta/preview/checkpoint wording
 - Build, customer package, and installed X-Plane artifact hashes for the plugin,
   transition sound, and packaged authority registry

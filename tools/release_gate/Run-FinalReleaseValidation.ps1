@@ -274,7 +274,8 @@ function Test-PackageFileSet {
         "Resources\plugins\XVatsim\win_x64\authority_source_registry.json",
         "README.txt",
         "CHANGELOG.txt",
-        "QUICK_START.txt"
+        "QUICK_START.txt",
+        "LICENSE.txt"
     )
 
     foreach ($relativePath in $expectedFiles) {
@@ -385,7 +386,7 @@ function Test-FinalZipSmoke {
     }
 
     $packageRoot = Split-Path -Parent $resourceCandidates[0].FullName
-    foreach ($fileName in @("README.txt", "CHANGELOG.txt", "QUICK_START.txt")) {
+    foreach ($fileName in @("README.txt", "CHANGELOG.txt", "QUICK_START.txt", "LICENSE.txt")) {
         [void](Assert-File (Join-Path $packageRoot $fileName) "Final zip customer document")
     }
 
@@ -484,6 +485,7 @@ function Write-ValidationReceipt {
     $lines.Add("- Active source text scan")
     $lines.Add("- Customer package file-set scan")
     $lines.Add("- Customer package text scan")
+    $lines.Add("- Customer package license/EULA presence")
     $lines.Add("- Build/package/installed artifact hash checks")
     $lines.Add("- Final zip clean install smoke")
 

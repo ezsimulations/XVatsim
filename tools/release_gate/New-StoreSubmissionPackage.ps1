@@ -99,6 +99,19 @@ function Write-TextFile {
     Set-Content -LiteralPath $Path -Value $normalized -Encoding ASCII
 }
 
+function Get-LicenseText {
+    param(
+        [string]$Root,
+        [string]$BuildDate
+    )
+
+    $templatePath = Join-Path $Root "docs\legal\XVatsim_EULA_TEMPLATE.txt"
+    Assert-File $templatePath "XVatsim EULA template"
+
+    $text = Get-Content -LiteralPath $templatePath -Raw
+    return $text.Replace("{{VERSION}}", $Version).Replace("{{BUILD_DATE}}", $BuildDate)
+}
+
 function New-CustomerReadme {
     param([string]$BuildDate)
 
@@ -161,6 +174,8 @@ If something looks wrong:
 - Include what XVatsim showed
 - Include screenshots if possible
 - Include X-Plane Log.txt if the issue can be repeated
+- Send support requests to ezsimulations@gmail.com
+- Support may require proof of purchase from the X-Plane.org Store
 
 Package contents:
 - Resources\plugins\XVatsim\win_x64\XVatsim.xpl
@@ -169,6 +184,7 @@ Package contents:
 - README.txt
 - CHANGELOG.txt
 - QUICK_START.txt
+- LICENSE.txt
 "@
 }
 
@@ -263,6 +279,12 @@ If something looks wrong:
 - Note what xPilot showed.
 - Note what XVatsim showed.
 - Include screenshots and X-Plane Log.txt if the issue can be repeated.
+- Send support requests to ezsimulations@gmail.com.
+- Support may require proof of purchase from the X-Plane.org Store.
+
+License:
+- XVatsim is commercial software from EZ SIMULATIONS.
+- Read LICENSE.txt before installing or using XVatsim.
 "@
 }
 
@@ -295,21 +317,22 @@ What is ready in this kit:
 - Quick-start text guide
 - Customer README
 - Customer changelog
+- Customer license/EULA
 - Store-upload package zip:
   $ZipName
 - Store listing copy
 - Store submission checklist
 - Support/update policy draft
 - Pricing/positioning draft
+- Anti-piracy and proof-of-purchase policy draft
 
 What still needs to be finalized before submission:
-- Final storefront/vendor display name
-- Final support email address
-- Final screenshots
+- Confirm whether the X-Plane.org Store can issue/display serial or license keys for XVatsim
+- Store screenshots are already placed in Store_Submission_Materials\Store_Images_To_Add
 
 Recommended next steps:
-1. Capture the screenshots listed in Store_Submission_Materials\08_Screenshot_Shot_List.txt.
-2. Fill in the support email and vendor/storefront name placeholders.
+1. Review LICENSE.txt and Store_Submission_Materials\12_License_and_Anti_Piracy_Policy.txt.
+2. Confirm whether the store can attach serial/license keys to the product listing.
 3. Run tools\release_gate\Run-FinalReleaseValidation.ps1 against this kit.
 4. Optionally run one final in-sim smoke test from the final zipped customer package.
 5. Submit the validated store-upload zip and store-facing materials.
@@ -478,8 +501,7 @@ faster, and easier to trust.
 Suggested support policy:
 
 Support channel:
-- Replace with your preferred support email or support forum thread
-- Suggested placeholder: [replace-with-support-email]
+- ezsimulations@gmail.com
 
 Bug-report expectations:
 Ask customers to include:
@@ -502,6 +524,10 @@ their X-Plane Log.txt so behavior can be verified accurately.
 
 Suggested expectations note:
 This release is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.
+
+Proof-of-purchase policy:
+Support, replacement downloads, update help, and licensing help may require proof of
+purchase through the X-Plane.org Store.
 "@
         }
         "06" {
@@ -519,8 +545,10 @@ Before contacting the store:
 - Confirm QUICK_START.txt matches the final packaged behavior
 - Confirm README and changelog match the final release version
 - Decide final product title
-- Decide final vendor/storefront name
-- Decide final support email
+- Confirm vendor/storefront name: EZ SIMULATIONS
+- Confirm support email: ezsimulations@gmail.com
+- Review LICENSE.txt
+- Ask whether the X-Plane.org Store can issue/display serial or license keys for XVatsim
 
 Store assets to prepare:
 - Customer package zip
@@ -529,6 +557,7 @@ Store assets to prepare:
 - Final long description
 - Technical specs
 - Support/update policy
+- License and anti-piracy policy
 - Changelog / release notes
 
 Before upload:
@@ -582,10 +611,16 @@ Included with this submission:
 Please let me know the preferred next step for store submission, review, and any
 additional requirements you would like included.
 
+Before launch, could you also confirm whether the X-Plane.org Store can issue or
+display serial/license keys for XVatsim? The current V1 package includes a proprietary
+EULA and proof-of-purchase support policy. I would like to understand the store's
+recommended option for license-key handling before adding any runtime activation
+system.
+
 Best regards,
-[replace-with-your-name]
-[replace-with-vendor-or-brand-name]
-[replace-with-support-email]
+Darron
+EZ SIMULATIONS
+ezsimulations@gmail.com
 "@
         }
         "08" {
@@ -640,9 +675,7 @@ Screenshot guidance:
 Still needed before final store submission:
 
 Required:
-- Final screenshots
-- Final storefront/vendor name
-- Final support email
+- Confirm whether the X-Plane.org Store can issue/display serial or license keys for XVatsim
 
 Recommended:
 - One strong hero image for the product page
@@ -650,8 +683,48 @@ Recommended:
 - A short public support note or support thread link
 
 Notes:
+- Store-facing screenshots are in Store_Submission_Materials\Store_Images_To_Add.
 - This kit intentionally avoids inventing store-image dimension requirements.
 - If the store provides specific artwork size requirements after contact, match those exactly.
+"@
+        }
+        "12" {
+            return @"
+XVatsim License and Anti-Piracy Policy
+
+Publisher:
+EZ SIMULATIONS
+
+Support:
+ezsimulations@gmail.com
+
+Customer package license:
+- LICENSE.txt is included in the root of the customer package.
+- The license grants personal simulator use only.
+- The customer does not receive ownership of XVatsim, source code, data files, artwork,
+  audio, product identity, or other intellectual property.
+- Redistribution, resale, upload, file sharing, account sharing, license sharing, and
+  presenting XVatsim as freeware are prohibited.
+- Support and update help may require proof of purchase from the X-Plane.org Store.
+
+V1 anti-piracy decision:
+- Do not add runtime DRM or online activation in this V1 package.
+- The current five-pass runtime hash should remain untouched for store submission.
+- Adding runtime activation later must go through a separate runtime Contract Gate and
+  live validation reset if it changes plugin behavior.
+
+Recommended store question:
+Ask whether the X-Plane.org Store can issue/display serial or license keys for XVatsim.
+If the store supports this cleanly, use the store-managed serial as the commercial
+purchase credential first. Runtime enforcement can remain a later, deliberate V2
+commercial-hardening project.
+
+Practical piracy response:
+- Keep the exact uploaded zip and hash on file.
+- Require proof of purchase for support, replacement downloads, and update help.
+- If XVatsim appears on unauthorized sites, use the EULA, store listing, uploaded zip
+  hash, and ownership records as takedown evidence.
+- Treat heavy runtime DRM as a separate product decision, not as a late packaging patch.
 "@
         }
     }
@@ -741,6 +814,7 @@ Write-Step "Writing customer documents"
 Write-TextFile -Path (Join-Path $customerPackageRoot "README.txt") -Text (New-CustomerReadme -BuildDate $KitDate)
 Write-TextFile -Path (Join-Path $customerPackageRoot "CHANGELOG.txt") -Text (New-CustomerChangelog -BuildDate $KitDate)
 Write-TextFile -Path (Join-Path $customerPackageRoot "QUICK_START.txt") -Text (New-CustomerQuickStart -BuildDate $KitDate)
+Write-TextFile -Path (Join-Path $customerPackageRoot "LICENSE.txt") -Text (Get-LicenseText -Root $root -BuildDate $KitDate)
 
 Write-Step "Writing store submission materials"
 Write-TextFile -Path (Join-Path $storeMaterialsRoot "01_Product_Tagline_and_Short_Description.txt") -Text (New-StoreMaterial -Name "01")
@@ -752,6 +826,7 @@ Write-TextFile -Path (Join-Path $storeMaterialsRoot "06_XPlaneOrg_Submission_Che
 Write-TextFile -Path (Join-Path $storeMaterialsRoot "07_Vendor_Contact_Email_Draft.txt") -Text (New-StoreMaterial -Name "07")
 Write-TextFile -Path (Join-Path $storeMaterialsRoot "08_Screenshot_Shot_List.txt") -Text (New-StoreMaterial -Name "08")
 Write-TextFile -Path (Join-Path $storeMaterialsRoot "09_Assets_Still_Needed.txt") -Text (New-StoreMaterial -Name "09")
+Write-TextFile -Path (Join-Path $storeMaterialsRoot "12_License_and_Anti_Piracy_Policy.txt") -Text (New-StoreMaterial -Name "12")
 Write-TextFile -Path (Join-Path $storeMaterialsRoot "Store_Images_To_Add\README.txt") -Text (New-ImagesReadme)
 
 Write-Step "Creating store-upload zip"
@@ -809,14 +884,14 @@ Explicitly not included in V1:
 Release-seam decisions:
 - Experimental controller/private-message UI is gated off by default.
 - The packaged authority source registry is included next to the plugin binary.
+- LICENSE.txt is included in the customer package and support may require proof of purchase.
+- No runtime DRM or online activation was added to this V1 store package.
 - The packaged binary must be refreshed from build\dist\XVatsim\win_x64 before zip creation.
 - The final package should contain no Debug, Release, RelWithDebInfo, tmp_*, desktop.ini, .pdb, .lib, .exp, .tmp, .log, or .pdf files.
 - Saved regression scenarios available for final gate replay: $scenarioCount.
 
 Still required before upload:
-- Final screenshots
-- Final storefront/vendor display name
-- Final support email address
+- Confirm whether the X-Plane.org Store can issue/display serial or license keys for XVatsim
 - Final release validation gate pass
 - Optional final in-sim smoke test from the final zipped customer package
 "@

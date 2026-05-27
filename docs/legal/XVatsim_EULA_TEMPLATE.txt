@@ -1,0 +1,114 @@
+XVatsim End User License Agreement
+Version: {{VERSION}}
+Updated: {{BUILD_DATE}}
+
+Publisher:
+EZ SIMULATIONS
+
+Support:
+ezsimulations@gmail.com
+
+Important:
+This End User License Agreement is a plain-language commercial software license
+for XVatsim. By installing, copying, or using XVatsim, you agree to these terms.
+If you do not agree, do not install or use XVatsim.
+
+1. License Grant
+
+EZ SIMULATIONS grants you a limited, non-exclusive, non-transferable license to
+install and use XVatsim for your personal simulator use with X-Plane 12, subject
+to this agreement and the purchase terms of the store where you bought it.
+
+You are buying a license to use XVatsim. You are not buying ownership of the
+software, source code, artwork, audio, data files, package contents, product
+name, or related intellectual property.
+
+2. Permitted Use
+
+You may install and use XVatsim on computers that you personally use for your
+own X-Plane simulator flying.
+
+You may keep a personal backup copy of the original downloaded package.
+
+3. Restrictions
+
+You may not:
+
+- Redistribute, upload, share, publish, sell, rent, lease, sublicense, or give
+  away XVatsim or any part of the XVatsim package.
+- Post XVatsim on file-sharing sites, forums, cloud folders, social platforms,
+  marketplaces, torrent indexes, or any other public or private distribution
+  channel.
+- Share your store account access, order details, license number, serial number,
+  download link, or other purchase credential with another person.
+- Remove, bypass, alter, or defeat any license notice, ownership notice, package
+  identity file, or future activation/licensing mechanism.
+- Reverse engineer, decompile, disassemble, modify, translate, adapt, or create
+  derivative works from XVatsim except where applicable law expressly allows it.
+- Package XVatsim with another product or installer without written permission
+  from EZ SIMULATIONS.
+- Present XVatsim as freeware, public-domain software, open-source software, or
+  your own work.
+
+4. Support And Updates
+
+Support is provided through ezsimulations@gmail.com.
+
+Support may require proof of purchase from the store where XVatsim was bought.
+EZ SIMULATIONS may refuse support, updates, replacement downloads, or license
+help when a valid purchase cannot be verified.
+
+Minor updates and bug-fix updates for the same major version may be provided at
+the discretion of EZ SIMULATIONS. Future major versions, platform expansions, or
+separate products may require a separate purchase.
+
+5. Online Services And Third-Party Dependencies
+
+XVatsim is designed for X-Plane 12, xPilot, and VATSIM flight operations.
+XVatsim depends on third-party software, services, simulator behavior, and data
+sources that EZ SIMULATIONS does not control.
+
+XVatsim is not affiliated with, endorsed by, or sponsored by Laminar Research,
+VATSIM, xPilot, or the X-Plane.org Store unless separately stated by those
+parties.
+
+6. No Operational Use
+
+XVatsim is for home flight simulation entertainment and training only. It is not
+approved for real-world aviation, real-world navigation, air traffic control,
+dispatch, flight planning, or any safety-critical use.
+
+7. Warranty Disclaimer
+
+XVatsim is provided as-is to the maximum extent permitted by law. EZ SIMULATIONS
+does not warrant that XVatsim will be error-free, uninterrupted, compatible with
+every simulator setup, or available with every third-party service or network
+condition.
+
+8. Limitation Of Liability
+
+To the maximum extent permitted by law, EZ SIMULATIONS will not be liable for
+indirect, incidental, special, consequential, exemplary, or punitive damages, or
+for loss of data, loss of use, simulator interruption, account issues, network
+issues, or third-party service changes arising from XVatsim.
+
+9. Termination
+
+This license terminates automatically if you violate its terms. Upon
+termination, you must stop using XVatsim and delete all copies in your
+possession or control.
+
+Unauthorized redistribution may result in refused support, refused updates,
+license termination, store account action where available, and takedown requests
+to the hosting platform or marketplace.
+
+10. Ownership
+
+XVatsim and all included files remain the property of EZ SIMULATIONS or their
+respective licensors. All rights not expressly granted in this agreement are
+reserved.
+
+11. Contact
+
+For support, update questions, or licensing questions, contact:
+ezsimulations@gmail.com
