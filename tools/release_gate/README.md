@@ -40,6 +40,7 @@ The final gate verifies:
 - Customer package file set and forbidden debug/test artifacts
 - Customer package license/EULA presence
 - Customer package text for beta/preview/checkpoint wording
+- Store submission materials, screenshot assets, and unresolved draft wording
 - Build, customer package, and installed X-Plane artifact hashes for the plugin,
   transition sound, and packaged authority registry
 - Final store-upload zip hash and clean install smoke

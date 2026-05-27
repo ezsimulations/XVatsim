@@ -152,7 +152,7 @@ Expected behavior:
 - If xPilot disconnects during a long flight, XVatsim can recover the current flight
   after reconnect when the matching VATSIM flight plan is available again.
 - If no route controller is online, the UI can sleep while continuing to monitor.
-- Optional Standby Assist can preload COM1 standby with the recommended live controller frequency.
+- Standby Assist can preload COM1 standby with the selected live controller frequency.
 - TX, RX, COM1, COM2, and MODE C status are displayed in the overlay.
 - Private messages, PDC/AUTO_ATC cards, SimBrief import, Navigraph AIRAC import,
   dedicated VFR workflow, Mac, Linux, and X-Plane 11 support are not part of this V1 release.
@@ -207,7 +207,7 @@ Release highlights:
 - COM1 and COM2 frequency display in the overlay
 - TX and RX status boxes mirror radio transmit and receive state
 - MODE C active status displayed in the overlay
-- Optional Standby Assist can preload COM1 standby with the recommended live controller
+- Standby Assist can preload COM1 standby with the selected live controller
 - Overlay position, scale, mode, and shell state persist across simulator restarts
 - Guard frequency 121.500 and invalid login frequency 199.998 are filtered
 - Airway-aware route parsing and route-sector resolution
@@ -256,7 +256,7 @@ Basic operation:
 - Reset XVatsim Session clears flight-scoped state.
 
 Standby Assist:
-- Standby Assist can preload COM1 standby with the recommended live controller frequency.
+- Standby Assist can preload COM1 standby with the selected live controller frequency.
 - The overlay shows ASST ON or ASST OFF so the current assist state is visible.
 - CTAF/UNICOM and private-message/PDC handling are not part of Standby Assist in V1.
 
@@ -330,11 +330,11 @@ What still needs to be finalized before submission:
 - Confirm whether the X-Plane.org Store can issue/display serial or license keys for XVatsim
 - Store screenshots are already placed in Store_Submission_Materials\Store_Images_To_Add
 
-Recommended next steps:
+Submission steps:
 1. Review LICENSE.txt and Store_Submission_Materials\12_License_and_Anti_Piracy_Policy.txt.
 2. Confirm whether the store can attach serial/license keys to the product listing.
 3. Run tools\release_gate\Run-FinalReleaseValidation.ps1 against this kit.
-4. Optionally run one final in-sim smoke test from the final zipped customer package.
+4. Run one final in-sim smoke test from the final zipped customer package when time allows.
 5. Submit the validated store-upload zip and store-facing materials.
 "@
 }
@@ -345,20 +345,15 @@ function New-StoreMaterial {
     switch ($Name) {
         "01" {
             return @"
-Suggested product title:
+Product title:
 XVatsim - Route-Aware VATSIM Overlay for X-Plane 12
 
-Suggested short tagline:
+Short tagline:
 Clean, route-aware VATSIM frequency awareness for xPilot in X-Plane 12.
 
-Suggested one-line short description:
+One-line short description:
 XVatsim is a companion overlay for xPilot that removes controller clutter and shows only
 the VATSIM frequencies relevant to your current IFR flight and stage of operation.
-
-Alternate short description options:
-1. A cleaner, smarter VATSIM overlay for xPilot and X-Plane 12 IFR flying.
-2. Route-aware VATSIM frequency display built to reduce cockpit clutter in X-Plane 12.
-3. XVatsim keeps VATSIM frequency awareness clean, relevant, and easy to trust.
 "@
         }
         "02" {
@@ -378,7 +373,7 @@ Core features:
 - Enroute display that follows the filed VATSIM route and monitors route-relevant Center controllers
 - Arrival display for destination-relevant Center, approach, tower, ground, ATIS, and CTAF/UNICOM fallback
 - Reset To Current Flight recovery for reconnecting to the active VATSIM plan after long-haul disconnects
-- Optional COM1 Standby Assist to preload the recommended live controller frequency
+- COM1 Standby Assist can preload the next live controller frequency
 - COM1 and COM2 frequency readout directly in the overlay
 - TX and RX status boxes that mirror radio transmit and receive state
 - MODE C status indication in the overlay
@@ -405,7 +400,7 @@ Not included in this V1 release:
 - Private-message, PDC, and AUTO_ATC card presentation are not part of this release
 - SimBrief import and Navigraph AIRAC import are not part of this release
 
-Recommended category:
+Store category:
 Utilities > Traffic / ATC
 "@
         }
@@ -414,7 +409,7 @@ Utilities > Traffic / ATC
 Product:
 XVatsim
 
-Recommended store title:
+Store title:
 XVatsim - Route-Aware VATSIM Overlay for X-Plane 12
 
 Public version:
@@ -445,7 +440,7 @@ Operational highlights:
 - Brain-owned route, workflow, relevance, and display decisions
 - Reset To Current Flight reconnect recovery
 - CTAF fallback to NO CTAF / UNICOM 122.800 when no CTAF is published
-- COM1 standby assist option for recommended live controller frequencies
+- COM1 standby assist for the next live controller frequency
 - TX / RX / MODE C visual status
 - ASST ON / ASST OFF visual status
 - Airway-aware route parsing and route-sector resolution
@@ -460,7 +455,7 @@ Not included in this release:
 - SimBrief import
 - Navigraph AIRAC import
 
-Suggested store tags/keywords:
+Store tags/keywords:
 - VATSIM
 - xPilot
 - ATC
@@ -473,7 +468,7 @@ Suggested store tags/keywords:
         }
         "04" {
             return @"
-Recommended launch price:
+Launch price:
 `$7.99 USD
 
 Positioning:
@@ -487,18 +482,18 @@ Why `$7.99 makes sense:
 - Fair price for a focused utility rather than a full ecosystem product
 - Encourages community adoption and word of mouth
 
-Optional launch strategy:
-- Standard launch: `$7.99
-- Optional intro sale: `$6.99 for a short launch window
+Launch plan:
+- Standard launch price: `$7.99
+- Introductory sale is not part of the first submission packet.
 
-Recommended positioning sentence:
+Positioning sentence:
 XVatsim is a small but high-value cockpit utility built to make VATSIM flying cleaner,
 faster, and easier to trust.
 "@
         }
         "05" {
             return @"
-Suggested support policy:
+Support policy:
 
 Support channel:
 - ezsimulations@gmail.com
@@ -513,16 +508,16 @@ Ask customers to include:
 - Screenshots if possible
 - X-Plane Log.txt if the issue can be repeated
 
-Suggested update policy:
+Update policy:
 - Free updates within the same major version
 - Critical bug-fix updates prioritized
 - Feature updates delivered as time and roadmap allow
 
-Suggested public support note:
+Public support note:
 XVatsim is actively supported, but support works best when users include screenshots and
 their X-Plane Log.txt so behavior can be verified accurately.
 
-Suggested expectations note:
+Release scope note:
 This release is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.
 
 Proof-of-purchase policy:
@@ -536,25 +531,24 @@ XVatsim X-Plane.org Store Submission Checklist
 
 Store contact:
 - X-Plane.org contact page: https://forums.x-plane.org/contactus/
-- If you have a product you want to add to the store, their contact page says to email:
-  [email protected]
+- Use the email address shown under "Add my product to the store" on that page.
 
 Before contacting the store:
 - Confirm the plugin works from a clean install using only the packaged files
 - Confirm the package path is correct
 - Confirm QUICK_START.txt matches the final packaged behavior
 - Confirm README and changelog match the final release version
-- Decide final product title
+- Product title is locked: XVatsim - Route-Aware VATSIM Overlay for X-Plane 12
 - Confirm vendor/storefront name: EZ SIMULATIONS
 - Confirm support email: ezsimulations@gmail.com
 - Review LICENSE.txt
 - Ask whether the X-Plane.org Store can issue/display serial or license keys for XVatsim
 
-Store assets to prepare:
+Store assets included:
 - Customer package zip
-- 5 to 8 strong product screenshots
-- Final short description
-- Final long description
+- 5 product screenshots
+- Short description
+- Long description
 - Technical specs
 - Support/update policy
 - License and anti-piracy policy
@@ -570,7 +564,7 @@ Before upload:
 After store approval:
 - Keep a copy of the exact uploaded zip
 - Keep a copy of the exact listing text
-- Create a public support thread or support mailbox if desired
+- Keep support routed through ezsimulations@gmail.com unless the store requests a forum thread
 "@
         }
         "07" {
@@ -614,7 +608,7 @@ additional requirements you would like included.
 Before launch, could you also confirm whether the X-Plane.org Store can issue or
 display serial/license keys for XVatsim? The current V1 package includes a proprietary
 EULA and proof-of-purchase support policy. I would like to understand the store's
-recommended option for license-key handling before adding any runtime activation
+preferred option for license-key handling before adding any runtime activation
 system.
 
 Best regards,
@@ -625,67 +619,63 @@ ezsimulations@gmail.com
         }
         "08" {
             return @"
-Recommended screenshot list for the store page
+Store screenshot inventory
 
 Goal:
 Show that XVatsim is polished, minimal, and useful under real IFR VATSIM conditions.
 
-Priority screenshots:
-1. Busy departure airport
-   Show departure controllers displayed cleanly and in order.
-   Suggested file name: 01_departure_busy_airport.png
+Screenshots included in Store_Images_To_Add:
+1. 01_clean_ui.jpg
+   Clean overlay state with the cockpit visible.
 
-2. Enroute with live Center controller
-   Show the route-aware enroute view with only relevant online Centers.
-   Suggested file name: 02_enroute_live_center.png
+2. 02_closed_shell.jpg
+   Closed shell / sleep-state view showing how the overlay stays out of the way.
 
-3. Arrival with approach plus Center plus CTAF/UNICOM
-   Show the arrival board with destination-relevant frequencies only.
-   Suggested file name: 03_arrival_destination_services.png
+3. 03_europe_unicom.jpg
+   European no-CTAF / UNICOM fallback behavior.
 
-4. European no-CTAF fallback
-   Show NO CTAF / UNICOM 122.800 at a suitable airport.
-   Suggested file name: 04_europe_unicom_fallback.png
+4. 04_airport_authority.jpg
+   Airport authority display with current-flight relevance.
 
-5. COM1 standby assist / radio status
-   Show COM1, COM2, TX, RX, MODE C, and ASST ON / ASST OFF in a clean cockpit view.
-   Suggested file name: 05_radio_status_and_standby_assist.png
+5. 05_center_frequency_display.jpg
+   Center frequency display for route-aware enroute or arrival context.
 
-6. Reset To Current Flight recovery
-   Show the menu item or recovered current-flight display after reconnect.
-   Suggested file name: 06_reset_to_current_flight.png
-
-Optional screenshots:
-7. Pacific or transatlantic route
-   Suggested file name: 07_longhaul_route_validation.png
-
-8. Settings/menu control shot
-   Suggested file name: 08_menu_and_controls.png
-
-Screenshot guidance:
-- Use bright, readable cockpit lighting
-- Keep the overlay unobstructed
-- Avoid overexposed outside scenery if possible
-- Prefer sharp examples where the controller logic is clearly visible
-- Capture a mix of departure, enroute, and arrival situations
+Screenshot status:
+- Store-facing JPG screenshots are placed in Store_Submission_Materials\Store_Images_To_Add.
+- Source screenshots came from the Store Ready screenshot folder and were converted to normal JPG for submission.
+- The current image set covers clean UI, closed shell, European UNICOM fallback, airport authority, and Center display.
 "@
         }
         "09" {
             return @"
-Still needed before final store submission:
+Final submission attachment checklist
 
-Required:
-- Confirm whether the X-Plane.org Store can issue/display serial or license keys for XVatsim
+Attach to the store email:
+- XVatsim_1.0.0_Windows_XP12_store_upload_20260527.zip
+- Store_Submission_Materials\01_Product_Tagline_and_Short_Description.txt
+- Store_Submission_Materials\02_Long_Store_Description.txt
+- Store_Submission_Materials\03_Technical_Specifications.txt
+- Store_Submission_Materials\04_Pricing_and_Positioning.txt
+- Store_Submission_Materials\05_Support_and_Update_Policy.txt
+- Store_Submission_Materials\06_XPlaneOrg_Submission_Checklist.txt
+- Store_Submission_Materials\07_Vendor_Contact_Email_Draft.txt
+- Store_Submission_Materials\08_Screenshot_Shot_List.txt
+- Store_Submission_Materials\10_V1_Release_Audit.txt
+- Store_Submission_Materials\11_Final_Validation_Result.txt
+- Store_Submission_Materials\12_License_and_Anti_Piracy_Policy.txt
+- Store_Submission_Materials\Store_Images_To_Add\01_clean_ui.jpg
+- Store_Submission_Materials\Store_Images_To_Add\02_closed_shell.jpg
+- Store_Submission_Materials\Store_Images_To_Add\03_europe_unicom.jpg
+- Store_Submission_Materials\Store_Images_To_Add\04_airport_authority.jpg
+- Store_Submission_Materials\Store_Images_To_Add\05_center_frequency_display.jpg
 
-Recommended:
-- One strong hero image for the product page
-- One clean product icon/logo if you want branding beyond screenshots
-- A short public support note or support thread link
+Store-side question to include:
+- Can the X-Plane.org Store issue or display serial/license keys for XVatsim?
 
 Notes:
-- Store-facing screenshots are in Store_Submission_Materials\Store_Images_To_Add.
-- This kit intentionally avoids inventing store-image dimension requirements.
-- If the store provides specific artwork size requirements after contact, match those exactly.
+- The store-upload zip is the customer package.
+- The Store_Submission_Materials folder is for the store review email and listing setup.
+- If the store requests different image dimensions or file naming, resize/copy the JPG screenshots without changing the validated customer zip.
 "@
         }
         "12" {
@@ -713,7 +703,7 @@ V1 anti-piracy decision:
 - Adding runtime activation later must go through a separate runtime Contract Gate and
   live validation reset if it changes plugin behavior.
 
-Recommended store question:
+Store licensing question:
 Ask whether the X-Plane.org Store can issue/display serial or license keys for XVatsim.
 If the store supports this cleanly, use the store-managed serial as the commercial
 purchase credential first. Runtime enforcement can remain a later, deliberate V2
@@ -732,20 +722,16 @@ Practical piracy response:
 
 function New-ImagesReadme {
     return @"
-Drop your final store screenshots into this folder.
+Store screenshots for the XVatsim submission.
 
-Suggested file names:
-- 01_departure_busy_airport.png
-- 02_enroute_live_center.png
-- 03_arrival_destination_services.png
-- 04_europe_unicom_fallback.png
-- 05_radio_status_and_standby_assist.png
-- 06_reset_to_current_flight.png
-- 07_longhaul_route_validation.png
-- 08_menu_and_controls.png
+Expected JPG files:
+- 01_clean_ui.jpg
+- 02_closed_shell.jpg
+- 03_europe_unicom.jpg
+- 04_airport_authority.jpg
+- 05_center_frequency_display.jpg
 
-You do not need all eight.
-If you only use five or six, prioritize the first six names in the list.
+These files are store-facing assets. They are not included in the customer upload zip.
 "@
 }
 
@@ -825,7 +811,7 @@ Write-TextFile -Path (Join-Path $storeMaterialsRoot "05_Support_and_Update_Polic
 Write-TextFile -Path (Join-Path $storeMaterialsRoot "06_XPlaneOrg_Submission_Checklist.txt") -Text (New-StoreMaterial -Name "06")
 Write-TextFile -Path (Join-Path $storeMaterialsRoot "07_Vendor_Contact_Email_Draft.txt") -Text (New-StoreMaterial -Name "07")
 Write-TextFile -Path (Join-Path $storeMaterialsRoot "08_Screenshot_Shot_List.txt") -Text (New-StoreMaterial -Name "08")
-Write-TextFile -Path (Join-Path $storeMaterialsRoot "09_Assets_Still_Needed.txt") -Text (New-StoreMaterial -Name "09")
+Write-TextFile -Path (Join-Path $storeMaterialsRoot "09_Final_Attachment_Checklist.txt") -Text (New-StoreMaterial -Name "09")
 Write-TextFile -Path (Join-Path $storeMaterialsRoot "12_License_and_Anti_Piracy_Policy.txt") -Text (New-StoreMaterial -Name "12")
 Write-TextFile -Path (Join-Path $storeMaterialsRoot "Store_Images_To_Add\README.txt") -Text (New-ImagesReadme)
 
@@ -869,7 +855,7 @@ Verified release behavior documented for V1:
 - Route-aware enroute Center selection
 - Current-polygon and next-polygon display relation coloring
 - CTAF/UNICOM display fallback on airport boards
-- Optional Standby Assist for recommended live controller frequencies
+- Standby Assist for selected live controller frequencies
 - COM1, COM2, TX, RX, MODE C, and ASST ON/OFF display
 - Reset To Current Flight reconnect recovery
 - Airway-aware route parsing, authority-catalog matching, date-line handling, and duplicate-waypoint protection
@@ -890,10 +876,10 @@ Release-seam decisions:
 - The final package should contain no Debug, Release, RelWithDebInfo, tmp_*, desktop.ini, .pdb, .lib, .exp, .tmp, .log, or .pdf files.
 - Saved regression scenarios available for final gate replay: $scenarioCount.
 
-Still required before upload:
+Store-side follow-up before upload:
 - Confirm whether the X-Plane.org Store can issue/display serial or license keys for XVatsim
 - Final release validation gate pass
-- Optional final in-sim smoke test from the final zipped customer package
+- Final in-sim smoke test from the zipped customer package when time allows
 "@
 
 Write-TextFile -Path (Join-Path $storeMaterialsRoot "10_V1_Release_Audit.txt") -Text $audit

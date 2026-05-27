@@ -287,6 +287,72 @@ function Test-PackageFileSet {
     }
 }
 
+function Test-StoreSubmissionMaterials {
+    param([string]$ActiveKitRoot)
+
+    Write-Step "Checking store submission materials"
+
+    $materialsRoot = Join-Path $ActiveKitRoot "Store_Submission_Materials"
+    if (-not (Assert-Directory $materialsRoot "Store submission materials root")) {
+        return
+    }
+
+    $expectedFiles = @(
+        "01_Product_Tagline_and_Short_Description.txt",
+        "02_Long_Store_Description.txt",
+        "03_Technical_Specifications.txt",
+        "04_Pricing_and_Positioning.txt",
+        "05_Support_and_Update_Policy.txt",
+        "06_XPlaneOrg_Submission_Checklist.txt",
+        "07_Vendor_Contact_Email_Draft.txt",
+        "08_Screenshot_Shot_List.txt",
+        "09_Final_Attachment_Checklist.txt",
+        "10_V1_Release_Audit.txt",
+        "12_License_and_Anti_Piracy_Policy.txt",
+        "Store_Images_To_Add\01_clean_ui.jpg",
+        "Store_Images_To_Add\02_closed_shell.jpg",
+        "Store_Images_To_Add\03_europe_unicom.jpg",
+        "Store_Images_To_Add\04_airport_authority.jpg",
+        "Store_Images_To_Add\05_center_frequency_display.jpg"
+    )
+
+    foreach ($relativePath in $expectedFiles) {
+        [void](Assert-File (Join-Path $materialsRoot $relativePath) "Expected store submission material")
+    }
+
+    $draftPatterns = @(
+        @{ Label = "placeholder text"; Pattern = "replace-with|placeholder" },
+        @{ Label = "suggested draft wording"; Pattern = "\bsuggested\b" },
+        @{ Label = "recommended draft wording"; Pattern = "\brecommended\b" },
+        @{ Label = "optional draft wording"; Pattern = "\boptional\b" },
+        @{ Label = "still-needed draft wording"; Pattern = "still needed|still required" },
+        @{ Label = "decide-final draft wording"; Pattern = "decide final" },
+        @{ Label = "final-placeholder wording"; Pattern = "final screenshots|final storefront|final support" }
+    )
+
+    $matches = [System.Collections.Generic.List[string]]::new()
+    foreach ($file in Get-TextFilesForScan -Paths @($materialsRoot)) {
+        $lineNumber = 0
+        foreach ($line in Get-Content -LiteralPath $file.FullName) {
+            $lineNumber++
+            foreach ($rule in $draftPatterns) {
+                if ([regex]::IsMatch($line, $rule.Pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+                    $relative = Get-RelativePathSafe $materialsRoot $file.FullName
+                    $matches.Add("${relative}:$lineNumber [$($rule.Label)] $line")
+                }
+            }
+        }
+    }
+
+    foreach ($match in $matches) {
+        Add-Failure "Draft store material text found: $match"
+    }
+
+    if ($matches.Count -eq 0) {
+        Write-Host "Store submission materials passed."
+    }
+}
+
 function Test-ArtifactHashes {
     param(
         [string]$Root,
@@ -486,6 +552,7 @@ function Write-ValidationReceipt {
     $lines.Add("- Customer package file-set scan")
     $lines.Add("- Customer package text scan")
     $lines.Add("- Customer package license/EULA presence")
+    $lines.Add("- Store submission material completeness and draft-wording scan")
     $lines.Add("- Build/package/installed artifact hash checks")
     $lines.Add("- Final zip clean install smoke")
 
@@ -563,6 +630,7 @@ try {
     Test-ForbiddenSourceText -Root $root
     Test-PackageFileSet -CustomerPackageRoot $customerPackageRoot
     Test-CustomerPackageText -CustomerPackageRoot $customerPackageRoot
+    Test-StoreSubmissionMaterials -ActiveKitRoot $activeKitRoot
     Test-ArtifactHashes -Root $root -CustomerPackageRoot $customerPackageRoot
     Test-FinalZipSmoke -Root $root -CustomerPackageRoot $customerPackageRoot -FinalZipPath $ZipPath
 } catch {
