@@ -1,0 +1,13 @@
+name=radio_reachable_source_rejects_over_300nm_transceiver_candidate
+now_seconds=100
+controller.feed_available=true
+controller.feed_stale=false
+controller.entry=callsign=LAX_25_CTR;frequency=126.525;facility=6;actionable=true
+controller.entry=callsign=MEM_221_CTR;frequency=132.550;facility=6;actionable=true
+transceiver.available=true
+transceiver.stale=false
+transceiver.status=RX 2 receivable
+transceiver.candidate=callsign=LAX_25_CTR;frequency=126.525;distanceNm=0;score=100;lat=33.94;lon=-118.40
+transceiver.candidate=callsign=MEM_221_CTR;frequency=132.550;distanceNm=325;score=275;lat=34.00;lon=-113.00
+expect.radio_reachable_source_candidates=LAX_25_CTR@126.525:CTR:AFV_RADIO_RANGE
+expect.radio_reachable_source_counts=DEL=0,GND=0,TWR=0,APP_DEP=0,CTR=1,ATIS=0,OTHER=0

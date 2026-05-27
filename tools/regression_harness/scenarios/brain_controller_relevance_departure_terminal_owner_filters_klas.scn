@@ -1,0 +1,32 @@
+name=Brain Controller Relevance Departure Terminal Owner Filters KLAS
+now_seconds=1000
+
+state.flight_active=true
+flight.callsign=SWA789
+flight.departure_icao=KLAS
+flight.destination_icao=PANC
+
+terminal_authority.airport_icao=KLAS
+terminal_authority.lat=36.080100
+terminal_authority.lon=-115.152300
+terminal_authority.feature=id=L30;name=Las Vegas Approach;suffix=APP;prefixes=LAS;polygon=35.0,-116.5|37.0,-116.5|37.0,-114.0|35.0,-114.0
+terminal_authority.feature=id=L30;name=Las Vegas Departure;suffix=DEP;prefixes=LAS;polygon=35.0,-116.5|37.0,-116.5|37.0,-114.0|35.0,-114.0
+
+controller.entry=callsign=LAS_F_APP;frequency=135.000;facility=5;actionable=true;atis=false
+controller.entry=callsign=L30_APP;frequency=125.900;facility=5;actionable=true;atis=false
+controller.entry=callsign=SCT_APP;frequency=128.050;facility=5;actionable=true;atis=false
+controller.entry=callsign=LAX_S_DEP;frequency=124.300;facility=5;actionable=true;atis=false
+controller.entry=callsign=ONT_APP;frequency=125.500;facility=5;actionable=true;atis=false
+
+transceiver.available=true
+transceiver.stale=false
+transceiver.candidate=callsign=LAS_F_APP;frequency=135.000;distanceNm=0;score=100
+transceiver.candidate=callsign=L30_APP;frequency=125.900;distanceNm=0;score=100
+transceiver.candidate=callsign=SCT_APP;frequency=128.050;distanceNm=180;score=30
+transceiver.candidate=callsign=LAX_S_DEP;frequency=124.300;distanceNm=185;score=30
+transceiver.candidate=callsign=ONT_APP;frequency=125.500;distanceNm=170;score=30
+
+expect.terminal_authority_owners=L30_APP,L30_DEP,LAS_APP,LAS_DEP
+expect.terminal_authority_polygons=L30
+expect.brain_controller_relevance_departure_callsigns=L30_APP,LAS_F_APP
+expect.brain_controller_relevance_completions=L30_APP:accepted:departure-terminal-owner-match:L30_APP:owner=L30_APP+L30_DEP+more:poly=L30,LAS_F_APP:accepted:departure-terminal-owner-match:LAS_APP:owner=L30_APP+L30_DEP+more:poly=L30,LAX_S_DEP:rejected:departure-terminal-owner-mismatch:LAX_DEP:owner=L30_APP+L30_DEP+more:poly=L30,ONT_APP:rejected:departure-terminal-owner-mismatch:ONT_APP:owner=L30_APP+L30_DEP+more:poly=L30,SCT_APP:rejected:departure-terminal-owner-mismatch:SCT_APP:owner=L30_APP+L30_DEP+more:poly=L30

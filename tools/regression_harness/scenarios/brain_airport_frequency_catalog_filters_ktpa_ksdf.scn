@@ -1,0 +1,26 @@
+name=Brain Airport Frequency Catalog Filters KTPA KSDF
+now_seconds=1000
+
+state.flight_active=true
+flight.callsign=UPS3602
+flight.departure_icao=KTPA
+flight.destination_icao=KSDF
+
+airport_frequency.frq_row=facility=TPA;facility_type=ATCT-TRACON;serviced_facility=TPA;tower_or_comm_call=TAMPA;primary_approach_radio_call=TAMPA;freq=119.5;freq_use=LCL/P
+airport_frequency.frq_row=facility=TPA;facility_type=ATCT-TRACON;serviced_facility=TPA;tower_or_comm_call=TAMPA;primary_approach_radio_call=TAMPA;freq=121.7;freq_use=GND/P
+airport_frequency.frq_row=facility=TPA;facility_type=ATCT-TRACON;serviced_facility=TPA;tower_or_comm_call=TAMPA;primary_approach_radio_call=TAMPA;freq=133.6;freq_use=CD/P
+airport_frequency.frq_row=facility=TPA;facility_type=ATCT-TRACON;serviced_facility=TPA;tower_or_comm_call=TAMPA;primary_approach_radio_call=TAMPA;freq=128.475;freq_use=D-ATIS;sectorization=DEP
+airport_frequency.frq_row=facility=TPA;facility_type=ATCT-TRACON;serviced_facility=TPA;tower_or_comm_call=TAMPA;primary_approach_radio_call=TAMPA;freq=118.8;freq_use=ENDED DP
+airport_frequency.frq_row=facility=TPA;facility_type=ATCT-TRACON;serviced_facility=TPA;freq=122.95;freq_use=UNICOM
+airport_frequency.frq_row=facility=SDF;facility_type=ATCT-TRACON;serviced_facility=SDF;tower_or_comm_call=LOUISVILLE;primary_approach_radio_call=LOUISVILLE;freq=124.2;freq_use=LCL/P
+airport_frequency.frq_row=facility=SDF;facility_type=ATCT-TRACON;serviced_facility=SDF;tower_or_comm_call=LOUISVILLE;primary_approach_radio_call=LOUISVILLE;freq=121.7;freq_use=GND/P
+airport_frequency.frq_row=facility=SDF;facility_type=ATCT-TRACON;serviced_facility=SDF;tower_or_comm_call=LOUISVILLE;primary_approach_radio_call=LOUISVILLE;freq=126.1;freq_use=CD/P
+airport_frequency.frq_row=facility=SDF;facility_type=ATCT-TRACON;serviced_facility=SDF;tower_or_comm_call=LOUISVILLE;primary_approach_radio_call=LOUISVILLE;freq=118.725;freq_use=D-ATIS
+airport_frequency.frq_row=facility=SDF;facility_type=ATCT-TRACON;serviced_facility=SDF;tower_or_comm_call=LOUISVILLE;primary_approach_radio_call=LOUISVILLE;freq=132.075;freq_use=APCH/P DEP/P;sectorization=350-169
+airport_frequency.frq_row=facility=SDF;facility_type=ATCT-TRACON;serviced_facility=SDF;tower_or_comm_call=LOUISVILLE;primary_approach_radio_call=LOUISVILLE;freq=123.675;freq_use=APCH/P DEP/P;sectorization=170-349
+airport_frequency.frq_row=facility=MEM;facility_type=ARTCC;serviced_facility=MEM;tower_or_comm_call=MEMPHIS;primary_approach_radio_call=MEMPHIS;freq=125.8;freq_use=APCH/P DEP/P
+airport_frequency.frq_row=facility=SDF;facility_type=NAVAID;serviced_facility=SDF;freq=111.0;freq_use=SDF VOT
+airport_frequency.frq_row=facility=SDF;facility_type=ATCT-TRACON;serviced_facility=SDF;tower_or_comm_call=LOUISVILLE;primary_approach_radio_call=LOUISVILLE;freq=121.5;freq_use=EMERG
+
+expect.airport_frequency_departure_records=KTPA:APP_DEP:118.800:ENDED DP,KTPA:ATIS:128.475:D-ATIS,KTPA:DEL:133.600:CD/P,KTPA:GND:121.700:GND/P,KTPA:TWR:119.500:LCL/P,KTPA:UNICOM:122.950:UNICOM
+expect.airport_frequency_arrival_records=KSDF:APP_DEP:123.675:APCH/P DEP/P,KSDF:APP_DEP:132.075:APCH/P DEP/P,KSDF:ATIS:118.725:D-ATIS,KSDF:DEL:126.100:CD/P,KSDF:GND:121.700:GND/P,KSDF:TWR:124.200:LCL/P

@@ -14,6 +14,8 @@
 
 #include "XVatsim/brain/BrainOrchestrator.h"
 #include "XVatsim/brain/BrainDisplayIntent.h"
+#include "XVatsim/brain/BrainOwnedRuntime.h"
+#include "XVatsim/brain/BrainOwnedWorkerTypes.h"
 #include "XVatsim/brain/BrainTypes.h"
 #include "XVatsim/brain/PhaseSnapshotPublisher.h"
 #include "XVatsim/brain/RadioReachableSnapshot.h"
@@ -28,9 +30,11 @@
 #include "XVatsim/core/WorkflowEngine.h"
 #include "XVatsim/modules/arrival/ArrivalAirspaceModule.h"
 #include "XVatsim/modules/arrival/ArrivalLocalModule.h"
+#include "XVatsim/modules/airport_frequency_catalog/AirportFrequencyCatalogResolver.h"
 #include "XVatsim/modules/departure/DepartureModule.h"
 #include "XVatsim/modules/enroute/EnrouteModule.h"
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
+#include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
 
 namespace {
 
@@ -62,6 +66,7 @@ struct ScenarioExpectations {
     std::optional<BoardSource> displaySource;
     std::vector<std::string> displayCallsigns;
     std::vector<std::string> overlayBodyLines;
+    std::vector<std::string> overlayBodyTones;
     std::optional<bool> departureCollectedAvailable;
     std::vector<std::string> departureCollectedCallsigns;
     std::optional<bool> arrivalAirspaceAvailable;
@@ -181,6 +186,13 @@ struct ScenarioExpectations {
     std::vector<std::string> radioReachableVerifierEnrouteControllers;
     std::vector<std::string> radioReachableVerifierUnchangedControllers;
     std::optional<std::string> radioReachableVerifierUnchangedStatus;
+    std::vector<std::string> terminalAuthorityOwners;
+    std::vector<std::string> terminalAuthorityPolygons;
+    std::vector<std::string> airportFrequencyDepartureRecords;
+    std::vector<std::string> airportFrequencyArrivalRecords;
+    std::vector<std::string> brainControllerRelevanceDepartureCallsigns;
+    std::vector<std::string> brainControllerRelevanceArrivalCallsigns;
+    std::vector<std::string> brainControllerRelevanceCompletions;
     std::vector<std::string> phasePublisherReuseLifecycle;
     std::vector<std::string> phasePublisherIsolationLifecycle;
     std::vector<std::string> phasePublisherWorkflowClearLifecycle;
@@ -224,6 +236,11 @@ struct ScenarioData {
     std::string displayIntentCurrentPolygonKey;
     std::string displayIntentNextPolygonKey;
     std::string displayIntentArrivalPolygonKey;
+    std::vector<xvatsim::brain::BrainDisplayRelationFact> displayIntentRelationFacts;
+    bool applyStandbyAssist = false;
+    std::optional<WorkflowStage> standbyAssistWorkflowStage;
+    std::string standbyAssistPlanKey;
+    std::optional<bool> standbyAssistLoaded;
     xvatsim::brain::RouteSectorSnapshot routeSectorSnapshot;
     xvatsim::brain::AirportSectorSnapshot departureAirportSectorSnapshot;
     xvatsim::brain::AirportSectorSnapshot arrivalAirportSectorSnapshot;
@@ -243,6 +260,13 @@ struct ScenarioData {
     std::vector<TerminalCoverageFeatureSpec> pendingAirportCoverageTerminalFeatures;
     std::vector<std::string> pendingAirportCoverageAuthorityCatalogLines;
     bool hasPendingAirportCoveragePayloads = false;
+    std::string terminalAuthorityAirportIcao;
+    double terminalAuthorityLatitudeDeg = 0.0;
+    double terminalAuthorityLongitudeDeg = 0.0;
+    bool hasTerminalAuthorityCoordinates = false;
+    std::vector<TerminalCoverageFeatureSpec> terminalAuthorityFeatures;
+    std::vector<std::string> airportFrequencyFrqRows;
+    WorkflowStage controllerRelevanceWorkflowStage = WorkflowStage::Departure;
     bool resolveRouteWithResolver = false;
     bool resolverRouteBuildsPreRefreshSnapshot = false;
     std::vector<CenterCoverageFeatureSpec> resolverRouteCenterFeatures;
@@ -525,6 +549,72 @@ std::vector<std::string> ExtractCallsigns(const ModuleBoardSnapshot& board) {
     return callsigns;
 }
 
+std::vector<std::string> ExtractTerminalAuthorityOwners(
+    const xvatsim::brain::BrainTerminalAuthorityWorkerOutput& output) {
+    return output.ownerTokens;
+}
+
+std::vector<std::string> ExtractTerminalAuthorityPolygons(
+    const xvatsim::brain::BrainTerminalAuthorityWorkerOutput& output) {
+    return output.polygonKeys;
+}
+
+std::string StationRoleToToken(StationRole role) {
+    switch (role) {
+    case StationRole::Delivery:
+        return "DEL";
+    case StationRole::Ground:
+        return "GND";
+    case StationRole::Tower:
+        return "TWR";
+    case StationRole::Departure:
+    case StationRole::Approach:
+        return "APP_DEP";
+    case StationRole::Center:
+        return "CTR";
+    case StationRole::Atis:
+        return "ATIS";
+    case StationRole::Ctaf:
+        return "CTAF";
+    case StationRole::Unicom:
+        return "UNICOM";
+    case StationRole::Other:
+    default:
+        return "OTHER";
+    }
+}
+
+std::vector<std::string> ExtractAirportFrequencyRecords(
+    const std::vector<xvatsim::brain::BrainAirportFrequencyRecord>& records) {
+    std::vector<std::string> values;
+    values.reserve(records.size());
+    for (const auto& record : records) {
+        std::ostringstream stream;
+        stream << record.airportIcao << ":"
+               << StationRoleToToken(record.role) << ":"
+               << record.frequency << ":"
+               << record.frequencyUse;
+        values.push_back(stream.str());
+    }
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
+std::vector<std::string> ExtractControllerRelevanceCompletions(
+    const xvatsim::brain::BrainControllerRelevanceWorkerOutput& output) {
+    std::vector<std::string> values;
+    values.reserve(output.completions.size());
+    for (const auto& completion : output.completions) {
+        std::ostringstream stream;
+        stream << completion.callsign << ":"
+               << xvatsim::brain::ToString(completion.decision) << ":"
+               << completion.reason;
+        values.push_back(stream.str());
+    }
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
 std::vector<std::string> ExtractCallsigns(
     const xvatsim::brain::FinalDisplaySnapshot& board) {
     std::vector<std::string> callsigns;
@@ -561,6 +651,28 @@ std::vector<std::string> ExtractOverlayBodyLines(
         lines.push_back(line.text);
     }
     return lines;
+}
+
+std::string OverlayToneToken(xvatsim::brain::OverlayTone tone) {
+    switch (tone) {
+        case xvatsim::brain::OverlayTone::Active:
+            return "Active";
+        case xvatsim::brain::OverlayTone::Next:
+            return "Next";
+        case xvatsim::brain::OverlayTone::Normal:
+        default:
+            return "Normal";
+    }
+}
+
+std::vector<std::string> ExtractOverlayBodyTones(
+    const xvatsim::brain::OverlayViewModel& overlayModel) {
+    std::vector<std::string> tones;
+    tones.reserve(overlayModel.bodyLines.size());
+    for (const auto& line : overlayModel.bodyLines) {
+        tones.push_back(OverlayToneToken(line.tone));
+    }
+    return tones;
 }
 
 std::vector<std::string> ExtractSectorIdentifiers(
@@ -2241,12 +2353,19 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         scenario->aircraftState.longitudeDeg = *parsed;
         return true;
     }
+    if (key == "radio.valid") {
+        return ParseBool(value, &scenario->radioStateSnapshot.valid);
+    }
     if (key == "radio.com1_active") {
         scenario->radioStateSnapshot.com1ActiveFrequency = value;
         return true;
     }
     if (key == "radio.com2_active") {
         scenario->radioStateSnapshot.com2ActiveFrequency = value;
+        return true;
+    }
+    if (key == "radio.com1_standby") {
+        scenario->radioStateSnapshot.com1StandbyFrequency = value;
         return true;
     }
     if (key == "xpilot.connected") {
@@ -2412,6 +2531,10 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "expect.overlay_body_lines") {
         scenario->expectations.overlayBodyLines = Split(value, '|');
+        return true;
+    }
+    if (key == "expect.overlay_body_tones") {
+        scenario->expectations.overlayBodyTones = Split(value, ',');
         return true;
     }
     if (key == "expect.departure_collected_available") {
@@ -2973,6 +3096,37 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         scenario->expectations.radioReachableVerifierUnchangedStatus = value;
         return true;
     }
+    if (key == "expect.terminal_authority_owners") {
+        scenario->expectations.terminalAuthorityOwners = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.terminal_authority_polygons") {
+        scenario->expectations.terminalAuthorityPolygons = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.airport_frequency_departure_records") {
+        scenario->expectations.airportFrequencyDepartureRecords = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.airport_frequency_arrival_records") {
+        scenario->expectations.airportFrequencyArrivalRecords = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.brain_controller_relevance_departure_callsigns") {
+        scenario->expectations.brainControllerRelevanceDepartureCallsigns =
+            Split(value, ',');
+        return true;
+    }
+    if (key == "expect.brain_controller_relevance_arrival_callsigns") {
+        scenario->expectations.brainControllerRelevanceArrivalCallsigns =
+            Split(value, ',');
+        return true;
+    }
+    if (key == "expect.brain_controller_relevance_completions") {
+        scenario->expectations.brainControllerRelevanceCompletions =
+            Split(value, ',');
+        return true;
+    }
     if (key == "expect.phase_publisher_reuse_lifecycle") {
         scenario->expectations.phasePublisherReuseLifecycle = Split(value, ',');
         return true;
@@ -2995,6 +3149,25 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "expect.brain_display_intent_rows") {
         scenario->expectations.brainDisplayIntentRows = Split(value, ',');
+        return true;
+    }
+    if (key == "standby_assist.apply") {
+        return ParseBool(value, &scenario->applyStandbyAssist);
+    }
+    if (key == "standby_assist.stage") {
+        scenario->standbyAssistWorkflowStage = ParseWorkflowStage(value);
+        return scenario->standbyAssistWorkflowStage.has_value();
+    }
+    if (key == "standby_assist.plan_key") {
+        scenario->standbyAssistPlanKey = value;
+        return true;
+    }
+    if (key == "standby_assist.loaded") {
+        bool parsed = false;
+        if (!ParseBool(value, &parsed)) {
+            return false;
+        }
+        scenario->standbyAssistLoaded = parsed;
         return true;
     }
 
@@ -3081,6 +3254,52 @@ bool AddStation(ModuleBoardSnapshot* board, const std::string& value) {
 
     board->stations.push_back(station);
     board->available = true;
+    return true;
+}
+
+bool AddDisplayRelationFact(
+    std::vector<xvatsim::brain::BrainDisplayRelationFact>* facts,
+    const std::string& value) {
+    if (facts == nullptr) {
+        return false;
+    }
+
+    xvatsim::brain::BrainDisplayRelationFact fact;
+    bool hasRelation = false;
+    for (const auto& part : Split(value, ';')) {
+        const auto equalsIndex = part.find('=');
+        if (equalsIndex == std::string::npos) {
+            continue;
+        }
+
+        const auto field = Trim(part.substr(0, equalsIndex));
+        const auto fieldValue = Trim(part.substr(equalsIndex + 1));
+        if (field == "callsign") {
+            fact.callsign = fieldValue;
+        } else if (field == "frequency") {
+            fact.frequency = fieldValue;
+        } else if (field == "relation" || field == "displayRelation") {
+            const auto parsedRelation = ParseDisplayRelation(fieldValue);
+            if (!parsedRelation.has_value()) {
+                return false;
+            }
+            fact.displayRelation = *parsedRelation;
+            hasRelation = true;
+        } else if (field == "routeEntryDistanceNm") {
+            const auto parsed = ParseDouble(fieldValue);
+            if (!parsed.has_value()) {
+                return false;
+            }
+            fact.hasRouteEntryDistance = true;
+            fact.routeEntryDistanceNm = *parsed;
+        }
+    }
+
+    if (fact.callsign.empty() || fact.frequency.empty() || !hasRelation) {
+        return false;
+    }
+
+    facts->push_back(std::move(fact));
     return true;
 }
 
@@ -3846,6 +4065,63 @@ std::string BuildTerminalBoundaryPayload(
     return stream.str();
 }
 
+std::string CsvEscape(const std::string& value) {
+    std::string escaped = "\"";
+    for (const auto character : value) {
+        if (character == '"') {
+            escaped += "\"\"";
+        } else {
+            escaped.push_back(character);
+        }
+    }
+    escaped += "\"";
+    return escaped;
+}
+
+std::string BuildAirportFrequencyFrqCsvPayload(
+    const std::vector<std::string>& rows) {
+    if (rows.empty()) {
+        return {};
+    }
+
+    std::ostringstream stream;
+    stream << "\"FACILITY\",\"FACILITY_TYPE\",\"SERVICED_FACILITY\","
+              "\"TOWER_OR_COMM_CALL\",\"PRIMARY_APPROACH_RADIO_CALL\","
+              "\"FREQ\",\"SECTORIZATION\",\"FREQ_USE\",\"REMARK\"\n";
+    for (const auto& row : rows) {
+        const auto fields = Split(row, ';');
+        std::unordered_map<std::string, std::string> values;
+        for (const auto& field : fields) {
+            const auto separator = field.find('=');
+            if (separator == std::string::npos) {
+                continue;
+            }
+            values[ToUpperCopy(Trim(field.substr(0, separator)))] =
+                Trim(field.substr(separator + 1));
+        }
+
+        const std::vector<std::string> columnNames = {
+            "FACILITY",
+            "FACILITY_TYPE",
+            "SERVICED_FACILITY",
+            "TOWER_OR_COMM_CALL",
+            "PRIMARY_APPROACH_RADIO_CALL",
+            "FREQ",
+            "SECTORIZATION",
+            "FREQ_USE",
+            "REMARK"};
+        for (std::size_t index = 0; index < columnNames.size(); ++index) {
+            if (index > 0) {
+                stream << ",";
+            }
+            const auto found = values.find(columnNames[index]);
+            stream << CsvEscape(found != values.end() ? found->second : "");
+        }
+        stream << "\n";
+    }
+    return stream.str();
+}
+
 std::string BuildAuthorityCatalogPayload(const std::vector<std::string>& firLines) {
     if (firLines.empty()) {
         return {};
@@ -4055,6 +4331,68 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
             scenario->routeSectorSnapshot.routeResolved = true;
             continue;
         }
+        if (key == "terminal_authority.airport_icao") {
+            scenario->terminalAuthorityAirportIcao = value;
+            continue;
+        }
+        if (key == "terminal_authority.lat") {
+            const auto parsed = ParseDouble(value);
+            if (!parsed.has_value()) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid terminal_authority.lat at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            scenario->terminalAuthorityLatitudeDeg = *parsed;
+            scenario->hasTerminalAuthorityCoordinates = true;
+            continue;
+        }
+        if (key == "terminal_authority.lon") {
+            const auto parsed = ParseDouble(value);
+            if (!parsed.has_value()) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid terminal_authority.lon at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            scenario->terminalAuthorityLongitudeDeg = *parsed;
+            scenario->hasTerminalAuthorityCoordinates = true;
+            continue;
+        }
+        if (key == "terminal_authority.feature") {
+            if (!AddTerminalCoverageFeature(
+                    &scenario->terminalAuthorityFeatures,
+                    value)) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid terminal_authority.feature at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "airport_frequency.frq_row") {
+            scenario->airportFrequencyFrqRows.push_back(value);
+            continue;
+        }
+        if (key == "brain_controller_relevance.stage") {
+            const auto parsed = ParseWorkflowStage(value);
+            if (!parsed.has_value()) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid brain_controller_relevance.stage at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            scenario->controllerRelevanceWorkflowStage = *parsed;
+            continue;
+        }
         if (key == "controller.entry") {
             if (!AddController(&scenario->controllers, value)) {
                 if (outError != nullptr) {
@@ -4183,6 +4521,19 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
         }
         if (key == "display_intent.arrival_polygon") {
             scenario->displayIntentArrivalPolygonKey = value;
+            continue;
+        }
+        if (key == "display_intent.relation") {
+            if (!AddDisplayRelationFact(
+                    &scenario->displayIntentRelationFacts,
+                    value)) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid display_intent.relation at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
             continue;
         }
         if (key == "route.waypoint") {
@@ -4546,9 +4897,31 @@ int main(int argc, char** argv) {
     displayIntentInput.departureBoard = scenario.departureBoard;
     displayIntentInput.arrivalBoard = scenario.arrivalBoard;
     displayIntentInput.enrouteBoard = scenario.enrouteBoard;
+    displayIntentInput.relationFacts = scenario.displayIntentRelationFacts;
     const auto displayIntentOutput =
         xvatsim::brain::RunBrainDisplayIntentWorker(displayIntentInput);
-    const auto& displayBoard = displayIntentOutput.finalDisplay;
+    auto displayBoard = displayIntentOutput.finalDisplay;
+    if (scenario.applyStandbyAssist) {
+        xvatsim::brain::BrainOwnedStandbyAssistPlanInput standbyInput;
+        standbyInput.workflowStage =
+            scenario.standbyAssistWorkflowStage.value_or(
+                displayIntentInput.workflowStage);
+        standbyInput.planKey =
+            scenario.standbyAssistPlanKey.empty()
+                ? std::string("HARNESS")
+                : scenario.standbyAssistPlanKey;
+        standbyInput.radios = scenario.radioStateSnapshot;
+        standbyInput.board = displayBoard;
+        const auto standbyPlan =
+            xvatsim::brain::BuildBrainOwnedStandbyAssistPlan(standbyInput);
+        const auto standbyLoaded =
+            scenario.standbyAssistLoaded.value_or(
+                standbyPlan.targetAlreadyInCom1Standby);
+        displayBoard =
+            xvatsim::brain::ApplyBrainOwnedStandbyAssistResult(
+                standbyPlan,
+                standbyLoaded);
+    }
 
     xvatsim::brain::ControllerFeedSnapshot controllerFeedSnapshot;
     controllerFeedSnapshot.stale = scenario.controllerFeedStale;
@@ -4944,6 +5317,86 @@ int main(int argc, char** argv) {
             vatglassesSourcePackagePayload,
             supplementalSourcePackagePayloads);
 
+    xvatsim::brain::BrainTerminalAuthorityWorkerOutput terminalAuthorityOutput;
+    if (!scenario.terminalAuthorityAirportIcao.empty()) {
+        xvatsim::modules::terminal_authority::TerminalAuthorityResolver
+            terminalAuthorityResolver;
+        terminalAuthorityResolver.LoadPayloadForTesting(
+            BuildTerminalBoundaryPayload(scenario.terminalAuthorityFeatures));
+        xvatsim::brain::BrainTerminalAuthorityWorkerInput terminalInput;
+        terminalInput.airportIcao = scenario.terminalAuthorityAirportIcao;
+        terminalInput.hasAirportCoordinates =
+            scenario.hasTerminalAuthorityCoordinates;
+        terminalInput.airportLatitudeDeg =
+            scenario.terminalAuthorityLatitudeDeg;
+        terminalInput.airportLongitudeDeg =
+            scenario.terminalAuthorityLongitudeDeg;
+        terminalInput.nowSeconds =
+            static_cast<long long>(scenario.nowSeconds);
+        terminalAuthorityOutput =
+            terminalAuthorityResolver.ResolveAirportTerminalOwner(
+                terminalInput);
+    }
+
+    xvatsim::brain::BrainOwnedRuntimeState airportFrequencyRuntimeState;
+    xvatsim::brain::BrainAirportFrequencyWorkerOutput airportFrequencyOutput;
+    if (!scenario.airportFrequencyFrqRows.empty()) {
+        xvatsim::modules::airport_frequency_catalog::AirportFrequencyCatalogResolver
+            airportFrequencyResolver;
+        airportFrequencyResolver.LoadFrqCsvPayloadForTesting(
+            BuildAirportFrequencyFrqCsvPayload(scenario.airportFrequencyFrqRows));
+        airportFrequencyOutput =
+            xvatsim::brain::RefreshBrainOwnedAirportFrequencies(
+                &airportFrequencyRuntimeState,
+                scenario.workflowState.flightContext,
+                static_cast<long long>(scenario.nowSeconds),
+                &airportFrequencyResolver);
+    }
+
+    xvatsim::brain::RadioReachableBuildOptions relevanceRadioOptions;
+    relevanceRadioOptions.generation = controllerFeedSnapshot.generation;
+    relevanceRadioOptions.source =
+        xvatsim::brain::RadioReachableSource::AFVRadioRange;
+    relevanceRadioOptions.changeReason = "harness-controller-relevance";
+    relevanceRadioOptions.nowSeconds = scenario.nowSeconds;
+    const auto controllerRelevanceRadioSnapshot =
+        xvatsim::brain::BuildRadioReachableControllerSnapshotFromTransceivers(
+            scenario.transceiverResolutionSnapshot,
+            controllerFeedSnapshot,
+            relevanceRadioOptions);
+    xvatsim::brain::BrainControllerRelevanceWorkerInput
+        controllerRelevanceInput;
+    controllerRelevanceInput.workflowStage =
+        scenario.controllerRelevanceWorkflowStage;
+    controllerRelevanceInput.radioBoardHash =
+        controllerRelevanceRadioSnapshot.stableHash;
+    controllerRelevanceInput.routePolygonHash = 1;
+    controllerRelevanceInput.currentPolygonIndex = 1;
+    controllerRelevanceInput.currentPolygonKey = "CURRENT";
+    controllerRelevanceInput.departureIcao =
+        scenario.workflowState.flightContext.departureIcao;
+    controllerRelevanceInput.arrivalIcao =
+        scenario.workflowState.flightContext.destinationIcao;
+    if (scenario.controllerRelevanceWorkflowStage == WorkflowStage::Arrival) {
+        controllerRelevanceInput.arrivalTerminalAuthorityHash = 1;
+        controllerRelevanceInput.arrivalTerminalAuthority =
+            terminalAuthorityOutput;
+    } else {
+        controllerRelevanceInput.departureTerminalAuthorityHash = 1;
+        controllerRelevanceInput.departureTerminalAuthority =
+            terminalAuthorityOutput;
+    }
+    controllerRelevanceInput.airportFrequencyHash =
+        airportFrequencyRuntimeState.airportFrequencyHash;
+    controllerRelevanceInput.airportFrequencies =
+        airportFrequencyOutput;
+    controllerRelevanceInput.radios = scenario.radioStateSnapshot;
+    controllerRelevanceInput.candidates =
+        controllerRelevanceRadioSnapshot.candidates;
+    const auto controllerRelevanceOutput =
+        xvatsim::brain::RunBrainControllerRelevanceWorker(
+            controllerRelevanceInput);
+
     std::cout << "Scenario: " << scenario.name << "\n";
     std::cout << "PreflightParseOk: "
               << (preflightParseResult.ok ? "true" : "false") << "\n";
@@ -4986,9 +5439,52 @@ int main(int argc, char** argv) {
         std::cout << " " << row;
     }
     std::cout << "\n";
+    std::cout << "TerminalAuthorityOwners:";
+    for (const auto& owner : ExtractTerminalAuthorityOwners(terminalAuthorityOutput)) {
+        std::cout << " " << owner;
+    }
+    std::cout << "\n";
+    std::cout << "TerminalAuthorityPolygons:";
+    for (const auto& polygon : ExtractTerminalAuthorityPolygons(terminalAuthorityOutput)) {
+        std::cout << " " << polygon;
+    }
+    std::cout << "\n";
+    std::cout << "AirportFrequencyDepartureRecords:";
+    for (const auto& record : ExtractAirportFrequencyRecords(
+             airportFrequencyOutput.departureFrequencies)) {
+        std::cout << " " << record;
+    }
+    std::cout << "\n";
+    std::cout << "AirportFrequencyArrivalRecords:";
+    for (const auto& record : ExtractAirportFrequencyRecords(
+             airportFrequencyOutput.arrivalFrequencies)) {
+        std::cout << " " << record;
+    }
+    std::cout << "\n";
+    std::cout << "BrainControllerRelevanceDepartureCallsigns:";
+    for (const auto& callsign : ExtractCallsigns(controllerRelevanceOutput.departureBoard)) {
+        std::cout << " " << callsign;
+    }
+    std::cout << "\n";
+    std::cout << "BrainControllerRelevanceArrivalCallsigns:";
+    for (const auto& callsign : ExtractCallsigns(controllerRelevanceOutput.arrivalBoard)) {
+        std::cout << " " << callsign;
+    }
+    std::cout << "\n";
+    std::cout << "BrainControllerRelevanceCompletions:";
+    for (const auto& completion : ExtractControllerRelevanceCompletions(
+             controllerRelevanceOutput)) {
+        std::cout << " " << completion;
+    }
+    std::cout << "\n";
     std::cout << "OverlayBodyLines:";
     for (const auto& line : ExtractOverlayBodyLines(overlayModel)) {
         std::cout << " " << line;
+    }
+    std::cout << "\n";
+    std::cout << "OverlayBodyTones:";
+    for (const auto& tone : ExtractOverlayBodyTones(overlayModel)) {
+        std::cout << " " << tone;
     }
     std::cout << "\n";
     std::cout << "DepartureCollectedAvailable: "
@@ -5501,6 +5997,14 @@ int main(int argc, char** argv) {
             "overlayBodyLines",
             scenario.expectations.overlayBodyLines,
             ExtractOverlayBodyLines(overlayModel));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "overlayBodyTones",
+            scenario.expectations.overlayBodyTones,
+            ExtractOverlayBodyTones(overlayModel));
         mismatch.has_value()) {
         return *mismatch;
     }
@@ -6628,6 +7132,64 @@ int main(int argc, char** argv) {
             "radioReachableVerifierUnchangedStatus",
             *scenario.expectations.radioReachableVerifierUnchangedStatus,
             radioReachableVerifierUnchanged.statusLine);
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "terminalAuthorityOwners",
+            scenario.expectations.terminalAuthorityOwners,
+            ExtractTerminalAuthorityOwners(terminalAuthorityOutput));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "terminalAuthorityPolygons",
+            scenario.expectations.terminalAuthorityPolygons,
+            ExtractTerminalAuthorityPolygons(terminalAuthorityOutput));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "airportFrequencyDepartureRecords",
+            scenario.expectations.airportFrequencyDepartureRecords,
+            ExtractAirportFrequencyRecords(
+                airportFrequencyOutput.departureFrequencies));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "airportFrequencyArrivalRecords",
+            scenario.expectations.airportFrequencyArrivalRecords,
+            ExtractAirportFrequencyRecords(
+                airportFrequencyOutput.arrivalFrequencies));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "brainControllerRelevanceDepartureCallsigns",
+            scenario.expectations.brainControllerRelevanceDepartureCallsigns,
+            ExtractCallsigns(controllerRelevanceOutput.departureBoard));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "brainControllerRelevanceArrivalCallsigns",
+            scenario.expectations.brainControllerRelevanceArrivalCallsigns,
+            ExtractCallsigns(controllerRelevanceOutput.arrivalBoard));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "brainControllerRelevanceCompletions",
+            scenario.expectations.brainControllerRelevanceCompletions,
+            ExtractControllerRelevanceCompletions(controllerRelevanceOutput));
+        mismatch.has_value()) {
+        return *mismatch;
     }
 
     if (const auto mismatch = CheckStringList(

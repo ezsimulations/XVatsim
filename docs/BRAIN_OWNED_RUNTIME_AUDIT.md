@@ -22,6 +22,12 @@ Engineer 1/2 display, authority, and board-building paths next to the Engineer
 3 runtime. Those paths must be mapped, quarantined, and removed in safe slices
 without damaging the working Engineer 3 behavior.
 
+Important clarification from 2026-05-21: new removable modules are the clean
+Engineer 3 extension mechanism. A module is not dirty merely because it is new.
+The dirty boundary is feature logic in the wrong owner, especially plugin-owned
+decision/scheduling logic, module-to-module calls, or UI/display truth outside
+the brain.
+
 ## Current Live Runtime
 
 The live runtime entry is `RefreshOverlayFromBrain`, which must route directly
@@ -34,13 +40,15 @@ Engineer 3 live flow:
 2. Update brain-owned flight context.
 3. Brain runs the Route Polygon Worker.
 4. Brain runs the Radio Range Worker.
-5. Brain builds narrow workflow signals from radio facts and decides the
+5. Brain owns any needed terminal-authority fact lookup/cache for APP/DEP
+   ownership.
+6. Brain builds narrow workflow signals from radio facts and decides the
    workflow phase.
-6. Brain phase-gates the radio board.
-7. Brain runs Controller Relevance Worker for accepted/rejected candidate facts.
-8. Brain Publisher filters accepted completions, runs Display Intent, publishes
+7. Brain phase-gates the radio board.
+8. Brain runs Controller Relevance Worker for accepted/rejected candidate facts.
+9. Brain Publisher filters accepted completions, runs Display Intent, publishes
    the final phase snapshot, and marks displayed completions.
-9. UI renders only the final brain-approved display snapshot.
+10. UI renders only the final brain-approved display snapshot.
 
 ## Ownership Map
 
@@ -63,6 +71,11 @@ context storage have moved into brain-owned source files.
 Plugin diagnostics timing/log throttle state is grouped under one shell-owned
 `PluginDiagnosticsState`, and radio range worker timing is logged as
 `radioRange` rather than the older `activeTx` label.
+No new feature-specific authority/relevance/display scheduling belongs in the
+plugin. The `modules/terminal_authority` worker itself is intentional clean
+module architecture; do not delete it as "cleanup." Any future boundary cleanup
+must preserve the removable module pattern and shrink plugin orchestration
+toward a generic brain-owned runtime dispatcher.
 
 - `brain/src/BrainWorkflow.cpp`
   - Owns workflow phase, current-flight recovery decisions, and normal
@@ -84,6 +97,12 @@ Plugin diagnostics timing/log throttle state is grouped under one shell-owned
   - Heavy authority proof must remain explicitly brain-scheduled only; the
     remaining broad proof entry is
     `ResolveBrainScheduledAuthorityVerification`.
+- `modules/terminal_authority`
+  - Departure/destination APP/DEP owner facts from source-backed terminal
+    authority polygons.
+  - Must not decide display, workflow phase, or candidate acceptance.
+  - Must not call other modules.
+  - Must parse/cache only when the brain-owned runtime schedules the lookup.
 - `brain/src/RoutePolygonTransition.cpp`
   - Route progress/current/next polygon transition facts.
 - `brain/src/BrainRoutePolygonWorker.cpp`
@@ -103,6 +122,9 @@ Plugin diagnostics timing/log throttle state is grouped under one shell-owned
 - `brain/src/BrainDisplayIntent.cpp`
   - Owns current-vs-next display relation, orange distance annotation, final
     board assembly.
+  - Preserves accepted-completion relation facts for non-center rows, so an
+    APP/DEP row accepted as `CURRENT_POLYGON` remains current/green in final
+    display.
   - Publishes final UI rows as `FinalDisplaySnapshot`, not as a raw
     `ModuleBoardSnapshot`.
   - Keeps accepted module boards raw in its output; UI-only annotation and
@@ -156,6 +178,16 @@ Plugin diagnostics timing/log throttle state is grouped under one shell-owned
   - Owns network-plan identity-key construction used by flight-context,
     diversion, preflight-route-cache, radio-route, standby-assist, and command
     decisions.
+  - Owns relation-fact transfer from accepted candidate completions into Brain
+    Display Intent.
+  - Owns radio tuning identity in controller relevance reuse so COM active and
+    COM standby changes cannot leave stale active/standby display state.
+  - Owns standby-assist final-row tuning refresh and may set only standby
+    display state after a successful COM1 standby load. It must not use standby
+    assist to rewrite polygon relation or fake `next` display state.
+  - Owns departure terminal-authority request keys, refresh/backoff decisions,
+    cached facts, fact hashing, and relevance invalidation when the terminal
+    authority fact changes.
   - Owns workflow phase selection through `ResolveBrainOwnedWorkflowSelection`,
     using `WorkflowSignals` derived from radio facts instead of provisional
     relevance boards.
@@ -166,6 +198,12 @@ Plugin diagnostics timing/log throttle state is grouped under one shell-owned
 
 - `brain/src/BrainOrchestrator.cpp`
   - Converts the final brain-approved board into overlay text/tone.
+  - Overlay tone must come from final `displayRelation` only: current polygon
+    green/active tone, next or arrival-prep orange/next tone.
+  - Controller row text badges are limited to `Active` for active COM tuning
+    and `Standby` for a successfully loaded COM1 standby-assist target.
+  - Must not reintroduce Engineer 1/2 text badges such as `NEXT`, `ONLINE`,
+    sector `ACTIVE`, or `OFFLINE` for controller frequency rows.
 - `modules/overlay`
   - Renders the view model.
 
@@ -771,6 +809,23 @@ unchanged. Release build passed and full harness passed `234 / 234` for
 installed hash
 `3ACE28B2E521493FA39A01444ADCFF6E7451B6292426257301EC8F54E992D363`.
 
+Follow-up update: KONT departure APP/DEP filtering now uses a removable
+`modules/terminal_authority` fact worker plus brain-owned terminal-authority
+cache/request logic. Controller Relevance accepts departure APP/DEP only when
+the candidate owner matches the cached terminal authority owner for the
+departure airport; KONT accepts `SCT_APP` and rejects `SAN_W1_APP` /
+`LAS_F_APP` as owner mismatches. Version 1 fails closed: unproven APP/DEP is
+rejected/hidden with a diagnostic reason, not displayed as unknown. Release
+build passed, the focused KONT regression passed, and full harness passed
+`237 / 237` for installed hash
+`2C106BBA63A742F4073715263565D048703521210A20389EC5AAFA3E2BFC87A4`.
+
+Contract cleanup note: the Version 2 unknown/magenta/manual visible-hidden
+idea must not be implemented in the Version 1 runtime. The plugin still has
+minimal terminal-authority worker shell wiring; do not expand it. The next
+plugin cleanup should remove feature-specific worker invocation from
+`plugin/src/XVatsimPlugin.cpp` behind a generic brain-owned runtime dispatcher.
+
 ### Slice 5: Convert Or Retire Old Modules
 
 - Convert departure/arrival/enroute modules to fact-only workers, or remove
@@ -802,3 +857,6 @@ plugin-shell reduction.
 - No candidate displayed without a brain-approved accepted completion.
 - No module-to-module live calls.
 - No repeated worker work when input hashes are unchanged.
+- No Version 2 unknown/magenta/manual visible-hidden controller rows in the
+  Version 1 runtime.
+- No new feature-specific authority/relevance/display scheduling in the plugin.

@@ -99,6 +99,13 @@ struct BrainControllerRelevanceWorkerInput {
     double routeProgressDistanceNm = 0.0;
     std::string departureIcao;
     std::string arrivalIcao;
+    std::uint64_t departureTerminalAuthorityHash = 0;
+    BrainTerminalAuthorityWorkerOutput departureTerminalAuthority;
+    std::uint64_t arrivalTerminalAuthorityHash = 0;
+    BrainTerminalAuthorityWorkerOutput arrivalTerminalAuthority;
+    std::uint64_t airportFrequencyHash = 0;
+    BrainAirportFrequencyWorkerOutput airportFrequencies;
+    std::uint64_t radioTuningHash = 0;
     RadioStateSnapshot radios;
     std::vector<RouteSectorMatchSnapshot> currentSectors;
     std::vector<RouteSectorMatchSnapshot> nextSectors;

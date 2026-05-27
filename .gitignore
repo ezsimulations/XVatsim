@@ -21,4 +21,6 @@ desktop.ini
 releases/Archived_Previous_Test_Packages_do_not_ship/
 releases/**/Internal_Checkpoints/
 releases/**/Resources/plugins/XVatsim/win_x64/
+releases/XVatsim_XPlaneOrg_Store_Submission_Kit_*/
+!releases/XVatsim_XPlaneOrg_Store_Submission_Kit_1.0.0_2026-05-15/
 tools/user_route_scenarios/generated_live/

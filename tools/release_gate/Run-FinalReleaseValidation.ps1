@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$WorkspaceRoot = "",
+    [string]$ActiveKitRoot = "",
+    [string]$CustomerPackageRoot = "",
     [string]$ZipPath = "",
     [switch]$SkipBuild,
     [switch]$SkipInstalledPluginCheck
@@ -10,6 +12,10 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $script:Failures = [System.Collections.Generic.List[string]]::new()
+$script:ScenarioReplayLog = ""
+$script:ScenarioReplayCount = 0
+$script:FinalZipHash = ""
+$script:FinalZipSmokeRoot = ""
 
 function Resolve-WorkspaceRoot {
     if (-not [string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
@@ -17,6 +23,43 @@ function Resolve-WorkspaceRoot {
     }
 
     return (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
+}
+
+function Resolve-ActiveKitRoot {
+    param([string]$Root)
+
+    if (-not [string]::IsNullOrWhiteSpace($ActiveKitRoot)) {
+        return (Resolve-Path -LiteralPath $ActiveKitRoot).Path
+    }
+
+    $releaseRoot = Join-Path $Root "releases"
+    $kitCandidates = @(Get-ChildItem -LiteralPath $releaseRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "XVatsim_XPlaneOrg_Store_Submission_Kit_*" } |
+        Sort-Object Name -Descending)
+
+    if ($kitCandidates.Count -eq 0) {
+        throw "No X-Plane.org store submission kit was found under $releaseRoot."
+    }
+
+    return $kitCandidates[0].FullName
+}
+
+function Resolve-CustomerPackageRoot {
+    param([string]$KitRoot)
+
+    if (-not [string]::IsNullOrWhiteSpace($CustomerPackageRoot)) {
+        return (Resolve-Path -LiteralPath $CustomerPackageRoot).Path
+    }
+
+    $packageCandidates = @(Get-ChildItem -LiteralPath $KitRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "XVatsim_*_Windows_XP12" } |
+        Sort-Object Name -Descending)
+
+    if ($packageCandidates.Count -eq 0) {
+        throw "No customer package folder was found under $KitRoot."
+    }
+
+    return $packageCandidates[0].FullName
 }
 
 function Write-Step {
@@ -228,6 +271,7 @@ function Test-PackageFileSet {
     $expectedFiles = @(
         "Resources\plugins\XVatsim\win_x64\XVatsim.xpl",
         "Resources\plugins\XVatsim\win_x64\ui_transition.mp3",
+        "Resources\plugins\XVatsim\win_x64\authority_source_registry.json",
         "README.txt",
         "CHANGELOG.txt",
         "QUICK_START.txt"
@@ -262,6 +306,12 @@ function Test-ArtifactHashes {
             Build = Join-Path $Root "build\dist\XVatsim\win_x64\ui_transition.mp3"
             Package = Join-Path $CustomerPackageRoot "Resources\plugins\XVatsim\win_x64\ui_transition.mp3"
             Installed = "C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\ui_transition.mp3"
+        },
+        @{
+            Label = "authority_source_registry.json"
+            Build = Join-Path $Root "build\dist\XVatsim\win_x64\authority_source_registry.json"
+            Package = Join-Path $CustomerPackageRoot "Resources\plugins\XVatsim\win_x64\authority_source_registry.json"
+            Installed = "C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\authority_source_registry.json"
         }
     )
 
@@ -313,9 +363,11 @@ function Test-FinalZipSmoke {
     }
 
     $zipHash = Get-Sha256 $FinalZipPath
+    $script:FinalZipHash = $zipHash
     Write-Host "Final zip SHA-256: $zipHash"
 
     $smokeRoot = Join-Path $Root ("build\package_smoke\final_release_gate_" + (Get-Date -Format "yyyyMMdd_HHmmss"))
+    $script:FinalZipSmokeRoot = $smokeRoot
     $expandedRoot = Join-Path $smokeRoot "expanded"
     New-Item -ItemType Directory -Path $expandedRoot -Force | Out-Null
 
@@ -346,8 +398,10 @@ function Test-FinalZipSmoke {
 
     $buildXpl = Join-Path $Root "build\dist\XVatsim\win_x64\XVatsim.xpl"
     $buildAudio = Join-Path $Root "build\dist\XVatsim\win_x64\ui_transition.mp3"
+    $buildRegistry = Join-Path $Root "build\dist\XVatsim\win_x64\authority_source_registry.json"
     $smokeXpl = Join-Path $packageRoot "Resources\plugins\XVatsim\win_x64\XVatsim.xpl"
     $smokeAudio = Join-Path $packageRoot "Resources\plugins\XVatsim\win_x64\ui_transition.mp3"
+    $smokeRegistry = Join-Path $packageRoot "Resources\plugins\XVatsim\win_x64\authority_source_registry.json"
 
     if ((Assert-File $smokeXpl "Final zip plugin") -and (Assert-File $buildXpl "Build plugin")) {
         $buildHash = Get-Sha256 $buildXpl
@@ -365,15 +419,85 @@ function Test-FinalZipSmoke {
         }
     }
 
+    if ((Assert-File $smokeRegistry "Final zip authority registry") -and (Assert-File $buildRegistry "Build authority registry")) {
+        $buildHash = Get-Sha256 $buildRegistry
+        $smokeHash = Get-Sha256 $smokeRegistry
+        if ($buildHash -ne $smokeHash) {
+            Add-Failure "Final zip authority registry hash does not match build hash. Build=$buildHash Zip=$smokeHash"
+        }
+    }
+
     Write-Host "Final zip smoke root: $smokeRoot"
+}
+
+function Write-ValidationReceipt {
+    param(
+        [string]$Root,
+        [string]$ActiveKitRoot,
+        [string]$CustomerPackageRoot,
+        [string]$FinalZipPath
+    )
+
+    $materialsRoot = Join-Path $ActiveKitRoot "Store_Submission_Materials"
+    if (-not (Test-Path -LiteralPath $materialsRoot -PathType Container)) {
+        return
+    }
+
+    $buildXpl = Join-Path $Root "build\dist\XVatsim\win_x64\XVatsim.xpl"
+    $packageXpl = Join-Path $CustomerPackageRoot "Resources\plugins\XVatsim\win_x64\XVatsim.xpl"
+    $installedXpl = "C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl"
+    $buildAudio = Join-Path $Root "build\dist\XVatsim\win_x64\ui_transition.mp3"
+    $packageAudio = Join-Path $CustomerPackageRoot "Resources\plugins\XVatsim\win_x64\ui_transition.mp3"
+    $buildRegistry = Join-Path $Root "build\dist\XVatsim\win_x64\authority_source_registry.json"
+    $packageRegistry = Join-Path $CustomerPackageRoot "Resources\plugins\XVatsim\win_x64\authority_source_registry.json"
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add("XVatsim Final Release Validation Result")
+    $lines.Add("Status: PASSED")
+    $lines.Add("Validated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+    $lines.Add("")
+    $lines.Add("Customer package:")
+    $lines.Add($CustomerPackageRoot)
+    $lines.Add("")
+    $lines.Add("Final store-upload zip:")
+    $lines.Add($FinalZipPath)
+    $lines.Add("SHA256: $script:FinalZipHash")
+    $lines.Add("")
+    $lines.Add("Regression scenarios executed: $script:ScenarioReplayCount")
+    $lines.Add("Scenario replay log: $script:ScenarioReplayLog")
+    $lines.Add("Final zip smoke root: $script:FinalZipSmokeRoot")
+    $lines.Add("")
+    $lines.Add("Artifact hashes:")
+    $lines.Add("- XVatsim.xpl build: $(Get-Sha256 $buildXpl)")
+    $lines.Add("- XVatsim.xpl package: $(Get-Sha256 $packageXpl)")
+    if (-not $SkipInstalledPluginCheck -and (Test-Path -LiteralPath $installedXpl -PathType Leaf)) {
+        $lines.Add("- XVatsim.xpl installed: $(Get-Sha256 $installedXpl)")
+    }
+    $lines.Add("- ui_transition.mp3 build: $(Get-Sha256 $buildAudio)")
+    $lines.Add("- ui_transition.mp3 package: $(Get-Sha256 $packageAudio)")
+    $lines.Add("- authority_source_registry.json build: $(Get-Sha256 $buildRegistry)")
+    $lines.Add("- authority_source_registry.json package: $(Get-Sha256 $packageRegistry)")
+    $lines.Add("")
+    $lines.Add("Gate coverage:")
+    $lines.Add("- Release build of XVatsimRegressionHarness and XVatsimPlugin")
+    $lines.Add("- Saved regression scenario replay")
+    $lines.Add("- Active source text scan")
+    $lines.Add("- Customer package file-set scan")
+    $lines.Add("- Customer package text scan")
+    $lines.Add("- Build/package/installed artifact hash checks")
+    $lines.Add("- Final zip clean install smoke")
+
+    $receiptPath = Join-Path $materialsRoot "11_Final_Validation_Result.txt"
+    Set-Content -LiteralPath $receiptPath -Value $lines -Encoding ASCII
+    Write-Host "Validation receipt: $receiptPath"
 }
 
 $root = Resolve-WorkspaceRoot
 $buildDir = Join-Path $root "build"
 $harnessExe = Join-Path $buildDir "tools\XVatsimRegressionHarness.exe"
 $scenarioDir = Join-Path $root "tools\regression_harness\scenarios"
-$activeKitRoot = Join-Path $root "releases\XVatsim_XPlaneOrg_Store_Submission_Kit_1.0.0_2026-05-15"
-$customerPackageRoot = Join-Path $activeKitRoot "XVatsim_1.0.0_Windows_XP12"
+$activeKitRoot = Resolve-ActiveKitRoot -Root $root
+$customerPackageRoot = Resolve-CustomerPackageRoot -KitRoot $activeKitRoot
 
 if ([string]::IsNullOrWhiteSpace($ZipPath)) {
     $zipCandidates = @(Get-ChildItem -LiteralPath $activeKitRoot -Filter "XVatsim_1.0.0_Windows_XP12*.zip" -File -ErrorAction SilentlyContinue |
@@ -428,6 +552,8 @@ try {
             }
         }
 
+        $script:ScenarioReplayLog = $scenarioLog
+        $script:ScenarioReplayCount = $scenarios.Count
         Write-Host "Regression scenarios executed: $($scenarios.Count)"
         Write-Host "Scenario replay log: $scenarioLog"
     }
@@ -450,5 +576,6 @@ if ($script:Failures.Count -gt 0) {
     exit 1
 }
 
+Write-ValidationReceipt -Root $root -ActiveKitRoot $activeKitRoot -CustomerPackageRoot $customerPackageRoot -FinalZipPath $ZipPath
 Write-Host "Final release validation PASSED." -ForegroundColor Green
 exit 0

@@ -1,0 +1,11 @@
+name=Brain display intent hides route-pending center candidates
+
+display_intent.stage=Departure
+display_intent.progress_nm=0
+
+departure.station=role=Ctaf;callsign=KELP;frequency=122.950;online=true
+enroute.station=role=Center;callsign=ZAK_FSS;frequency=129.400;online=true;sectorActive=true
+
+expect.display_source=Departure
+expect.display_callsigns=KELP
+expect.brain_display_intent_rows=KELP:UNKNOWN

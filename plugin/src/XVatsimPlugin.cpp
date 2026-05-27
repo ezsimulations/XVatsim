@@ -33,6 +33,7 @@
 #include "XVatsim/modules/radio_state/RadioStateSampler.h"
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
 #include "XVatsim/modules/settings_store/SettingsStore.h"
+#include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
 #include "XVatsim/modules/transceiver_resolver/TransceiverResolver.h"
 #include "XVatsim/modules/vatsim_data_feed/VatsimDataFeedClient.h"
 #include "XVatsim/modules/xpilot_bridge/XPilotBridge.h"
@@ -218,6 +219,8 @@ xvatsim::modules::pilot_identity::PilotIdentityResolver gPilotIdentityResolver;
 xvatsim::modules::radio_state::RadioStateSampler gRadioStateSampler;
 xvatsim::modules::route_sector::RouteSectorResolver gRouteSectorResolver;
 xvatsim::modules::settings_store::SettingsStore gSettingsStore;
+xvatsim::modules::terminal_authority::TerminalAuthorityResolver
+    gTerminalAuthorityResolver;
 xvatsim::modules::transceiver_resolver::TransceiverResolver gTransceiverResolver;
 xvatsim::modules::vatsim_data_feed::VatsimDataFeedClient gVatsimDataFeedClient;
 xvatsim::modules::xpilot_bridge::XPilotBridge gXPilotBridge;
@@ -453,6 +456,7 @@ void ResetSessionRuntimeCaches(bool resetVatsimFeed) {
     gRadioStateSampler.Reset();
     gRouteSectorResolver.ResetRuntimeState();
     gRouteSectorResolver.ClearPreflightRouteCache();
+    gTerminalAuthorityResolver.Reset();
     ResetBrainOwnedRuntimeCache();
     ResetDiagnosticsTraceState();
     gTransceiverResolver.Reset();
@@ -3426,12 +3430,28 @@ void RefreshOverlayFromBrainEngineer3() {
         transceiverResolutionSnapshot =
             gBrainOwnedRuntimeState.transceiverSnapshot;
 
+        const auto departureTerminalAuthority =
+            xvatsim::brain::RefreshBrainOwnedDepartureTerminalAuthority(
+                &gBrainOwnedRuntimeState,
+                flightContext,
+                CurrentTickSeconds(),
+                &gTerminalAuthorityResolver);
+        const auto arrivalTerminalAuthority =
+            xvatsim::brain::RefreshBrainOwnedArrivalTerminalAuthority(
+                &gBrainOwnedRuntimeState,
+                flightContext,
+                CurrentTickSeconds(),
+                &gTerminalAuthorityResolver);
+        (void)arrivalTerminalAuthority;
+
         xvatsim::brain::BrainOwnedWorkflowSelectionInput workflowInput;
         workflowInput.aircraft = aircraftState;
         workflowInput.radios = radioStateSnapshot;
         workflowInput.radioSnapshot = radioSnapshot;
         workflowInput.departureIcao = flightContext.departureIcao;
         workflowInput.arrivalIcao = flightContext.destinationIcao;
+        workflowInput.departureTerminalAuthority =
+            departureTerminalAuthority;
         workflowInput.nowSeconds = XPLMGetElapsedTime();
         workflowInput.tuning.arrivalWakeDistanceNm = kArrivalWakeDistanceNm;
         workflowInput.tuning.departureReleaseHoldSeconds =

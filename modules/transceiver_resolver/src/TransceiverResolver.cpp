@@ -398,6 +398,8 @@ brain::TransceiverResolutionSnapshot ResolveReceivableControllers(
     brain::TransceiverResolutionSnapshot snapshot;
     snapshot.available = !indexedTransceivers.empty();
     snapshot.stale = isStaleFeed;
+    snapshot.maxCandidateDistanceNm =
+        brain::kBrainOwnedMaxRadioBoardCandidateDistanceNm;
     snapshot.statusLine = isStaleFeed ? "RX feed stale" : "RX feed active";
 
     if (isStaleFeed) {
@@ -438,6 +440,7 @@ brain::TransceiverResolutionSnapshot ResolveReceivableControllers(
         std::string bestTransceiverFrequency;
         double bestLatitudeDeg = 0.0;
         double bestLongitudeDeg = 0.0;
+        bool rejectedByDistanceEnvelope = false;
 
         for (const auto& transceiver : transceiverEntry->second) {
             const auto distanceNm = GreatCircleDistanceNm(
@@ -445,6 +448,11 @@ brain::TransceiverResolutionSnapshot ResolveReceivableControllers(
                 aircraftState.longitudeDeg,
                 transceiver.latitudeDeg,
                 transceiver.longitudeDeg);
+            if (distanceNm > snapshot.maxCandidateDistanceNm) {
+                rejectedByDistanceEnvelope = true;
+                continue;
+            }
+
             const auto controllerVisualRangeNm =
                 controller.visualRangeNm > 0
                     ? static_cast<double>(controller.visualRangeNm)
@@ -487,6 +495,10 @@ brain::TransceiverResolutionSnapshot ResolveReceivableControllers(
             snapshot.candidates.push_back(std::move(candidate));
             continue;
         }
+
+        if (rejectedByDistanceEnvelope) {
+            ++snapshot.distanceRejectedControllers;
+        }
     }
 
     std::sort(
@@ -501,6 +513,15 @@ brain::TransceiverResolutionSnapshot ResolveReceivableControllers(
     snapshot.receivableControllers = static_cast<int>(snapshot.candidates.size());
     snapshot.statusLine =
         "RX " + std::to_string(snapshot.receivableControllers) + " receivable";
+    if (snapshot.distanceRejectedControllers > 0) {
+        snapshot.statusLine +=
+            " distanceRejected=" +
+            std::to_string(snapshot.distanceRejectedControllers) +
+            " maxCandidateDistanceNm=" +
+            std::to_string(static_cast<int>(
+                std::round(snapshot.maxCandidateDistanceNm))) +
+            " distanceReason=radio-candidate-over-max-distance";
+    }
     return snapshot;
 }
 

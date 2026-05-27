@@ -8,6 +8,14 @@
 
 namespace xvatsim::brain {
 
+struct BrainDisplayRelationFact {
+    std::string callsign;
+    std::string frequency;
+    DisplayRelation displayRelation = DisplayRelation::Unknown;
+    bool hasRouteEntryDistance = false;
+    double routeEntryDistanceNm = 0.0;
+};
+
 struct BrainDisplayIntentInput {
     WorkflowStage workflowStage = WorkflowStage::None;
     double routeProgressDistanceNm = 0.0;
@@ -17,6 +25,7 @@ struct BrainDisplayIntentInput {
     ModuleBoardSnapshot departureBoard;
     ModuleBoardSnapshot arrivalBoard;
     ModuleBoardSnapshot enrouteBoard;
+    std::vector<BrainDisplayRelationFact> relationFacts;
 };
 
 struct BrainDisplayIntentOutput {

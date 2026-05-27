@@ -6,10 +6,12 @@ target_compile_features(XVatsimRegressionHarness PRIVATE cxx_std_17)
 
 target_link_libraries(XVatsimRegressionHarness PRIVATE
     XVatsimBrain
+    XVatsimAirportFrequencyCatalog
     XVatsimHarnessLegacyArrival
     XVatsimHarnessLegacyDeparture
     XVatsimHarnessLegacyEnroute
     XVatsimRouteSector
+    XVatsimTerminalAuthority
     XVatsimWorkflowCore
 )
 

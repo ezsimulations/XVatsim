@@ -1,0 +1,28 @@
+name=Brain display intent keeps current departure APP green and advances standby
+
+display_intent.stage=Departure
+display_intent.progress_nm=0
+display_intent.current_polygon=KZLA
+display_intent.next_polygon=KZAB
+display_intent.arrival_polygon=KZFW
+
+radio.valid=true
+radio.com1_active=128.050
+radio.com2_active=122.800
+radio.com1_standby=126.525
+
+departure.station=role=Approach;callsign=SCT_APP;frequency=128.050;online=true;polygonKey=KZLA;tuned=false
+enroute.station=role=Center;callsign=LAX_25_CTR;frequency=126.525;online=true;polygonKey=KZLA;tuned=false
+
+display_intent.relation=callsign=SCT_APP;frequency=128.050;relation=CurrentPolygon
+display_intent.relation=callsign=LAX_25_CTR;frequency=126.525;relation=CurrentPolygon
+
+standby_assist.apply=true
+standby_assist.stage=Departure
+standby_assist.plan_key=UPS2183|KONT|KDFW
+
+expect.display_source=Departure
+expect.display_callsigns=SCT_APP,LAX_25_CTR
+expect.brain_display_intent_rows=SCT_APP:CURRENT_POLYGON,LAX_25_CTR:CURRENT_POLYGON:ACTIVE
+expect.overlay_body_lines=xPilot not loaded|APP SCT_APP 128.050 *Active*|CTR LAX_25_CTR 126.525 *Standby*
+expect.overlay_body_tones=Normal,Active,Active

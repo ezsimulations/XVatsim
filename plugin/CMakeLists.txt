@@ -64,6 +64,7 @@ target_link_libraries(XVatsimPlugin PRIVATE
     XVatsimRadioState
     XVatsimRouteSector
     XVatsimSettingsStore
+    XVatsimTerminalAuthority
     XVatsimTransceiverResolver
     XVatsimVatsimDataFeed
     XVatsimWorkflowCore

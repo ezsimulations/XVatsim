@@ -1,0 +1,35 @@
+name=Brain Controller Relevance Departure Terminal Owner Filters KLAX
+now_seconds=1000
+
+state.flight_active=true
+flight.callsign=DAL123
+flight.departure_icao=KLAX
+flight.destination_icao=PANC
+
+terminal_authority.airport_icao=KLAX
+terminal_authority.lat=33.942500
+terminal_authority.lon=-118.408100
+terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=LAX;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+terminal_authority.feature=id=SCT;name=SoCal Departure;suffix=DEP;prefixes=LAX;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=ONT;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SAN;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SCT;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+
+controller.entry=callsign=LAX_APP;frequency=124.500;facility=5;actionable=true;atis=false
+controller.entry=callsign=LAX_S_DEP;frequency=124.300;facility=5;actionable=true;atis=false
+controller.entry=callsign=SCT_APP;frequency=128.050;facility=5;actionable=true;atis=false
+controller.entry=callsign=ONT_APP;frequency=125.500;facility=5;actionable=true;atis=false
+controller.entry=callsign=SAN_W1_APP;frequency=119.600;facility=5;actionable=true;atis=false
+
+transceiver.available=true
+transceiver.stale=false
+transceiver.candidate=callsign=LAX_APP;frequency=124.500;distanceNm=0;score=100
+transceiver.candidate=callsign=LAX_S_DEP;frequency=124.300;distanceNm=0;score=100
+transceiver.candidate=callsign=SCT_APP;frequency=128.050;distanceNm=0;score=100
+transceiver.candidate=callsign=ONT_APP;frequency=125.500;distanceNm=35;score=30
+transceiver.candidate=callsign=SAN_W1_APP;frequency=119.600;distanceNm=95;score=30
+
+expect.terminal_authority_owners=LAX_APP,LAX_DEP,SCT_APP,SCT_DEP
+expect.terminal_authority_polygons=SCT
+expect.brain_controller_relevance_departure_callsigns=LAX_APP,LAX_S_DEP,SCT_APP
+expect.brain_controller_relevance_completions=LAX_APP:accepted:departure-terminal-owner-match:LAX_APP:owner=LAX_APP+LAX_DEP+more:poly=SCT,LAX_S_DEP:accepted:departure-terminal-owner-match:LAX_DEP:owner=LAX_APP+LAX_DEP+more:poly=SCT,ONT_APP:rejected:departure-terminal-owner-mismatch:ONT_APP:owner=LAX_APP+LAX_DEP+more:poly=SCT,SAN_W1_APP:rejected:departure-terminal-owner-mismatch:SAN_APP:owner=LAX_APP+LAX_DEP+more:poly=SCT,SCT_APP:accepted:departure-terminal-owner-match:SCT_APP:owner=LAX_APP+LAX_DEP+more:poly=SCT

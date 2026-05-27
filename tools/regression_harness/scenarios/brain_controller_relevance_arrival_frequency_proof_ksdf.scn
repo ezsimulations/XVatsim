@@ -1,0 +1,35 @@
+name=Brain Controller Relevance Arrival Frequency Proof KSDF
+now_seconds=1000
+
+state.flight_active=true
+flight.callsign=UPS3602
+flight.departure_icao=KTPA
+flight.destination_icao=KSDF
+
+brain_controller_relevance.stage=Arrival
+
+terminal_authority.airport_icao=KSDF
+terminal_authority.lat=38.174085
+terminal_authority.lon=-85.736494
+terminal_authority.feature=id=SDF;name=Louisville Approach;suffix=APP;prefixes=SDF;polygon=37.0,-87.0|39.0,-87.0|39.0,-84.0|37.0,-84.0
+
+airport_frequency.frq_row=facility=SDF;facility_type=ATCT-TRACON;serviced_facility=SDF;tower_or_comm_call=LOUISVILLE;primary_approach_radio_call=LOUISVILLE;freq=124.2;freq_use=LCL/P
+airport_frequency.frq_row=facility=SDF;facility_type=ATCT-TRACON;serviced_facility=SDF;tower_or_comm_call=LOUISVILLE;primary_approach_radio_call=LOUISVILLE;freq=132.075;freq_use=APCH/P DEP/P;sectorization=350-169
+airport_frequency.frq_row=facility=SDF;facility_type=ATCT-TRACON;serviced_facility=SDF;tower_or_comm_call=LOUISVILLE;primary_approach_radio_call=LOUISVILLE;freq=123.675;freq_use=APCH/P DEP/P;sectorization=170-349
+airport_frequency.frq_row=facility=MEM;facility_type=ATCT-TRACON;serviced_facility=MEM;tower_or_comm_call=MEMPHIS;primary_approach_radio_call=MEMPHIS;freq=125.8;freq_use=APCH/P DEP/P
+
+controller.entry=callsign=SDF_APP;frequency=132.075;facility=5;actionable=true;atis=false
+controller.entry=callsign=SDF_TWR;frequency=124.200;facility=4;actionable=true;atis=false
+controller.entry=callsign=MEM_E_APP;frequency=125.800;facility=5;actionable=true;atis=false
+
+transceiver.available=true
+transceiver.stale=false
+transceiver.candidate=callsign=SDF_APP;frequency=132.075;distanceNm=20;score=100
+transceiver.candidate=callsign=SDF_TWR;frequency=124.200;distanceNm=5;score=100
+transceiver.candidate=callsign=MEM_E_APP;frequency=125.800;distanceNm=240;score=30
+
+expect.terminal_authority_owners=SDF_APP
+expect.terminal_authority_polygons=SDF
+expect.airport_frequency_arrival_records=KSDF:APP_DEP:123.675:APCH/P DEP/P,KSDF:APP_DEP:132.075:APCH/P DEP/P,KSDF:TWR:124.200:LCL/P
+expect.brain_controller_relevance_arrival_callsigns=SDF_TWR,SDF_APP
+expect.brain_controller_relevance_completions=MEM_E_APP:rejected:arrival-terminal-owner-mismatch:MEM_APP:owner=SDF_APP:poly=SDF:freq=arr-miss,SDF_APP:accepted:arrival-terminal-owner-match:SDF_APP:owner=SDF_APP:poly=SDF:freq=arr-APP_DEP,SDF_TWR:accepted:arrival-airport-match:freq=arr-TWR

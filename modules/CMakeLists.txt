@@ -1,4 +1,5 @@
 add_subdirectory(aircraft_state)
+add_subdirectory(airport_frequency_catalog)
 add_subdirectory(ctaf_lookup)
 add_subdirectory(vatsim_data_feed)
 add_subdirectory(controller_feed)
@@ -10,6 +11,7 @@ add_subdirectory(pilot_identity)
 add_subdirectory(radio_state)
 add_subdirectory(route_sector)
 add_subdirectory(settings_store)
+add_subdirectory(terminal_authority)
 add_subdirectory(transceiver_resolver)
 add_subdirectory(xpilot_bridge)
 

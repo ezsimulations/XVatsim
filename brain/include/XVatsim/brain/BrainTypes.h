@@ -6,6 +6,8 @@
 
 namespace xvatsim::brain {
 
+constexpr double kBrainOwnedMaxRadioBoardCandidateDistanceNm = 300.0;
+
 enum class OverlayMode {
     Dormant,
     Prewarm,
@@ -184,6 +186,8 @@ struct TransceiverResolutionSnapshot {
     bool available = false;
     bool stale = true;
     int receivableControllers = 0;
+    int distanceRejectedControllers = 0;
+    double maxCandidateDistanceNm = kBrainOwnedMaxRadioBoardCandidateDistanceNm;
     std::string statusLine;
     std::vector<ReceivableControllerSnapshot> candidates;
 };

@@ -8,6 +8,16 @@ Coordinator Contract, Reconnect Workflow Recovery Contract, or Preflight Route
 Cache Contract. It is the release-readiness gate that proves those contracts
 behave correctly in real X-Plane, xPilot, and VATSIM use.
 
+Current live-gate update 2026-05-27: installed hash
+`81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A` has five
+confirmed valid live battle-test passes. Battle Test #1 was UPS325 KSDF ->
+MMMX. Battle Test #2 was UA1224 / UAL1224 KLAX -> KLAS. Battle Test #3 was
+UAL1045 KSFO -> KGEG. Battle Test #4 was UAL1005 KGEG -> KDEN. Battle Test #5
+was UPS293 EGSS -> KSDF. The active live streak is now `5`; Milestone 1 /
+Beta Streamer Candidate live gate is complete. The next work is the deliberate
+brain-owned runtime audit and market-preparation process with the contract open.
+This current-state note supersedes older historical hash/streak lines below.
+
 Status update 2026-05-20: the Radio Board / Brain-owned runtime baseline has
 one confirmed live pass. Battle Test #1, KONT -> KPDX / UPS3502, passed with
 healthy steady-state performance and no old authority fallback work firing.
@@ -54,6 +64,144 @@ change workflow, relevance, display intent, UI wake behavior, or the old
 authority path. The active consecutive pass count remains `0`; the next valid
 live battle test is Battle Test #1 for this hash.
 
+Live failure update 2026-05-21: SWA3187 KELP -> KHOU on installed hash
+`3ACE28B2E521493FA39A01444ADCFF6E7451B6292426257301EC8F54E992D363`
+is logged as `FAIL` in
+`battle_tests/2026-05-21_SWA3187_KELP_KHOU_FAIL.log`. Route resolution and
+Controller Relevance correctly identified HOU Center as a route-relevant
+`NEXT_POLYGON` controller for KZHU, and rejected ZAK FSS as off-route. Brain
+Display Intent / final departure display assembly dropped the next-polygon
+center and left only KELP CTAF visible. A corrective build changes only the
+brain-owned display boundary so route-pending centers stay hidden until route
+context exists, and departure final display includes accepted current and next
+route centers. Corrective build hash:
+`30FA935A1D4DA1CD1ED7054D8DD20BB4700D44058673E41EE80E2F559E32A5C6`. Full
+regression harness passed `236 / 236`, and Release build passed. Installation
+is pending because X-Plane had the installed plugin/audio files locked during
+the live session. The active consecutive pass count remains `0`; after the
+corrective build is installed, the next valid live test is Battle Test #1 for
+that hash.
+
+Install update 2026-05-21: after X-Plane disconnected, the corrective
+`XVatsim.xpl` was copied into
+`C:\X-Plane 12\Resources\plugins\XVatsim\win_x64`. The installed SHA256 now
+matches the corrective build:
+`30FA935A1D4DA1CD1ED7054D8DD20BB4700D44058673E41EE80E2F559E32A5C6`. The next
+valid departure-mode live test is Battle Test #1 for this hash.
+
+Departure-mode corrective validation update 2026-05-21: SWA3187 KELP -> KHOU
+was reconnected on corrective hash
+`30FA935A1D4DA1CD1ED7054D8DD20BB4700D44058673E41EE80E2F559E32A5C6` and is
+logged as `PASS / DEPARTURE-MODE CORRECTIVE VALIDATION` in
+`battle_tests/2026-05-21_SWA3187_KELP_KHOU_DEPARTURE_VALIDATION_PASS.log`.
+KELP CTAF displayed, HOU Center displayed as `NEXT_POLYGON` with remaining
+distance and pilot-observed orange UI color, HOU was removed from the UI when
+it logged off, and DEN Center remained captured by the radio board but hidden
+as `center-not-route-polygon-match`. The route-pending slice also hid center
+rows until route polygon context was available. This validates the corrective
+departure display action but does not increment the full release-gate live
+streak because the team is intentionally holding at departure-mode tests before
+airborne testing.
+
+Terminal-authority failure update 2026-05-21: UPS2153 KONT -> PANC exposed an
+APP/DEP authority failure. XVatsim correctly showed KONT CTAF, LAX Center, and
+`SCT_APP 128.050`, but incorrectly displayed `SAN_W1_APP 119.600`, which is
+San Diego Approach authority and not Ontario departure authority. The bad
+candidate was about `69nm` away, while a transient Las Vegas APP candidate also
+reported `0nm`, proving distance alone is not trustworthy for airport or
+terminal authority. The active consecutive pass count remains `0`.
+
+Terminal-authority corrective install update 2026-05-21: corrective build hash
+`2C106BBA63A742F4073715263565D048703521210A20389EC5AAFA3E2BFC87A4` was built,
+full harness passed `237 / 237`, and the XPL was installed to
+`C:\X-Plane 12\Resources\plugins\XVatsim\win_x64`. Departure APP/DEP now
+requires brain-owned terminal-owner proof from the removable
+`terminal_authority` worker fact. The KONT regression accepts `SCT_APP` and
+rejects `SAN_W1_APP` / `LAS_F_APP` as owner mismatches. The next valid live
+test is Battle Test #1 for this installed hash.
+
+Version 1 boundary update 2026-05-21: unknown/magenta/manual visible-hidden
+controller rows are not part of the Version 1 runtime. Unproven APP/DEP,
+airport local, or center candidates must be rejected/hidden with diagnostic
+reasons unless the brain has proof to display them. Any pilot-controlled
+visible/hidden handling is a possible Version 2 discussion only.
+
+Clean-module clarification 2026-05-21: the removable
+`modules/terminal_authority` worker is intentional Engineer 3 clean
+architecture. New modules are the preferred way to add isolated fact producers.
+The contract risk is feature decision/scheduling logic leaking into the plugin
+shell, not the existence of a new module.
+
+Radio-board candidate envelope update 2026-05-21: a build was produced with an
+approved Brain-owned 300nm raw radio-board candidate cap. This prevents
+controllers such as `MEM_221_CTR` at `325nm` from entering the raw candidate
+board just because controller visual range is `600nm`. The cap is not authority
+proof; route polygon proof and terminal authority proof still decide display.
+Release build passed, focused scenario
+`radio_reachable_source_rejects_over_300nm_transceiver_candidate.scn` passed,
+and full harness passed `238 / 238`. Built XPL SHA256:
+`616E135A48E61ADBC8537BDB483EC025D12012E641649DDA2BDF95B81D04E9DC`.
+After Darron requested the install, this XPL was copied into X-Plane and the
+installed SHA256 now matches:
+`616E135A48E61ADBC8537BDB483EC025D12012E641649DDA2BDF95B81D04E9DC`.
+
+Terminal-authority guardrail update 2026-05-22: UPS2153 KONT -> PANC exposed a
+second APP/DEP leak where `LAX_S_DEP` was accepted for KONT after service
+tokens were collapsed too broadly. The fix preserves service-aware terminal
+tokens such as `SCT_APP`, `ONT_APP`, and `LAX_DEP`; adds cached arrival
+terminal-authority facts matching the existing departure path; and rejects
+same-TRACON sibling airport prefixes unless they match the current endpoint
+authority. Backend guardrail scenarios now cover departure and arrival for
+`KONT`, `KLAX`, `KSAN`, `KLAS`, and `PANC`. During the guardrail work, PANC
+exposed a local terminal clue gap because live terminal callsigns use `ANC`;
+the terminal-authority resolver now treats four-letter `P*` airport ICAOs the
+same way as `K*` ICAOs for three-letter local clues. This is not a global
+string-only alias engine: callsign tokens are clues, radio-board/frequency
+evidence must be present, and endpoint/route authority still decides display.
+Focused guardrail passed `10 / 10`, full harness passed `247 / 247`, Release
+plugin build passed, and the installed XPL SHA256 is now:
+`C11962103BA224FA57263490319118091D1F791625BAB9B1CFE43EAA70410AB6`. The
+active live streak remains `0`; the next valid live test is Battle Test #1 for
+this hash.
+
+FAA/NASR frequency decision-hardening update 2026-05-22: the KONT/KLAX SoCal
+ambiguity showed that shared SimAware/TRACON text is not enough. A removable
+`airport_frequency_catalog` worker now parses endpoint-scoped FAA/NASR
+`FRQ.csv` airport frequency facts, and brain-owned Controller Relevance uses
+those facts as decision evidence when available. Exact endpoint APP/DEP
+frequency can rescue a SimAware text miss; exact endpoint APP/DEP frequency
+miss can block a broad/shared SimAware text-only pass. The KONT guardrail
+rejects `SCT_APP 124.300` for KONT while accepting `SCT_1_APP 127.000` when
+KONT FAA APP/DEP facts are present. Focused SoCal, KSDF FAA frequency proof,
+and KONT terminal-authority scenarios passed; full harness passed `250 / 250`;
+Release plugin build passed; and the XPL was installed to
+`C:\X-Plane 12\Resources\plugins\XVatsim\win_x64`. Installed SHA256 now
+matches:
+`10937952D56614905E144EBD9DD1C4CE203349A4AEFB88B85B16A2766016CC42`. The
+active live streak remains `0`; the next valid live test is Battle Test #1 for
+this installed hash. Critical boundary: live FAA/NASR source acquisition is
+not yet wired, so do not count a live flight as FAA/NASR disambiguation proof
+until diagnostics show the departure/arrival frequency cache was populated.
+
+Brain display contract source update 2026-05-22: live UPS2183 KONT -> KDFW
+exposed a display-contract failure, not a controller-relevance failure.
+Controller Relevance accepted `SCT_APP 128.050` as `CURRENT_POLYGON`, but the
+final non-center display row lost that relation and old Engineer 1/2 text/tone
+assumptions let standby/next/online style state influence the row. Source has
+been updated so accepted-completion relation facts flow into Brain Display
+Intent, overlay tone comes only from final `displayRelation`, departure APP/DEP
+sorts before Center, radio tuning changes invalidate stale relevance reuse, and
+controller row text is limited to `Active` or `Standby`. The pilot-facing
+current/next distinction is now color-only: green for current polygon, orange
+for next/arrival-prep. Harness verification passed, including the new
+`brain_display_intent_departure_app_current_active_standby_advances.scn`
+scenario and full harness `251 / 251`. Release plugin build/install was not
+performed for this source closeout. The installed X-Plane plugin hash therefore
+remains `10937952D56614905E144EBD9DD1C4CE203349A4AEFB88B85B16A2766016CC42`
+until a future approved build/install verifies a new hash. The active live
+streak remains `0`; the first valid live test after installing a build with
+this runtime display change must be Battle Test #1 for that installed hash.
+
 ## Purpose
 
 XVatsim is not release-ready because a single test works. It is release-ready
@@ -83,8 +231,11 @@ Requirement:
 
 Outcome:
 
-- After this milestone passes, a copy of the plugin may be given to the beta
-  tester / streamer.
+- After this milestone passes, begin the deliberate audit and market-preparation
+  process with the brain-owned runtime contract open.
+- A copy of the plugin may be given to the beta tester / streamer only after
+  that post-Milestone-1 review confirms the same installed binary is still the
+  intended candidate.
 
 ### Milestone 2: Store Release Candidate
 
@@ -216,10 +367,35 @@ Only then may XVatsim be treated as store-release ready.
 
 ## Current Installed Test Hash
 
-- Date: 2026-05-21
+- Date: 2026-05-22
 - Installed `XVatsim.xpl` SHA256:
-  `3ACE28B2E521493FA39A01444ADCFF6E7451B6292426257301EC8F54E992D363`
-- Reason: diagnostics-only Engineer 3 trace added for radio-board candidate
+  `10937952D56614905E144EBD9DD1C4CE203349A4AEFB88B85B16A2766016CC42`
+- Reason: FAA/NASR frequency decision hardening for airport local and terminal
+  APP/DEP relevance; removable `airport_frequency_catalog` worker added as a
+  fact producer; brain-owned airport frequency cache added; Controller
+  Relevance now uses endpoint FAA frequency evidence in accept/reject
+  decisions when facts are present; KONT/KLAX SoCal frequency disambiguation
+  covered by regression; focused SoCal/KONT, KSDF FAA frequency proof, and KONT
+  terminal-authority scenarios passed; full harness passed `250 / 250`;
+  release plugin build passed; live FAA/NASR source acquisition still requires
+  a future approved gate before live flights can prove frequency
+  disambiguation; service-aware terminal authority for APP/DEP; cached departure and
+  arrival endpoint terminal-authority facts; KONT rejects `LAX_S_DEP`,
+  `SAN_W1_APP`, and `LAS_F_APP` while accepting `SCT_APP`/sectorized `SCT_APP`
+  authority; backend departure/arrival guardrail scenarios for `KONT`, `KLAX`,
+  `KSAN`, `KLAS`, and `PANC`; PANC/ANC terminal clue normalization; focused
+  guardrail passed `10 / 10`; full harness passed `247 / 247`; release plugin
+  build passed; controller identity remains radio-board scoped and
+  frequency-backed, not a global string-only alias table; approved 300nm
+  radio-board candidate envelope; controllers farther
+  than 300nm from the aircraft to the nearest AFV transceiver are rejected
+  before raw board relevance; corrective build for UPS2153 KONT -> PANC
+  terminal APP/DEP filtering;
+  departure APP/DEP now requires brain-owned terminal-owner proof from the
+  removable `terminal_authority` worker fact, and the KONT regression accepts
+  `SCT_APP` while rejecting `SAN_W1_APP` and `LAS_F_APP` as owner mismatches;
+  corrective build for SWA3187 KELP -> KHOU departure display plus
+  diagnostics-only Engineer 3 trace added for radio-board candidate
   diffs and post-publisher completion/display results; Engineer 3 locked as the
   unconditional live refresh entry;
   display-intent distance is now non-destructive so route-entry fact truth is
@@ -360,5 +536,7 @@ Only then may XVatsim be treated as store-release ready.
   is used by regression coverage rather than ordinary live UI refresh; workflow
   selection no longer runs a provisional Controller Relevance pass;
   brain-owned runtime audit map updated.
-- Active live streak: remains `0`; the next valid live test is Battle Test #1
-  for this installed hash.
+- Current status superseding the long hash history: installed hash
+  `81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A` has
+  active live streak `5`; Milestone 1 / Beta Streamer Candidate live gate is
+  complete.

@@ -143,6 +143,13 @@ std::string HashToHex(std::uint64_t hash) {
     return stream.str();
 }
 
+double ResolveMaxRadioBoardCandidateDistanceNm(
+    double configuredDistanceNm) {
+    return configuredDistanceNm > 0.0
+               ? configuredDistanceNm
+               : kBrainOwnedMaxRadioBoardCandidateDistanceNm;
+}
+
 const char* ToStageToken(WorkflowStage stage) {
     switch (stage) {
         case WorkflowStage::Departure:
@@ -369,10 +376,20 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshotFromTransc
 
     const auto controllersByCallsign = IndexControllersByCallsign(controllerFeedSnapshot);
     int unmatchedCandidates = 0;
+    int distanceFilteredCandidates = 0;
+    const auto maxCandidateDistanceNm =
+        ResolveMaxRadioBoardCandidateDistanceNm(
+            transceiverSnapshot.maxCandidateDistanceNm);
     snapshot.candidates.reserve(transceiverSnapshot.candidates.size());
     for (const auto& receivable : transceiverSnapshot.candidates) {
         const auto callsign = ToUpper(Trim(receivable.callsign));
         if (callsign.empty()) {
+            continue;
+        }
+
+        if (std::isfinite(receivable.distanceNm) &&
+            receivable.distanceNm > maxCandidateDistanceNm) {
+            ++distanceFilteredCandidates;
             continue;
         }
 
@@ -415,6 +432,15 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshotFromTransc
            << " unmatched=" << unmatchedCandidates
            << " hash=" << HashToHex(snapshot.stableHash)
            << " " << RadioReachableGroupCountSummary(snapshot);
+    const auto totalDistanceRejected =
+        transceiverSnapshot.distanceRejectedControllers +
+        distanceFilteredCandidates;
+    if (totalDistanceRejected > 0) {
+        stream << " distanceRejected=" << totalDistanceRejected
+               << " maxCandidateDistanceNm="
+               << static_cast<int>(std::round(maxCandidateDistanceNm))
+               << " distanceReason=radio-candidate-over-max-distance";
+    }
     if (!snapshot.changeReason.empty()) {
         stream << " reason=" << snapshot.changeReason;
     }

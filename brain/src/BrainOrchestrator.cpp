@@ -212,6 +212,7 @@ int DepartureRoleRank(StationRole role) {
         case StationRole::Tower:
             return 2;
         case StationRole::Departure:
+        case StationRole::Approach:
             return 3;
         case StationRole::Center:
             return 4;
@@ -220,7 +221,6 @@ int DepartureRoleRank(StationRole role) {
         case StationRole::Ctaf:
         case StationRole::Unicom:
             return 6;
-        case StationRole::Approach:
         case StationRole::Other:
         default:
             return 7;
@@ -275,6 +275,23 @@ std::string RoleLabel(StationRole role) {
         default:
             return "ATC";
     }
+}
+
+bool HasDisplayRelationTone(DisplayRelation relation) {
+    return relation == DisplayRelation::CurrentPolygon ||
+           relation == DisplayRelation::NextPolygon ||
+           relation == DisplayRelation::ArrivalPrep;
+}
+
+OverlayTone ToneForDisplayRelation(DisplayRelation relation) {
+    if (relation == DisplayRelation::CurrentPolygon) {
+        return OverlayTone::Active;
+    }
+    if (relation == DisplayRelation::NextPolygon ||
+        relation == DisplayRelation::ArrivalPrep) {
+        return OverlayTone::Next;
+    }
+    return OverlayTone::Normal;
 }
 
 std::vector<FinalDisplayStationSnapshot> OrderStations(
@@ -341,22 +358,10 @@ OverlayTextLine FormatBoardLine(
     const FinalDisplayStationSnapshot& station,
     BoardSource boardSource) {
     OverlayTextLine line;
-    const auto isEnrouteCenter = station.role == StationRole::Center;
-    if (isEnrouteCenter) {
-        if (station.offline) {
-            line.tone = OverlayTone::Normal;
-        } else if (station.sectorActive) {
-            line.tone = OverlayTone::Active;
-        } else if (station.hasRouteEntryDistance) {
-            line.tone = OverlayTone::Next;
-        } else {
-            line.tone = station.tuned ? OverlayTone::Active : OverlayTone::Normal;
-        }
+    if (HasDisplayRelationTone(station.displayRelation)) {
+        line.tone = ToneForDisplayRelation(station.displayRelation);
     } else {
-        line.tone = (station.next || station.standby) ? OverlayTone::Next
-                                 : ((station.tuned || station.sectorActive)
-                                        ? OverlayTone::Active
-                                        : OverlayTone::Normal);
+        line.tone = OverlayTone::Normal;
     }
 
     std::string text = SanitizeDisplayText(RoleLabel(station.role), 24);
@@ -378,24 +383,10 @@ OverlayTextLine FormatBoardLine(
         text += " " + annotation;
     }
 
-    if (isEnrouteCenter) {
-        if (station.tuned) {
-            text += " *Active*";
-        } else if (station.offline) {
-            text += " *OFFLINE*";
-        }
+    if (station.tuned) {
+        text += " *Active*";
     } else if (station.standby) {
         text += " *Standby*";
-    } else if (station.next) {
-        text += " *NEXT*";
-    } else if (station.sectorActive) {
-        text += " *ACTIVE*";
-    } else if (station.online) {
-        text += " *ONLINE*";
-    } else if (station.offline) {
-        text += " *OFFLINE*";
-    } else if (station.tuned) {
-        text += " *Active*";
     }
 
     line.text = SanitizeDisplayText(std::move(text), kMaxDisplayLineChars);

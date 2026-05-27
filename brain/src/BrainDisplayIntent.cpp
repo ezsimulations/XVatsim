@@ -49,6 +49,44 @@ std::string NormalizeKey(std::string value) {
     return value;
 }
 
+std::string NormalizeFrequency(std::string frequency) {
+    frequency.erase(
+        std::remove_if(
+            frequency.begin(),
+            frequency.end(),
+            [](unsigned char ch) { return std::isspace(ch) != 0; }),
+        frequency.end());
+
+    std::string digits;
+    bool sawDecimal = false;
+    int decimals = 0;
+    for (const auto ch : frequency) {
+        if (std::isdigit(static_cast<unsigned char>(ch)) != 0) {
+            digits.push_back(ch);
+            if (sawDecimal && decimals < 3) {
+                ++decimals;
+            }
+            continue;
+        }
+        if (ch == '.' && !sawDecimal) {
+            sawDecimal = true;
+        }
+    }
+
+    if (digits.empty()) {
+        return {};
+    }
+    if (sawDecimal) {
+        while (decimals < 3) {
+            digits.push_back('0');
+            ++decimals;
+        }
+    } else if (digits.size() == 5) {
+        digits.push_back('0');
+    }
+    return digits;
+}
+
 bool KeysEqual(const std::string& left, const std::string& right) {
     const auto normalizedLeft = NormalizeKey(left);
     const auto normalizedRight = NormalizeKey(right);
@@ -74,7 +112,7 @@ bool IsDisplayableStation(const FinalDisplayStationSnapshot& station) {
 std::string StationKey(const FinalDisplayStationSnapshot& station) {
     return std::to_string(static_cast<int>(station.role)) + "|" +
            NormalizeKey(station.callsign) + "|" +
-           NormalizeKey(station.frequency);
+           NormalizeFrequency(station.frequency);
 }
 
 std::string FormatDistanceAnnotation(double distanceNm) {
@@ -112,9 +150,67 @@ void AppendUnique(
     }
 }
 
+const BrainDisplayRelationFact* FindRelationFact(
+    const BoardStationSnapshot& station,
+    const std::vector<BrainDisplayRelationFact>& relationFacts) {
+    const auto stationCallsign = NormalizeKey(station.callsign);
+    const auto stationFrequency = NormalizeFrequency(station.frequency);
+    if (stationCallsign.empty() || stationFrequency.empty()) {
+        return nullptr;
+    }
+
+    const auto found = std::find_if(
+        relationFacts.begin(),
+        relationFacts.end(),
+        [&](const auto& fact) {
+            return NormalizeKey(fact.callsign) == stationCallsign &&
+                   NormalizeFrequency(fact.frequency) == stationFrequency;
+        });
+    return found == relationFacts.end() ? nullptr : &*found;
+}
+
+bool IsFinalDisplayRelation(DisplayRelation relation) {
+    return relation == DisplayRelation::CurrentPolygon ||
+           relation == DisplayRelation::NextPolygon ||
+           relation == DisplayRelation::ArrivalPrep;
+}
+
+FinalDisplayStationSnapshot BuildFactDisplayStation(
+    const BoardStationSnapshot& sourceStation,
+    const std::vector<BrainDisplayRelationFact>& relationFacts) {
+    auto station = ToFinalDisplayStation(sourceStation);
+    station.next = false;
+    station.standby = false;
+
+    const auto* relationFact = FindRelationFact(sourceStation, relationFacts);
+    if (relationFact == nullptr ||
+        !IsFinalDisplayRelation(relationFact->displayRelation)) {
+        return station;
+    }
+
+    station.displayRelation = relationFact->displayRelation;
+    station.next =
+        relationFact->displayRelation == DisplayRelation::NextPolygon ||
+        relationFact->displayRelation == DisplayRelation::ArrivalPrep;
+    station.hasRouteEntryDistance = relationFact->hasRouteEntryDistance;
+    station.routeEntryDistanceNm =
+        relationFact->hasRouteEntryDistance
+            ? std::max(0.0, relationFact->routeEntryDistanceNm)
+            : 0.0;
+    return station;
+}
+
 DisplayRelation InferCenterRelation(
     const BoardStationSnapshot& station,
     const BrainDisplayIntentInput& input) {
+    const auto hasRouteContext =
+        !input.currentPolygonKey.empty() ||
+        !input.nextPolygonKey.empty() ||
+        !input.arrivalPolygonKey.empty();
+    if (!hasRouteContext && !station.hasRouteEntryDistance) {
+        return DisplayRelation::Hidden;
+    }
+
     if (station.sectorActive || station.tuned ||
         KeysEqual(station.polygonKey, input.currentPolygonKey)) {
         return DisplayRelation::CurrentPolygon;
@@ -136,6 +232,12 @@ DisplayRelation InferCenterRelation(
                    : DisplayRelation::NextPolygon;
     }
     return DisplayRelation::Hidden;
+}
+
+bool ShouldDisplayDepartureEnrouteCenter(
+    const FinalDisplayStationSnapshot& station) {
+    return station.displayRelation == DisplayRelation::CurrentPolygon ||
+           station.displayRelation == DisplayRelation::NextPolygon;
 }
 
 FinalDisplayStationSnapshot BuildFinalDisplayStation(
@@ -185,6 +287,7 @@ FinalDisplayStationSnapshot BuildFinalDisplayStation(
 
 void AddBoardStations(
     const ModuleBoardSnapshot& source,
+    const std::vector<BrainDisplayRelationFact>& relationFacts,
     FinalDisplaySnapshot* target,
     std::unordered_set<std::string>* keys) {
     if (target == nullptr || keys == nullptr) {
@@ -194,7 +297,10 @@ void AddBoardStations(
         if (!IsDisplayableStation(station)) {
             continue;
         }
-        AppendUnique(ToFinalDisplayStation(station), target, keys);
+        AppendUnique(
+            BuildFactDisplayStation(station, relationFacts),
+            target,
+            keys);
     }
 }
 
@@ -226,14 +332,15 @@ FinalDisplaySnapshot BuildDisplayBoard(
     WorkflowStage stage,
     const ModuleBoardSnapshot& departureBoard,
     const ModuleBoardSnapshot& arrivalBoard,
-    const FinalDisplaySnapshot& enrouteBoard) {
+    const FinalDisplaySnapshot& enrouteBoard,
+    const std::vector<BrainDisplayRelationFact>& relationFacts) {
     FinalDisplaySnapshot display;
     std::unordered_set<std::string> keys;
 
     if (stage == WorkflowStage::Arrival) {
         display = MakeDisplayShell(arrivalBoard, BoardSource::Arrival);
         keys.reserve(arrivalBoard.stations.size() + enrouteBoard.stations.size());
-        AddBoardStations(arrivalBoard, &display, &keys);
+        AddBoardStations(arrivalBoard, relationFacts, &display, &keys);
         AddFinalDisplayStations(enrouteBoard, &display, &keys);
         return display;
     }
@@ -241,9 +348,9 @@ FinalDisplaySnapshot BuildDisplayBoard(
     if (stage == WorkflowStage::Departure) {
         display = MakeDisplayShell(departureBoard, BoardSource::Departure);
         keys.reserve(departureBoard.stations.size() + enrouteBoard.stations.size());
-        AddBoardStations(departureBoard, &display, &keys);
+        AddBoardStations(departureBoard, relationFacts, &display, &keys);
         for (const auto& station : enrouteBoard.stations) {
-            if (station.displayRelation == DisplayRelation::CurrentPolygon &&
+            if (ShouldDisplayDepartureEnrouteCenter(station) &&
                 IsDisplayableStation(station)) {
                 AppendUnique(station, &display, &keys);
             }
@@ -418,7 +525,8 @@ BrainDisplayIntentOutput RunBrainDisplayIntentWorker(
         input.workflowStage,
         output.departureBoard,
         output.arrivalBoard,
-        displayEnrouteBoard);
+        displayEnrouteBoard,
+        input.relationFacts);
     output.stableHash = HashBoard(output.finalDisplay);
 
     return output;
