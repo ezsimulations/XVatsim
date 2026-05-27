@@ -320,6 +320,17 @@ function Test-StoreSubmissionMaterials {
         [void](Assert-File (Join-Path $materialsRoot $relativePath) "Expected store submission material")
     }
 
+    $auditPath = Join-Path $materialsRoot "10_V1_Release_Audit.txt"
+    if (Test-Path -LiteralPath $auditPath -PathType Leaf) {
+        $auditText = Get-Content -LiteralPath $auditPath -Raw
+        if ($auditText -notmatch "UAL548 KDEN -> KJAC PASS") {
+            Add-Failure "Manual customer-package smoke test proof missing from 10_V1_Release_Audit.txt."
+        }
+        if ($auditText -notmatch "store package installs and runs as a proper X-Plane plugin") {
+            Add-Failure "Customer-package install/run proof wording missing from 10_V1_Release_Audit.txt."
+        }
+    }
+
     $draftPatterns = @(
         @{ Label = "placeholder text"; Pattern = "replace-with|placeholder" },
         @{ Label = "suggested draft wording"; Pattern = "\bsuggested\b" },

@@ -848,6 +848,12 @@ Final store-upload package:
 - Built after the 5 of 5 live battle-test gate completed for the current runtime hash.
 - Must be validated by tools\release_gate\Run-FinalReleaseValidation.ps1 before upload.
 
+Manual customer-package smoke test:
+- UAL548 KDEN -> KJAC PASS
+- The final store package zip was downloaded/extracted as a customer would receive it.
+- X-Plane was flown under the packaged XVatsim.xpl.
+- Result confirms the store package installs and runs as a proper X-Plane plugin.
+
 Verified release behavior documented for V1:
 - Windows / X-Plane 12 / xPilot / IFR flight-plan workflow
 - Automatic wake/sleep overlay behavior after xPilot connection
