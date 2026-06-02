@@ -1,11 +1,12 @@
 # Roadmap Boundaries
 
-Updated: 2026-05-15
+Updated: 2026-06-02
 
 ## V1 Product Position
 
-XVatsim V1 is an xPilot companion plugin for Windows and X-Plane 12. It is not a
-replacement VATSIM client, not an xPilot fork, and not a full network/audio client.
+XVatsim V1.0.0 is closed as a freeware xPilot companion plugin for Windows and
+X-Plane 12. It is not a replacement VATSIM client, not an xPilot fork, and not a
+full network/audio client.
 
 The V1 reliability goal is controller-awareness trustworthiness:
 
@@ -16,7 +17,7 @@ The V1 reliability goal is controller-awareness trustworthiness:
 - clean lifecycle/reset behavior
 - regression coverage for known real-world failures
 
-## Do Not Reintroduce For V1
+## Do Not Reopen For V1
 
 - xPilot fork/replacement planning
 - standalone desktop client planning
@@ -27,8 +28,21 @@ The V1 reliability goal is controller-awareness trustworthiness:
 - second-monitor/out-of-sim UI
 - dedicated VFR workflow
 
-These may be discussed after the V1 milestone map is complete, but they should not
-change the current release path.
+These items should not change the closed V1.0.0 freeware release path.
+
+## V2.0.0 Entry Point
+
+Future work begins as XVatsim V2.0.0 planning and implementation.
+
+Initial V2 objectives:
+
+- dedicated VFR implementation
+- Mac support
+- Linux support
+
+Each V2 objective needs its own Contract Gate before source changes. The
+brain-owned runtime contract still applies: Brain decides, modules produce facts,
+and UI displays brain-approved facts.
 
 ## Future Work Rule
 

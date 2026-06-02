@@ -1,6 +1,55 @@
 # Next Session Handoff
 
-Date noted: 2026-05-27
+Date noted: 2026-06-02
+
+## Current Product State - V1.0.0 Freeware Closeout
+
+XVatsim V1.0.0 is closed as a verified freeware Windows/X-Plane 12/xPilot
+release.
+
+Active V1.0.0 freeware package:
+
+- `releases\XVatsim_1.0.0_Freeware_Windows_XP12.zip`
+- Package SHA-256:
+  `C5F5B9513D2EE1783E1FE40B0E4BFD6331E11F24A8BF5F4CE2F93917815BDF7C`
+- Packaged plugin/runtime SHA-256:
+  `81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A`
+
+The X-Plane.org Store submission path is no longer active for V1.0.0 because the
+store requested a Mac version. V1.0.0 is now a freeware Windows release.
+
+Freeware package validation:
+
+- Fresh Release plugin build passed.
+- Freeware zip smoke extraction passed.
+- Package file set verified.
+- Packaged plugin hash matched the verified Release runtime hash.
+- Package text scan found no store, commercial, or proof-of-purchase wording.
+- Package scan found no `.pdb`, `.lib`, `.exp`, `.log`, temp, debug, or
+  store-submission files.
+- Darron reported the freeware package passes cleanly.
+
+User guide:
+
+- `docs\user_guide\XVatsim_User_Guide.md`
+- `docs\user_guide\XVatsim_User_Guide.pdf`
+- `docs\user_guide\assets\*.jpg`
+
+Diagnostic logging remains intentional for customer bug reports, but generated
+logs are not shipped in the package.
+
+Next product work:
+
+- Start XVatsim V2.0.0.
+- Initial V2 targets are dedicated VFR implementation, Mac support, and Linux
+  support.
+- Before V2 source changes, produce a new Contract Gate and wait for
+  `Approved to edit`.
+
+Closeout docs:
+
+- `docs\V1_0_0_FREEWARE_CLOSEOUT.md`
+- `docs\V2_0_0_ROADMAP.md`
 
 ## Current Verified Runtime State - 2026-05-27 Battle Test #5
 

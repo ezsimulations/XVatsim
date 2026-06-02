@@ -1,18 +1,46 @@
 # Milestone Status
 
-Updated: 2026-05-16
+Updated: 2026-06-02
 
 ## Current Position
 
-Milestones 1 through 9 are complete on the authoritative rebuild plan. The live
-plugin now uses the offline regression harness, fail-closed source handling,
-true route geometry, typed route grammar, deterministic nav-graph resolution,
-data-driven controller authority, proven workflow ownership, audited
-`XPLMFindNavAid` use, and post-rebuild cleanup. The final V1 customer package
-has been refreshed from the validated build output, zipped, smoke-tested, and
-validated by the final release gate. The package zip created during Milestone 5
-remains an internal checkpoint only and must not be treated as the store-upload
-package.
+Milestones 1 through 9 are complete on the authoritative rebuild plan, and the
+five-flight live battle-test gate passed for the installed V1 runtime hash
+`81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A`.
+
+XVatsim V1.0.0 is now closed as a freeware Windows/X-Plane 12/xPilot release.
+The X-Plane.org Store submission path is superseded because the store requested
+a Mac version. Future product work starts as XVatsim V2.0.0 with dedicated VFR
+implementation, Mac support, and Linux support.
+
+The live plugin uses the offline regression harness, fail-closed source
+handling, true route geometry, typed route grammar, deterministic nav-graph
+resolution, data-driven controller authority, proven workflow ownership, audited
+`XPLMFindNavAid` use, and post-rebuild cleanup.
+
+## V1.0.0 Freeware Closeout
+
+- Freeware package:
+  `releases\XVatsim_1.0.0_Freeware_Windows_XP12.zip`.
+- Package SHA-256:
+  `C5F5B9513D2EE1783E1FE40B0E4BFD6331E11F24A8BF5F4CE2F93917815BDF7C`.
+- Packaged plugin SHA-256:
+  `81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A`.
+- Professional user guide added:
+  `docs\user_guide\XVatsim_User_Guide.pdf`.
+- Fresh Release build, package smoke extraction, file-set validation, package
+  text scan, and packaged-plugin hash verification passed.
+- Darron reported the freeware package passes cleanly.
+- Diagnostic logging remains intentional for customer bug reports; generated
+  logs are not shipped in the release package.
+
+Closeout record:
+
+- `docs\V1_0_0_FREEWARE_CLOSEOUT.md`
+
+V2 roadmap:
+
+- `docs\V2_0_0_ROADMAP.md`
 
 ## Milestone 5 Cleanup Completed
 
@@ -400,18 +428,19 @@ package.
 
 ## Release Rule
 
-Milestones 6 through 9 are complete, and the final package validation pass has
-been run from a fresh store-upload zip. Before public upload, finish the
-non-code store assets: final screenshots, storefront/vendor display name, and
-support email address.
+Milestones 6 through 9 are complete, the five-flight live battle-test gate is
+complete, and V1.0.0 is closed as freeware.
+
+Future runtime or platform work starts under the V2.0.0 roadmap and requires a
+new Contract Gate before edits.
 
 ## Final Package Validation
 
-- Final store-upload package created:
-  `releases\XVatsim_XPlaneOrg_Store_Submission_Kit_1.0.0_2026-05-15\XVatsim_1.0.0_Windows_XP12_store_upload_2026-05-16.zip`.
-- Final store-upload package SHA-256:
-  `0843DE043A9DF557DA5B9A7E9E96016DAEB12A1B5799E2196722C8EFC189FC88`.
-- Final release gate passed after rebuilding release targets, replaying all 94
-  saved regression scenarios, scanning active source and customer package text,
-  checking customer package contents, verifying build/package/installed hashes,
-  and smoke-testing a clean install from the final zip.
+- Final freeware package:
+  `releases\XVatsim_1.0.0_Freeware_Windows_XP12.zip`.
+- Final freeware package SHA-256:
+  `C5F5B9513D2EE1783E1FE40B0E4BFD6331E11F24A8BF5F4CE2F93917815BDF7C`.
+- Final package validation passed after rebuilding Release targets, smoke
+  extracting the zip, checking customer package contents, scanning package text,
+  verifying the packaged plugin hash, and preserving the professional user
+  guide in the package.

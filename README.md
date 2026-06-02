@@ -3,6 +3,24 @@
 XVatsim is a Windows/X-Plane 12 companion plugin for xPilot. It provides a route-aware
 cockpit overlay for VATSIM controller awareness, focused on IFR flight-plan operations.
 
+## Current Release
+
+XVatsim V1.0.0 is closed as a verified freeware Windows release for X-Plane 12
+and xPilot.
+
+- Freeware package:
+  `releases/XVatsim_1.0.0_Freeware_Windows_XP12.zip`
+- Package SHA-256:
+  `C5F5B9513D2EE1783E1FE40B0E4BFD6331E11F24A8BF5F4CE2F93917815BDF7C`
+- Packaged runtime SHA-256:
+  `81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A`
+- User guide:
+  `docs/user_guide/XVatsim_User_Guide.pdf`
+
+The X-Plane.org Store submission path is no longer the active release path for
+V1.0.0 because the store requested a Mac build. XVatsim V1.0.0 is being released
+as freeware instead.
+
 ## Current V1 Scope
 
 - Windows
@@ -30,6 +48,13 @@ must not be papered over with guessed substitutions.
 - `docs/`: current architecture notes
 - `assets/`: package assets such as transition audio
 - `releases/`: release/checkpoint packaging materials
+
+## V2.0.0 Direction
+
+Future development starts as XVatsim V2.0.0 work. The first planned V2 workstreams
+are dedicated VFR implementation and Mac/Linux support. V2 changes still require
+the brain-owned runtime contract: modules produce facts, the brain decides, and
+the UI displays brain-approved facts.
 
 ## Build
 
