@@ -48,6 +48,27 @@ The final gate verifies:
 - A `Store_Submission_Materials\11_Final_Validation_Result.txt` receipt when
   the gate passes
 
+## Freeware Package Builder
+
+The active public release path is the freeware Windows/X-Plane 12/xPilot
+package. Store-submission scripts are historical tooling unless the store path
+is deliberately reopened.
+
+To build a fresh freeware zip from the current Release payload:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release_gate\New-FreewareReleasePackage.ps1
+```
+
+The freeware builder creates:
+
+- `releases\XVatsim_<version>_Freeware_Windows_XP12\...`
+- `releases\XVatsim_<version>_Freeware_Windows_XP12.zip`
+
+It includes the plugin, transition audio, authority registry, user guide,
+README, quick start, freeware license, changelog, and support instructions. It
+rejects debug symbols, temporary files, logs, and build-output folders.
+
 ## Historical Milestone 6 Gate
 
 This remains available for the old internal Milestone 5 checkpoint validation.

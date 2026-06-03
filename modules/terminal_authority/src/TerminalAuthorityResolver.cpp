@@ -18,7 +18,7 @@
 namespace xvatsim::modules::terminal_authority {
 namespace {
 
-constexpr const wchar_t* kUserAgent = L"XVatsim/1.0.0";
+constexpr const wchar_t* kUserAgent = L"XVatsim/1.0.1";
 constexpr const wchar_t* kTerminalBoundaryUrl =
     L"https://github.com/vatsimnetwork/simaware-tracon-project/releases/latest/download/TRACONBoundaries.geojson";
 constexpr long long kRefreshCadenceSeconds = 6 * 60 * 60;
@@ -132,6 +132,62 @@ std::string TerminalServiceTokenFromLookupKey(const std::string& value) {
     return TerminalRoleSuffixFromToken(token).empty() ? std::string{} : token;
 }
 
+std::string ExplicitSimAwareRoleSuffixFromSourceRecord(
+    const core::authority::AuthorityPolygon& polygon) {
+    if (polygon.source != core::authority::AuthoritySource::SimAwareTracon ||
+        polygon.sourceRecord.empty()) {
+        return {};
+    }
+
+    try {
+        const auto feature =
+            winrt::Windows::Data::Json::JsonObject::Parse(
+                winrt::to_hstring(polygon.sourceRecord));
+        const auto properties = feature.GetNamedObject(
+            L"properties",
+            winrt::Windows::Data::Json::JsonObject{});
+        if (!properties.HasKey(L"suffix")) {
+            return {};
+        }
+        const auto suffix = NormalizeToken(
+            winrt::to_string(properties.GetNamedString(L"suffix", L"")));
+        return IsTerminalRoleSuffix(suffix) ? suffix : std::string{};
+    } catch (...) {
+        return {};
+    }
+}
+
+bool SimAwarePolygonIsSharedAppDep(
+    const core::authority::AuthorityPolygon& polygon) {
+    return polygon.source == core::authority::AuthoritySource::SimAwareTracon &&
+           !polygon.sourceRecord.empty() &&
+           ExplicitSimAwareRoleSuffixFromSourceRecord(polygon).empty();
+}
+
+std::string TerminalServiceBase(const std::string& serviceToken);
+
+std::vector<std::string> TerminalServiceTokensFromLookupKey(
+    const std::string& value,
+    bool sharedAppDep) {
+    std::vector<std::string> tokens;
+    const auto token = TerminalServiceTokenFromLookupKey(value);
+    if (token.empty()) {
+        return tokens;
+    }
+
+    AppendUnique(&tokens, token);
+    if (sharedAppDep) {
+        const auto base = TerminalServiceBase(token);
+        const auto suffix = TerminalRoleSuffixFromToken(token);
+        if (!base.empty() && suffix == "APP") {
+            AppendUnique(&tokens, TerminalServiceToken(base, "DEP"));
+        } else if (!base.empty() && suffix == "DEP") {
+            AppendUnique(&tokens, TerminalServiceToken(base, "APP"));
+        }
+    }
+    return tokens;
+}
+
 std::string TerminalServiceBase(const std::string& serviceToken) {
     const auto token = NormalizeToken(serviceToken);
     const auto lastSeparator = token.rfind('_');
@@ -151,19 +207,30 @@ std::string TerminalServiceRoot(const std::string& serviceToken) {
                : base.substr(0, firstSeparator);
 }
 
-std::string TerminalRoleSuffixFromPolygon(
+std::vector<std::string> TerminalRoleSuffixesFromPolygon(
     const core::authority::AuthorityPolygon& polygon) {
+    if (polygon.source == core::authority::AuthoritySource::SimAwareTracon &&
+        !polygon.sourceRecord.empty()) {
+        const auto explicitSuffix =
+            ExplicitSimAwareRoleSuffixFromSourceRecord(polygon);
+        if (!explicitSuffix.empty()) {
+            return {explicitSuffix};
+        }
+        return {"APP", "DEP"};
+    }
+
     auto suffix = TerminalRoleSuffixFromToken(polygon.id);
     if (!suffix.empty()) {
-        return suffix;
+        return {suffix};
     }
     for (const auto& lookupKey : polygon.lookupKeys) {
         suffix = TerminalRoleSuffixFromToken(lookupKey);
         if (!suffix.empty()) {
-            return suffix;
+            return {suffix};
         }
     }
-    return "APP";
+
+    return {"APP"};
 }
 
 bool TerminalServiceMatchesAirportTokens(
@@ -717,27 +784,32 @@ TerminalAuthorityResolver::ResolveFromCatalog(
         }
 
         AppendUnique(&output.polygonKeys, polygon.polygonKey);
-        const auto polygonRoleSuffix = TerminalRoleSuffixFromPolygon(polygon);
-        const auto polygonServiceToken =
-            TerminalServiceToken(polygon.polygonKey, polygonRoleSuffix);
-        if (TerminalServiceMatchesSharedPolygonKey(
-                polygonServiceToken,
-                polygon.polygonKey) ||
-            TerminalServiceMatchesAirportTokens(
-                polygonServiceToken,
-                airportTokens)) {
-            AppendUnique(&output.ownerTokens, polygonServiceToken);
-        }
-        for (const auto& lookupKey : polygon.lookupKeys) {
-            const auto serviceToken =
-                TerminalServiceTokenFromLookupKey(lookupKey);
+        const auto polygonRoleSuffixes =
+            TerminalRoleSuffixesFromPolygon(polygon);
+        const auto sharedAppDep = SimAwarePolygonIsSharedAppDep(polygon);
+        for (const auto& polygonRoleSuffix : polygonRoleSuffixes) {
+            const auto polygonServiceToken =
+                TerminalServiceToken(polygon.polygonKey, polygonRoleSuffix);
             if (TerminalServiceMatchesSharedPolygonKey(
-                    serviceToken,
+                    polygonServiceToken,
                     polygon.polygonKey) ||
                 TerminalServiceMatchesAirportTokens(
-                    serviceToken,
+                    polygonServiceToken,
                     airportTokens)) {
-                AppendUnique(&output.ownerTokens, serviceToken);
+                AppendUnique(&output.ownerTokens, polygonServiceToken);
+            }
+        }
+        for (const auto& lookupKey : polygon.lookupKeys) {
+            for (const auto& serviceToken :
+                 TerminalServiceTokensFromLookupKey(lookupKey, sharedAppDep)) {
+                if (TerminalServiceMatchesSharedPolygonKey(
+                        serviceToken,
+                        polygon.polygonKey) ||
+                    TerminalServiceMatchesAirportTokens(
+                        serviceToken,
+                        airportTokens)) {
+                    AppendUnique(&output.ownerTokens, serviceToken);
+                }
             }
         }
     }

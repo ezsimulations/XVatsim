@@ -1,6 +1,6 @@
 # Milestone Status
 
-Updated: 2026-06-02
+Updated: 2026-06-03
 
 ## Current Position
 
@@ -8,15 +8,37 @@ Milestones 1 through 9 are complete on the authoritative rebuild plan, and the
 five-flight live battle-test gate passed for the installed V1 runtime hash
 `81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A`.
 
-XVatsim V1.0.0 is now closed as a freeware Windows/X-Plane 12/xPilot release.
+XVatsim V1.0.1 is now the current freeware Windows/X-Plane 12/xPilot release.
 The X-Plane.org Store submission path is superseded because the store requested
-a Mac version. Future product work starts as XVatsim V2.0.0 with dedicated VFR
-implementation, Mac support, and Linux support.
+a Mac version. Future major product work starts as XVatsim V2.0.0 with
+dedicated VFR implementation, Mac support, and Linux support.
 
 The live plugin uses the offline regression harness, fail-closed source
 handling, true route geometry, typed route grammar, deterministic nav-graph
 resolution, data-driven controller authority, proven workflow ownership, audited
 `XPLMFindNavAid` use, and post-rebuild cleanup.
+
+## V1.0.1 Patch Release
+
+- Freeware package:
+  `releases\XVatsim_1.0.1_Freeware_Windows_XP12.zip`.
+- Package SHA-256:
+  `E97B787F14B1E0FC5879B5D53D71BD97A1F18ED004E017B2DE1F4955E24ACF78`.
+- Packaged plugin SHA-256:
+  `763491DB96FDFA03FB433A17C4001121BD4A94B137D4CCA4D20C2051BADFA152`.
+- Installed simulator plugin SHA-256:
+  `763491DB96FDFA03FB433A17C4001121BD4A94B137D4CCA4D20C2051BADFA152`.
+- Fixes arrival APP/DEP/TRACON authority matching when SimAware terminal
+  boundaries do not explicitly separate APP and DEP.
+- Added KEWR/EWR_DEP and KPVD/PVD_APP regression coverage.
+- Focused authority regression set passed: `7 / 7`.
+- Full regression harness passed: `253 / 253`.
+- Release plugin build passed.
+- Freeware package generated and file-set scanned clean.
+
+Closeout record:
+
+- `docs\V1_0_1_PATCH_CLOSEOUT.md`
 
 ## V1.0.0 Freeware Closeout
 

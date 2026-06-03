@@ -5,21 +5,24 @@ cockpit overlay for VATSIM controller awareness, focused on IFR flight-plan oper
 
 ## Current Release
 
-XVatsim V1.0.0 is closed as a verified freeware Windows release for X-Plane 12
+XVatsim V1.0.1 is the current verified freeware Windows release for X-Plane 12
 and xPilot.
 
 - Freeware package:
-  `releases/XVatsim_1.0.0_Freeware_Windows_XP12.zip`
+  `releases/XVatsim_1.0.1_Freeware_Windows_XP12.zip`
 - Package SHA-256:
-  `C5F5B9513D2EE1783E1FE40B0E4BFD6331E11F24A8BF5F4CE2F93917815BDF7C`
+  `E97B787F14B1E0FC5879B5D53D71BD97A1F18ED004E017B2DE1F4955E24ACF78`
 - Packaged runtime SHA-256:
-  `81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A`
+  `763491DB96FDFA03FB433A17C4001121BD4A94B137D4CCA4D20C2051BADFA152`
 - User guide:
   `docs/user_guide/XVatsim_User_Guide.pdf`
 
 The X-Plane.org Store submission path is no longer the active release path for
-V1.0.0 because the store requested a Mac build. XVatsim V1.0.0 is being released
-as freeware instead.
+Version 1 because the store requested a Mac build. XVatsim Version 1 is being
+released as freeware instead.
+
+V1.0.1 is a patch release for arrival APP/DEP/TRACON authority matching when
+SimAware terminal boundaries do not explicitly separate APP and DEP.
 
 ## Current V1 Scope
 

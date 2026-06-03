@@ -2,6 +2,8 @@
 
 Date: 2026-06-02
 
+Superseded by: `docs/V1_0_1_PATCH_CLOSEOUT.md`
+
 ## Release Decision
 
 XVatsim V1.0.0 is closed as a freeware Windows/X-Plane 12/xPilot plugin release.

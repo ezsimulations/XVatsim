@@ -1,6 +1,6 @@
 # XVatsim Freeware User Guide
 
-Version 1.0
+Version 1.0.1
 
 Updated: June 2026
 

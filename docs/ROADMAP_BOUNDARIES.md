@@ -1,12 +1,12 @@
 # Roadmap Boundaries
 
-Updated: 2026-06-02
+Updated: 2026-06-03
 
 ## V1 Product Position
 
-XVatsim V1.0.0 is closed as a freeware xPilot companion plugin for Windows and
-X-Plane 12. It is not a replacement VATSIM client, not an xPilot fork, and not a
-full network/audio client.
+XVatsim V1.0.1 is the current freeware xPilot companion plugin for Windows and
+X-Plane 12. It is not a replacement VATSIM client, not an xPilot fork, and not
+a full network/audio client.
 
 The V1 reliability goal is controller-awareness trustworthiness:
 
@@ -28,7 +28,8 @@ The V1 reliability goal is controller-awareness trustworthiness:
 - second-monitor/out-of-sim UI
 - dedicated VFR workflow
 
-These items should not change the closed V1.0.0 freeware release path.
+These items should not change the closed Version 1 freeware release path except
+for narrow patch releases that preserve the Version 1 runtime contract.
 
 ## V2.0.0 Entry Point
 

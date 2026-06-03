@@ -22,7 +22,7 @@ namespace xvatsim::modules::transceiver_resolver {
 
 namespace {
 
-constexpr wchar_t kUserAgent[] = L"XVatsim/1.0.0";
+constexpr wchar_t kUserAgent[] = L"XVatsim/1.0.1";
 constexpr wchar_t kHost[] = L"data.vatsim.net";
 constexpr wchar_t kPath[] = L"/v3/transceivers-data.json";
 constexpr long long kRefreshCadenceSeconds = 15;
