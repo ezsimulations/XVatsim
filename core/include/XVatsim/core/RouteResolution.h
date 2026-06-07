@@ -37,6 +37,7 @@ struct RouteResolveDiagnostics {
     std::vector<std::string> ignoredTokens;
     std::vector<std::string> unsupportedTokens;
     std::vector<std::string> unresolvedTokens;
+    std::vector<std::string> unresolvedAirwayTokens;
 };
 
 struct AirwayNode {

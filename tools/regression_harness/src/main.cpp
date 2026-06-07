@@ -153,6 +153,7 @@ struct ScenarioExpectations {
     std::vector<std::string> ignoredTokens;
     std::vector<std::string> unsupportedTokens;
     std::vector<std::string> unresolvedTokens;
+    std::vector<std::string> unresolvedAirwayTokens;
     std::optional<bool> preflightParseOk;
     std::optional<bool> preflightValidationAccepted;
     std::optional<std::string> preflightValidationReason;
@@ -2954,6 +2955,10 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "expect.unresolved_tokens") {
         scenario->expectations.unresolvedTokens = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.unresolved_airway_tokens") {
+        scenario->expectations.unresolvedAirwayTokens = Split(value, ',');
         return true;
     }
     if (key == "expect.preflight_parse_ok") {
@@ -5893,6 +5898,12 @@ int main(int argc, char** argv) {
         std::cout << " " << token;
     }
     std::cout << "\n";
+    std::cout << "UnresolvedAirwayTokens:";
+    for (const auto& token :
+         ExtractRouteDiagnostics(routeResolveDiagnostics.unresolvedAirwayTokens)) {
+        std::cout << " " << token;
+    }
+    std::cout << "\n";
 
     if (scenario.expectations.stage.has_value() &&
         handoffDecision.stage != *scenario.expectations.stage) {
@@ -6802,6 +6813,14 @@ int main(int argc, char** argv) {
             "unresolvedTokens",
             scenario.expectations.unresolvedTokens,
             routeResolveDiagnostics.unresolvedTokens);
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = checkDiagnosticList(
+            "unresolvedAirwayTokens",
+            scenario.expectations.unresolvedAirwayTokens,
+            routeResolveDiagnostics.unresolvedAirwayTokens);
         mismatch.has_value()) {
         return *mismatch;
     }

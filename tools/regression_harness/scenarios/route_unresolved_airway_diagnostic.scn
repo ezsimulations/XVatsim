@@ -1,0 +1,31 @@
+name=Route Unresolved Airway Diagnostic
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+plan.matched=true
+plan.departure_icao=KAAA
+plan.departure_lat=-1.0
+plan.departure_lon=-1.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=4.0
+plan.destination_lon=4.0
+plan.has_destination_coordinates=true
+plan.route_text=AAA Q900 BBB
+
+graph.node=ident=AAA;region=K1;type=11;lat=0.0;lon=0.0
+graph.node=ident=BBB;region=K1;type=11;lat=3.0;lon=3.0
+graph.node=ident=MID;region=K1;type=11;lat=1.0;lon=1.0
+graph.node=ident=OTH;region=K1;type=11;lat=2.0;lon=2.0
+graph.edge=startIdent=MID;startRegion=K1;startType=11;endIdent=OTH;endRegion=K1;endType=11;airway=Q900;direction=N
+
+expect.route_token_kinds=AAA:Point,Q900:Airway,BBB:Point
+expect.resolved_waypoints=ACFT,BBB,KBBB
+expect.resolved_tokens=AAA,BBB
+expect.expanded_tokens=
+expect.unresolved_tokens=Q900
+expect.unresolved_airway_tokens=Q900

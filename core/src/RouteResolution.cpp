@@ -2736,6 +2736,7 @@ std::vector<brain::RouteWaypointSnapshot> ResolveRouteWaypoints(
             if (parsedToken.kind == RouteTokenKind::Airway) {
                 if (diagnostics != nullptr) {
                     diagnostics->unresolvedTokens.push_back(parsedToken.normalized);
+                    diagnostics->unresolvedAirwayTokens.push_back(parsedToken.normalized);
                 }
                 continue;
             }
@@ -2806,6 +2807,7 @@ std::vector<brain::RouteWaypointSnapshot> ResolveRouteWaypoints(
 
     if (diagnostics != nullptr) {
         DeduplicatePreserveOrder(&diagnostics->ignoredTokens);
+        DeduplicatePreserveOrder(&diagnostics->unresolvedAirwayTokens);
     }
 
     resolvedFiledRoute.push_back({

@@ -1,0 +1,76 @@
+name=KSFO KMCI Q126 Expanded Route Shows SLC Center
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=39.635150
+aircraft.longitude_deg=-111.141675
+
+plan.matched=true
+plan.stale=false
+plan.departure_icao=KSFO
+plan.departure_lat=37.618806
+plan.departure_lon=-122.375417
+plan.has_departure_coordinates=true
+plan.destination_icao=KMCI
+plan.destination_lat=39.297611
+plan.destination_lon=-94.713889
+plan.has_destination_coordinates=true
+plan.route_text=TRUKN2 TIPRE Q126 BRAFF DPEAK JSONN4
+
+radio.com1_active=118.000
+radio.com2_active=122.800
+
+controller.entry=callsign=SLC_44_CTR;frequency=125.575;facility=6;actionable=true;atis=false
+
+transceiver.available=true
+transceiver.stale=false
+transceiver.candidate=callsign=SLC_44_CTR;frequency=125.575;lat=39.635150;lon=-111.141675
+
+preflight.fms_line=I
+preflight.fms_line=1100 Version
+preflight.fms_line=CYCLE 2605
+preflight.fms_line=ADEP KSFO
+preflight.fms_line=DEPRWY RW28L
+preflight.fms_line=SID TRUKN2
+preflight.fms_line=SIDTRANS TIPRE
+preflight.fms_line=ADES KMCI
+preflight.fms_line=DESRWY RW19R
+preflight.fms_line=STAR JSONN4
+preflight.fms_line=STARTRANS DPEAK
+preflight.fms_line=NUMENR 14
+preflight.fms_line=1 KSFO ADEP 13.000000 37.618806 -122.375417
+preflight.fms_line=11 TIPRE DRCT 26200.000000 38.205833 -121.035833
+preflight.fms_line=11 RALEY Q126 35000.000000 38.572139 -118.234342
+preflight.fms_line=11 INSLO Q126 35000.000000 38.679139 -117.298111
+preflight.fms_line=11 CHUKR Q126 35000.000000 38.887189 -116.047172
+preflight.fms_line=11 TTOES Q126 35000.000000 39.097356 -114.684011
+preflight.fms_line=11 GAROT Q126 35000.000000 39.300000 -113.250000
+preflight.fms_line=11 KREYK Q126 35000.000000 39.472356 -112.198367
+preflight.fms_line=11 DRRSI Q126 35000.000000 39.635150 -111.141675
+preflight.fms_line=11 LBATO Q126 35000.000000 39.788283 -110.080167
+preflight.fms_line=11 BASNN Q126 35000.000000 39.931661 -109.014092
+preflight.fms_line=11 BRAFF Q126 35000.000000 40.143228 -104.390764
+preflight.fms_line=11 DPEAK DRCT 35000.000000 40.091008 -96.566178
+preflight.fms_line=1 KMCI ADES 3500.000000 39.297611 -94.713889
+
+resolver.route_resolve=true
+resolver.use_preflight_cache=true
+resolver.center_feature=label=KZLC;tokens=KZLC;polygon=37,-119|41,-119|41,-109|37,-109
+resolver.authority_catalog_fir=KZLC|Salt Lake||KZLC
+resolver.ownership_json={"positions":[{"id":"SLC_44_CTR","polygon_key":"KZLC","kind":"center","callsign_patterns":["SLC_44_CTR"]}]}
+
+expect.preflight_parse_ok=true
+expect.preflight_validation_accepted=true
+expect.preflight_validation_reason=cache matches live VATSIM departure and destination
+expect.preflight_waypoints=KSFO,TIPRE,RALEY,INSLO,CHUKR,TTOES,GAROT,KREYK,DRRSI,LBATO,BASNN,BRAFF,DPEAK,KMCI
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_current_sectors=<none>
+expect.resolver_route_next_sectors=KZLC
+expect.resolver_route_authority_gaps=<none>
+expect.resolver_authority_relevance_available=true
+expect.resolver_enroute_available=true
+expect.resolver_enroute_callsigns=SLC_44_CTR

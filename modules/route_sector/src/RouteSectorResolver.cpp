@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <cctype>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <limits>
@@ -13,6 +14,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -161,6 +163,7 @@ struct RouteResolveDiagnostics {
     std::vector<std::string> ignoredTokens;
     std::vector<std::string> unsupportedTokens;
     std::vector<std::string> unresolvedTokens;
+    std::vector<std::string> unresolvedAirwayTokens;
 };
 
 bool TokenCanActAsPoint(const xvatsim::core::route::ParsedRouteToken& token);
@@ -8659,6 +8662,158 @@ bool TryResolveSyntheticStarWaypoint(
     return true;
 }
 
+struct ExpandedFmsRouteCacheResult {
+    core::preflight::PreflightRouteCache cache;
+    std::string sourceName;
+};
+
+std::filesystem::path BuildXPlaneFmsPlansFolderPath() {
+    const auto xplaneRoot = GetXPlaneRootPath();
+    if (!xplaneRoot.empty()) {
+        return std::filesystem::path(xplaneRoot) / "Output" / "FMS plans";
+    }
+
+    return std::filesystem::path(core::preflight::kDefaultFmsPlansFolder);
+}
+
+std::unordered_set<std::string> BuildFmsRouteEvidenceTokens(
+    const core::preflight::FmsPlan& plan) {
+    std::unordered_set<std::string> tokens;
+    for (const auto& [_, value] : plan.metadata) {
+        const auto normalized = NormalizeRouteToken(value);
+        if (!normalized.empty()) {
+            tokens.insert(normalized);
+        }
+    }
+    for (const auto& waypoint : plan.waypoints) {
+        const auto ident = NormalizeRouteToken(waypoint.ident);
+        if (!ident.empty()) {
+            tokens.insert(ident);
+        }
+        const auto via = NormalizeRouteToken(waypoint.via);
+        if (!via.empty() && !IsRouteControlToken(via)) {
+            tokens.insert(via);
+        }
+    }
+    return tokens;
+}
+
+bool ExpandedFmsPlanMatchesFiledRoute(
+    const core::preflight::FmsPlan& plan,
+    const brain::NetworkPlanSnapshot& networkPlanSnapshot) {
+    if (NormalizeRouteToken(plan.departureIcao) !=
+            NormalizeRouteToken(networkPlanSnapshot.departureIcao) ||
+        NormalizeRouteToken(plan.destinationIcao) !=
+            NormalizeRouteToken(networkPlanSnapshot.destinationIcao)) {
+        return false;
+    }
+    if (networkPlanSnapshot.routeText.empty()) {
+        return false;
+    }
+
+    const auto evidenceTokens = BuildFmsRouteEvidenceTokens(plan);
+    const auto proceduresByName =
+        BuildRouteProcedureCatalog(networkPlanSnapshot);
+    const auto grammarCatalog =
+        BuildRouteGrammarCatalog(GetAirwayGraph(), &proceduresByName);
+    const auto parsedTokens =
+        xvatsim::core::route::ParseRouteTokens(
+            networkPlanSnapshot.routeText,
+            &grammarCatalog);
+
+    std::size_t requiredTokens = 0;
+    for (const auto& parsedToken : parsedTokens) {
+        if (parsedToken.kind == xvatsim::core::route::RouteTokenKind::Control ||
+            parsedToken.kind == xvatsim::core::route::RouteTokenKind::Empty) {
+            continue;
+        }
+
+        const auto normalized = parsedToken.normalized.empty()
+                                    ? parsedToken.rawNormalized
+                                    : parsedToken.normalized;
+        if (normalized.empty() || IsRouteControlToken(normalized)) {
+            continue;
+        }
+
+        ++requiredTokens;
+        if (evidenceTokens.find(normalized) == evidenceTokens.end()) {
+            return false;
+        }
+    }
+
+    return requiredTokens > 0;
+}
+
+std::optional<ExpandedFmsRouteCacheResult> TryBuildExpandedFmsRouteCache(
+    const brain::NetworkPlanSnapshot& networkPlanSnapshot) {
+    const auto departureIcao = NormalizeRouteToken(networkPlanSnapshot.departureIcao);
+    const auto destinationIcao = NormalizeRouteToken(networkPlanSnapshot.destinationIcao);
+    if (departureIcao.empty() ||
+        destinationIcao.empty() ||
+        networkPlanSnapshot.routeText.empty()) {
+        return std::nullopt;
+    }
+
+    const auto fmsPlansFolder = BuildXPlaneFmsPlansFolderPath();
+    std::error_code ec;
+    if (!std::filesystem::exists(fmsPlansFolder, ec) ||
+        !std::filesystem::is_directory(fmsPlansFolder, ec)) {
+        return std::nullopt;
+    }
+
+    const auto fileStemPrefix = departureIcao + destinationIcao;
+    std::optional<ExpandedFmsRouteCacheResult> bestResult;
+    std::filesystem::directory_iterator iterator(fmsPlansFolder, ec);
+    const std::filesystem::directory_iterator end;
+    for (; !ec && iterator != end; iterator.increment(ec)) {
+        const auto& entry = *iterator;
+        std::error_code entryError;
+        if (!entry.is_regular_file(entryError)) {
+            continue;
+        }
+        const auto path = entry.path();
+        if (NormalizeRouteToken(path.extension().string()) != "FMS") {
+            continue;
+        }
+        const auto stem = NormalizeRouteToken(path.stem().string());
+        if (stem.rfind(fileStemPrefix, 0) != 0) {
+            continue;
+        }
+
+        const auto parseResult = core::preflight::LoadFmsPlanFile(path);
+        if (!parseResult.ok ||
+            !ExpandedFmsPlanMatchesFiledRoute(
+                parseResult.plan,
+                networkPlanSnapshot)) {
+            continue;
+        }
+
+        auto cache = core::preflight::BuildPreflightRouteCache(parseResult.plan);
+        const auto validation =
+            core::preflight::ValidatePreflightRouteCacheForNetworkPlan(
+                cache,
+                networkPlanSnapshot,
+                false);
+        if (!validation.accepted) {
+            continue;
+        }
+
+        ExpandedFmsRouteCacheResult result;
+        result.cache = std::move(cache);
+        result.sourceName = path.filename().string();
+        if (!bestResult.has_value() ||
+            result.cache.plan.sourceModifiedUnixSeconds >
+                bestResult->cache.plan.sourceModifiedUnixSeconds ||
+            (result.cache.plan.sourceModifiedUnixSeconds ==
+                 bestResult->cache.plan.sourceModifiedUnixSeconds &&
+             result.sourceName > bestResult->sourceName)) {
+            bestResult = std::move(result);
+        }
+    }
+
+    return bestResult;
+}
+
 std::vector<brain::RouteWaypointSnapshot> ResolveRouteWaypoints(
     const brain::AircraftStateSnapshot& aircraftState,
     const brain::NetworkPlanSnapshot& networkPlanSnapshot,
@@ -9057,6 +9212,7 @@ std::vector<brain::RouteWaypointSnapshot> ResolveRouteWaypoints(
             if (parsedToken.kind == xvatsim::core::route::RouteTokenKind::Airway) {
                 if (diagnostics != nullptr) {
                     diagnostics->unresolvedTokens.push_back(parsedToken.normalized);
+                    diagnostics->unresolvedAirwayTokens.push_back(parsedToken.normalized);
                 }
                 continue;
             }
@@ -9120,6 +9276,7 @@ std::vector<brain::RouteWaypointSnapshot> ResolveRouteWaypoints(
 
     if (diagnostics != nullptr) {
         DeduplicatePreserveOrder(&diagnostics->ignoredTokens);
+        DeduplicatePreserveOrder(&diagnostics->unresolvedAirwayTokens);
     }
 
     resolvedFiledRoute.push_back({
@@ -9438,6 +9595,7 @@ void LogRouteDiagnosticsIfChanged(
                     << diagnostics.ignoredTokens.size() << "|"
                     << diagnostics.unsupportedTokens.size() << "|"
                     << diagnostics.unresolvedTokens.size() << "|"
+                    << diagnostics.unresolvedAirwayTokens.size() << "|"
                     << snapshot.currentSectors.size() << "|"
                     << snapshot.nextSectors.size() << "|"
                     << SummarizeSectorIdentifiers(snapshot.currentSectors) << "|"
@@ -9492,6 +9650,7 @@ void LogRouteDiagnosticsIfChanged(
            << " ignoredTokens=" << diagnostics.ignoredTokens.size()
            << " unsupportedTokens=" << diagnostics.unsupportedTokens.size()
            << " unresolvedTokens=" << diagnostics.unresolvedTokens.size()
+           << " unresolvedAirways=" << diagnostics.unresolvedAirwayTokens.size()
            << " waypoints=" << snapshot.waypoints.size()
            << " antiMeridianSegments=" << CountAntiMeridianSegments(snapshot.waypoints)
            << " direct=" << FormatDistanceNm(directDistanceNm)
@@ -9534,6 +9693,8 @@ void LogRouteDiagnosticsIfChanged(
            << " ignoredList=" << SummarizeStrings(diagnostics.ignoredTokens)
            << " unsupportedList=" << SummarizeStrings(diagnostics.unsupportedTokens)
            << " unresolvedList=" << SummarizeStrings(diagnostics.unresolvedTokens)
+           << " unresolvedAirwayList="
+           << SummarizeStrings(diagnostics.unresolvedAirwayTokens)
            << " currentSectors=" << SummarizeSectorIdentifiers(snapshot.currentSectors)
            << " nextSectors=" << SummarizeSectorIdentifiers(snapshot.nextSectors)
            << " authorityGapSectors="
@@ -9873,10 +10034,14 @@ brain::RouteSectorSnapshot RouteSectorResolver::Resolve(
 
     auto snapshot = BuildSnapshot(aircraftState, networkPlanSnapshot);
     if (snapshot.diagnosticCacheStatus.empty()) {
-        snapshot.diagnosticCacheStatus =
-            snapshot.statusLine.find("via preflight cache") != std::string::npos
-                ? "preflight-route-cache-build"
-                : "route-rebuild";
+        if (snapshot.statusLine.find("via preflight cache") != std::string::npos) {
+            snapshot.diagnosticCacheStatus = "preflight-route-cache-build";
+        } else if (snapshot.statusLine.find("via expanded FMS plan") !=
+                   std::string::npos) {
+            snapshot.diagnosticCacheStatus = "expanded-fms-route-build";
+        } else {
+            snapshot.diagnosticCacheStatus = "route-rebuild";
+        }
     }
     if (snapshot.diagnosticReason.empty()) {
         if (routeSourceChanged) {
@@ -10638,6 +10803,8 @@ brain::RouteSectorSnapshot RouteSectorResolver::BuildSnapshot(
 
     RouteResolveDiagnostics diagnostics;
     bool usedPreflightRouteCache = false;
+    bool usedExpandedFmsRouteCache = false;
+    std::string expandedFmsSourceName;
     if (preflightRouteCache_.has_value()) {
         const auto cacheValidation =
             core::preflight::ValidatePreflightRouteCacheForNetworkPlan(
@@ -10661,6 +10828,24 @@ brain::RouteSectorSnapshot RouteSectorResolver::BuildSnapshot(
         }
     }
     if (!usedPreflightRouteCache) {
+        if (auto expandedFmsRoute =
+                TryBuildExpandedFmsRouteCache(networkPlanSnapshot);
+            expandedFmsRoute.has_value()) {
+            snapshot.waypoints =
+                core::preflight::BuildRouteWaypointsFromCache(
+                    expandedFmsRoute->cache);
+            usedExpandedFmsRouteCache = snapshot.waypoints.size() >= 2;
+            expandedFmsSourceName = expandedFmsRoute->sourceName;
+            if (usedExpandedFmsRouteCache) {
+                diagnostics.resolvedTokens.push_back(
+                    "EXPANDED_FMS:" +
+                    expandedFmsRoute->cache.plan.routeIdentityHash);
+                diagnostics.procedureMetadataSources.push_back(
+                    "EXPANDED_FMS:" + expandedFmsSourceName);
+            }
+        }
+    }
+    if (!usedPreflightRouteCache && !usedExpandedFmsRouteCache) {
         snapshot.waypoints =
             ResolveRouteWaypoints(aircraftState, networkPlanSnapshot, &diagnostics);
     }
@@ -10670,6 +10855,27 @@ brain::RouteSectorSnapshot RouteSectorResolver::BuildSnapshot(
         aircraftState.longitudeDeg,
         networkPlanSnapshot.destinationLatDeg,
         networkPlanSnapshot.destinationLonDeg);
+    if (snapshot.routeResolved &&
+        !usedPreflightRouteCache &&
+        !usedExpandedFmsRouteCache &&
+        !diagnostics.unresolvedAirwayTokens.empty()) {
+        const auto routeDistanceNm = RouteDistanceNm(snapshot.waypoints);
+        snapshot.routeResolved = false;
+        snapshot.statusLine =
+            AppendUnsupportedRouteStatus(
+                "ROUTE incomplete unresolved-airways " +
+                    std::to_string(diagnostics.unresolvedAirwayTokens.size()),
+                diagnostics);
+        LogRouteDiagnosticsIfChanged(
+            networkPlanSnapshot,
+            diagnostics,
+            snapshot,
+            directDistanceNm,
+            routeDistanceNm,
+            "none",
+            false);
+        return snapshot;
+    }
     if (!snapshot.routeResolved) {
         snapshot.statusLine =
             AppendUnsupportedRouteStatus("ROUTE unresolved", diagnostics);
@@ -10701,6 +10907,8 @@ brain::RouteSectorSnapshot RouteSectorResolver::BuildSnapshot(
         AppendUnsupportedRouteStatus(traversalSnapshot.statusLine, diagnostics);
     if (usedPreflightRouteCache) {
         snapshot.statusLine += " via preflight cache";
+    } else if (usedExpandedFmsRouteCache) {
+        snapshot.statusLine += " via expanded FMS plan";
     }
     PopulateTraversalControllerPrefixes(&snapshot.currentSectors, authorityCatalog);
     PopulateTraversalControllerPrefixes(&snapshot.nextSectors, authorityCatalog);
