@@ -185,9 +185,11 @@ XVatsim Freeware Changelog
 Version: $Version
 
 Patch release:
-- Fixes arrival APP/DEP/TRACON authority matching when SimAware terminal boundaries do not explicitly separate APP and DEP.
-- Keeps the brain-owned relevance contract: radio-board candidates are evaluated against endpoint terminal authority facts, then accepted or rejected with diagnostic reasons.
-- Adds regression coverage for KEWR arrival EWR_DEP and KPVD arrival PVD_APP terminal authority cases.
+- Fixes missed airway route sector resolution when an expanded FMS route is available.
+- Uses validated expanded FMS route geometry before falling back to raw airway expansion.
+- Adds unresolved airway diagnostics so failed airway expansion cannot collapse into an exact direct route silently.
+- Adds regression coverage for KSFO-KMCI Q126/SLC Center and unresolved-airway diagnostics.
+- Adds an update-check manifest for future in-plugin update notifications.
 
 Current scope:
 - Windows only.
