@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "product": "XVatsim",
+  "channel": "stable",
+  "latest_version": "1.0.2",
+  "minimum_supported_version": "1.0.0",
+  "published_date": "2026-06-07",
+  "download_page_url": "https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/",
+  "update_policy": "notify_only",
+  "critical": false,
+  "message": "XVatsim 1.0.2 is available. Download the update from X-Plane.org.",
+  "release_notes": [
+    "Fixed missed airway route sector resolution when an expanded FMS route is available.",
+    "Added unresolved airway diagnostics so incomplete airway routes no longer collapse into an exact direct route."
+  ]
+}

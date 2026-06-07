@@ -18,7 +18,7 @@
 namespace xvatsim::modules::terminal_authority {
 namespace {
 
-constexpr const wchar_t* kUserAgent = L"XVatsim/1.0.1";
+constexpr const wchar_t* kUserAgent = L"XVatsim/1.0.2";
 constexpr const wchar_t* kTerminalBoundaryUrl =
     L"https://github.com/vatsimnetwork/simaware-tracon-project/releases/latest/download/TRACONBoundaries.geojson";
 constexpr long long kRefreshCadenceSeconds = 6 * 60 * 60;

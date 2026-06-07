@@ -1,10 +1,10 @@
 # Roadmap Boundaries
 
-Updated: 2026-06-03
+Updated: 2026-06-07
 
 ## V1 Product Position
 
-XVatsim V1.0.1 is the current freeware xPilot companion plugin for Windows and
+XVatsim V1.0.2 is the current freeware xPilot companion plugin for Windows and
 X-Plane 12. It is not a replacement VATSIM client, not an xPilot fork, and not
 a full network/audio client.
 
