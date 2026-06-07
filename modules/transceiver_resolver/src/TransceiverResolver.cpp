@@ -28,6 +28,7 @@ constexpr wchar_t kPath[] = L"/v3/transceivers-data.json";
 constexpr long long kRefreshCadenceSeconds = 15;
 constexpr long long kFailureBackoffSeconds = 60;
 constexpr long long kFeedFreshSeconds = 45;
+constexpr long long kFeedHoldoverSeconds = 180;
 constexpr long long kHungFetchStaleSeconds = 30;
 constexpr DWORD kWinHttpResolveTimeoutMs = 5000;
 constexpr DWORD kWinHttpConnectTimeoutMs = 5000;
@@ -769,6 +770,7 @@ void TransceiverResolver::Reset() {
     lastSuccessfulFetchTickSeconds_ = 0;
     hasResolveCache_ = false;
     cachedSnapshot_ = {};
+    lastResolveUsedHoldover_ = false;
     lastResolveTickSeconds_ = 0;
     lastResolveLatitudeDeg_ = 0.0;
     lastResolveLongitudeDeg_ = 0.0;
@@ -791,6 +793,9 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::Resolve(
     const brain::AircraftStateSnapshot& aircraftState,
     const brain::ControllerFeedSnapshot& controllerFeedSnapshot) {
     const auto refreshSucceeded = RefreshFeedIfNeeded();
+    const auto nowSeconds = CurrentTickSeconds();
+    const auto useHoldover =
+        !refreshSucceeded && IsFeedCacheUsableAsHoldover(nowSeconds);
 
     if (cachedTransceivers_.empty()) {
         brain::TransceiverResolutionSnapshot snapshot;
@@ -800,16 +805,15 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::Resolve(
         return snapshot;
     }
 
-    if (!refreshSucceeded) {
+    if (!refreshSucceeded && !useHoldover) {
         brain::TransceiverResolutionSnapshot snapshot;
         snapshot.available = false;
         snapshot.stale = true;
-        snapshot.statusLine = "RX feed stale";
+        snapshot.statusLine = "RX feed holdover expired";
         return snapshot;
     }
 
     const auto controllerFeedHash = BuildControllerFeedHash(controllerFeedSnapshot);
-    const auto nowSeconds = CurrentTickSeconds();
     const auto movedDistanceNm =
         hasResolveCache_
             ? GreatCircleDistanceNm(
@@ -831,8 +835,10 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::Resolve(
         !hasResolveCache_ ||
         movedDistanceNm >= kResolveMovementThresholdNm ||
         altitudeDeltaFt >= kResolveAltitudeThresholdFt;
+    const auto holdoverStateChanged =
+        !hasResolveCache_ || lastResolveUsedHoldover_ != useHoldover;
 
-    if (!feedChanged && !cadenceExpired && !movedEnough) {
+    if (!feedChanged && !cadenceExpired && !movedEnough && !holdoverStateChanged) {
         auto snapshot = cachedSnapshot_;
         snapshot.stale = false;
         return snapshot;
@@ -843,7 +849,13 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::Resolve(
         controllerFeedSnapshot,
         indexedTransceivers_,
         false);
+    if (useHoldover) {
+        snapshot.statusLine +=
+            " holdover=1 feedAgeSeconds=" +
+            std::to_string(FeedCacheAgeSeconds(nowSeconds));
+    }
     cachedSnapshot_ = snapshot;
+    lastResolveUsedHoldover_ = useHoldover;
     hasResolveCache_ = true;
     lastResolveTickSeconds_ = nowSeconds;
     lastResolveLatitudeDeg_ = aircraftState.latitudeDeg;
@@ -1058,6 +1070,21 @@ bool TransceiverResolver::IsFeedCacheFresh(long long nowSeconds) const {
            (nowSeconds - lastSuccessfulFetchTickSeconds_) <= kFeedFreshSeconds;
 }
 
+bool TransceiverResolver::IsFeedCacheUsableAsHoldover(long long nowSeconds) const {
+    return hasFeedCache_ &&
+           !cachedTransceivers_.empty() &&
+           lastSuccessfulFetchTickSeconds_ != 0 &&
+           (nowSeconds - lastSuccessfulFetchTickSeconds_) <= kFeedHoldoverSeconds;
+}
+
+long long TransceiverResolver::FeedCacheAgeSeconds(long long nowSeconds) const {
+    if (lastSuccessfulFetchTickSeconds_ == 0 ||
+        nowSeconds < lastSuccessfulFetchTickSeconds_) {
+        return 0;
+    }
+    return nowSeconds - lastSuccessfulFetchTickSeconds_;
+}
+
 void TransceiverResolver::HarvestPendingFetch() {
     if (fetchInProgress_.load()) {
         return;
@@ -1089,6 +1116,47 @@ void TransceiverResolver::HarvestPendingFetch() {
     lastSuccessfulFetchTickSeconds_ = CurrentTickSeconds();
     hasResolveCache_ = false;
     hasAirportCoverageCache_ = false;
+}
+
+void TransceiverResolver::SeedFeedCacheForTesting(
+    std::vector<CachedTransceiver> transceivers,
+    long long successfulFetchAgeSeconds,
+    bool lastFetchSucceeded) {
+    if (fetchThread_.joinable()) {
+        fetchThread_.join();
+    }
+
+    const auto nowSeconds = CurrentTickSeconds();
+    const auto cacheAgeSeconds = std::max<long long>(0, successfulFetchAgeSeconds);
+    std::lock_guard<std::mutex> lock(fetchMutex_);
+    cachedTransceivers_ = std::move(transceivers);
+    indexedTransceivers_ = IndexTransceiversByCallsign(cachedTransceivers_);
+    pendingTransceivers_.clear();
+    hasFeedCache_ = !cachedTransceivers_.empty();
+    hasPendingFeed_ = false;
+    lastFetchSucceeded_ = lastFetchSucceeded && hasFeedCache_;
+    lastFetchTickSeconds_ = nowSeconds;
+    lastSuccessfulFetchTickSeconds_ =
+        hasFeedCache_ ? std::max<long long>(1, nowSeconds - cacheAgeSeconds) : 0;
+    hasResolveCache_ = false;
+    cachedSnapshot_ = {};
+    lastResolveUsedHoldover_ = false;
+    lastResolveTickSeconds_ = 0;
+    lastResolveLatitudeDeg_ = 0.0;
+    lastResolveLongitudeDeg_ = 0.0;
+    lastResolveAltitudeAglFt_ = 0.0;
+    lastControllerFeedHash_ = 0;
+    hasAuthorityStationCache_ = false;
+    cachedAuthorityStationSnapshot_ = {};
+    lastAuthorityStationResolveTickSeconds_ = 0;
+    lastAuthorityStationControllerFeedHash_ = 0;
+    hasAirportCoverageCache_ = false;
+    cachedAirportCoverageSnapshot_ = {};
+    lastAirportCoverageResolveTickSeconds_ = 0;
+    lastAirportCoverageLatitudeDeg_ = 0.0;
+    lastAirportCoverageLongitudeDeg_ = 0.0;
+    lastAirportCoverageControllerFeedHash_ = 0;
+    fetchInProgress_.store(false);
 }
 
 }  // namespace xvatsim::modules::transceiver_resolver

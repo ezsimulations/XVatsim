@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "XVatsim/brain/BrainOrchestrator.h"
@@ -35,6 +36,7 @@
 #include "XVatsim/modules/enroute/EnrouteModule.h"
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
+#include "XVatsim/modules/transceiver_resolver/TransceiverResolver.h"
 
 namespace {
 
@@ -180,6 +182,12 @@ struct ScenarioExpectations {
     std::optional<std::string> radioReachableHashCheck;
     std::vector<std::string> radioReachableSourceCandidates;
     std::optional<std::string> radioReachableSourceCounts;
+    std::optional<bool> transceiverResolverHoldoverAvailable;
+    std::optional<bool> transceiverResolverHoldoverStale;
+    std::optional<std::string> transceiverResolverHoldoverStatusContains;
+    std::vector<std::string> transceiverResolverHoldoverCandidates;
+    std::vector<std::string> transceiverResolverHoldoverRadioCandidates;
+    std::optional<std::string> transceiverResolverHoldoverRadioCounts;
     std::vector<std::string> radioReachableGateDepartureCandidates;
     std::vector<std::string> radioReachableGateEnrouteCandidates;
     std::vector<std::string> radioReachableGateArrivalCandidates;
@@ -231,6 +239,9 @@ struct ScenarioData {
     xvatsim::brain::RadioStateSnapshot radioStateSnapshot;
     xvatsim::brain::XPilotSessionSnapshot xPilotSessionSnapshot;
     xvatsim::brain::TransceiverResolutionSnapshot transceiverResolutionSnapshot;
+    bool transceiverResolverHoldoverProbe = false;
+    long long transceiverResolverHoldoverCacheAgeSeconds = 60;
+    bool transceiverResolverHoldoverLastFetchSucceeded = false;
     std::optional<WorkflowStage> overlayWorkflowStage;
     std::optional<WorkflowStage> displayIntentWorkflowStage;
     double displayIntentRouteProgressNm = 0.0;
@@ -2354,6 +2365,23 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         scenario->aircraftState.longitudeDeg = *parsed;
         return true;
     }
+    if (key == "transceiver_resolver_holdover.probe") {
+        return ParseBool(value, &scenario->transceiverResolverHoldoverProbe);
+    }
+    if (key == "transceiver_resolver_holdover.cache_age_seconds") {
+        const auto parsed = ParseDouble(value);
+        if (!parsed.has_value()) {
+            return false;
+        }
+        scenario->transceiverResolverHoldoverCacheAgeSeconds =
+            static_cast<long long>(*parsed);
+        return true;
+    }
+    if (key == "transceiver_resolver_holdover.last_fetch_succeeded") {
+        return ParseBool(
+            value,
+            &scenario->transceiverResolverHoldoverLastFetchSucceeded);
+    }
     if (key == "radio.valid") {
         return ParseBool(value, &scenario->radioStateSnapshot.valid);
     }
@@ -3073,6 +3101,40 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         scenario->expectations.radioReachableSourceCounts = value;
         return true;
     }
+    if (key == "expect.transceiver_resolver_holdover_available") {
+        bool parsed = false;
+        if (!ParseBool(value, &parsed)) {
+            return false;
+        }
+        scenario->expectations.transceiverResolverHoldoverAvailable = parsed;
+        return true;
+    }
+    if (key == "expect.transceiver_resolver_holdover_stale") {
+        bool parsed = false;
+        if (!ParseBool(value, &parsed)) {
+            return false;
+        }
+        scenario->expectations.transceiverResolverHoldoverStale = parsed;
+        return true;
+    }
+    if (key == "expect.transceiver_resolver_holdover_status_contains") {
+        scenario->expectations.transceiverResolverHoldoverStatusContains = value;
+        return true;
+    }
+    if (key == "expect.transceiver_resolver_holdover_candidates") {
+        scenario->expectations.transceiverResolverHoldoverCandidates =
+            Split(value, ',');
+        return true;
+    }
+    if (key == "expect.transceiver_resolver_holdover_radio_candidates") {
+        scenario->expectations.transceiverResolverHoldoverRadioCandidates =
+            Split(value, ',');
+        return true;
+    }
+    if (key == "expect.transceiver_resolver_holdover_radio_counts") {
+        scenario->expectations.transceiverResolverHoldoverRadioCounts = value;
+        return true;
+    }
     if (key == "expect.radio_reachable_gate_departure_candidates") {
         scenario->expectations.radioReachableGateDepartureCandidates = Split(value, ',');
         return true;
@@ -3476,6 +3538,34 @@ bool AddTransceiverCandidate(
     snapshot->candidates.push_back(std::move(candidate));
     snapshot->receivableControllers = static_cast<int>(snapshot->candidates.size());
     return true;
+}
+
+std::vector<xvatsim::modules::transceiver_resolver::CachedTransceiver>
+BuildCachedTransceiversForResolverProbe(
+    const xvatsim::brain::TransceiverResolutionSnapshot& snapshot) {
+    std::vector<xvatsim::modules::transceiver_resolver::CachedTransceiver>
+        transceivers;
+    transceivers.reserve(snapshot.candidates.size());
+    for (const auto& candidate : snapshot.candidates) {
+        xvatsim::modules::transceiver_resolver::CachedTransceiver transceiver;
+        transceiver.callsign = candidate.callsign;
+        transceiver.frequency = candidate.frequency;
+        transceiver.latitudeDeg = candidate.latitudeDeg;
+        transceiver.longitudeDeg = candidate.longitudeDeg;
+        transceiver.heightAglFt = 0.0;
+        transceivers.push_back(std::move(transceiver));
+    }
+    return transceivers;
+}
+
+std::vector<std::string> TransceiverResolverCandidateSummaries(
+    const xvatsim::brain::TransceiverResolutionSnapshot& snapshot) {
+    std::vector<std::string> summaries;
+    summaries.reserve(snapshot.candidates.size());
+    for (const auto& candidate : snapshot.candidates) {
+        summaries.push_back(candidate.callsign + "@" + candidate.frequency);
+    }
+    return summaries;
 }
 
 bool AddRouteWaypoint(
@@ -7083,6 +7173,94 @@ int main(int argc, char** argv) {
                 "radioReachableSourceCounts",
                 *scenario.expectations.radioReachableSourceCounts,
                 actual);
+        }
+    }
+
+    const auto shouldRunTransceiverResolverHoldoverProbe =
+        scenario.transceiverResolverHoldoverProbe ||
+        scenario.expectations.transceiverResolverHoldoverAvailable.has_value() ||
+        scenario.expectations.transceiverResolverHoldoverStale.has_value() ||
+        scenario.expectations.transceiverResolverHoldoverStatusContains.has_value() ||
+        !scenario.expectations.transceiverResolverHoldoverCandidates.empty() ||
+        !scenario.expectations.transceiverResolverHoldoverRadioCandidates.empty() ||
+        scenario.expectations.transceiverResolverHoldoverRadioCounts.has_value();
+    if (shouldRunTransceiverResolverHoldoverProbe) {
+        xvatsim::modules::transceiver_resolver::TransceiverResolver resolver;
+        resolver.SeedFeedCacheForTesting(
+            BuildCachedTransceiversForResolverProbe(
+                scenario.transceiverResolutionSnapshot),
+            scenario.transceiverResolverHoldoverCacheAgeSeconds,
+            scenario.transceiverResolverHoldoverLastFetchSucceeded);
+
+        const auto transceiverResolverHoldoverSnapshot =
+            resolver.Resolve(scenario.aircraftState, controllerFeedSnapshot);
+        if (scenario.expectations.transceiverResolverHoldoverAvailable.has_value() &&
+            transceiverResolverHoldoverSnapshot.available !=
+                *scenario.expectations.transceiverResolverHoldoverAvailable) {
+            return PrintMismatch(
+                "transceiverResolverHoldoverAvailable",
+                *scenario.expectations.transceiverResolverHoldoverAvailable
+                    ? "true"
+                    : "false",
+                transceiverResolverHoldoverSnapshot.available ? "true" : "false");
+        }
+        if (scenario.expectations.transceiverResolverHoldoverStale.has_value() &&
+            transceiverResolverHoldoverSnapshot.stale !=
+                *scenario.expectations.transceiverResolverHoldoverStale) {
+            return PrintMismatch(
+                "transceiverResolverHoldoverStale",
+                *scenario.expectations.transceiverResolverHoldoverStale
+                    ? "true"
+                    : "false",
+                transceiverResolverHoldoverSnapshot.stale ? "true" : "false");
+        }
+        if (scenario.expectations.transceiverResolverHoldoverStatusContains
+                .has_value() &&
+            transceiverResolverHoldoverSnapshot.statusLine.find(
+                *scenario.expectations.transceiverResolverHoldoverStatusContains) ==
+                std::string::npos) {
+            return PrintMismatch(
+                "transceiverResolverHoldoverStatusContains",
+                *scenario.expectations.transceiverResolverHoldoverStatusContains,
+                transceiverResolverHoldoverSnapshot.statusLine);
+        }
+        if (const auto mismatch = CheckStringList(
+                "transceiverResolverHoldoverCandidates",
+                scenario.expectations.transceiverResolverHoldoverCandidates,
+                TransceiverResolverCandidateSummaries(
+                    transceiverResolverHoldoverSnapshot));
+            mismatch.has_value()) {
+            return *mismatch;
+        }
+
+        auto holdoverRadioOptions = radioReachableSourceOptions;
+        holdoverRadioOptions.changeReason =
+            "harness-transceiver-resolver-holdover";
+        const auto transceiverResolverHoldoverRadioSnapshot =
+            xvatsim::brain::BuildRadioReachableControllerSnapshotFromTransceivers(
+                transceiverResolverHoldoverSnapshot,
+                controllerFeedSnapshot,
+                holdoverRadioOptions);
+        if (const auto mismatch = CheckStringList(
+                "transceiverResolverHoldoverRadioCandidates",
+                scenario.expectations.transceiverResolverHoldoverRadioCandidates,
+                xvatsim::brain::RadioReachableCandidateSummaries(
+                    transceiverResolverHoldoverRadioSnapshot));
+            mismatch.has_value()) {
+            return *mismatch;
+        }
+        if (scenario.expectations.transceiverResolverHoldoverRadioCounts
+                .has_value()) {
+            const auto actual =
+                xvatsim::brain::RadioReachableGroupCountSummary(
+                    transceiverResolverHoldoverRadioSnapshot);
+            if (actual !=
+                *scenario.expectations.transceiverResolverHoldoverRadioCounts) {
+                return PrintMismatch(
+                    "transceiverResolverHoldoverRadioCounts",
+                    *scenario.expectations.transceiverResolverHoldoverRadioCounts,
+                    actual);
+            }
         }
     }
 

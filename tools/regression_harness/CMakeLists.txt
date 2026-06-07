@@ -12,6 +12,7 @@ target_link_libraries(XVatsimRegressionHarness PRIVATE
     XVatsimHarnessLegacyEnroute
     XVatsimRouteSector
     XVatsimTerminalAuthority
+    XVatsimTransceiverResolver
     XVatsimWorkflowCore
 )
 

@@ -189,6 +189,8 @@ Patch release:
 - Uses validated expanded FMS route geometry before falling back to raw airway expansion.
 - Adds unresolved airway diagnostics so failed airway expansion cannot collapse into an exact direct route silently.
 - Adds regression coverage for KSFO-KMCI Q126/SLC Center and unresolved-airway diagnostics.
+- Keeps route-relevant enroute controllers visible during short AFV radio-range refresh gaps by using a bounded cached-transceiver holdover.
+- Adds regression coverage for the KSFO-CYVR/SEA Center stale refresh case.
 - Adds an update-check manifest for future in-plugin update notifications.
 
 Current scope:

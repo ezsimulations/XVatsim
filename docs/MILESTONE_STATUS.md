@@ -23,14 +23,17 @@ resolution, data-driven controller authority, proven workflow ownership, audited
 - Freeware package:
   `releases\XVatsim_1.0.2_Freeware_Windows_XP12.zip`.
 - Package SHA-256:
-  `F271E1352DCD3C748A2D34D7F52C879F3AC3C0295990C74ACADA0B17A4305526`.
+  `B95492717DAF8D6C1AF6CFB06202C343B28187198263A959F0125F6FC07C7B4E`.
 - Packaged plugin SHA-256:
-  `42DA3F8F6711665E59591D190129DA3061C5133915261E0A57DB42D0371BBA7B`.
+  `1DE18CE5211084BA49B9C8E5490E38433DFC0AE20342DA58F5011E2B38A16A0E`.
 - Fixes missed airway route sector resolution by preferring validated expanded
   FMS geometry before falling back to raw airway expansion.
 - Adds unresolved airway diagnostics so failed airway expansion cannot collapse
   into an exact direct route silently.
 - Adds KSFO-KMCI Q126/SLC Center and unresolved-airway regression coverage.
+- Keeps route-relevant enroute controllers visible during short AFV
+  radio-range refresh gaps using bounded cached-transceiver holdover.
+- Adds KSFO-CYVR/SEA Center stale-refresh regression coverage.
 - Publishes an update-check manifest at `docs\xvatsim_update.json`.
 
 ## V1.0.1 Patch Release

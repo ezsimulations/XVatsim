@@ -11,9 +11,9 @@ xPilot.
 - Freeware package:
   `releases/XVatsim_1.0.2_Freeware_Windows_XP12.zip`
 - Package SHA-256:
-  `F271E1352DCD3C748A2D34D7F52C879F3AC3C0295990C74ACADA0B17A4305526`
+  `B95492717DAF8D6C1AF6CFB06202C343B28187198263A959F0125F6FC07C7B4E`
 - Packaged runtime SHA-256:
-  `42DA3F8F6711665E59591D190129DA3061C5133915261E0A57DB42D0371BBA7B`
+  `1DE18CE5211084BA49B9C8E5490E38433DFC0AE20342DA58F5011E2B38A16A0E`
 - User guide:
   `docs/user_guide/XVatsim_User_Guide.pdf`
 
@@ -21,9 +21,11 @@ The X-Plane.org Store submission path is no longer the active release path for
 Version 1 because the store requested a Mac build. XVatsim Version 1 is being
 released as freeware instead.
 
-V1.0.2 is a patch release for missed airway route sector resolution. It uses
-validated expanded FMS route geometry when available and fails closed when an
-airway token cannot be expanded.
+V1.0.2 is a patch release for missed airway route sector resolution and
+transient AFV radio-range refresh gaps. It uses validated expanded FMS route
+geometry when available, fails closed when an airway token cannot be expanded,
+and keeps route-relevant enroute controllers visible during short cached-feed
+holdover windows.
 
 ## Current V1 Scope
 

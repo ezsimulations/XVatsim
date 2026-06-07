@@ -35,12 +35,18 @@ public:
         double airportLatitudeDeg,
         double airportLongitudeDeg);
     void Reset();
+    void SeedFeedCacheForTesting(
+        std::vector<CachedTransceiver> transceivers,
+        long long successfulFetchAgeSeconds,
+        bool lastFetchSucceeded);
 
 private:
     bool RefreshFeedIfNeeded();
     bool StartAsyncFetch(long long nowSeconds);
     void HarvestPendingFetch();
     bool IsFeedCacheFresh(long long nowSeconds) const;
+    bool IsFeedCacheUsableAsHoldover(long long nowSeconds) const;
+    long long FeedCacheAgeSeconds(long long nowSeconds) const;
 
     std::vector<CachedTransceiver> cachedTransceivers_{};
     std::unordered_map<std::string, std::vector<CachedTransceiver>> indexedTransceivers_{};
@@ -52,6 +58,7 @@ private:
     long long lastSuccessfulFetchTickSeconds_ = 0;
     bool hasResolveCache_ = false;
     brain::TransceiverResolutionSnapshot cachedSnapshot_{};
+    bool lastResolveUsedHoldover_ = false;
     long long lastResolveTickSeconds_ = 0;
     double lastResolveLatitudeDeg_ = 0.0;
     double lastResolveLongitudeDeg_ = 0.0;

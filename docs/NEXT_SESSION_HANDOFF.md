@@ -10,9 +10,9 @@ Active V1.0.2 freeware package:
 
 - `releases\XVatsim_1.0.2_Freeware_Windows_XP12.zip`
 - Package SHA-256:
-  `F271E1352DCD3C748A2D34D7F52C879F3AC3C0295990C74ACADA0B17A4305526`
+  `B95492717DAF8D6C1AF6CFB06202C343B28187198263A959F0125F6FC07C7B4E`
 - Packaged plugin/runtime SHA-256:
-  `42DA3F8F6711665E59591D190129DA3061C5133915261E0A57DB42D0371BBA7B`
+  `1DE18CE5211084BA49B9C8E5490E38433DFC0AE20342DA58F5011E2B38A16A0E`
 
 Installed simulator plugin:
 
@@ -32,13 +32,16 @@ V1.0.2 patch summary:
 - Added unresolved airway diagnostics so failed airway expansion cannot collapse
   into an exact direct route silently.
 - Added KSFO-KMCI Q126/SLC Center and unresolved-airway regression coverage.
+- Added bounded cached-transceiver holdover so route-relevant enroute
+  controllers stay visible during short AFV radio-range refresh gaps.
+- Added KSFO-CYVR/SEA Center stale-refresh regression coverage.
 - Added `docs\xvatsim_update.json` for plugin update notification.
 
 Freeware package validation:
 
 - Fresh Release plugin build passed.
 - Focused authority regression set passed: `7 / 7`.
-- Full regression harness passed: `253 / 253`.
+- Full regression harness passed: `256 / 256`.
 - Freeware zip smoke extraction passed.
 - Package file set verified.
 - Packaged plugin hash matched the verified Release runtime hash.
