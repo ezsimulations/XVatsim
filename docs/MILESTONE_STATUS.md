@@ -1,6 +1,6 @@
 # Milestone Status
 
-Updated: 2026-06-07
+Updated: 2026-06-08
 
 ## Current Position
 
@@ -23,9 +23,11 @@ resolution, data-driven controller authority, proven workflow ownership, audited
 - Freeware package:
   `releases\XVatsim_1.0.2_Freeware_Windows_XP12.zip`.
 - Package SHA-256:
-  `B95492717DAF8D6C1AF6CFB06202C343B28187198263A959F0125F6FC07C7B4E`.
+  `C4F4DD6C7AF60A96DC0840D73CBD8AFEB9602FE8FCAC6B8FA5BFB0E136324ADB`.
 - Packaged plugin SHA-256:
-  `1DE18CE5211084BA49B9C8E5490E38433DFC0AE20342DA58F5011E2B38A16A0E`.
+  `037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72`.
+- Installed simulator plugin SHA-256:
+  `037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72`.
 - Fixes missed airway route sector resolution by preferring validated expanded
   FMS geometry before falling back to raw airway expansion.
 - Adds unresolved airway diagnostics so failed airway expansion cannot collapse
@@ -34,7 +36,22 @@ resolution, data-driven controller authority, proven workflow ownership, audited
 - Keeps route-relevant enroute controllers visible during short AFV
   radio-range refresh gaps using bounded cached-transceiver holdover.
 - Adds KSFO-CYVR/SEA Center stale-refresh regression coverage.
+- Moves frequency display order, `Active` row ownership, and Standby Assist
+  target selection under brain ownership using COM1 active as the only assist
+  pointer input.
+- Adds departure/arrival frequency-intent regression coverage for Tower to
+  TRACON, TRACON to current Center, and Center to TRACON transitions.
+- Adds notify-only in-plugin update checks with 24-hour automatic cadence,
+  manual `Check for Updates`, and public manifest parsing.
 - Publishes an update-check manifest at `docs\xvatsim_update.json`.
+- Focused contract diagnostics passed: `6 / 6`.
+- Full regression harness passed: `262 / 262`.
+- Freeware package generated and file-set scanned clean.
+- Darron reported the live simulator test passed before package closeout.
+
+Closeout record:
+
+- `docs\V1_0_2_PATCH_CLOSEOUT.md`
 
 ## V1.0.1 Patch Release
 

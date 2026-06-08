@@ -37,6 +37,7 @@
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
 #include "XVatsim/modules/transceiver_resolver/TransceiverResolver.h"
+#include "XVatsim/modules/update_checker/UpdateChecker.h"
 
 namespace {
 
@@ -123,6 +124,11 @@ struct ScenarioExpectations {
     std::optional<bool> sourceManifestValid;
     std::vector<std::string> sourceManifestValues;
     std::optional<std::string> sourcePackagePayload;
+    std::optional<std::string> updateStatus;
+    std::optional<std::string> updateLatestVersion;
+    std::optional<std::string> updateDownloadPageUrl;
+    std::optional<std::string> updateErrorClass;
+    std::optional<bool> updateCritical;
     std::optional<bool> routeResolved;
     std::vector<std::string> routeCurrentSectors;
     std::vector<std::string> routeNextSectors;
@@ -313,6 +319,10 @@ struct ScenarioData {
     std::vector<std::string> sourcePackageSpecialSectorJsons;
     std::vector<std::string> sourcePackageTerminalAuthorityJsons;
     std::vector<std::string> sourceRegistryJsons;
+    std::string updateManifestPayload;
+    std::string updateInstalledVersion = "1.0.2";
+    std::string updateManifestUrl =
+        "https://ezsimulations.github.io/XVatsim/xvatsim_update.json";
     std::unordered_map<std::string, std::string> sourceRegistryPayloadsByUrl;
     xvatsim::core::route::AirwayGraph routeGraph;
     std::unordered_map<std::string, xvatsim::core::route::ProcedureCatalogEntry> proceduresByName;
@@ -2158,6 +2168,18 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         scenario->sourceManifestJson = value;
         return true;
     }
+    if (key == "update.installed_version") {
+        scenario->updateInstalledVersion = value;
+        return true;
+    }
+    if (key == "update.manifest_url") {
+        scenario->updateManifestUrl = value;
+        return true;
+    }
+    if (key == "update.manifest_payload") {
+        scenario->updateManifestPayload = value;
+        return true;
+    }
     if (key == "source_registry.json" ||
         key == "source_package.registry_json") {
         scenario->sourceRegistryJsons.push_back(value);
@@ -2828,6 +2850,30 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "expect.source_package_payload") {
         scenario->expectations.sourcePackagePayload = value;
+        return true;
+    }
+    if (key == "expect.update_status") {
+        scenario->expectations.updateStatus = value;
+        return true;
+    }
+    if (key == "expect.update_latest_version") {
+        scenario->expectations.updateLatestVersion = value;
+        return true;
+    }
+    if (key == "expect.update_download_page_url") {
+        scenario->expectations.updateDownloadPageUrl = value;
+        return true;
+    }
+    if (key == "expect.update_error_class") {
+        scenario->expectations.updateErrorClass = value;
+        return true;
+    }
+    if (key == "expect.update_critical") {
+        bool parsed = false;
+        if (!ParseBool(value, &parsed)) {
+            return false;
+        }
+        scenario->expectations.updateCritical = parsed;
         return true;
     }
     if (key == "expect.route_resolved") {
@@ -4989,6 +5035,7 @@ int main(int argc, char** argv) {
         scenario.displayIntentNextPolygonKey;
     displayIntentInput.arrivalPolygonKey =
         scenario.displayIntentArrivalPolygonKey;
+    displayIntentInput.radios = scenario.radioStateSnapshot;
     displayIntentInput.departureBoard = scenario.departureBoard;
     displayIntentInput.arrivalBoard = scenario.arrivalBoard;
     displayIntentInput.enrouteBoard = scenario.enrouteBoard;
@@ -5384,6 +5431,18 @@ int main(int argc, char** argv) {
     const auto sourceManifest =
         xvatsim::core::source_data::ParseMapDataManifestJson(
             scenario.sourceManifestJson);
+    xvatsim::modules::update_checker::UpdateCheckResult updateCheckResult;
+    if (!scenario.updateManifestPayload.empty()) {
+        xvatsim::modules::update_checker::UpdateCheckRequest updateRequest;
+        updateRequest.installedVersion = scenario.updateInstalledVersion;
+        updateRequest.manifestUrl = scenario.updateManifestUrl;
+        updateRequest.source =
+            xvatsim::modules::update_checker::UpdateCheckSource::Automatic;
+        updateCheckResult =
+            xvatsim::modules::update_checker::EvaluateUpdateManifestPayload(
+                updateRequest,
+                scenario.updateManifestPayload);
+    }
     const auto vatglassesSourcePackagePayload =
         xvatsim::core::source_data::BuildVatGlassesDynamicSourcePayload(
             scenario.sourcePackagePositionsJson,
@@ -5697,6 +5756,18 @@ int main(int argc, char** argv) {
         std::cout << " " << value;
     }
     std::cout << "\n";
+    std::cout << "UpdateStatus: "
+              << xvatsim::modules::update_checker::ToString(
+                     updateCheckResult.status)
+              << "\n";
+    std::cout << "UpdateLatestVersion: "
+              << updateCheckResult.latestVersion << "\n";
+    std::cout << "UpdateCritical: "
+              << (updateCheckResult.critical ? "true" : "false") << "\n";
+    std::cout << "UpdateDownloadPageUrl: "
+              << updateCheckResult.downloadPageUrl << "\n";
+    std::cout << "UpdateErrorClass: "
+              << updateCheckResult.errorClass << "\n";
     std::cout << "SourceRegistryValues:";
     for (const auto& value : ExtractSourceRegistryValues(scenario.sourceRegistryJsons)) {
         std::cout << " " << value;
@@ -6343,6 +6414,47 @@ int main(int argc, char** argv) {
             "sourcePackagePayload",
             *scenario.expectations.sourcePackagePayload,
             sourcePackagePayload);
+    }
+
+    if (scenario.expectations.updateStatus.has_value() &&
+        xvatsim::modules::update_checker::ToString(updateCheckResult.status) !=
+            *scenario.expectations.updateStatus) {
+        return PrintMismatch(
+            "updateStatus",
+            *scenario.expectations.updateStatus,
+            xvatsim::modules::update_checker::ToString(
+                updateCheckResult.status));
+    }
+    if (scenario.expectations.updateLatestVersion.has_value() &&
+        updateCheckResult.latestVersion !=
+            *scenario.expectations.updateLatestVersion) {
+        return PrintMismatch(
+            "updateLatestVersion",
+            *scenario.expectations.updateLatestVersion,
+            updateCheckResult.latestVersion);
+    }
+    if (scenario.expectations.updateDownloadPageUrl.has_value() &&
+        updateCheckResult.downloadPageUrl !=
+            *scenario.expectations.updateDownloadPageUrl) {
+        return PrintMismatch(
+            "updateDownloadPageUrl",
+            *scenario.expectations.updateDownloadPageUrl,
+            updateCheckResult.downloadPageUrl);
+    }
+    if (scenario.expectations.updateErrorClass.has_value() &&
+        updateCheckResult.errorClass !=
+            *scenario.expectations.updateErrorClass) {
+        return PrintMismatch(
+            "updateErrorClass",
+            *scenario.expectations.updateErrorClass,
+            updateCheckResult.errorClass);
+    }
+    if (scenario.expectations.updateCritical.has_value() &&
+        updateCheckResult.critical != *scenario.expectations.updateCritical) {
+        return PrintMismatch(
+            "updateCritical",
+            *scenario.expectations.updateCritical ? "true" : "false",
+            updateCheckResult.critical ? "true" : "false");
     }
 
     if (const auto mismatch = CheckStringList(

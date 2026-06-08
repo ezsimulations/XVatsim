@@ -20,35 +20,48 @@ C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl
 
 Installed SHA256:
 
-81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A
+037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72
 
 Installed file timestamp:
 
-5/22/2026 9:43:18 PM local time
+6/7/2026 4:14:27 PM local time
 
 Last verified state:
 
-- Release plugin build passed.
-- Focused SoCal KONT frequency-disambiguation scenario passed.
-- Existing KSDF FAA frequency proof scenario passed.
-- Existing KONT terminal-authority scenario passed.
-- Harness build passed after the SCT display-contract closeout.
-- New SCT display scenario passed.
-- Full regression harness passed: 251 / 251.
-- Release plugin build/install was performed after the prior handoff.
+- XVatsim V1.0.2 is the current freeware Windows/X-Plane 12/xPilot release.
+- RelWithDebInfo plugin and harness build passed.
+- Focused update/frequency contract diagnostics passed: 6 / 6.
+- Full regression harness passed: 262 / 262.
+- Darron reported the live simulator test passed for the brain-owned Assist
+  Module and update-check candidate.
 - Installed X-Plane plugin hash is verified as the hash above.
-- Successful live Battle Test #1 passed for the installed hash above.
-- Successful live Battle Test #2 passed for the installed hash above.
-- Successful live Battle Test #3 passed for the installed hash above.
-- Successful live Battle Test #4 passed for the installed hash above.
-- Successful live Battle Test #5 passed for the installed hash above.
-- Active live battle-test streak is 5.
-- Milestone 1 / Beta Streamer Candidate live gate is complete for the
-  installed hash above.
-- Next work is the deliberate brain-owned runtime audit and
-  market-preparation process with the contract open.
+- Packaged plugin/runtime SHA256:
+  037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72.
+- Freeware package:
+  releases\XVatsim_1.0.2_Freeware_Windows_XP12.zip
+- Package SHA256:
+  C4F4DD6C7AF60A96DC0840D73CBD8AFEB9602FE8FCAC6B8FA5BFB0E136324ADB.
+- Package size:
+  2782092 bytes.
+- Public update manifest:
+  docs\xvatsim_update.json
 
 Latest source closeout included in the installed plugin:
+
+- Missed airway route sector resolution now prefers validated expanded FMS
+  route geometry and fails closed when airway expansion is incomplete.
+- Route-relevant enroute controllers remain visible during short AFV
+  transceiver refresh gaps through bounded cached-transceiver holdover.
+- Brain owns final frequency order, `Active` row ownership, and Standby Assist
+  target selection.
+- COM1 active frequency is the only radio state that advances the standby
+  assist target; COM2 does not move the assist pointer.
+- Notify-only update checks are available through automatic 24-hour checks and
+  manual `Plugins > XVatsim > Check for Updates`.
+- GitHub Pages served the manifest successfully and the in-sim manual check
+  showed the installed version as current.
+
+Previous historical closeout included in earlier installed plugin:
 
 - Live UPS2183 KONT -> KDFW exposed a display-contract bug with SCT_APP.
 - Controller Relevance correctly accepted SCT_APP 128.050 as CURRENT_POLYGON.

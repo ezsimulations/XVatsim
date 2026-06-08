@@ -113,6 +113,7 @@ What XVatsim does:
 - Supports departure, enroute, and arrival frequency awareness.
 - Displays COM1, COM2, TX, RX, MODE C, and Standby Assist state.
 - Can recover the current flight after an xPilot disconnect/reconnect.
+- Can manually check whether the installed XVatsim version is current.
 - Can show CTAF or UNICOM fallback when controlled airport service is unavailable.
 
 Install:
@@ -156,6 +157,7 @@ Basic use:
 - Use Plugins > XVatsim > Close Display to force it closed.
 - Use Plugins > XVatsim > Recover Current Flight after reconnecting xPilot during an active flight.
 - Use Plugins > XVatsim > Reset XVatsim Session when starting a new flight.
+- Use Plugins > XVatsim > Check for Updates to manually verify the installed version.
 
 Keyboard commands:
 Open X-Plane Settings > Keyboard and search for xvatsim.
@@ -191,7 +193,10 @@ Patch release:
 - Adds regression coverage for KSFO-KMCI Q126/SLC Center and unresolved-airway diagnostics.
 - Keeps route-relevant enroute controllers visible during short AFV radio-range refresh gaps by using a bounded cached-transceiver holdover.
 - Adds regression coverage for the KSFO-CYVR/SEA Center stale refresh case.
-- Adds an update-check manifest for future in-plugin update notifications.
+- Moves final frequency ordering, Active labels, and Standby Assist target selection under brain ownership.
+- Uses COM1 active frequency as the only radio state that advances the Standby Assist target.
+- Adds regression coverage for departure and arrival brain-owned frequency priority.
+- Adds in-plugin notify-only update checks with a public JSON manifest, 24-hour automatic cadence, and manual Check for Updates menu action.
 
 Current scope:
 - Windows only.

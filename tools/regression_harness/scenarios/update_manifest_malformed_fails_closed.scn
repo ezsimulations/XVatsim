@@ -1,0 +1,8 @@
+name=Update manifest malformed fails closed
+
+update.installed_version=1.0.2
+update.manifest_payload={"schema":1,"product":"XVatsim","minimum_supported_version":"1.0.0","download_page_url":"https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/","update_policy":"notify_only","critical":false}
+
+expect.update_status=check-failed
+expect.update_critical=false
+expect.update_error_class=missing-or-malformed-latest-version

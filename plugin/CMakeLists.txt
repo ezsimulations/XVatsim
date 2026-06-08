@@ -66,6 +66,7 @@ target_link_libraries(XVatsimPlugin PRIVATE
     XVatsimSettingsStore
     XVatsimTerminalAuthority
     XVatsimTransceiverResolver
+    XVatsimUpdateChecker
     XVatsimVatsimDataFeed
     XVatsimWorkflowCore
     XVatsimXPilotBridge

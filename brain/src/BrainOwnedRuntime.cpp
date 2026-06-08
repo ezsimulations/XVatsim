@@ -342,42 +342,6 @@ bool IsStandbyEligibleRole(StationRole role) {
     }
 }
 
-int StandbyRoleRank(WorkflowStage workflowStage, StationRole role) {
-    if (workflowStage == WorkflowStage::Arrival) {
-        switch (role) {
-            case StationRole::Center:
-                return 0;
-            case StationRole::Approach:
-            case StationRole::Departure:
-                return 1;
-            case StationRole::Tower:
-                return 2;
-            case StationRole::Ground:
-                return 3;
-            case StationRole::Delivery:
-                return 4;
-            default:
-                return 99;
-        }
-    }
-
-    switch (role) {
-        case StationRole::Delivery:
-            return 0;
-        case StationRole::Ground:
-            return 1;
-        case StationRole::Tower:
-            return 2;
-        case StationRole::Departure:
-        case StationRole::Approach:
-            return 3;
-        case StationRole::Center:
-            return 4;
-        default:
-            return 99;
-    }
-}
-
 bool FrequencyTuned(
     const std::string& frequency,
     const RadioStateSnapshot& radioStateSnapshot) {
@@ -1993,7 +1957,7 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
             station.displayRelation == DisplayRelation::NextPolygon ||
             station.displayRelation == DisplayRelation::ArrivalPrep;
         if (input.radios.valid) {
-            station.tuned = FrequencyTuned(station.frequency, input.radios);
+            station.tuned = IsCom1TunedToFrequency(input.radios, station.frequency);
         }
     }
 
@@ -2017,27 +1981,6 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
             continue;
         }
         orderedEligibleIndices.push_back(index);
-    }
-
-    if (input.workflowStage != WorkflowStage::Enroute) {
-        std::stable_sort(
-            orderedEligibleIndices.begin(),
-            orderedEligibleIndices.end(),
-            [&](std::size_t leftIndex, std::size_t rightIndex) {
-                const auto& left = output.board.stations[leftIndex];
-                const auto& right = output.board.stations[rightIndex];
-                const auto leftRank =
-                    StandbyRoleRank(input.workflowStage, left.role);
-                const auto rightRank =
-                    StandbyRoleRank(input.workflowStage, right.role);
-                if (leftRank != rightRank) {
-                    return leftRank < rightRank;
-                }
-                if (left.frequency != right.frequency) {
-                    return left.frequency < right.frequency;
-                }
-                return left.callsign < right.callsign;
-            });
     }
 
     if (orderedEligibleIndices.empty()) {
@@ -2139,6 +2082,7 @@ BrainOwnedPublisherInput BuildBrainOwnedPublisherInputFromFacts(
     input.currentPolygonKey = state.currentPolygonKey;
     input.nextPolygonKey = state.nextPolygonKey;
     input.arrivalPolygonKey = state.arrivalPolygonKey;
+    input.radios = facts.radios;
     input.departureBoard = facts.departureBoard;
     input.arrivalBoard = facts.arrivalBoard;
     input.enrouteBoard = facts.enrouteBoard;
@@ -2230,6 +2174,7 @@ BrainOwnedPublisherOutput RunBrainOwnedPublisher(
     displayIntentInput.currentPolygonKey = input.currentPolygonKey;
     displayIntentInput.nextPolygonKey = input.nextPolygonKey;
     displayIntentInput.arrivalPolygonKey = input.arrivalPolygonKey;
+    displayIntentInput.radios = input.radios;
     displayIntentInput.departureBoard = output.departureBoard;
     displayIntentInput.arrivalBoard = output.arrivalBoard;
     displayIntentInput.enrouteBoard = output.enrouteBoard;

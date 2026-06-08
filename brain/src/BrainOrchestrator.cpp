@@ -203,54 +203,6 @@ std::string StageLabel(WorkflowStage workflowStage) {
     }
 }
 
-int DepartureRoleRank(StationRole role) {
-    switch (role) {
-        case StationRole::Delivery:
-            return 0;
-        case StationRole::Ground:
-            return 1;
-        case StationRole::Tower:
-            return 2;
-        case StationRole::Departure:
-        case StationRole::Approach:
-            return 3;
-        case StationRole::Center:
-            return 4;
-        case StationRole::Atis:
-            return 5;
-        case StationRole::Ctaf:
-        case StationRole::Unicom:
-            return 6;
-        case StationRole::Other:
-        default:
-            return 7;
-    }
-}
-
-int ArrivalRoleRank(StationRole role) {
-    switch (role) {
-        case StationRole::Center:
-            return 0;
-        case StationRole::Approach:
-            return 1;
-        case StationRole::Departure:
-            return 1;
-        case StationRole::Tower:
-            return 2;
-        case StationRole::Ground:
-            return 3;
-        case StationRole::Atis:
-            return 4;
-        case StationRole::Ctaf:
-        case StationRole::Unicom:
-            return 5;
-        case StationRole::Delivery:
-        case StationRole::Other:
-        default:
-            return 6;
-    }
-}
-
 std::string RoleLabel(StationRole role) {
     switch (role) {
         case StationRole::Delivery:
@@ -292,66 +244,6 @@ OverlayTone ToneForDisplayRelation(DisplayRelation relation) {
         return OverlayTone::Next;
     }
     return OverlayTone::Normal;
-}
-
-std::vector<FinalDisplayStationSnapshot> OrderStations(
-    const FinalDisplaySnapshot& boardSnapshot) {
-    auto orderedStations = boardSnapshot.stations;
-    if (boardSnapshot.source == BoardSource::Enroute) {
-        std::stable_sort(
-            orderedStations.begin(),
-            orderedStations.end(),
-            [](const auto& left, const auto& right) {
-                if (left.hasRouteEntryDistance != right.hasRouteEntryDistance) {
-                    return left.hasRouteEntryDistance && !right.hasRouteEntryDistance;
-                }
-
-                if (left.hasRouteEntryDistance && right.hasRouteEntryDistance &&
-                    left.routeEntryDistanceNm != right.routeEntryDistanceNm) {
-                    return left.routeEntryDistanceNm < right.routeEntryDistanceNm;
-                }
-
-                if (left.sectorActive != right.sectorActive) {
-                    return left.sectorActive && !right.sectorActive;
-                }
-
-                if (left.tuned != right.tuned) {
-                    return left.tuned && !right.tuned;
-                }
-
-                return left.callsign < right.callsign;
-            });
-        return orderedStations;
-    }
-
-    std::stable_sort(
-        orderedStations.begin(),
-        orderedStations.end(),
-        [&boardSnapshot](const auto& left, const auto& right) {
-            const auto leftRank =
-                boardSnapshot.source == BoardSource::Arrival
-                    ? ArrivalRoleRank(left.role)
-                    : DepartureRoleRank(left.role);
-            const auto rightRank =
-                boardSnapshot.source == BoardSource::Arrival
-                    ? ArrivalRoleRank(right.role)
-                    : DepartureRoleRank(right.role);
-
-            if (leftRank != rightRank) {
-                return leftRank < rightRank;
-            }
-
-            if (left.tuned != right.tuned) {
-                return left.tuned && !right.tuned;
-            }
-
-            if (left.frequency != right.frequency) {
-                return left.frequency < right.frequency;
-            }
-
-            return left.callsign < right.callsign;
-        });
-    return orderedStations;
 }
 
 OverlayTextLine FormatBoardLine(
@@ -439,16 +331,16 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
     };
 
     if (finalDisplaySnapshot.available || !finalDisplaySnapshot.stations.empty()) {
-        const auto orderedStations = OrderStations(finalDisplaySnapshot);
         const auto countToDisplay =
-            std::min(orderedStations.size(), kMaxDisplayedStations);
+            std::min(finalDisplaySnapshot.stations.size(), kMaxDisplayedStations);
         for (std::size_t index = 0; index < countToDisplay; ++index) {
-            const auto& station = orderedStations[index];
+            const auto& station = finalDisplaySnapshot.stations[index];
             bodyLines.push_back(FormatBoardLine(station, finalDisplaySnapshot.source));
         }
-        if (orderedStations.size() > countToDisplay) {
+        if (finalDisplaySnapshot.stations.size() > countToDisplay) {
             bodyLines.push_back(
-                {"+" + std::to_string(orderedStations.size() - countToDisplay) +
+                {"+" + std::to_string(
+                     finalDisplaySnapshot.stations.size() - countToDisplay) +
                      " more ATC",
                  OverlayTone::Normal});
         }

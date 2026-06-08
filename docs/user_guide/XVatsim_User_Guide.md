@@ -75,6 +75,8 @@ Color and labels matter:
 
 Tuning a frequency does not make a row green by itself. XVatsim colors controller rows from route and authority context, not from radio tuning alone.
 
+In Version 1.0.2, the brain owns the final radio-board order and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
+
 ![Center frequency display](assets/05_center_frequency_display.jpg)
 
 ## CTAF And UNICOM
@@ -138,6 +140,12 @@ Clears flight-scoped XVatsim state. Use this when starting a new flight or when 
 Recovers XVatsim workflow state for the currently active VATSIM flight plan. Use this after an xPilot disconnect/reconnect or if XVatsim needs to resume monitoring an active flight.
 
 This is not the same as Reset XVatsim Session. Recover Current Flight is intended to keep working with the current flight plan.
+
+### Check for Updates
+
+Runs a manual notify-only update check against the public XVatsim update manifest. If the installed version is current, XVatsim shows a short current-version status. If a newer version is available, XVatsim tells you to download it from the X-Plane.org file page.
+
+XVatsim does not automatically download, install, replace, or launch a browser for updates.
 
 ### Set Diversion Airport
 
@@ -232,6 +240,12 @@ Do not use Reset Session just to recover after a reconnect. Use `Recover Current
 - Confirm a relevant live controller exists.
 - Confirm the recommended frequency is not already active.
 - CTAF/UNICOM and private-message/PDC handling are not part of Standby Assist in Version 1.
+
+### Update check is unavailable
+
+- Confirm you have internet access.
+- Confirm GitHub Pages can serve `https://ezsimulations.github.io/XVatsim/xvatsim_update.json`.
+- If the public update file is temporarily unreachable, XVatsim continues to work normally; only the update check is unavailable.
 
 ## Bug Reports
 

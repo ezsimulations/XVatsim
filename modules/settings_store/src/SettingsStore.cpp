@@ -99,6 +99,29 @@ bool TryParseInt(const std::string& value, int* outValue) {
     }
 }
 
+bool TryParseLongLong(const std::string& value, long long* outValue) {
+    if (outValue == nullptr) {
+        return false;
+    }
+
+    const auto trimmedValue = TrimCopy(value);
+    if (trimmedValue.empty()) {
+        return false;
+    }
+
+    try {
+        std::size_t consumed = 0;
+        const auto parsedValue = std::stoll(trimmedValue, &consumed);
+        if (consumed != trimmedValue.size()) {
+            return false;
+        }
+        *outValue = parsedValue;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 bool TryParseWindowCoordinate(const std::string& value, int* outValue) {
     int parsedValue = 0;
     if (!TryParseInt(value, &parsedValue)) {
@@ -197,6 +220,10 @@ PluginSettings NormalizeSettings(PluginSettings settings) {
         settings.windowTop = 0;
     }
 
+    if (settings.lastUpdateCheckUnixSeconds < 0) {
+        settings.lastUpdateCheckUnixSeconds = 0;
+    }
+
     return settings;
 }
 
@@ -289,6 +316,11 @@ PluginSettings SettingsStore::Load() const {
             TryParseFloat(value, &settings.animationSpeed);
             continue;
         }
+
+        if (key == "last_update_check_unix_seconds") {
+            TryParseLongLong(value, &settings.lastUpdateCheckUnixSeconds);
+            continue;
+        }
     }
 
     if (hasWindowLeft && hasWindowTop) {
@@ -327,6 +359,8 @@ bool SettingsStore::Save(const PluginSettings& settings) const {
         output << "overlay_opacity=" << normalizedSettings.overlayOpacity << "\n";
         output << "overlay_scale=" << normalizedSettings.overlayScale << "\n";
         output << "animation_speed=" << normalizedSettings.animationSpeed << "\n";
+        output << "last_update_check_unix_seconds="
+               << normalizedSettings.lastUpdateCheckUnixSeconds << "\n";
         if (normalizedSettings.hasWindowPosition) {
             output << "window_left=" << normalizedSettings.windowLeft << "\n";
             output << "window_top=" << normalizedSettings.windowTop << "\n";

@@ -13,6 +13,7 @@ add_subdirectory(route_sector)
 add_subdirectory(settings_store)
 add_subdirectory(terminal_authority)
 add_subdirectory(transceiver_resolver)
+add_subdirectory(update_checker)
 add_subdirectory(xpilot_bridge)
 
 if (XVATSIM_BUILD_REGRESSION_HARNESS)

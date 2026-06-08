@@ -93,6 +93,17 @@ bool KeysEqual(const std::string& left, const std::string& right) {
     return !normalizedLeft.empty() && normalizedLeft == normalizedRight;
 }
 
+bool IsCom1TunedToFrequency(
+    const RadioStateSnapshot& radios,
+    const std::string& frequency) {
+    const auto normalizedTarget = NormalizeFrequency(frequency);
+    if (normalizedTarget.empty()) {
+        return false;
+    }
+
+    return NormalizeFrequency(radios.com1ActiveFrequency) == normalizedTarget;
+}
+
 bool IsCenter(const BoardStationSnapshot& station) {
     return station.role == StationRole::Center;
 }
@@ -122,12 +133,14 @@ std::string FormatDistanceAnnotation(double distanceNm) {
 }
 
 FinalDisplayStationSnapshot ToFinalDisplayStation(
-    const BoardStationSnapshot& station) {
+    const BoardStationSnapshot& station,
+    const RadioStateSnapshot& radios) {
     FinalDisplayStationSnapshot displayStation;
     displayStation.role = station.role;
     displayStation.callsign = station.callsign;
     displayStation.frequency = station.frequency;
-    displayStation.tuned = station.tuned;
+    displayStation.tuned =
+        radios.valid && IsCom1TunedToFrequency(radios, station.frequency);
     displayStation.sectorActive = station.sectorActive;
     displayStation.online = station.online;
     displayStation.offline = station.offline;
@@ -177,8 +190,9 @@ bool IsFinalDisplayRelation(DisplayRelation relation) {
 
 FinalDisplayStationSnapshot BuildFactDisplayStation(
     const BoardStationSnapshot& sourceStation,
+    const BrainDisplayIntentInput& input,
     const std::vector<BrainDisplayRelationFact>& relationFacts) {
-    auto station = ToFinalDisplayStation(sourceStation);
+    auto station = ToFinalDisplayStation(sourceStation, input.radios);
     station.next = false;
     station.standby = false;
 
@@ -211,7 +225,8 @@ DisplayRelation InferCenterRelation(
         return DisplayRelation::Hidden;
     }
 
-    if (station.sectorActive || station.tuned ||
+    if ((input.radios.valid &&
+         IsCom1TunedToFrequency(input.radios, station.frequency)) ||
         KeysEqual(station.polygonKey, input.currentPolygonKey)) {
         return DisplayRelation::CurrentPolygon;
     }
@@ -240,11 +255,115 @@ bool ShouldDisplayDepartureEnrouteCenter(
            station.displayRelation == DisplayRelation::NextPolygon;
 }
 
+int CenterRelationRank(DisplayRelation relation) {
+    switch (relation) {
+        case DisplayRelation::CurrentPolygon:
+            return 0;
+        case DisplayRelation::NextPolygon:
+            return 1;
+        case DisplayRelation::ArrivalPrep:
+            return 1;
+        default:
+            return 2;
+    }
+}
+
+int DepartureFrequencyRank(const FinalDisplayStationSnapshot& station) {
+    switch (station.role) {
+        case StationRole::Delivery:
+            return 0;
+        case StationRole::Ground:
+            return 1;
+        case StationRole::Tower:
+            return 2;
+        case StationRole::Approach:
+        case StationRole::Departure:
+            return 3;
+        case StationRole::Center:
+            return 4 + CenterRelationRank(station.displayRelation);
+        case StationRole::Ctaf:
+        case StationRole::Unicom:
+            return 7;
+        case StationRole::Atis:
+            return 8;
+        case StationRole::Other:
+        default:
+            return 9;
+    }
+}
+
+int ArrivalFrequencyRank(const FinalDisplayStationSnapshot& station) {
+    switch (station.role) {
+        case StationRole::Center:
+            return CenterRelationRank(station.displayRelation) == 0 ? 0 : 4;
+        case StationRole::Approach:
+        case StationRole::Departure:
+            return 1;
+        case StationRole::Tower:
+            return 2;
+        case StationRole::Ground:
+            return 3;
+        case StationRole::Delivery:
+            return 5;
+        case StationRole::Ctaf:
+        case StationRole::Unicom:
+            return 6;
+        case StationRole::Atis:
+            return 7;
+        case StationRole::Other:
+        default:
+            return 8;
+    }
+}
+
+int FrequencyIntentRank(
+    WorkflowStage stage,
+    const FinalDisplayStationSnapshot& station) {
+    if (stage == WorkflowStage::Arrival) {
+        return ArrivalFrequencyRank(station);
+    }
+    return DepartureFrequencyRank(station);
+}
+
+void SortFrequencyIntent(WorkflowStage stage, FinalDisplaySnapshot* board) {
+    if (board == nullptr) {
+        return;
+    }
+
+    std::stable_sort(
+        board->stations.begin(),
+        board->stations.end(),
+        [stage](const auto& left, const auto& right) {
+            const auto leftRank = FrequencyIntentRank(stage, left);
+            const auto rightRank = FrequencyIntentRank(stage, right);
+            if (leftRank != rightRank) {
+                return leftRank < rightRank;
+            }
+            if (left.role == StationRole::Center &&
+                right.role == StationRole::Center &&
+                left.displayRelation != right.displayRelation) {
+                return CenterRelationRank(left.displayRelation) <
+                       CenterRelationRank(right.displayRelation);
+            }
+            if (left.hasRouteEntryDistance != right.hasRouteEntryDistance) {
+                return left.hasRouteEntryDistance && !right.hasRouteEntryDistance;
+            }
+            if (left.hasRouteEntryDistance && right.hasRouteEntryDistance &&
+                left.routeEntryDistanceNm != right.routeEntryDistanceNm) {
+                return left.routeEntryDistanceNm < right.routeEntryDistanceNm;
+            }
+            if (left.frequency != right.frequency) {
+                return left.frequency < right.frequency;
+            }
+            return left.callsign < right.callsign;
+        });
+}
+
 FinalDisplayStationSnapshot BuildFinalDisplayStation(
     const BoardStationSnapshot& sourceStation,
     DisplayRelation relation,
     const BrainDisplayIntentInput& input) {
-    auto station = ToFinalDisplayStation(sourceStation);
+    auto station = ToFinalDisplayStation(sourceStation, input.radios);
     station.displayRelation = relation;
     station.next = false;
     station.standby = false;
@@ -287,7 +406,7 @@ FinalDisplayStationSnapshot BuildFinalDisplayStation(
 
 void AddBoardStations(
     const ModuleBoardSnapshot& source,
-    const std::vector<BrainDisplayRelationFact>& relationFacts,
+    const BrainDisplayIntentInput& input,
     FinalDisplaySnapshot* target,
     std::unordered_set<std::string>* keys) {
     if (target == nullptr || keys == nullptr) {
@@ -298,7 +417,7 @@ void AddBoardStations(
             continue;
         }
         AppendUnique(
-            BuildFactDisplayStation(station, relationFacts),
+            BuildFactDisplayStation(station, input, input.relationFacts),
             target,
             keys);
     }
@@ -329,26 +448,23 @@ FinalDisplaySnapshot MakeDisplayShell(
 }
 
 FinalDisplaySnapshot BuildDisplayBoard(
-    WorkflowStage stage,
-    const ModuleBoardSnapshot& departureBoard,
-    const ModuleBoardSnapshot& arrivalBoard,
-    const FinalDisplaySnapshot& enrouteBoard,
-    const std::vector<BrainDisplayRelationFact>& relationFacts) {
+    const BrainDisplayIntentInput& input,
+    const FinalDisplaySnapshot& enrouteBoard) {
     FinalDisplaySnapshot display;
     std::unordered_set<std::string> keys;
 
-    if (stage == WorkflowStage::Arrival) {
-        display = MakeDisplayShell(arrivalBoard, BoardSource::Arrival);
-        keys.reserve(arrivalBoard.stations.size() + enrouteBoard.stations.size());
-        AddBoardStations(arrivalBoard, relationFacts, &display, &keys);
+    if (input.workflowStage == WorkflowStage::Arrival) {
+        display = MakeDisplayShell(input.arrivalBoard, BoardSource::Arrival);
+        keys.reserve(input.arrivalBoard.stations.size() + enrouteBoard.stations.size());
+        AddBoardStations(input.arrivalBoard, input, &display, &keys);
         AddFinalDisplayStations(enrouteBoard, &display, &keys);
         return display;
     }
 
-    if (stage == WorkflowStage::Departure) {
-        display = MakeDisplayShell(departureBoard, BoardSource::Departure);
-        keys.reserve(departureBoard.stations.size() + enrouteBoard.stations.size());
-        AddBoardStations(departureBoard, relationFacts, &display, &keys);
+    if (input.workflowStage == WorkflowStage::Departure) {
+        display = MakeDisplayShell(input.departureBoard, BoardSource::Departure);
+        keys.reserve(input.departureBoard.stations.size() + enrouteBoard.stations.size());
+        AddBoardStations(input.departureBoard, input, &display, &keys);
         for (const auto& station : enrouteBoard.stations) {
             if (ShouldDisplayDepartureEnrouteCenter(station) &&
                 IsDisplayableStation(station)) {
@@ -358,7 +474,7 @@ FinalDisplaySnapshot BuildDisplayBoard(
         return display;
     }
 
-    if (stage == WorkflowStage::Enroute) {
+    if (input.workflowStage == WorkflowStage::Enroute) {
         return enrouteBoard;
     }
 
@@ -521,12 +637,8 @@ BrainDisplayIntentOutput RunBrainDisplayIntentWorker(
 
     SortEnrouteStations(&displayEnrouteBoard);
 
-    output.finalDisplay = BuildDisplayBoard(
-        input.workflowStage,
-        output.departureBoard,
-        output.arrivalBoard,
-        displayEnrouteBoard,
-        input.relationFacts);
+    output.finalDisplay = BuildDisplayBoard(input, displayEnrouteBoard);
+    SortFrequencyIntent(input.workflowStage, &output.finalDisplay);
     output.stableHash = HashBoard(output.finalDisplay);
 
     return output;

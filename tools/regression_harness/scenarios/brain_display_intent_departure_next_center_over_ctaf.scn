@@ -10,5 +10,5 @@ departure.station=role=Ctaf;callsign=KELP;frequency=122.950;online=true;polygonK
 enroute.station=role=Center;callsign=HOU_461_CTR;frequency=132.775;online=true;polygonKey=KZHU;routeEntryDistanceNm=220
 
 expect.display_source=Departure
-expect.display_callsigns=KELP,HOU_461_CTR
-expect.brain_display_intent_rows=KELP:UNKNOWN,HOU_461_CTR:NEXT_POLYGON:220nm
+expect.display_callsigns=HOU_461_CTR,KELP
+expect.brain_display_intent_rows=HOU_461_CTR:NEXT_POLYGON:220nm,KELP:UNKNOWN

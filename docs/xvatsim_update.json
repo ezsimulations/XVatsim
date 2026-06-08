@@ -4,11 +4,11 @@
   "channel": "stable",
   "latest_version": "1.0.2",
   "minimum_supported_version": "1.0.0",
-  "published_date": "2026-06-07",
+  "published_date": "2026-06-08",
   "download_filename": "XVatsim_1.0.2_Freeware_Windows_XP12.zip",
-  "package_sha256": "B95492717DAF8D6C1AF6CFB06202C343B28187198263A959F0125F6FC07C7B4E",
-  "package_size_bytes": 1277187,
-  "plugin_sha256": "1DE18CE5211084BA49B9C8E5490E38433DFC0AE20342DA58F5011E2B38A16A0E",
+  "package_sha256": "C4F4DD6C7AF60A96DC0840D73CBD8AFEB9602FE8FCAC6B8FA5BFB0E136324ADB",
+  "package_size_bytes": 2782092,
+  "plugin_sha256": "037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72",
   "download_page_url": "https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/",
   "update_policy": "notify_only",
   "critical": false,
@@ -16,6 +16,8 @@
   "release_notes": [
     "Fixed missed airway route sector resolution when an expanded FMS route is available.",
     "Added unresolved airway diagnostics so incomplete airway routes no longer collapse into an exact direct route.",
-    "Kept route-relevant enroute controllers visible during short AFV radio-range refresh gaps."
+    "Kept route-relevant enroute controllers visible during short AFV radio-range refresh gaps.",
+    "Moved frequency ordering, Active row ownership, and Standby Assist target selection under brain ownership.",
+    "Added notify-only in-plugin update checks with manual Check for Updates and 24-hour automatic cadence."
   ]
 }

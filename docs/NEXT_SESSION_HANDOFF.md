@@ -1,6 +1,6 @@
 # Next Session Handoff
 
-Date noted: 2026-06-07
+Date noted: 2026-06-08
 
 ## Current Product State - V1.0.2 Freeware Patch Release
 
@@ -10,15 +10,15 @@ Active V1.0.2 freeware package:
 
 - `releases\XVatsim_1.0.2_Freeware_Windows_XP12.zip`
 - Package SHA-256:
-  `B95492717DAF8D6C1AF6CFB06202C343B28187198263A959F0125F6FC07C7B4E`
+  `C4F4DD6C7AF60A96DC0840D73CBD8AFEB9602FE8FCAC6B8FA5BFB0E136324ADB`
 - Packaged plugin/runtime SHA-256:
-  `1DE18CE5211084BA49B9C8E5490E38433DFC0AE20342DA58F5011E2B38A16A0E`
+  `037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72`
 
 Installed simulator plugin:
 
 - `C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl`
 - Installed SHA-256:
-  `763491DB96FDFA03FB433A17C4001121BD4A94B137D4CCA4D20C2051BADFA152`
+  `037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72`
 - Previous installed build backup:
   `C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl.bak-20260603-102134-7AF0EDE64524`
 
@@ -35,13 +35,19 @@ V1.0.2 patch summary:
 - Added bounded cached-transceiver holdover so route-relevant enroute
   controllers stay visible during short AFV radio-range refresh gaps.
 - Added KSFO-CYVR/SEA Center stale-refresh regression coverage.
+- Moved final frequency display order, `Active` row ownership, and Standby
+  Assist target selection under brain ownership.
+- Added COM1-only assist pointer behavior so COM2 cannot move the standby
+  assist target.
+- Added notify-only plugin update checks with 24-hour automatic cadence,
+  manual `Check for Updates`, and public manifest parsing.
 - Added `docs\xvatsim_update.json` for plugin update notification.
 
 Freeware package validation:
 
-- Fresh Release plugin build passed.
-- Focused authority regression set passed: `7 / 7`.
-- Full regression harness passed: `256 / 256`.
+- Fresh RelWithDebInfo plugin and harness build passed.
+- Focused contract diagnostics passed: `6 / 6`.
+- Full regression harness passed: `262 / 262`.
 - Freeware zip smoke extraction passed.
 - Package file set verified.
 - Packaged plugin hash matched the verified Release runtime hash.
@@ -49,7 +55,9 @@ Freeware package validation:
   wording.
 - Package scan found no `.pdb`, `.lib`, `.exp`, `.log`, temp, debug, or
   store-submission files.
-- Darron reported the freeware package passes cleanly.
+- Packaged plugin hash matched the installed simulator plugin hash.
+- Darron reported the live simulator test passed before commit/package
+  closeout.
 
 User guide:
 
@@ -71,6 +79,7 @@ Next product work:
 Closeout docs:
 
 - `docs\V1_0_1_PATCH_CLOSEOUT.md`
+- `docs\V1_0_2_PATCH_CLOSEOUT.md`
 - `docs\V1_0_0_FREEWARE_CLOSEOUT.md`
 - `docs\V2_0_0_ROADMAP.md`
 

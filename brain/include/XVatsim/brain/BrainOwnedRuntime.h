@@ -489,6 +489,7 @@ struct BrainOwnedPublisherInput {
     std::string currentPolygonKey;
     std::string nextPolygonKey;
     std::string arrivalPolygonKey;
+    RadioStateSnapshot radios;
     ModuleBoardSnapshot departureBoard;
     ModuleBoardSnapshot arrivalBoard;
     ModuleBoardSnapshot enrouteBoard;

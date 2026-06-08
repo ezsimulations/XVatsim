@@ -19,6 +19,7 @@ struct PluginSettings {
     float overlayOpacity = 1.0f;
     float overlayScale = 1.0f;
     float animationSpeed = 1.0f;
+    long long lastUpdateCheckUnixSeconds = 0;
 };
 
 class SettingsStore {
