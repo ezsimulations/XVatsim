@@ -32,4 +32,4 @@ expect.terminal_authority_owners=SDF_APP
 expect.terminal_authority_polygons=SDF
 expect.airport_frequency_arrival_records=KSDF:APP_DEP:123.675:APCH/P DEP/P,KSDF:APP_DEP:132.075:APCH/P DEP/P,KSDF:TWR:124.200:LCL/P
 expect.brain_controller_relevance_arrival_callsigns=SDF_TWR,SDF_APP
-expect.brain_controller_relevance_completions=MEM_E_APP:rejected:arrival-terminal-owner-mismatch:MEM_APP:owner=SDF_APP:poly=SDF:freq=arr-miss,SDF_APP:accepted:arrival-terminal-owner-match:SDF_APP:owner=SDF_APP:poly=SDF:freq=arr-APP_DEP,SDF_TWR:accepted:arrival-airport-match:freq=arr-TWR
+expect.brain_controller_relevance_completions=MEM_E_APP:rejected:arrival-terminal-owner-mismatch:votes=1/2:yes=vatsim-appdep:no=terminal-owner+endpoint-frequency:final=reject-hide:MEM_APP:owner=SDF_APP:poly=SDF:freq=arr-miss,SDF_APP:accepted:arrival-terminal-owner-match:votes=3/0:yes=vatsim-appdep+terminal-owner+endpoint-frequency:no=none:final=accept-display:SDF_APP:owner=SDF_APP:poly=SDF:freq=arr-APP_DEP,SDF_TWR:accepted:arrival-airport-match:freq=arr-TWR

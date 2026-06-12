@@ -22,4 +22,4 @@ transceiver.candidate=callsign=EWR_DEP;frequency=119.200;distanceNm=25;score=100
 expect.terminal_authority_owners=EWR_APP,EWR_DEP,N90_APP,N90_DEP
 expect.terminal_authority_polygons=N90
 expect.brain_controller_relevance_arrival_callsigns=EWR_DEP
-expect.brain_controller_relevance_completions=EWR_DEP:accepted:arrival-terminal-owner-match:EWR_DEP:owner=EWR_APP+EWR_DEP+more:poly=N90
+expect.brain_controller_relevance_completions=EWR_DEP:accepted:arrival-terminal-owner-match:votes=2/0:yes=vatsim-appdep+terminal-owner:no=none:final=accept-display:EWR_DEP:owner=EWR_APP+EWR_DEP+more:poly=N90

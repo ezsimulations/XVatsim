@@ -730,6 +730,179 @@ struct CenterCandidate {
     BoardStationSnapshot station;
 };
 
+std::string ControllerRootToken(const std::string& callsign) {
+    const auto normalized = NormalizeCallsign(callsign);
+    if (normalized.empty()) {
+        return {};
+    }
+
+    const auto separator = normalized.find('_');
+    return separator == std::string::npos ? normalized
+                                          : normalized.substr(0, separator);
+}
+
+std::unordered_set<std::string> BuildCurrentRouteCenterRoots(
+    const BrainControllerRelevanceWorkerInput& input) {
+    std::unordered_set<std::string> roots;
+    for (const auto& candidate : input.candidates) {
+        if (candidate.group != RadioReachableFacilityGroup::Center) {
+            continue;
+        }
+
+        const auto routeMatch = MatchCenterToRoutePolygon(input, candidate);
+        if (!routeMatch.matched ||
+            routeMatch.displayRelation != DisplayRelation::CurrentPolygon) {
+            continue;
+        }
+
+        const auto root = ControllerRootToken(candidate.callsign);
+        if (!root.empty()) {
+            roots.insert(root);
+        }
+    }
+    return roots;
+}
+
+struct TerminalDecisionEvidence {
+    bool terminalOwnerAvailable = false;
+    bool terminalOwnerMatch = false;
+    bool frequencyRoleMatch = false;
+    bool frequencyRoleMiss = false;
+    bool radioNearAirport = false;
+    bool routeCenterRootMatch = false;
+    bool accepted = false;
+    std::string candidateOwner;
+    std::vector<std::string> positiveVotes;
+    std::vector<std::string> negativeVotes;
+};
+
+void AddVote(std::vector<std::string>* votes, const std::string& vote) {
+    if (votes == nullptr || vote.empty()) {
+        return;
+    }
+    if (std::find(votes->begin(), votes->end(), vote) == votes->end()) {
+        votes->push_back(vote);
+    }
+}
+
+std::string JoinVotes(const std::vector<std::string>& votes) {
+    if (votes.empty()) {
+        return "none";
+    }
+
+    std::ostringstream stream;
+    for (std::size_t index = 0; index < votes.size(); ++index) {
+        if (index > 0) {
+            stream << '+';
+        }
+        stream << votes[index];
+    }
+    return stream.str();
+}
+
+std::string TerminalDecisionVoteSuffix(
+    const TerminalDecisionEvidence& evidence,
+    bool accepted) {
+    std::ostringstream stream;
+    stream << ":votes=" << evidence.positiveVotes.size()
+           << "/" << evidence.negativeVotes.size()
+           << ":yes=" << JoinVotes(evidence.positiveVotes)
+           << ":no=" << JoinVotes(evidence.negativeVotes)
+           << ":final=" << (accepted ? "accept-display" : "reject-hide");
+    return stream.str();
+}
+
+TerminalDecisionEvidence BuildTerminalDecisionEvidence(
+    const RadioReachableControllerCandidate& candidate,
+    const BrainTerminalAuthorityWorkerOutput& terminalAuthority,
+    const AirportFrequencyEvidence& frequencyEvidence,
+    const std::unordered_set<std::string>& currentRouteCenterRoots) {
+    TerminalDecisionEvidence evidence;
+
+    AddVote(&evidence.positiveVotes, "vatsim-appdep");
+
+    evidence.radioNearAirport =
+        candidate.hasDistanceNm && candidate.distanceNm <= 5.0;
+    if (evidence.radioNearAirport) {
+        AddVote(&evidence.positiveVotes, "radio-near5");
+    }
+
+    evidence.terminalOwnerAvailable =
+        TerminalAuthorityFactAvailable(terminalAuthority);
+    evidence.terminalOwnerMatch = ControllerMatchesTerminalAuthority(
+        candidate.callsign,
+        terminalAuthority,
+        &evidence.candidateOwner);
+    if (evidence.terminalOwnerMatch) {
+        AddVote(&evidence.positiveVotes, "terminal-owner");
+    } else if (evidence.terminalOwnerAvailable) {
+        AddVote(&evidence.negativeVotes, "terminal-owner");
+    }
+
+    evidence.frequencyRoleMatch = frequencyEvidence.roleMatch;
+    evidence.frequencyRoleMiss =
+        frequencyEvidence.endpointRoleFacts && !frequencyEvidence.roleMatch;
+    if (evidence.frequencyRoleMatch) {
+        AddVote(&evidence.positiveVotes, "endpoint-frequency");
+    } else if (evidence.frequencyRoleMiss) {
+        AddVote(&evidence.negativeVotes, "endpoint-frequency");
+    }
+
+    const auto candidateRoot = ControllerRootToken(candidate.callsign);
+    evidence.routeCenterRootMatch =
+        !candidateRoot.empty() &&
+        currentRouteCenterRoots.find(candidateRoot) !=
+            currentRouteCenterRoots.end();
+    if (evidence.routeCenterRootMatch) {
+        AddVote(&evidence.positiveVotes, "route-center-root");
+    }
+
+    const auto positiveCount = evidence.positiveVotes.size();
+    const auto negativeCount = evidence.negativeVotes.size();
+    const auto majorityPositive = positiveCount > negativeCount;
+    evidence.accepted = positiveCount >= 2 && majorityPositive;
+    return evidence;
+}
+
+std::string TerminalDecisionReason(
+    const std::string& endpointToken,
+    const TerminalDecisionEvidence& evidence,
+    const BrainTerminalAuthorityWorkerOutput& terminalAuthority,
+    const AirportFrequencyEvidence& frequencyEvidence) {
+    std::string baseReason;
+    if (evidence.accepted) {
+        if (evidence.terminalOwnerMatch && !evidence.frequencyRoleMiss) {
+            baseReason = endpointToken + "-terminal-owner-match";
+        } else if (evidence.frequencyRoleMatch) {
+            baseReason = endpointToken + "-terminal-frequency-match";
+        } else {
+            baseReason = endpointToken + "-terminal-majority-match";
+        }
+    } else if (evidence.frequencyRoleMiss && evidence.terminalOwnerMatch) {
+        baseReason = endpointToken + "-terminal-frequency-mismatch";
+    } else if (!evidence.terminalOwnerAvailable &&
+               !evidence.frequencyRoleMatch) {
+        baseReason = endpointToken + "-terminal-authority-unavailable";
+    } else if (evidence.terminalOwnerAvailable &&
+               !evidence.terminalOwnerMatch) {
+        baseReason = endpointToken + "-terminal-owner-mismatch";
+    } else {
+        baseReason = endpointToken + "-terminal-insufficient-evidence";
+    }
+
+    std::string reason =
+        baseReason +
+        TerminalDecisionVoteSuffix(evidence, evidence.accepted);
+    if (!evidence.candidateOwner.empty()) {
+        reason += ":" + evidence.candidateOwner;
+    }
+    reason += TerminalAuthorityFactSuffix(
+        terminalAuthority,
+        baseReason.find("unavailable") != std::string::npos);
+    reason += AirportFrequencyEvidenceSuffix(frequencyEvidence);
+    return reason;
+}
+
 void AppendSelectedCenterStations(
     const std::vector<CenterCandidate>& centerCandidates,
     ModuleBoardSnapshot* enrouteBoard,
@@ -764,6 +937,8 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
     std::unordered_set<std::string> arrivalKeys;
     std::unordered_set<std::string> enrouteKeys;
     std::vector<CenterCandidate> centerCandidates;
+    const auto currentRouteCenterRoots =
+        BuildCurrentRouteCenterRoots(input);
 
     const auto includeDepartureGroups =
         input.workflowStage == WorkflowStage::None ||
@@ -889,25 +1064,17 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                          AirportFrequencyEvidenceSuffix(frequencyEvidence);
             }
         } else if (includeDepartureGroups && appDepRole) {
-            std::string candidateOwner;
-            const auto terminalOwnerMatch = ControllerMatchesTerminalAuthority(
-                candidate.callsign,
-                input.departureTerminalAuthority,
-                &candidateOwner);
             const auto frequencyEvidence = ResolveAirportFrequencyEvidence(
                 input,
                 candidate,
                 BrainAirportFrequencyEndpoint::Departure,
                 role);
-            if (terminalOwnerMatch && frequencyEvidence.endpointRoleFacts &&
-                !frequencyEvidence.roleMatch) {
-                completionRelation = DisplayRelation::Hidden;
-                reason = TerminalAuthorityDecisionReason(
-                    "departure-terminal-frequency-mismatch",
-                    candidateOwner,
-                    input.departureTerminalAuthority) +
-                         AirportFrequencyEvidenceSuffix(frequencyEvidence);
-            } else if (terminalOwnerMatch || frequencyEvidence.roleMatch) {
+            const auto evidence = BuildTerminalDecisionEvidence(
+                candidate,
+                input.departureTerminalAuthority,
+                frequencyEvidence,
+                currentRouteCenterRoots);
+            if (evidence.accepted) {
                 station.polygonKey = input.currentPolygonKey;
                 AppendStationUnique(
                     station,
@@ -915,33 +1082,18 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                     &departureKeys);
                 accepted = true;
                 completionRelation = DisplayRelation::CurrentPolygon;
-                reason =
-                    terminalOwnerMatch
-                        ? TerminalAuthorityDecisionReason(
-                              "departure-terminal-owner-match",
-                              candidateOwner,
-                              input.departureTerminalAuthority)
-                        : TerminalAuthorityDecisionReason(
-                              "departure-terminal-frequency-match",
-                              candidateOwner,
-                              input.departureTerminalAuthority);
-                reason += AirportFrequencyEvidenceSuffix(frequencyEvidence);
+                reason = TerminalDecisionReason(
+                    "departure",
+                    evidence,
+                    input.departureTerminalAuthority,
+                    frequencyEvidence);
             } else {
                 completionRelation = DisplayRelation::Hidden;
-                if (!TerminalAuthorityFactAvailable(
-                        input.departureTerminalAuthority)) {
-                    reason = TerminalAuthorityDecisionReason(
-                        "departure-terminal-authority-unavailable",
-                        {},
-                        input.departureTerminalAuthority) +
-                             AirportFrequencyEvidenceSuffix(frequencyEvidence);
-                } else {
-                    reason = TerminalAuthorityDecisionReason(
-                        "departure-terminal-owner-mismatch",
-                        candidateOwner,
-                        input.departureTerminalAuthority) +
-                             AirportFrequencyEvidenceSuffix(frequencyEvidence);
-                }
+                reason = TerminalDecisionReason(
+                    "departure",
+                    evidence,
+                    input.departureTerminalAuthority,
+                    frequencyEvidence);
             }
         } else if (includeArrivalGroups &&
                    localRole &&
@@ -968,25 +1120,17 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                          AirportFrequencyEvidenceSuffix(frequencyEvidence);
             }
         } else if (includeArrivalGroups && appDepRole) {
-            std::string candidateOwner;
-            const auto terminalOwnerMatch = ControllerMatchesTerminalAuthority(
-                candidate.callsign,
-                input.arrivalTerminalAuthority,
-                &candidateOwner);
             const auto frequencyEvidence = ResolveAirportFrequencyEvidence(
                 input,
                 candidate,
                 BrainAirportFrequencyEndpoint::Arrival,
                 role);
-            if (terminalOwnerMatch && frequencyEvidence.endpointRoleFacts &&
-                !frequencyEvidence.roleMatch) {
-                completionRelation = DisplayRelation::Hidden;
-                reason = TerminalAuthorityDecisionReason(
-                    "arrival-terminal-frequency-mismatch",
-                    candidateOwner,
-                    input.arrivalTerminalAuthority) +
-                         AirportFrequencyEvidenceSuffix(frequencyEvidence);
-            } else if (terminalOwnerMatch || frequencyEvidence.roleMatch) {
+            const auto evidence = BuildTerminalDecisionEvidence(
+                candidate,
+                input.arrivalTerminalAuthority,
+                frequencyEvidence,
+                currentRouteCenterRoots);
+            if (evidence.accepted) {
                 station.polygonKey = input.arrivalPolygonKey;
                 AppendStationUnique(
                     station,
@@ -994,33 +1138,18 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                     &arrivalKeys);
                 accepted = true;
                 completionRelation = DisplayRelation::ArrivalPrep;
-                reason =
-                    terminalOwnerMatch
-                        ? TerminalAuthorityDecisionReason(
-                              "arrival-terminal-owner-match",
-                              candidateOwner,
-                              input.arrivalTerminalAuthority)
-                        : TerminalAuthorityDecisionReason(
-                              "arrival-terminal-frequency-match",
-                              candidateOwner,
-                              input.arrivalTerminalAuthority);
-                reason += AirportFrequencyEvidenceSuffix(frequencyEvidence);
+                reason = TerminalDecisionReason(
+                    "arrival",
+                    evidence,
+                    input.arrivalTerminalAuthority,
+                    frequencyEvidence);
             } else {
                 completionRelation = DisplayRelation::Hidden;
-                if (!TerminalAuthorityFactAvailable(
-                        input.arrivalTerminalAuthority)) {
-                    reason = TerminalAuthorityDecisionReason(
-                        "arrival-terminal-authority-unavailable",
-                        {},
-                        input.arrivalTerminalAuthority) +
-                             AirportFrequencyEvidenceSuffix(frequencyEvidence);
-                } else {
-                    reason = TerminalAuthorityDecisionReason(
-                        "arrival-terminal-owner-mismatch",
-                        candidateOwner,
-                        input.arrivalTerminalAuthority) +
-                             AirportFrequencyEvidenceSuffix(frequencyEvidence);
-                }
+                reason = TerminalDecisionReason(
+                    "arrival",
+                    evidence,
+                    input.arrivalTerminalAuthority,
+                    frequencyEvidence);
             }
         } else {
             completionRelation = DisplayRelation::Hidden;

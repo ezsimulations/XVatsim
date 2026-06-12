@@ -1,0 +1,29 @@
+name=Brain Controller Relevance Departure Terminal Majority Accepts KMDW CHI APP
+now_seconds=1000
+
+state.flight_active=true
+flight.callsign=SWA2002
+flight.departure_icao=KMDW
+flight.destination_icao=KRAP
+
+brain_controller_relevance.stage=Departure
+
+terminal_authority.airport_icao=KMDW
+terminal_authority.lat=41.785972
+terminal_authority.lon=-87.752417
+terminal_authority.feature=id=C90;name=Chicago TRACON;polygon=41.0,-88.5|42.5,-88.5|42.5,-86.8|41.0,-86.8
+
+route.current_sector=identifier=KZAU;entryDistanceNm=0;matchTokens=KZAU;controllerPatterns=CHI_*_CTR;controllerPrefixes=CHI
+
+controller.entry=callsign=CHI_Z_APP;frequency=119.000;facility=5;actionable=true;atis=false
+controller.entry=callsign=CHI_35_CTR;frequency=134.875;facility=6;actionable=true;atis=false
+
+transceiver.available=true
+transceiver.stale=false
+transceiver.candidate=callsign=CHI_Z_APP;frequency=119.000;distanceNm=1;score=100
+transceiver.candidate=callsign=CHI_35_CTR;frequency=134.875;distanceNm=1;score=100
+
+expect.terminal_authority_owners=C90_APP,C90_DEP
+expect.terminal_authority_polygons=C90
+expect.brain_controller_relevance_departure_callsigns=CHI_Z_APP
+expect.brain_controller_relevance_completions=CHI_35_CTR:accepted:center-current-polygon-match:pattern:CHI_*_CTR,CHI_Z_APP:accepted:departure-terminal-majority-match:votes=3/1:yes=vatsim-appdep+radio-near5+route-center-root:no=terminal-owner:final=accept-display:CHI_APP:owner=C90_APP+C90_DEP:poly=C90

@@ -5526,7 +5526,18 @@ int main(int argc, char** argv) {
         controllerRelevanceRadioSnapshot.stableHash;
     controllerRelevanceInput.routePolygonHash = 1;
     controllerRelevanceInput.currentPolygonIndex = 1;
-    controllerRelevanceInput.currentPolygonKey = "CURRENT";
+    controllerRelevanceInput.currentPolygonKey =
+        scenario.routeSectorSnapshot.currentSectors.empty()
+            ? "CURRENT"
+            : scenario.routeSectorSnapshot.currentSectors.front().identifier;
+    controllerRelevanceInput.nextPolygonKey =
+        scenario.routeSectorSnapshot.nextSectors.empty()
+            ? ""
+            : scenario.routeSectorSnapshot.nextSectors.front().identifier;
+    controllerRelevanceInput.currentSectors =
+        scenario.routeSectorSnapshot.currentSectors;
+    controllerRelevanceInput.nextSectors =
+        scenario.routeSectorSnapshot.nextSectors;
     controllerRelevanceInput.departureIcao =
         scenario.workflowState.flightContext.departureIcao;
     controllerRelevanceInput.arrivalIcao =
