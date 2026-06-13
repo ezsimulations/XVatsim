@@ -1528,6 +1528,52 @@ xvatsim::brain::BrainRoutePolygonWorkerOutput RefreshBrainRoutePolygonSnapshot(
     return runtimeOutput.route;
 }
 
+xvatsim::brain::AuthorityRelevanceSnapshot RefreshBrainAuthorityRelevanceSnapshot(
+    const xvatsim::brain::AircraftStateSnapshot& aircraftState,
+    const xvatsim::brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const xvatsim::brain::RouteSectorSnapshot& routeSectorSnapshot,
+    const xvatsim::brain::TransceiverResolutionSnapshot& transceiverSnapshot,
+    const std::string& planKey,
+    RefreshDiagnosticsFrame* diagnostics) {
+    const auto timingStarted = std::chrono::steady_clock::now();
+    auto snapshot =
+        gRouteSectorResolver.ResolveBrainScheduledAuthorityVerification(
+            aircraftState,
+            controllerFeedSnapshot,
+            routeSectorSnapshot,
+            "controller-relevance-evidence-ledger",
+            &transceiverSnapshot);
+    const auto elapsedUs = ElapsedMicrosecondsSince(timingStarted);
+    const auto hash = HashAuthorityRelevanceSnapshot(snapshot);
+
+    if (diagnostics != nullptr) {
+        diagnostics->authorityRelevanceUs = elapsedUs;
+        diagnostics->authorityRelevanceMs = elapsedUs / 1000;
+        diagnostics->authorityStatus = snapshot.statusLine;
+        diagnostics->authorityCount =
+            static_cast<int>(snapshot.relevantAuthorities.size());
+        diagnostics->authorityProofSummary = SummarizeAuthorityProofs(snapshot);
+        diagnostics->hasAuthorityProofHash = true;
+        diagnostics->authorityProofHash = hash;
+    }
+
+    std::ostringstream result;
+    result << "authorities=" << snapshot.relevantAuthorities.size()
+           << ",status=" << SanitizeLogText(snapshot.statusLine, 72)
+           << ",proofs=" << SanitizeLogText(SummarizeAuthorityProofs(snapshot), 160);
+    RecordDiagnosticJob(
+        "BrainAuthorityRelevanceWorker",
+        snapshot.diagnosticReason.empty()
+            ? snapshot.statusLine
+            : snapshot.diagnosticReason,
+        elapsedUs / 1000,
+        snapshot.diagnosticCacheStatus,
+        result.str(),
+        FormatSourceGenerations(snapshot),
+        planKey);
+    return snapshot;
+}
+
 xvatsim::brain::FlightPlanSnapshot SampleFlightPlanForRuntime(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     RefreshDiagnosticsFrame* diagnostics) {
@@ -3659,7 +3705,6 @@ void RefreshOverlayFromBrainEngineer3() {
                 aircraftState,
                 effectiveNetworkPlanSnapshot,
                 &diagnostics);
-        (void)routePolygonOutput;
 
         const auto radioSnapshot =
             BuildEngineer3RadioSnapshot(
@@ -3669,6 +3714,14 @@ void RefreshOverlayFromBrainEngineer3() {
                 &diagnostics);
         transceiverResolutionSnapshot =
             gBrainOwnedRuntimeState.transceiverSnapshot;
+        const auto authorityRelevanceSnapshot =
+            RefreshBrainAuthorityRelevanceSnapshot(
+                aircraftState,
+                controllerFeedSnapshot,
+                routePolygonOutput.route,
+                transceiverResolutionSnapshot,
+                planKey,
+                &diagnostics);
 
         const auto departureTerminalAuthority =
             xvatsim::brain::RefreshBrainOwnedDepartureTerminalAuthority(
@@ -3722,6 +3775,10 @@ void RefreshOverlayFromBrainEngineer3() {
         relevanceRequest.radioSnapshot = gatedRadioSnapshot;
         relevanceRequest.departureIcao = flightContext.departureIcao;
         relevanceRequest.arrivalIcao = flightContext.destinationIcao;
+        relevanceRequest.authorityRelevanceHash =
+            static_cast<std::uint64_t>(
+                HashAuthorityRelevanceSnapshot(authorityRelevanceSnapshot));
+        relevanceRequest.authorityRelevance = authorityRelevanceSnapshot;
         relevanceRequest.radios = radioStateSnapshot;
         const auto relevanceInput =
             xvatsim::brain::BuildBrainOwnedControllerRelevanceInput(

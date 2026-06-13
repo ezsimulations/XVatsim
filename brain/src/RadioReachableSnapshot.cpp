@@ -133,6 +133,17 @@ std::uint64_t BuildStableHash(
         HashCombine(&hash, candidate.actionable);
         HashCombine(&hash, candidate.atis);
         HashCombine(&hash, static_cast<std::uint64_t>(candidate.visualRangeNm));
+        HashCombine(&hash, candidate.hasStationCoordinates);
+        if (candidate.hasStationCoordinates) {
+            HashCombine(
+                &hash,
+                static_cast<std::uint64_t>(
+                    std::llround(candidate.stationLatitudeDeg * 100000.0)));
+            HashCombine(
+                &hash,
+                static_cast<std::uint64_t>(
+                    std::llround(candidate.stationLongitudeDeg * 100000.0)));
+        }
     }
     return hash;
 }
@@ -412,6 +423,14 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshotFromTransc
         candidate.visualRangeNm = controller.visualRangeNm;
         candidate.hasDistanceNm = std::isfinite(receivable.distanceNm);
         candidate.distanceNm = candidate.hasDistanceNm ? receivable.distanceNm : 0.0;
+        candidate.hasStationCoordinates =
+            std::isfinite(receivable.latitudeDeg) &&
+            std::isfinite(receivable.longitudeDeg) &&
+            (receivable.latitudeDeg != 0.0 || receivable.longitudeDeg != 0.0);
+        candidate.stationLatitudeDeg =
+            candidate.hasStationCoordinates ? receivable.latitudeDeg : 0.0;
+        candidate.stationLongitudeDeg =
+            candidate.hasStationCoordinates ? receivable.longitudeDeg : 0.0;
         candidate.firstSeenSeconds = options.nowSeconds;
         candidate.lastSeenSeconds = options.nowSeconds;
         candidate.stableKey = BuildStableKey(

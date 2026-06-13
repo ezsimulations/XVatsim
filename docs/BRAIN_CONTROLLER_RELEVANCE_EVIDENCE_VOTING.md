@@ -1,23 +1,29 @@
-# Brain Controller Relevance Evidence Voting
+# Brain Controller Relevance Weighted Evidence Ledger
 
 Date locked: 2026-06-12
 
-Status: implemented in the brain relevance worker and covered by the
-regression harness.
+Status: implemented in the brain relevance worker, wired into the clean
+runtime path, and covered by the regression harness.
 
 ## Purpose
 
 The KMDW -> KRAP live case as SWA2002 exposed a bad failure mode:
 `CHI_Z_APP` on `119.000` was radio-reachable at KMDW, was a VATSIM APP/DEP
 controller, and shared the CHI route-center root with the accepted current
-center, but it was hidden because one terminal authority text token normalized
-to `CHI_APP` while the endpoint owner report said `C90_APP`/`C90_DEP`.
+center. It was hidden because one terminal authority text token normalized to
+`CHI_APP` while the endpoint owner report said `C90_APP`/`C90_DEP`.
 
 That is no longer allowed to be a one-string hard veto.
 
-The controller relevance brain now records multiple deciding factors for
-terminal APP/DEP candidates and reports the vote ledger in every terminal
-accept/reject completion reason.
+The controller relevance brain now builds a weighted evidence ledger for every
+terminal APP/DEP candidate. The ledger reports:
+
+- raw positive/negative vote count
+- weighted positive/negative score
+- positive non-FAA evidence family count
+- positive, negative, and neutral factor names
+- confidence
+- final action: `accept-display` or `reject-hide`
 
 ## Ownership Boundary
 
@@ -30,60 +36,93 @@ The brain consumes these reports when they are present:
 
 - VATSIM controller identity, frequency, and facility group.
 - Radio-board or AFV transceiver reachability and distance.
+- AFV station coordinates from transceiver resolution.
 - Terminal authority owners and polygons, including SimAware-backed reports.
-- Airport frequency catalog facts for departure and arrival endpoints.
+- Source-owned authority relevance from the scheduled route authority verifier.
+- FAA/NASR airport frequency catalog facts for departure and arrival endpoints.
 - Route-sector center patterns and prefixes.
+- Radio tuning state for cache invalidation.
 
 Modules must not decide "show or hide this APP/DEP controller." They only
 provide evidence.
 
-## Terminal Vote Factors
-
-For APP/DEP candidates, the brain builds a terminal decision evidence packet.
-Each factor is named in the completion reason.
+## Evidence Weights
 
 Positive factors:
 
-- `vatsim-appdep`: the live VATSIM controller candidate is APP/DEP.
-- `radio-near5`: the radio-range report identifies the controller within 5 NM.
-- `terminal-owner`: terminal authority owner/polygon facts match the candidate.
-- `endpoint-frequency`: airport frequency facts match the endpoint and role.
-- `route-center-root`: the APP/DEP root matches an accepted or matching route
-  center root, such as `CHI_Z_APP` sharing `CHI` with `CHI_35_CTR`.
+- `source-owned-authority`: weight `4`, non-FAA family `source-authority`.
+- `terminal-owner`: weight `3`, non-FAA family `terminal-source`.
+- `route-center-root`: weight `3`, non-FAA family `route-context`.
+- `vatsim-appdep`: weight `2`, non-FAA family `vatsim-live`.
+- `radio-near5`: weight `2`, non-FAA family `afv-radio`.
+- `faa-frequency`: weight `1`, FAA-derived family `faa-frequency`.
 
 Negative factors:
 
-- `terminal-owner`: terminal authority owner/polygon facts are present but do
+- `terminal-owner`: weight `2` when terminal owner facts are present and do
   not match the candidate.
-- `endpoint-frequency`: endpoint frequency facts exist but do not support the
-  candidate frequency/role.
 
-The radio-board candidate itself is still the candidate source. `radio-near5`
-is a positive vote when the candidate is 5 NM or closer; it is not a blind pass
-by itself.
+Neutral facts:
+
+- `radio-distance-over5`: the radio-board candidate has range data, but it is
+  farther than 5 NM.
+- `afv-station-geo`: AFV station coordinates were available for diagnostics.
+- `faa-frequency-miss`: FAA/NASR endpoint facts exist but do not match the
+  VATSIM candidate frequency/role.
+
+FAA/NASR is intentionally weak. VATSIM can use virtual or pseudo frequencies,
+so FAA/NASR can help when it agrees, but an FAA miss is neutral and cannot hide
+a VATSIM controller by itself.
 
 ## Decision Rule
 
-The brain accepts and displays a terminal APP/DEP candidate when at least two
-positive factors exist and the positive count is greater than the negative
-count.
+The brain accepts and displays a terminal APP/DEP candidate only when all three
+conditions are true:
 
-The brain rejects and hides a candidate when there is not enough independent
-positive evidence, or when the vote count is tied or negative.
+```text
+positiveScore > negativeScore
+positiveNonFaaScore > negativeScore
+positiveNonFaaFamilies >= 2
+```
 
-Endpoint frequency facts remain strong evidence, but a single endpoint
-frequency miss is no longer a hard veto. If two other independent factors say
-yes and only endpoint frequency says no, the brain accepts and reports the
-negative vote.
+This means a candidate needs at least two independent non-FAA evidence families
+to display. FAA/NASR can add a small positive score, but it cannot become the
+second required non-FAA family and it cannot rescue a candidate alone.
 
-Terminal owner mismatch is now evidence against the candidate, not an automatic
-kill switch.
+The brain rejects and hides a candidate when the evidence is tied, negative, or
+too narrow. A single string mismatch is no longer a hard kill switch; it is one
+negative item inside the weighted ledger.
 
 Every terminal completion reason includes:
 
 ```text
-votes=<positive>/<negative>:yes=<factor+factor>:no=<factor>:final=<accept-display|reject-hide>
+votes=<positive>/<negative>:score=<positive>/<negative>:yes=<factor+factor>:no=<factor>:neutral=<factor+factor>:families=<non-faa-family-count>:confidence=<low|medium|high>:final=<accept-display|reject-hide>
 ```
+
+DEL/GND/TWR airport-local matches remain airport-local authority decisions. FAA
+frequency facts are appended for diagnostics, but an FAA miss does not reject a
+local airport callsign match.
+
+## Runtime Wiring
+
+The clean runtime path now passes `AuthorityRelevanceSnapshot` into
+`BrainOwnedControllerRelevanceInputRequest`. This gives the controller
+relevance brain the already scheduled and cached route authority proof without
+reopening old module-side display decisions.
+
+The controller relevance cache includes:
+
+- radio board hash
+- route polygon hash
+- departure and arrival terminal authority hashes
+- airport frequency hash
+- authority relevance hash
+- radio tuning hash
+- workflow stage
+- current polygon key
+
+That keeps CPU behavior bounded. The brain relaxes on unchanged inputs and only
+re-evaluates when a real evidence source changes.
 
 ## KMDW SWA2002 Decision
 
@@ -108,29 +147,33 @@ Facts reported to the brain:
 Brain result after this change:
 
 ```text
-CHI_Z_APP:accepted:departure-terminal-majority-match:votes=3/1:yes=vatsim-appdep+radio-near5+route-center-root:no=terminal-owner:final=accept-display:CHI_APP:owner=C90_APP+C90_DEP:poly=C90
+CHI_Z_APP:accepted:departure-terminal-majority-match:votes=3/1:score=7/2:yes=vatsim-appdep+radio-near5+route-center-root:no=terminal-owner:neutral=none:families=3:confidence=high:final=accept-display:CHI_APP:owner=C90_APP+C90_DEP:poly=C90
 ```
 
 That means the old single text mismatch is still visible in diagnostics, but it
-no longer hides the controller when three independent factors support showing
-it.
+no longer hides the controller when three independent non-FAA families support
+showing it.
 
 ## Guardrail Scenarios
 
-The existing scenario suite now records the same vote ledger for prior cases:
+The controller relevance scenario suite records the weighted ledger for prior
+edge cases:
 
-- Owner-confirmed terminal controllers accept as `votes=3/0` or `2/0`.
-- Endpoint frequency proof can accept a controller even when owner text says
-  no, as in the KONT SoCal disambiguation case.
-- Endpoint frequency mismatch is now one negative vote, not a hard veto. The
-  KONT SoCal `SCT_APP` case accepts as `votes=2/1` when VATSIM APP/DEP and
-  terminal owner facts say yes.
-- A nearby mismatch is also one negative vote, not a hard veto. The KONT
-  `LAS_F_APP` case accepts as `votes=2/1` because VATSIM APP/DEP and
-  `radio-near5` say yes while terminal owner says no.
-- Controllers with only one positive and one negative factor still reject as a
-  tie, which keeps unsupported text mismatches visible as `final=reject-hide`.
-- Arrival and departure owner-filter cases now expose why each hidden row was
+- Owner-confirmed terminal controllers accept with `terminal-owner` plus either
+  `radio-near5`, `vatsim-appdep`, `faa-frequency`, or another non-FAA family.
+- KMDW accepts `CHI_Z_APP` with `score=7/2`, `families=3`, and
+  `final=accept-display`.
+- KONT rejects `LAX_S_DEP` even though FAA/NASR frequency agrees, because the
+  only non-FAA positive family is VATSIM live data and terminal owner says no.
+- KONT accepts `SCT_APP` even with `faa-frequency-miss`, because VATSIM live
+  and terminal-owner facts are two non-FAA families and the FAA miss is neutral.
+- KONT accepts nearby `LAS_F_APP` with low confidence when VATSIM APP/DEP and
+  `radio-near5` beat one terminal-owner mismatch.
+- KSDF rejects `MEM_E_APP` because VATSIM live alone ties the terminal owner
+  mismatch, while the FAA miss is neutral.
+- Controllers with only one positive family and one terminal-owner mismatch
+  still reject as `final=reject-hide`.
+- Arrival and departure owner-filter cases expose why each hidden row was
   hidden instead of silently disappearing.
 
 ## Test Documentation
@@ -142,9 +185,8 @@ tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal
 ```
 
 This scenario reproduces the KMDW departure problem. It proves that
-`CHI_Z_APP` is accepted and displayed by a 3 positive / 1 negative majority
-when the only rejection is the `CHI_APP` versus `C90_APP`/`C90_DEP` terminal
-owner text mismatch.
+`CHI_Z_APP` is accepted and displayed when the only rejection is the `CHI_APP`
+versus `C90_APP`/`C90_DEP` terminal owner text mismatch.
 
 Relevant validation commands:
 
@@ -156,15 +198,20 @@ $p = $env:Path
 
 & '.\build\tools\XVatsimRegressionHarness.exe' '.\tools\regression_harness\scenarios\brain_controller_relevance_departure_terminal_majority_accepts_kmdw_chi_app.scn'
 
-$scenarios = Get-ChildItem '.\tools\regression_harness\scenarios\*.scn' | Sort-Object Name
-foreach ($s in $scenarios) {
-  & '.\build\tools\XVatsimRegressionHarness.exe' $s.FullName > $null
+$failed = @()
+$count = 0
+Get-ChildItem '.\tools\regression_harness\scenarios' -Filter '*.scn' | Sort-Object Name | ForEach-Object {
+  $count++
+  & '.\build\tools\XVatsimRegressionHarness.exe' $_.FullName *> $null
   if ($LASTEXITCODE -ne 0) {
-    Write-Host "FAILED $($s.Name)"
-    exit $LASTEXITCODE
+    $failed += $_.Name
   }
 }
-"passed $($scenarios.Count) scenarios"
+if ($failed.Count -eq 0) {
+  "passed=$count"
+} else {
+  "failed=$($failed.Count)/$count " + ($failed -join ',')
+}
 ```
 
 Current validation result:
@@ -172,4 +219,5 @@ Current validation result:
 ```text
 passed 15 brain_controller_relevance scenarios
 passed 263 scenarios
+full RelWithDebInfo build completed, including XVatsim.xpl
 ```

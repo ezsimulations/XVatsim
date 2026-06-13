@@ -769,35 +769,100 @@ struct TerminalDecisionEvidence {
     bool frequencyRoleMatch = false;
     bool frequencyRoleMiss = false;
     bool radioNearAirport = false;
+    bool sourceAuthorityMatch = false;
     bool routeCenterRootMatch = false;
     bool accepted = false;
+    int positiveScore = 0;
+    int negativeScore = 0;
+    int positiveNonFaaScore = 0;
     std::string candidateOwner;
+    std::string sourceAuthorityProof;
     std::vector<std::string> positiveVotes;
     std::vector<std::string> negativeVotes;
+    std::vector<std::string> neutralFacts;
+    std::unordered_set<std::string> positiveFamilies;
+    std::unordered_set<std::string> positiveNonFaaFamilies;
 };
 
-void AddVote(std::vector<std::string>* votes, const std::string& vote) {
-    if (votes == nullptr || vote.empty()) {
+void AddUniqueToken(std::vector<std::string>* values, const std::string& value) {
+    if (values == nullptr || value.empty()) {
         return;
     }
-    if (std::find(votes->begin(), votes->end(), vote) == votes->end()) {
-        votes->push_back(vote);
+    if (std::find(values->begin(), values->end(), value) == values->end()) {
+        values->push_back(value);
     }
 }
 
-std::string JoinVotes(const std::vector<std::string>& votes) {
-    if (votes.empty()) {
+void AddPositiveEvidence(
+    TerminalDecisionEvidence* evidence,
+    const std::string& token,
+    const std::string& family,
+    int weight,
+    bool faaDerived = false) {
+    if (evidence == nullptr || token.empty() || weight <= 0) {
+        return;
+    }
+    AddUniqueToken(&evidence->positiveVotes, token);
+    evidence->positiveScore += weight;
+    if (!family.empty()) {
+        evidence->positiveFamilies.insert(family);
+    }
+    if (!faaDerived) {
+        evidence->positiveNonFaaScore += weight;
+        if (!family.empty()) {
+            evidence->positiveNonFaaFamilies.insert(family);
+        }
+    }
+}
+
+void AddNegativeEvidence(
+    TerminalDecisionEvidence* evidence,
+    const std::string& token,
+    int weight) {
+    if (evidence == nullptr || token.empty() || weight <= 0) {
+        return;
+    }
+    AddUniqueToken(&evidence->negativeVotes, token);
+    evidence->negativeScore += weight;
+}
+
+void AddNeutralFact(
+    TerminalDecisionEvidence* evidence,
+    const std::string& token) {
+    if (evidence == nullptr || token.empty()) {
+        return;
+    }
+    AddUniqueToken(&evidence->neutralFacts, token);
+}
+
+std::string JoinTokens(const std::vector<std::string>& values) {
+    if (values.empty()) {
         return "none";
     }
 
     std::ostringstream stream;
-    for (std::size_t index = 0; index < votes.size(); ++index) {
+    for (std::size_t index = 0; index < values.size(); ++index) {
         if (index > 0) {
             stream << '+';
         }
-        stream << votes[index];
+        stream << values[index];
     }
     return stream.str();
+}
+
+std::string TerminalDecisionConfidence(
+    const TerminalDecisionEvidence& evidence) {
+    const auto margin = evidence.positiveScore - evidence.negativeScore;
+    if (evidence.sourceAuthorityMatch ||
+        (evidence.terminalOwnerMatch && evidence.routeCenterRootMatch) ||
+        margin >= 5) {
+        return "high";
+    }
+    if (evidence.terminalOwnerMatch || evidence.routeCenterRootMatch ||
+        margin >= 3) {
+        return "medium";
+    }
+    return "low";
 }
 
 std::string TerminalDecisionVoteSuffix(
@@ -806,25 +871,74 @@ std::string TerminalDecisionVoteSuffix(
     std::ostringstream stream;
     stream << ":votes=" << evidence.positiveVotes.size()
            << "/" << evidence.negativeVotes.size()
-           << ":yes=" << JoinVotes(evidence.positiveVotes)
-           << ":no=" << JoinVotes(evidence.negativeVotes)
+           << ":score=" << evidence.positiveScore
+           << "/" << evidence.negativeScore
+           << ":yes=" << JoinTokens(evidence.positiveVotes)
+           << ":no=" << JoinTokens(evidence.negativeVotes)
+           << ":neutral=" << JoinTokens(evidence.neutralFacts)
+           << ":families=" << evidence.positiveNonFaaFamilies.size()
+           << ":confidence=" << TerminalDecisionConfidence(evidence)
            << ":final=" << (accepted ? "accept-display" : "reject-hide");
     return stream.str();
 }
 
+const RelevantAuthoritySnapshot* FindRelevantSourceAuthority(
+    const BrainControllerRelevanceWorkerInput& input,
+    const RadioReachableControllerCandidate& candidate) {
+    if (!input.authorityRelevance.available || input.authorityRelevance.stale) {
+        return nullptr;
+    }
+
+    const auto candidateCallsign = NormalizeCallsign(candidate.callsign);
+    const auto candidateFrequency = NormalizeFrequency(candidate.frequency);
+    for (const auto& authority : input.authorityRelevance.relevantAuthorities) {
+        if (authority.kind == AuthorityRelevanceKind::Center) {
+            continue;
+        }
+        if (NormalizeCallsign(authority.callsign) != candidateCallsign) {
+            continue;
+        }
+        const auto authorityFrequency = NormalizeFrequency(authority.frequency);
+        if (!authorityFrequency.empty() &&
+            !candidateFrequency.empty() &&
+            authorityFrequency != candidateFrequency) {
+            continue;
+        }
+        return &authority;
+    }
+    return nullptr;
+}
+
 TerminalDecisionEvidence BuildTerminalDecisionEvidence(
+    const BrainControllerRelevanceWorkerInput& input,
     const RadioReachableControllerCandidate& candidate,
     const BrainTerminalAuthorityWorkerOutput& terminalAuthority,
     const AirportFrequencyEvidence& frequencyEvidence,
     const std::unordered_set<std::string>& currentRouteCenterRoots) {
     TerminalDecisionEvidence evidence;
 
-    AddVote(&evidence.positiveVotes, "vatsim-appdep");
+    AddPositiveEvidence(&evidence, "vatsim-appdep", "vatsim-live", 2);
 
     evidence.radioNearAirport =
         candidate.hasDistanceNm && candidate.distanceNm <= 5.0;
     if (evidence.radioNearAirport) {
-        AddVote(&evidence.positiveVotes, "radio-near5");
+        AddPositiveEvidence(&evidence, "radio-near5", "afv-radio", 2);
+    } else if (candidate.hasDistanceNm) {
+        AddNeutralFact(&evidence, "radio-distance-over5");
+    }
+    if (candidate.hasStationCoordinates) {
+        AddNeutralFact(&evidence, "afv-station-geo");
+    }
+
+    const auto sourceAuthority = FindRelevantSourceAuthority(input, candidate);
+    if (sourceAuthority != nullptr) {
+        evidence.sourceAuthorityMatch = true;
+        evidence.sourceAuthorityProof = sourceAuthority->proofSource;
+        AddPositiveEvidence(
+            &evidence,
+            "source-owned-authority",
+            "source-authority",
+            4);
     }
 
     evidence.terminalOwnerAvailable =
@@ -834,18 +948,18 @@ TerminalDecisionEvidence BuildTerminalDecisionEvidence(
         terminalAuthority,
         &evidence.candidateOwner);
     if (evidence.terminalOwnerMatch) {
-        AddVote(&evidence.positiveVotes, "terminal-owner");
+        AddPositiveEvidence(&evidence, "terminal-owner", "terminal-source", 3);
     } else if (evidence.terminalOwnerAvailable) {
-        AddVote(&evidence.negativeVotes, "terminal-owner");
+        AddNegativeEvidence(&evidence, "terminal-owner", 2);
     }
 
     evidence.frequencyRoleMatch = frequencyEvidence.roleMatch;
     evidence.frequencyRoleMiss =
         frequencyEvidence.endpointRoleFacts && !frequencyEvidence.roleMatch;
     if (evidence.frequencyRoleMatch) {
-        AddVote(&evidence.positiveVotes, "endpoint-frequency");
+        AddPositiveEvidence(&evidence, "faa-frequency", "faa-frequency", 1, true);
     } else if (evidence.frequencyRoleMiss) {
-        AddVote(&evidence.negativeVotes, "endpoint-frequency");
+        AddNeutralFact(&evidence, "faa-frequency-miss");
     }
 
     const auto candidateRoot = ControllerRootToken(candidate.callsign);
@@ -854,13 +968,13 @@ TerminalDecisionEvidence BuildTerminalDecisionEvidence(
         currentRouteCenterRoots.find(candidateRoot) !=
             currentRouteCenterRoots.end();
     if (evidence.routeCenterRootMatch) {
-        AddVote(&evidence.positiveVotes, "route-center-root");
+        AddPositiveEvidence(&evidence, "route-center-root", "route-context", 3);
     }
 
-    const auto positiveCount = evidence.positiveVotes.size();
-    const auto negativeCount = evidence.negativeVotes.size();
-    const auto majorityPositive = positiveCount > negativeCount;
-    evidence.accepted = positiveCount >= 2 && majorityPositive;
+    evidence.accepted =
+        evidence.positiveScore > evidence.negativeScore &&
+        evidence.positiveNonFaaScore > evidence.negativeScore &&
+        evidence.positiveNonFaaFamilies.size() >= 2;
     return evidence;
 }
 
@@ -871,17 +985,18 @@ std::string TerminalDecisionReason(
     const AirportFrequencyEvidence& frequencyEvidence) {
     std::string baseReason;
     if (evidence.accepted) {
-        if (evidence.terminalOwnerMatch && !evidence.frequencyRoleMiss) {
+        if (evidence.sourceAuthorityMatch) {
+            baseReason = endpointToken + "-terminal-source-authority-match";
+        } else if (evidence.terminalOwnerMatch) {
             baseReason = endpointToken + "-terminal-owner-match";
         } else if (evidence.frequencyRoleMatch) {
             baseReason = endpointToken + "-terminal-frequency-match";
         } else {
             baseReason = endpointToken + "-terminal-majority-match";
         }
-    } else if (evidence.frequencyRoleMiss && evidence.terminalOwnerMatch) {
-        baseReason = endpointToken + "-terminal-frequency-mismatch";
     } else if (!evidence.terminalOwnerAvailable &&
-               !evidence.frequencyRoleMatch) {
+               !evidence.frequencyRoleMatch &&
+               !evidence.sourceAuthorityMatch) {
         baseReason = endpointToken + "-terminal-authority-unavailable";
     } else if (evidence.terminalOwnerAvailable &&
                !evidence.terminalOwnerMatch) {
@@ -900,6 +1015,9 @@ std::string TerminalDecisionReason(
         terminalAuthority,
         baseReason.find("unavailable") != std::string::npos);
     reason += AirportFrequencyEvidenceSuffix(frequencyEvidence);
+    if (!evidence.sourceAuthorityProof.empty()) {
+        reason += ":source=" + NormalizeCallsign(evidence.sourceAuthorityProof);
+    }
     return reason;
 }
 
@@ -1047,22 +1165,15 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                 candidate,
                 BrainAirportFrequencyEndpoint::Departure,
                 role);
-            if (frequencyEvidence.endpointRoleFacts &&
-                !frequencyEvidence.roleMatch) {
-                completionRelation = DisplayRelation::Hidden;
-                reason = std::string("departure-airport-frequency-mismatch") +
-                         AirportFrequencyEvidenceSuffix(frequencyEvidence);
-            } else {
-                station.polygonKey = input.currentPolygonKey;
-                AppendStationUnique(
-                    station,
-                    &output.departureBoard,
-                    &departureKeys);
-                accepted = true;
-                completionRelation = DisplayRelation::CurrentPolygon;
-                reason = std::string("departure-airport-match") +
-                         AirportFrequencyEvidenceSuffix(frequencyEvidence);
-            }
+            station.polygonKey = input.currentPolygonKey;
+            AppendStationUnique(
+                station,
+                &output.departureBoard,
+                &departureKeys);
+            accepted = true;
+            completionRelation = DisplayRelation::CurrentPolygon;
+            reason = std::string("departure-airport-match") +
+                     AirportFrequencyEvidenceSuffix(frequencyEvidence);
         } else if (includeDepartureGroups && appDepRole) {
             const auto frequencyEvidence = ResolveAirportFrequencyEvidence(
                 input,
@@ -1070,6 +1181,7 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                 BrainAirportFrequencyEndpoint::Departure,
                 role);
             const auto evidence = BuildTerminalDecisionEvidence(
+                input,
                 candidate,
                 input.departureTerminalAuthority,
                 frequencyEvidence,
@@ -1103,22 +1215,15 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                 candidate,
                 BrainAirportFrequencyEndpoint::Arrival,
                 role);
-            if (frequencyEvidence.endpointRoleFacts &&
-                !frequencyEvidence.roleMatch) {
-                completionRelation = DisplayRelation::Hidden;
-                reason = std::string("arrival-airport-frequency-mismatch") +
-                         AirportFrequencyEvidenceSuffix(frequencyEvidence);
-            } else {
-                station.polygonKey = input.arrivalPolygonKey;
-                AppendStationUnique(
-                    station,
-                    &output.arrivalBoard,
-                    &arrivalKeys);
-                accepted = true;
-                completionRelation = DisplayRelation::ArrivalPrep;
-                reason = std::string("arrival-airport-match") +
-                         AirportFrequencyEvidenceSuffix(frequencyEvidence);
-            }
+            station.polygonKey = input.arrivalPolygonKey;
+            AppendStationUnique(
+                station,
+                &output.arrivalBoard,
+                &arrivalKeys);
+            accepted = true;
+            completionRelation = DisplayRelation::ArrivalPrep;
+            reason = std::string("arrival-airport-match") +
+                     AirportFrequencyEvidenceSuffix(frequencyEvidence);
         } else if (includeArrivalGroups && appDepRole) {
             const auto frequencyEvidence = ResolveAirportFrequencyEvidence(
                 input,
@@ -1126,6 +1231,7 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                 BrainAirportFrequencyEndpoint::Arrival,
                 role);
             const auto evidence = BuildTerminalDecisionEvidence(
+                input,
                 candidate,
                 input.arrivalTerminalAuthority,
                 frequencyEvidence,
@@ -1200,6 +1306,8 @@ BrainControllerRelevanceWorkerInput BuildBrainOwnedControllerRelevanceInput(
         state.airportFrequencyHash;
     input.airportFrequencies =
         state.airportFrequencies;
+    input.authorityRelevanceHash = request.authorityRelevanceHash;
+    input.authorityRelevance = request.authorityRelevance;
     input.radioTuningHash = HashRadioTuningIdentity(request.radios);
     input.radios = request.radios;
     input.currentSectors = state.routePolygonSnapshot.currentSectors;
@@ -1224,6 +1332,8 @@ BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
             input.arrivalTerminalAuthorityHash &&
         state->lastAirportFrequencyHash ==
             input.airportFrequencyHash &&
+        state->lastAuthorityRelevanceHash ==
+            input.authorityRelevanceHash &&
         state->lastRadioTuningHash == input.radioTuningHash &&
         state->lastWorkflowStage == input.workflowStage &&
         state->currentPolygonKey == input.currentPolygonKey;
@@ -1265,6 +1375,8 @@ BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
         input.arrivalTerminalAuthorityHash;
     state->lastAirportFrequencyHash =
         input.airportFrequencyHash;
+    state->lastAuthorityRelevanceHash =
+        input.authorityRelevanceHash;
     state->lastRadioTuningHash = input.radioTuningHash;
 
     state->candidateCompletions.clear();

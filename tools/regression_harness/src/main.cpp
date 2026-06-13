@@ -5555,6 +5555,10 @@ int main(int argc, char** argv) {
         airportFrequencyRuntimeState.airportFrequencyHash;
     controllerRelevanceInput.airportFrequencies =
         airportFrequencyOutput;
+    if (authorityRelevanceSnapshot.available) {
+        controllerRelevanceInput.authorityRelevanceHash = 1;
+        controllerRelevanceInput.authorityRelevance = authorityRelevanceSnapshot;
+    }
     controllerRelevanceInput.radios = scenario.radioStateSnapshot;
     controllerRelevanceInput.candidates =
         controllerRelevanceRadioSnapshot.candidates;

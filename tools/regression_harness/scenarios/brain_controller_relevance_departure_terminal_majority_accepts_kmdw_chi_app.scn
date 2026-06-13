@@ -26,4 +26,4 @@ transceiver.candidate=callsign=CHI_35_CTR;frequency=134.875;distanceNm=1;score=1
 expect.terminal_authority_owners=C90_APP,C90_DEP
 expect.terminal_authority_polygons=C90
 expect.brain_controller_relevance_departure_callsigns=CHI_Z_APP
-expect.brain_controller_relevance_completions=CHI_35_CTR:accepted:center-current-polygon-match:pattern:CHI_*_CTR,CHI_Z_APP:accepted:departure-terminal-majority-match:votes=3/1:yes=vatsim-appdep+radio-near5+route-center-root:no=terminal-owner:final=accept-display:CHI_APP:owner=C90_APP+C90_DEP:poly=C90
+expect.brain_controller_relevance_completions=CHI_35_CTR:accepted:center-current-polygon-match:pattern:CHI_*_CTR,CHI_Z_APP:accepted:departure-terminal-majority-match:votes=3/1:score=7/2:yes=vatsim-appdep+radio-near5+route-center-root:no=terminal-owner:neutral=none:families=3:confidence=high:final=accept-display:CHI_APP:owner=C90_APP+C90_DEP:poly=C90

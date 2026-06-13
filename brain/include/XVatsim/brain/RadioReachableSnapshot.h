@@ -46,6 +46,9 @@ struct RadioReachableControllerCandidate {
     int visualRangeNm = 0;
     bool hasDistanceNm = false;
     double distanceNm = 0.0;
+    bool hasStationCoordinates = false;
+    double stationLatitudeDeg = 0.0;
+    double stationLongitudeDeg = 0.0;
     double firstSeenSeconds = 0.0;
     double lastSeenSeconds = 0.0;
     std::string stableKey;

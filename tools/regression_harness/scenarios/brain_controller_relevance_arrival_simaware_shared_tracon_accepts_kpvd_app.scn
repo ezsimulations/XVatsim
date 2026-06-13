@@ -22,4 +22,4 @@ transceiver.candidate=callsign=PVD_APP;frequency=123.675;distanceNm=5;score=100
 expect.terminal_authority_owners=PVD_APP,PVD_DEP
 expect.terminal_authority_polygons=PVD
 expect.brain_controller_relevance_arrival_callsigns=PVD_APP
-expect.brain_controller_relevance_completions=PVD_APP:accepted:arrival-terminal-owner-match:votes=3/0:yes=vatsim-appdep+radio-near5+terminal-owner:no=none:final=accept-display:PVD_APP:owner=PVD_APP+PVD_DEP:poly=PVD
+expect.brain_controller_relevance_completions=PVD_APP:accepted:arrival-terminal-owner-match:votes=3/0:score=7/0:yes=vatsim-appdep+radio-near5+terminal-owner:no=none:neutral=none:families=3:confidence=high:final=accept-display:PVD_APP:owner=PVD_APP+PVD_DEP:poly=PVD

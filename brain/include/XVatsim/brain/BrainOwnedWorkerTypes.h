@@ -105,6 +105,8 @@ struct BrainControllerRelevanceWorkerInput {
     BrainTerminalAuthorityWorkerOutput arrivalTerminalAuthority;
     std::uint64_t airportFrequencyHash = 0;
     BrainAirportFrequencyWorkerOutput airportFrequencies;
+    std::uint64_t authorityRelevanceHash = 0;
+    AuthorityRelevanceSnapshot authorityRelevance;
     std::uint64_t radioTuningHash = 0;
     RadioStateSnapshot radios;
     std::vector<RouteSectorMatchSnapshot> currentSectors;
@@ -117,6 +119,8 @@ struct BrainOwnedControllerRelevanceInputRequest {
     RadioReachableControllerSnapshot radioSnapshot;
     std::string departureIcao;
     std::string arrivalIcao;
+    std::uint64_t authorityRelevanceHash = 0;
+    AuthorityRelevanceSnapshot authorityRelevance;
     RadioStateSnapshot radios;
 };
 
