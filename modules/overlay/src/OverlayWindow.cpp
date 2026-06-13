@@ -686,6 +686,7 @@ RasterImage RenderCardImage(
     graphics.DrawLine(&dividerPen, 20.0f, 246.0f, panelRect.GetRight() - 20.0f, 246.0f);
 
     DrawTextBlock(&graphics, RectF(46.0f, 8.0f, 118.0f, 24.0f), "XVatsim", &brandFont, white);
+    DrawTextBlock(&graphics, RectF(46.0f, 30.0f, 80.0f, 12.0f), "v1.0.3", &metaFont, muted);
     DrawTextBlock(&graphics, RectF(154.0f, 17.0f, 76.0f, 12.0f), sections.badgeText, &badgeFont, cyan);
     DrawTextBlock(&graphics, RectF(panelRect.GetRight() - 112.0f, 10.0f, 98.0f, 16.0f), sections.phaseChip, &metaFont, muted, Gdiplus::StringAlignmentFar);
 

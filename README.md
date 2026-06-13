@@ -5,15 +5,15 @@ cockpit overlay for VATSIM controller awareness, focused on IFR flight-plan oper
 
 ## Current Release
 
-XVatsim V1.0.2 is the current freeware Windows release for X-Plane 12 and
+XVatsim V1.0.3 is the current freeware Windows release for X-Plane 12 and
 xPilot.
 
 - Freeware package:
-  `releases/XVatsim_1.0.2_Freeware_Windows_XP12.zip`
+  `releases/XVatsim_1.0.3_Freeware_Windows_XP12.zip`
 - Package SHA-256:
-  `C4F4DD6C7AF60A96DC0840D73CBD8AFEB9602FE8FCAC6B8FA5BFB0E136324ADB`
+  `F974CF81FE73CF18C95C99D2638E64F853C60AEF5FD16CD6B90FA701C4CBC1C1`
 - Packaged runtime SHA-256:
-  `037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72`
+  `8FF264BD52690EC51DA0E5D22C95438CE637198C4A5B00937D3C0B000FFF5645`
 - User guide:
   `docs/user_guide/XVatsim_User_Guide.pdf`
 
@@ -21,13 +21,12 @@ The X-Plane.org Store submission path is no longer the active release path for
 Version 1 because the store requested a Mac build. XVatsim Version 1 is being
 released as freeware instead.
 
-V1.0.2 is a patch release for missed airway route sector resolution,
-transient AFV radio-range refresh gaps, brain-owned frequency ordering and
-Standby Assist target selection, and notify-only update checks. It uses
-validated expanded FMS route geometry when available, fails closed when an
-airway token cannot be expanded, keeps route-relevant enroute controllers
-visible during short cached-feed holdover windows, and lets users manually
-check whether their installed version is current.
+V1.0.3 is a patch release for weighted brain-owned terminal controller
+relevance decisions. It prevents one terminal-owner text mismatch from hiding a
+controller when multiple independent VATSIM, radio, route, and source-owned
+authority facts support displaying it. It also treats FAA/NASR frequency facts
+as low-weight context, reports the full accept/reject ledger in diagnostics, and
+shows the installed version on the overlay and plugin menu.
 
 ## Current V1 Scope
 

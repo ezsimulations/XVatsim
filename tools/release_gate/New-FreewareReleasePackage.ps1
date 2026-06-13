@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.0.2",
+    [string]$Version = "1.0.3",
     [string]$PlatformName = "Windows_XP12"
 )
 
@@ -187,16 +187,13 @@ XVatsim Freeware Changelog
 Version: $Version
 
 Patch release:
-- Fixes missed airway route sector resolution when an expanded FMS route is available.
-- Uses validated expanded FMS route geometry before falling back to raw airway expansion.
-- Adds unresolved airway diagnostics so failed airway expansion cannot collapse into an exact direct route silently.
-- Adds regression coverage for KSFO-KMCI Q126/SLC Center and unresolved-airway diagnostics.
-- Keeps route-relevant enroute controllers visible during short AFV radio-range refresh gaps by using a bounded cached-transceiver holdover.
-- Adds regression coverage for the KSFO-CYVR/SEA Center stale refresh case.
-- Moves final frequency ordering, Active labels, and Standby Assist target selection under brain ownership.
-- Uses COM1 active frequency as the only radio state that advances the Standby Assist target.
-- Adds regression coverage for departure and arrival brain-owned frequency priority.
-- Adds in-plugin notify-only update checks with a public JSON manifest, 24-hour automatic cadence, and manual Check for Updates menu action.
+- Adds a weighted brain evidence ledger for terminal APP/DEP controller relevance.
+- Prevents one terminal-owner text mismatch from hiding a controller when multiple independent VATSIM/radio/route facts support displaying it.
+- Includes FAA/NASR airport frequency evidence as a low-weight positive only; FAA misses are neutral because VATSIM can use virtual frequencies.
+- Feeds scheduled source-owned authority relevance into the brain-owned controller relevance decision path.
+- Adds score, vote, neutral-fact, evidence-family, confidence, and final display/hide diagnostics to terminal controller decisions.
+- Keeps controller relevance CPU bounded by cache keys for radio board, route polygons, terminal authority, airport frequency facts, authority relevance, radio tuning, workflow stage, and current polygon.
+- Shows the installed version on the overlay and plugin menu so pilots can confirm the active build without running a manual update check.
 
 Current scope:
 - Windows only.

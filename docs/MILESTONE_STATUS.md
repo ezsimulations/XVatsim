@@ -8,7 +8,23 @@ Milestones 1 through 9 are complete on the authoritative rebuild plan, and the
 five-flight live battle-test gate passed for the installed V1 runtime hash
 `81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A`.
 
-XVatsim V1.0.2 is now the current freeware Windows/X-Plane 12/xPilot release.
+XVatsim V1.0.3 is now the current freeware Windows/X-Plane 12/xPilot release.
+
+## V1.0.3 Patch Release
+
+- Built `releases\XVatsim_1.0.3_Freeware_Windows_XP12.zip`.
+- Package SHA-256:
+  `F974CF81FE73CF18C95C99D2638E64F853C60AEF5FD16CD6B90FA701C4CBC1C1`.
+- Packaged runtime SHA-256:
+  `8FF264BD52690EC51DA0E5D22C95438CE637198C4A5B00937D3C0B000FFF5645`.
+- Added weighted brain-owned controller relevance evidence so one terminal
+  owner text mismatch cannot hide a controller when multiple VATSIM/radio/route
+  facts support displaying it.
+- Kept FAA/NASR frequency facts as low-weight context only; FAA misses are
+  neutral because VATSIM can use pseudo frequencies.
+- Added visible installed-version text to the overlay and plugin menu.
+- Updated the public update manifest to advertise V1.0.3 as a notify-only
+  update.
 The X-Plane.org Store submission path is superseded because the store requested
 a Mac version. Future major product work starts as XVatsim V2.0.0 with
 dedicated VFR implementation, Mac support, and Linux support.

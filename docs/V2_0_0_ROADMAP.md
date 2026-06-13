@@ -4,7 +4,7 @@ Date: 2026-06-07
 
 ## Starting Point
 
-XVatsim V1.0.2 is the current freeware Windows/X-Plane 12/xPilot release.
+XVatsim V1.0.3 is the current freeware Windows/X-Plane 12/xPilot release.
 V2.0.0 starts after the closed Version 1 baseline.
 
 ## Primary V2 Objectives

@@ -1,6 +1,6 @@
 # XVatsim Freeware User Guide
 
-Version 1.0.2
+Version 1.0.3
 
 Updated: June 2026
 
@@ -75,7 +75,7 @@ Color and labels matter:
 
 Tuning a frequency does not make a row green by itself. XVatsim colors controller rows from route and authority context, not from radio tuning alone.
 
-In Version 1.0.2, the brain owns the final radio-board order and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
+In Version 1.0.3, the brain owns the final radio-board order, terminal controller relevance decisions, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
 
 ![Center frequency display](assets/05_center_frequency_display.jpg)
 

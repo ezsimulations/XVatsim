@@ -28,38 +28,31 @@ Installed file timestamp:
 
 Last verified state:
 
-- XVatsim V1.0.2 is the current freeware Windows/X-Plane 12/xPilot release.
-- RelWithDebInfo plugin and harness build passed.
-- Focused update/frequency contract diagnostics passed: 6 / 6.
-- Full regression harness passed: 262 / 262.
-- Darron reported the live simulator test passed for the brain-owned Assist
-  Module and update-check candidate.
-- Installed X-Plane plugin hash is verified as the hash above.
-- Packaged plugin/runtime SHA256:
-  037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72.
+- XVatsim V1.0.3 is the current freeware Windows/X-Plane 12/xPilot release.
+- Release plugin and harness build passed.
+- Full regression harness passed: 263 / 263.
+- Installed X-Plane plugin is intentionally still V1.0.2 with the hash above so
+  Darron can test the public V1.0.3 update notification.
+- Packaged V1.0.3 plugin/runtime SHA256:
+  8FF264BD52690EC51DA0E5D22C95438CE637198C4A5B00937D3C0B000FFF5645.
 - Freeware package:
-  releases\XVatsim_1.0.2_Freeware_Windows_XP12.zip
+  releases\XVatsim_1.0.3_Freeware_Windows_XP12.zip
 - Package SHA256:
-  C4F4DD6C7AF60A96DC0840D73CBD8AFEB9602FE8FCAC6B8FA5BFB0E136324ADB.
+  F974CF81FE73CF18C95C99D2638E64F853C60AEF5FD16CD6B90FA701C4CBC1C1.
 - Package size:
-  2782092 bytes.
+  2411912 bytes.
 - Public update manifest:
   docs\xvatsim_update.json
 
-Latest source closeout included in the installed plugin:
+Latest source closeout included in the packaged V1.0.3 plugin:
 
-- Missed airway route sector resolution now prefers validated expanded FMS
-  route geometry and fails closed when airway expansion is incomplete.
-- Route-relevant enroute controllers remain visible during short AFV
-  transceiver refresh gaps through bounded cached-transceiver holdover.
-- Brain owns final frequency order, `Active` row ownership, and Standby Assist
-  target selection.
-- COM1 active frequency is the only radio state that advances the standby
-  assist target; COM2 does not move the assist pointer.
-- Notify-only update checks are available through automatic 24-hour checks and
-  manual `Plugins > XVatsim > Check for Updates`.
-- GitHub Pages served the manifest successfully and the in-sim manual check
-  showed the installed version as current.
+- Weighted brain-owned terminal controller relevance evidence prevents one
+  string mismatch from hiding a controller when multiple source families say yes.
+- FAA/NASR frequency facts are included as low-weight context only; FAA misses
+  are neutral for VATSIM pseudo-frequency cases.
+- Controller relevance diagnostics report votes, scores, neutral facts,
+  non-FAA evidence families, confidence, and final display/hide action.
+- The overlay and plugin menu show the installed version.
 
 Previous historical closeout included in earlier installed plugin:
 

@@ -1,63 +1,56 @@
 # Next Session Handoff
 
-Date noted: 2026-06-08
+Date noted: 2026-06-13
 
-## Current Product State - V1.0.2 Freeware Patch Release
+## Current Product State - V1.0.3 Freeware Patch Release
 
-XVatsim V1.0.2 is the current freeware Windows/X-Plane 12/xPilot release.
+XVatsim V1.0.3 is the current freeware Windows/X-Plane 12/xPilot release.
 
-Active V1.0.2 freeware package:
+Active V1.0.3 freeware package:
 
-- `releases\XVatsim_1.0.2_Freeware_Windows_XP12.zip`
+- `releases\XVatsim_1.0.3_Freeware_Windows_XP12.zip`
 - Package SHA-256:
-  `C4F4DD6C7AF60A96DC0840D73CBD8AFEB9602FE8FCAC6B8FA5BFB0E136324ADB`
+  `F974CF81FE73CF18C95C99D2638E64F853C60AEF5FD16CD6B90FA701C4CBC1C1`
 - Packaged plugin/runtime SHA-256:
-  `037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72`
+  `8FF264BD52690EC51DA0E5D22C95438CE637198C4A5B00937D3C0B000FFF5645`
 
 Installed simulator plugin:
 
 - `C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl`
 - Installed SHA-256:
   `037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72`
+- Installed version remains V1.0.2 intentionally so Darron can test the
+  notify-only update check against the public V1.0.3 manifest.
 - Previous installed build backup:
   `C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl.bak-20260603-102134-7AF0EDE64524`
 
 The X-Plane.org Store submission path is no longer active for Version 1 because
 the store requested a Mac version. Version 1 is a freeware Windows release.
 
-V1.0.2 patch summary:
+V1.0.3 patch summary:
 
-- Fixed missed airway route sector resolution by preferring validated expanded
-  FMS route geometry before raw airway expansion.
-- Added unresolved airway diagnostics so failed airway expansion cannot collapse
-  into an exact direct route silently.
-- Added KSFO-KMCI Q126/SLC Center and unresolved-airway regression coverage.
-- Added bounded cached-transceiver holdover so route-relevant enroute
-  controllers stay visible during short AFV radio-range refresh gaps.
-- Added KSFO-CYVR/SEA Center stale-refresh regression coverage.
-- Moved final frequency display order, `Active` row ownership, and Standby
-  Assist target selection under brain ownership.
-- Added COM1-only assist pointer behavior so COM2 cannot move the standby
-  assist target.
-- Added notify-only plugin update checks with 24-hour automatic cadence,
-  manual `Check for Updates`, and public manifest parsing.
-- Added `docs\xvatsim_update.json` for plugin update notification.
+- Added weighted brain-owned terminal controller relevance evidence.
+- Prevented one terminal-owner text mismatch from hiding a controller when
+  multiple VATSIM, radio, route, and source-owned authority facts support
+  displaying it.
+- Kept FAA/NASR frequency facts as low-weight context only and made FAA misses
+  neutral for VATSIM pseudo-frequency cases.
+- Added score/vote/neutral/family/confidence/final-action diagnostics.
+- Added visible installed-version text to the overlay and plugin menu.
+- Updated `docs\xvatsim_update.json` to advertise V1.0.3.
 
 Freeware package validation:
 
-- Fresh RelWithDebInfo plugin and harness build passed.
-- Focused contract diagnostics passed: `6 / 6`.
-- Full regression harness passed: `262 / 262`.
-- Freeware zip smoke extraction passed.
+- Fresh Release plugin and harness build passed.
+- Full regression harness passed: `263 / 263`.
+- Freeware package builder passed for V1.0.3.
 - Package file set verified.
 - Packaged plugin hash matched the verified Release runtime hash.
 - Package text scan found no store-submission, serial-key, or proof-of-purchase
   wording.
 - Package scan found no `.pdb`, `.lib`, `.exp`, `.log`, temp, debug, or
   store-submission files.
-- Packaged plugin hash matched the installed simulator plugin hash.
-- Darron reported the live simulator test passed before commit/package
-  closeout.
+- Installed simulator plugin was not replaced for this housekeeping pass.
 
 User guide:
 
@@ -80,6 +73,7 @@ Closeout docs:
 
 - `docs\V1_0_1_PATCH_CLOSEOUT.md`
 - `docs\V1_0_2_PATCH_CLOSEOUT.md`
+- `docs\V1_0_3_PATCH_CLOSEOUT.md`
 - `docs\V1_0_0_FREEWARE_CLOSEOUT.md`
 - `docs\V2_0_0_ROADMAP.md`
 
