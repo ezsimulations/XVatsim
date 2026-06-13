@@ -14,7 +14,7 @@ XVatsim V1.0.3 is now the current freeware Windows/X-Plane 12/xPilot release.
 
 - Built `releases\XVatsim_1.0.3_Freeware_Windows_XP12.zip`.
 - Package SHA-256:
-  `F974CF81FE73CF18C95C99D2638E64F853C60AEF5FD16CD6B90FA701C4CBC1C1`.
+  `C81CFE2095BFA2B615D5D273ECE3856DB4ADBA8922950E852D6317D6D2CBA180`.
 - Packaged runtime SHA-256:
   `8FF264BD52690EC51DA0E5D22C95438CE637198C4A5B00937D3C0B000FFF5645`.
 - Added weighted brain-owned controller relevance evidence so one terminal

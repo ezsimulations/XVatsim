@@ -10,7 +10,7 @@ Active V1.0.3 freeware package:
 
 - `releases\XVatsim_1.0.3_Freeware_Windows_XP12.zip`
 - Package SHA-256:
-  `F974CF81FE73CF18C95C99D2638E64F853C60AEF5FD16CD6B90FA701C4CBC1C1`
+  `C81CFE2095BFA2B615D5D273ECE3856DB4ADBA8922950E852D6317D6D2CBA180`
 - Packaged plugin/runtime SHA-256:
   `8FF264BD52690EC51DA0E5D22C95438CE637198C4A5B00937D3C0B000FFF5645`
 
@@ -44,6 +44,7 @@ Freeware package validation:
 - Fresh Release plugin and harness build passed.
 - Full regression harness passed: `263 / 263`.
 - Freeware package builder passed for V1.0.3.
+- User guide PDF was regenerated from the V1.0.3 Markdown source.
 - Package file set verified.
 - Packaged plugin hash matched the verified Release runtime hash.
 - Package text scan found no store-submission, serial-key, or proof-of-purchase

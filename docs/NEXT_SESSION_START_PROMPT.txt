@@ -38,9 +38,9 @@ Last verified state:
 - Freeware package:
   releases\XVatsim_1.0.3_Freeware_Windows_XP12.zip
 - Package SHA256:
-  F974CF81FE73CF18C95C99D2638E64F853C60AEF5FD16CD6B90FA701C4CBC1C1.
+  C81CFE2095BFA2B615D5D273ECE3856DB4ADBA8922950E852D6317D6D2CBA180.
 - Package size:
-  2411912 bytes.
+  1407605 bytes.
 - Public update manifest:
   docs\xvatsim_update.json
 
