@@ -361,6 +361,55 @@ struct OverlayTextLine {
     OverlayTone tone = OverlayTone::Normal;
 };
 
+enum class OverlayVersionTone {
+    Unknown,
+    Current,
+    UpdateAvailable,
+    Error,
+};
+
+struct OverlayVersionSnapshot {
+    std::string text;
+    std::string alternateText;
+    OverlayVersionTone tone = OverlayVersionTone::Unknown;
+    bool rotateAlternate = false;
+};
+
+enum class OverlayNoticeSeverity {
+    Info,
+    Success,
+    Warning,
+    Error,
+};
+
+struct OverlayNoticeSnapshot {
+    bool visible = false;
+    OverlayNoticeSeverity severity = OverlayNoticeSeverity::Info;
+    std::string title;
+    std::vector<std::string> bodyLines;
+    std::string dismissText = "Close";
+    bool dismissible = true;
+};
+
+enum class OverlayUpdateStatus {
+    Unknown,
+    Checking,
+    Current,
+    Available,
+    Failed,
+};
+
+struct OverlayUpdateSnapshot {
+    std::string installedVersion;
+    std::string latestVersion;
+    std::string downloadPageUrl;
+    std::string errorClass;
+    OverlayUpdateStatus status = OverlayUpdateStatus::Unknown;
+    bool critical = false;
+    bool manualNoticeRequested = false;
+    bool automaticNoticeRequested = false;
+};
+
 enum class RecommendationKind {
     None,
     Controller,
@@ -389,6 +438,8 @@ struct OverlayViewModel {
     std::string title;
     std::string headerRightText;
     RadioStateSnapshot radioState;
+    OverlayVersionSnapshot version;
+    OverlayNoticeSnapshot systemNotice;
     std::vector<OverlayTextLine> bodyLines;
     bool showMessageAcknowledge = false;
     bool showMessageRecall = false;

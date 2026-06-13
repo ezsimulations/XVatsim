@@ -84,6 +84,12 @@ struct OverlaySections {
     std::string badgeText;
     std::string phaseChip;
     std::string headerRightText;
+    std::string versionText;
+    std::string versionAlternateText;
+    bool versionRotateAlternate = false;
+    xvatsim::brain::OverlayVersionTone versionTone =
+        xvatsim::brain::OverlayVersionTone::Unknown;
+    xvatsim::brain::OverlayNoticeSnapshot systemNotice;
     xvatsim::brain::RadioStateSnapshot radioState;
     std::vector<xvatsim::brain::OverlayTextLine> listLines;
     std::string footerPrimary;
@@ -340,6 +346,17 @@ ScreenRect ResolveCardActionRect(
     return rect;
 }
 
+ScreenRect ResolveSystemNoticeDismissRect(
+    const OverlayLayout& layout,
+    float scale) {
+    ScreenRect rect;
+    rect.left = layout.cardLeft + ScaleValue(300, scale);
+    rect.top = layout.cardTop - ScaleValue(250, scale);
+    rect.right = rect.left + ScaleValue(58, scale);
+    rect.bottom = rect.top - ScaleValue(22, scale);
+    return rect;
+}
+
 OverlaySections ResolveSections(
     const brain::OverlayViewModel& viewModel,
     bool textEntryActive,
@@ -353,6 +370,25 @@ OverlaySections ResolveSections(
     sections.phaseChip = ResolvePhaseChip(viewModel.title);
     sections.headerRightText =
         SanitizeRenderText(viewModel.headerRightText, kMaxRenderHeaderChars);
+    sections.versionText =
+        SanitizeRenderText(viewModel.version.text, kMaxRenderHeaderChars);
+    sections.versionAlternateText =
+        SanitizeRenderText(viewModel.version.alternateText, kMaxRenderHeaderChars);
+    sections.versionRotateAlternate = viewModel.version.rotateAlternate;
+    sections.versionTone = viewModel.version.tone;
+    if (sections.versionRotateAlternate &&
+        !sections.versionAlternateText.empty() &&
+        static_cast<int>(std::floor(XPLMGetElapsedTime() / 2.0f)) % 2 != 0) {
+        sections.versionText = sections.versionAlternateText;
+    }
+    sections.systemNotice = viewModel.systemNotice;
+    sections.systemNotice.title =
+        SanitizeRenderText(sections.systemNotice.title, kMaxRenderTextChars);
+    sections.systemNotice.dismissText =
+        SanitizeRenderText(sections.systemNotice.dismissText, kMaxRenderHeaderChars);
+    for (auto& line : sections.systemNotice.bodyLines) {
+        line = SanitizeRenderText(line, kMaxRenderTextChars);
+    }
     sections.radioState = viewModel.radioState;
     sections.radioState.com1ActiveFrequency = SanitizeRenderText(
         sections.radioState.com1ActiveFrequency,
@@ -427,6 +463,21 @@ std::size_t BuildRenderSignature(
     signature = HashCombine(signature, sections.badgeText);
     signature = HashCombine(signature, sections.phaseChip);
     signature = HashCombine(signature, sections.headerRightText);
+    signature = HashCombine(signature, sections.versionText);
+    signature = HashCombine(signature, sections.versionAlternateText);
+    signature ^= static_cast<std::size_t>(
+        static_cast<int>(sections.versionTone) * 181);
+    signature ^= static_cast<std::size_t>(
+        sections.versionRotateAlternate ? 191 : 193);
+    signature ^= static_cast<std::size_t>(
+        sections.systemNotice.visible ? 197 : 199);
+    signature ^= static_cast<std::size_t>(
+        static_cast<int>(sections.systemNotice.severity) * 211);
+    signature = HashCombine(signature, sections.systemNotice.title);
+    signature = HashCombine(signature, sections.systemNotice.dismissText);
+    for (const auto& line : sections.systemNotice.bodyLines) {
+        signature = HashCombine(signature, line);
+    }
     signature = HashCombine(signature, sections.footerPrimary);
     signature = HashCombine(signature, sections.footerSecondary);
     signature ^= static_cast<std::size_t>(sections.showMessageAcknowledge ? 151 : 0);
@@ -554,6 +605,94 @@ void DrawActionButton(
     DrawStatusBox(graphics, rect, label, font, true, false);
 }
 
+Color VersionToneColor(brain::OverlayVersionTone tone) {
+    switch (tone) {
+        case brain::OverlayVersionTone::Current:
+            return Color(224, 172, 242, 205);
+        case brain::OverlayVersionTone::UpdateAvailable:
+            return Color(236, 247, 212, 130);
+        case brain::OverlayVersionTone::Error:
+            return Color(236, 255, 142, 142);
+        case brain::OverlayVersionTone::Unknown:
+        default:
+            return Color(180, 186, 196, 206);
+    }
+}
+
+Color NoticeAccentColor(brain::OverlayNoticeSeverity severity) {
+    switch (severity) {
+        case brain::OverlayNoticeSeverity::Success:
+            return Color(228, 132, 238, 190);
+        case brain::OverlayNoticeSeverity::Warning:
+            return Color(238, 247, 212, 130);
+        case brain::OverlayNoticeSeverity::Error:
+            return Color(238, 255, 142, 142);
+        case brain::OverlayNoticeSeverity::Info:
+        default:
+            return Color(228, 174, 218, 244);
+    }
+}
+
+void DrawSystemNotice(
+    Graphics* graphics,
+    const RectF& panelRect,
+    const brain::OverlayNoticeSnapshot& notice) {
+    if (!notice.visible) {
+        return;
+    }
+
+    Font noticeTitleFont(L"Segoe UI", 13.5f, FontStyleBold, UnitPixel);
+    Font noticeBodyFont(L"Segoe UI", 11.5f, FontStyleRegular, UnitPixel);
+    Font noticeButtonFont(L"Segoe UI", 10.0f, FontStyleBold, UnitPixel);
+
+    const RectF noticeRect(
+        28.0f,
+        146.0f,
+        panelRect.GetRight() - 56.0f,
+        130.0f);
+    const auto accent = NoticeAccentColor(notice.severity);
+    const Color fill(232, 10, 16, 24);
+    const Color bodyColor(232, 226, 235, 242);
+    const Color titleColor(246, 244, 248, 252);
+
+    FillRoundedRect(graphics, noticeRect, 8.0f, fill, accent);
+    SolidBrush accentBrush(Color(88, accent.GetR(), accent.GetG(), accent.GetB()));
+    graphics->FillRectangle(
+        &accentBrush,
+        noticeRect.X + 1.0f,
+        noticeRect.Y + 1.0f,
+        5.0f,
+        noticeRect.Height - 2.0f);
+
+    DrawTextBlock(
+        graphics,
+        RectF(44.0f, 156.0f, 274.0f, 18.0f),
+        notice.title,
+        &noticeTitleFont,
+        titleColor);
+
+    auto lineY = 184.0f;
+    const auto maxBodyLines =
+        std::min<std::size_t>(notice.bodyLines.size(), 4);
+    for (std::size_t index = 0; index < maxBodyLines; ++index) {
+        DrawTextBlock(
+            graphics,
+            RectF(44.0f, lineY, 268.0f, 16.0f),
+            notice.bodyLines[index],
+            &noticeBodyFont,
+            bodyColor);
+        lineY += 17.0f;
+    }
+
+    if (notice.dismissible) {
+        DrawActionButton(
+            graphics,
+            RectF(300.0f, 250.0f, 58.0f, 22.0f),
+            notice.dismissText.empty() ? "Close" : notice.dismissText,
+            &noticeButtonFont);
+    }
+}
+
 RasterImage CaptureBitmap(Bitmap* bitmap) {
     RasterImage image;
     image.width = bitmap->GetWidth();
@@ -650,6 +789,7 @@ RasterImage RenderCardImage(
     Font brandFont(L"Segoe UI", 17.0f, FontStyleBold, UnitPixel);
     Font badgeFont(L"Segoe UI", 8.5f, FontStyleBold, UnitPixel);
     Font metaFont(L"Segoe UI", 10.5f, FontStyleRegular, UnitPixel);
+    Font versionFont(L"Segoe UI", 10.5f, FontStyleBold, UnitPixel);
     Font callsignFont(L"Segoe UI", 17.0f, FontStyleBold, UnitPixel);
     Font radioLabelFont(L"Segoe UI", 11.0f, FontStyleBold, UnitPixel);
     Font radioFrequencyFont(L"Segoe UI", 12.0f, FontStyleBold, UnitPixel);
@@ -686,9 +826,15 @@ RasterImage RenderCardImage(
     graphics.DrawLine(&dividerPen, 20.0f, 246.0f, panelRect.GetRight() - 20.0f, 246.0f);
 
     DrawTextBlock(&graphics, RectF(46.0f, 8.0f, 118.0f, 24.0f), "XVatsim", &brandFont, white);
-    DrawTextBlock(&graphics, RectF(46.0f, 30.0f, 80.0f, 12.0f), "v1.0.3", &metaFont, muted);
     DrawTextBlock(&graphics, RectF(154.0f, 17.0f, 76.0f, 12.0f), sections.badgeText, &badgeFont, cyan);
     DrawTextBlock(&graphics, RectF(panelRect.GetRight() - 112.0f, 10.0f, 98.0f, 16.0f), sections.phaseChip, &metaFont, muted, Gdiplus::StringAlignmentFar);
+    DrawTextBlock(
+        &graphics,
+        RectF(panelRect.GetRight() - 112.0f, 28.0f, 98.0f, 15.0f),
+        sections.versionText,
+        &versionFont,
+        VersionToneColor(sections.versionTone),
+        Gdiplus::StringAlignmentFar);
 
     DrawTextBlock(&graphics, RectF(20.0f, 48.0f, 226.0f, 22.0f), sections.callsignOrStatus, &callsignFont, cyan);
     DrawTextBlock(&graphics, RectF(panelRect.GetRight() - 68.0f, 51.0f, 52.0f, 16.0f), sections.headerRightText, &metaFont, muted, Gdiplus::StringAlignmentFar);
@@ -788,6 +934,8 @@ RasterImage RenderCardImage(
     } else if (sections.showMessageRecall) {
         DrawActionButton(&graphics, RectF(276.0f, 257.0f, 82.0f, 22.0f), "RECALL", &footerFont);
     }
+
+    DrawSystemNotice(&graphics, panelRect, sections.systemNotice);
 
     return CaptureBitmap(&bitmap);
 }
@@ -1062,6 +1210,15 @@ bool OverlayWindow::ConsumeRecallRequest() {
     return true;
 }
 
+bool OverlayWindow::ConsumeSystemNoticeDismissRequest() {
+    if (!hasPendingSystemNoticeDismissRequest_) {
+        return false;
+    }
+
+    hasPendingSystemNoticeDismissRequest_ = false;
+    return true;
+}
+
 void OverlayWindow::SetWindowTopLeft(int left, int top) {
     const auto pendingWidth = ScaleValue(kOverlayWidth, scale_);
     const auto pendingHeight = ScaleValue(kOverlayHeight, scale_);
@@ -1131,6 +1288,7 @@ void OverlayWindow::Hide() {
     hasPendingSubmittedText_ = false;
     hasPendingAcknowledgeRequest_ = false;
     hasPendingRecallRequest_ = false;
+    hasPendingSystemNoticeDismissRequest_ = false;
     overlayEnabled_ = false;
     dragging_ = false;
     resizing_ = false;
@@ -1169,6 +1327,10 @@ int OverlayWindow::HandleMouseClickCallback(
         XPLMBringWindowToFront(windowId);
         if (self->textEntryActive_) {
             XPLMTakeKeyboardFocus(windowId);
+        }
+        if (self->IsInSystemNoticeDismissAction(x, y)) {
+            self->hasPendingSystemNoticeDismissRequest_ = true;
+            return 1;
         }
         if (self->IsInAcknowledgeAction(x, y)) {
             self->hasPendingAcknowledgeRequest_ = true;
@@ -1257,7 +1419,8 @@ XPLMCursorStatus OverlayWindow::HandleCursorCallback(XPLMWindowID windowId, int 
         (self->ResolveResizeCorner(x, y) != ResizeCorner::None ||
          self->IsInDragRegion(x, y) ||
          self->IsInAcknowledgeAction(x, y) ||
-         self->IsInRecallAction(x, y))) {
+         self->IsInRecallAction(x, y) ||
+         self->IsInSystemNoticeDismissAction(x, y))) {
         return xplm_CursorArrow;
     }
 
@@ -1501,6 +1664,23 @@ bool OverlayWindow::IsInRecallAction(int x, int y) const {
     XPLMGetWindowGeometry(window_, &left, &top, &right, &bottom);
     const auto layout = ResolveLayout(left, top, std::max(animationProgress_, 0.10f), scale_);
     return ResolveCardActionRect(layout, scale_, OverlayMessageAction::Recall).Contains(x, y);
+}
+
+bool OverlayWindow::IsInSystemNoticeDismissAction(int x, int y) const {
+    if (window_ == nullptr ||
+        !windowVisible_ ||
+        !viewModel_.systemNotice.visible ||
+        !viewModel_.systemNotice.dismissible) {
+        return false;
+    }
+
+    int left = 0;
+    int top = 0;
+    int right = 0;
+    int bottom = 0;
+    XPLMGetWindowGeometry(window_, &left, &top, &right, &bottom);
+    const auto layout = ResolveLayout(left, top, std::max(animationProgress_, 0.10f), scale_);
+    return ResolveSystemNoticeDismissRect(layout, scale_).Contains(x, y);
 }
 
 OverlayWindow::ResizeCorner OverlayWindow::ResolveResizeCorner(int x, int y) const {

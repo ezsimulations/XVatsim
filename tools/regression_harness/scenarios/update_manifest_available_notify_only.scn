@@ -1,10 +1,18 @@
 name=Update manifest reports newer notify-only version
 
-update.installed_version=1.0.2
-update.manifest_payload={"schema":1,"product":"XVatsim","latest_version":"1.0.3","minimum_supported_version":"1.0.0","package_sha256":"ABCDEF","plugin_sha256":"123456","download_page_url":"https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/","update_policy":"notify_only","critical":true,"message":"XVatsim 1.0.3 is available.","release_notes":["Update notification test","Brain-owned radio ordering test"]}
+update.installed_version=1.0.3
+update.manifest_payload={"schema":1,"product":"XVatsim","latest_version":"1.0.4","minimum_supported_version":"1.0.0","package_sha256":"ABCDEF","plugin_sha256":"123456","download_page_url":"https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/","update_policy":"notify_only","critical":true,"message":"XVatsim 1.0.4 is available.","release_notes":["Update notification test","Brain-owned radio ordering test"]}
 
 expect.update_status=available
-expect.update_latest_version=1.0.3
+expect.update_latest_version=1.0.4
 expect.update_critical=true
 expect.update_download_page_url=https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/
 expect.update_error_class=none
+expect.overlay_version_text=V1.0.3
+expect.overlay_version_alternate_text=UPDATE
+expect.overlay_version_tone=UpdateAvailable
+expect.overlay_version_rotates=true
+expect.overlay_notice_visible=true
+expect.overlay_notice_severity=Error
+expect.overlay_notice_title=XVatsim update available
+expect.overlay_notice_body_lines=Installed: V1.0.3|Latest: V1.0.4|Download: X-Plane.org

@@ -1,6 +1,6 @@
 # Milestone Status
 
-Updated: 2026-06-08
+Updated: 2026-06-13
 
 ## Current Position
 
@@ -8,22 +8,26 @@ Milestones 1 through 9 are complete on the authoritative rebuild plan, and the
 five-flight live battle-test gate passed for the installed V1 runtime hash
 `81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A`.
 
-XVatsim V1.0.3 is now the current freeware Windows/X-Plane 12/xPilot release.
+XVatsim V1.0.4 is now the current freeware Windows/X-Plane 12/xPilot release.
 
-## V1.0.3 Patch Release
+## V1.0.4 Patch Release
 
-- Built `releases\XVatsim_1.0.3_Freeware_Windows_XP12.zip`.
+- Built `releases\XVatsim_1.0.4_Freeware_Windows_XP12.zip`.
 - Package SHA-256:
-  `C81CFE2095BFA2B615D5D273ECE3856DB4ADBA8922950E852D6317D6D2CBA180`.
+  `7D215C941192E85133FD2CE69B6F87E808C21F5DDB53ED48B7B31A0950A5CF39`.
 - Packaged runtime SHA-256:
-  `8FF264BD52690EC51DA0E5D22C95438CE637198C4A5B00937D3C0B000FFF5645`.
+  `58BC6C9AAAB3CB1E4DDFEE3DAF16BBD7655C3E670A3EE1C78BB0C28F3FECD07B`.
+- Added a top-right overlay version chip and dismissible update notice panel so
+  update status is visible without clipping into the footer/status line.
+- Runs one automatic update check per simulator/plugin session so a new public
+  manifest is not hidden by an old 24-hour check timestamp.
 - Added weighted brain-owned controller relevance evidence so one terminal
   owner text mismatch cannot hide a controller when multiple VATSIM/radio/route
   facts support displaying it.
 - Kept FAA/NASR frequency facts as low-weight context only; FAA misses are
   neutral because VATSIM can use pseudo frequencies.
 - Added visible installed-version text to the overlay and plugin menu.
-- Updated the public update manifest to advertise V1.0.3 as a notify-only
+- Updated the public update manifest to advertise V1.0.4 as a notify-only
   update.
 The X-Plane.org Store submission path is superseded because the store requested
 a Mac version. Future major product work starts as XVatsim V2.0.0 with

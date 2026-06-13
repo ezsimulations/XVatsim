@@ -17,7 +17,10 @@ public:
         const ControllerFeedSnapshot& controllerFeedSnapshot,
         const TransceiverResolutionSnapshot& transceiverResolutionSnapshot,
         const FinalDisplaySnapshot& finalDisplaySnapshot,
-        const ManualQuerySnapshot& manualQuerySnapshot);
+        const ManualQuerySnapshot& manualQuerySnapshot,
+        const OverlayUpdateSnapshot& updateSnapshot = {});
 };
+
+bool OverlayUpdateRequestsWake(const OverlayUpdateSnapshot& updateSnapshot);
 
 }  // namespace xvatsim::brain

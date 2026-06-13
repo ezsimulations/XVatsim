@@ -2,22 +2,24 @@
   "schema": 1,
   "product": "XVatsim",
   "channel": "stable",
-  "latest_version": "1.0.3",
+  "latest_version": "1.0.4",
   "minimum_supported_version": "1.0.0",
   "published_date": "2026-06-13",
-  "download_filename": "XVatsim_1.0.3_Freeware_Windows_XP12.zip",
-  "package_sha256": "C81CFE2095BFA2B615D5D273ECE3856DB4ADBA8922950E852D6317D6D2CBA180",
-  "package_size_bytes": 1407605,
-  "plugin_sha256": "8FF264BD52690EC51DA0E5D22C95438CE637198C4A5B00937D3C0B000FFF5645",
+  "download_filename": "XVatsim_1.0.4_Freeware_Windows_XP12.zip",
+  "package_sha256": "7D215C941192E85133FD2CE69B6F87E808C21F5DDB53ED48B7B31A0950A5CF39",
+  "package_size_bytes": 1409597,
+  "plugin_sha256": "58BC6C9AAAB3CB1E4DDFEE3DAF16BBD7655C3E670A3EE1C78BB0C28F3FECD07B",
   "download_page_url": "https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/",
   "update_policy": "notify_only",
   "critical": false,
-  "message": "XVatsim 1.0.3 is available. Download the update from X-Plane.org.",
+  "message": "XVatsim 1.0.4 is available. Download the update from X-Plane.org.",
   "release_notes": [
+    "Adds a persistent top-right overlay version chip that turns green when current and rotates amber version/UPDATE text when a newer build is available.",
+    "Replaces clipped footer update text with a dismissible update notice panel for automatic and manual update checks.",
+    "Runs one automatic update check per simulator/plugin session so a newly published manifest is not hidden by an older 24-hour check timestamp.",
     "Added a weighted brain evidence ledger for terminal APP/DEP controller relevance.",
     "Prevents one terminal-owner text mismatch from hiding a controller when VATSIM, radio, route, and source authority evidence support displaying it.",
     "Includes FAA/NASR airport frequency evidence as low-weight context while treating FAA misses as neutral for VATSIM pseudo-frequency cases.",
-    "Reports score, votes, neutral facts, evidence families, confidence, and final display/hide action in controller relevance diagnostics.",
-    "Shows the installed version on the overlay and plugin menu so pilots can confirm the active build without running a manual update check."
+    "Reports score, votes, neutral facts, evidence families, confidence, and final display/hide action in controller relevance diagnostics."
   ]
 }

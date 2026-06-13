@@ -285,6 +285,111 @@ OverlayTextLine FormatBoardLine(
     return line;
 }
 
+std::string FormatVersionText(const std::string& version) {
+    const auto sanitizedVersion = SanitizeDisplayText(version, 16);
+    if (sanitizedVersion.empty()) {
+        return {};
+    }
+    return "V" + sanitizedVersion;
+}
+
+OverlayVersionSnapshot BuildVersionSnapshot(
+    const OverlayUpdateSnapshot& updateSnapshot) {
+    OverlayVersionSnapshot version;
+    version.text = FormatVersionText(updateSnapshot.installedVersion);
+    version.tone = OverlayVersionTone::Unknown;
+
+    switch (updateSnapshot.status) {
+        case OverlayUpdateStatus::Current:
+            version.tone = OverlayVersionTone::Current;
+            break;
+        case OverlayUpdateStatus::Available:
+            version.tone = OverlayVersionTone::UpdateAvailable;
+            version.alternateText = "UPDATE";
+            version.rotateAlternate = true;
+            break;
+        case OverlayUpdateStatus::Failed:
+            version.tone = updateSnapshot.manualNoticeRequested
+                ? OverlayVersionTone::Error
+                : OverlayVersionTone::Unknown;
+            break;
+        case OverlayUpdateStatus::Checking:
+        case OverlayUpdateStatus::Unknown:
+        default:
+            version.tone = OverlayVersionTone::Unknown;
+            break;
+    }
+
+    return version;
+}
+
+OverlayNoticeSnapshot BuildSystemNotice(
+    const OverlayUpdateSnapshot& updateSnapshot) {
+    const auto noticeRequested =
+        updateSnapshot.manualNoticeRequested ||
+        updateSnapshot.automaticNoticeRequested;
+    if (!noticeRequested) {
+        return {};
+    }
+
+    OverlayNoticeSnapshot notice;
+    notice.visible = true;
+    notice.dismissible = true;
+    notice.dismissText = "Close";
+
+    const auto installedVersion = FormatVersionText(updateSnapshot.installedVersion);
+    const auto latestVersion = FormatVersionText(updateSnapshot.latestVersion);
+    const auto installedLine = installedVersion.empty()
+        ? std::string{"Installed: unknown"}
+        : "Installed: " + installedVersion;
+
+    switch (updateSnapshot.status) {
+        case OverlayUpdateStatus::Available:
+            notice.severity = updateSnapshot.critical
+                ? OverlayNoticeSeverity::Error
+                : OverlayNoticeSeverity::Warning;
+            notice.title = "XVatsim update available";
+            notice.bodyLines.push_back(installedLine);
+            notice.bodyLines.push_back(
+                latestVersion.empty()
+                    ? std::string{"Latest: available"}
+                    : "Latest: " + latestVersion);
+            notice.bodyLines.push_back("Download: X-Plane.org");
+            break;
+        case OverlayUpdateStatus::Current:
+            notice.severity = OverlayNoticeSeverity::Success;
+            notice.title = "XVatsim is up to date";
+            notice.bodyLines.push_back(installedLine);
+            notice.bodyLines.push_back("No update is available.");
+            break;
+        case OverlayUpdateStatus::Failed:
+            notice.severity = OverlayNoticeSeverity::Error;
+            notice.title = "Update check failed";
+            notice.bodyLines.push_back(installedLine);
+            notice.bodyLines.push_back("Try again from Plugins > XVatsim.");
+            if (!updateSnapshot.errorClass.empty()) {
+                notice.bodyLines.push_back(
+                    "Reason: " +
+                    SanitizeDisplayText(updateSnapshot.errorClass, 42));
+            }
+            break;
+        case OverlayUpdateStatus::Checking:
+            notice.severity = OverlayNoticeSeverity::Info;
+            notice.title = "Checking for updates";
+            notice.bodyLines.push_back(installedLine);
+            notice.bodyLines.push_back("Contacting the update manifest.");
+            break;
+        case OverlayUpdateStatus::Unknown:
+        default:
+            notice.severity = OverlayNoticeSeverity::Info;
+            notice.title = "Update status unavailable";
+            notice.bodyLines.push_back(installedLine);
+            break;
+    }
+
+    return notice;
+}
+
 void AssignBodyLines(
     const std::vector<OverlayTextLine>& lines,
     OverlayViewModel* model) {
@@ -316,7 +421,8 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
     const ControllerFeedSnapshot& controllerFeedSnapshot,
     const TransceiverResolutionSnapshot& transceiverResolutionSnapshot,
     const FinalDisplaySnapshot& finalDisplaySnapshot,
-    const ManualQuerySnapshot& manualQuerySnapshot) {
+    const ManualQuerySnapshot& manualQuerySnapshot,
+    const OverlayUpdateSnapshot& updateSnapshot) {
     (void)controllerFeedSnapshot;
 
     OverlayViewModel model;
@@ -325,6 +431,8 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
     model.title = "XVatsim " + StageLabel(workflowStage);
     model.headerRightText = FormatHeaderRightText(networkPlanSnapshot);
     model.radioState = radioStateSnapshot;
+    model.version = BuildVersionSnapshot(updateSnapshot);
+    model.systemNotice = BuildSystemNotice(updateSnapshot);
 
     std::vector<OverlayTextLine> bodyLines = {
         {FormatXPilotLine(xPilotSessionSnapshot), OverlayTone::Normal},
@@ -359,6 +467,10 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
          OverlayTone::Normal});
     AssignBodyLines(bodyLines, &model);
     return model;
+}
+
+bool OverlayUpdateRequestsWake(const OverlayUpdateSnapshot& updateSnapshot) {
+    return BuildSystemNotice(updateSnapshot).visible;
 }
 
 }  // namespace xvatsim::brain

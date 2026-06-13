@@ -49,7 +49,7 @@
 
 namespace {
 constexpr char kPluginName[] = "XVatsim";
-constexpr char kInstalledPluginVersion[] = "1.0.3";
+constexpr char kInstalledPluginVersion[] = "1.0.4";
 constexpr char kPluginSig[] = "org.xvatsim.plugin";
 constexpr char kPluginDesc[] = "XVatsim VATSIM workflow display for X-Plane 12.";
 constexpr char kUpdateManifestUrl[] =
@@ -116,8 +116,6 @@ constexpr long long kRadioBoardSnapshotCadenceSeconds = 1;
 constexpr long long kRadioBoardPendingRouteRetrySeconds = 2;
 constexpr long long kActiveFlightPlanSampleCadenceSeconds = 15;
 constexpr long long kEngineer3RadioBoardRefreshSeconds = 5;
-constexpr long long kAutomaticUpdateCheckCadenceSeconds = 24 * 60 * 60;
-constexpr long long kUpdateNoticeVisibleSeconds = 30;
 constexpr std::size_t kDiagnosticsMaxTraceItems = 24;
 
 using HandoffDecision = xvatsim::brain::workflow::HandoffDecision;
@@ -251,9 +249,8 @@ std::optional<xvatsim::core::preflight::PreflightRouteCache> gPreflightRouteCach
 std::string gPreflightRouteCachePath;
 std::optional<xvatsim::modules::update_checker::UpdateCheckResult>
     gUpdateSessionResult;
-bool gUpdateNoticeQueued = false;
-bool gUpdateNoticeShown = false;
-long long gUpdateNoticeVisibleUntilSeconds = 0;
+bool gManualUpdateNoticeOpen = false;
+std::string gDismissedUpdateNoticeVersion;
 
 void RefreshOverlayFromBrain();
 void RefreshOverlayFromBrainEngineer3();
@@ -2473,9 +2470,9 @@ void SavePluginSettings() {
 
 std::string FormatUpdateDiagnosticLine(
     const xvatsim::modules::update_checker::UpdateCheckResult& result,
-    bool queued,
-    bool shown,
-    bool expired) {
+    bool noticeRequested,
+    bool noticeVisible,
+    bool dismissed) {
     std::ostringstream stream;
     stream << "updateCheck source="
            << xvatsim::modules::update_checker::ToString(result.source)
@@ -2486,9 +2483,9 @@ std::string FormatUpdateDiagnosticLine(
            << " status="
            << xvatsim::modules::update_checker::ToString(result.status)
            << " critical=" << (result.critical ? 1 : 0)
-           << " queued=" << (queued ? 1 : 0)
-           << " shown=" << (shown ? 1 : 0)
-           << " expired=" << (expired ? 1 : 0)
+           << " noticeRequested=" << (noticeRequested ? 1 : 0)
+           << " noticeVisible=" << (noticeVisible ? 1 : 0)
+           << " dismissed=" << (dismissed ? 1 : 0)
            << " manifest="
            << SanitizeLogToken(result.manifestUrl, 140)
            << " error="
@@ -2505,60 +2502,111 @@ xvatsim::modules::update_checker::UpdateCheckRequest BuildUpdateCheckRequest(
     return request;
 }
 
-std::string FormatManualUpdateStatus(
-    const xvatsim::modules::update_checker::UpdateCheckResult& result) {
+xvatsim::brain::OverlayUpdateStatus ToOverlayUpdateStatus(
+    xvatsim::modules::update_checker::UpdateStatus status) {
     using xvatsim::modules::update_checker::UpdateStatus;
-    switch (result.status) {
+    switch (status) {
         case UpdateStatus::Available:
-            return "UPDATE XVatsim " + result.latestVersion +
-                   " available. Download from X-Plane.org.";
+            return xvatsim::brain::OverlayUpdateStatus::Available;
         case UpdateStatus::Current:
-            return "UPDATE XVatsim " + std::string(kInstalledPluginVersion) +
-                   " current.";
+            return xvatsim::brain::OverlayUpdateStatus::Current;
         case UpdateStatus::CheckFailed:
-            return "UPDATE check failed.";
+            return xvatsim::brain::OverlayUpdateStatus::Failed;
         case UpdateStatus::InProgress:
-            return "UPDATE check already running.";
+            return xvatsim::brain::OverlayUpdateStatus::Checking;
         case UpdateStatus::Unknown:
         default:
-            return "UPDATE status unavailable.";
+            return xvatsim::brain::OverlayUpdateStatus::Unknown;
+    }
+}
+
+xvatsim::modules::update_checker::UpdateCheckResult MakeUpdateInProgressResult(
+    xvatsim::modules::update_checker::UpdateCheckSource source) {
+    using xvatsim::modules::update_checker::UpdateCheckResult;
+    using xvatsim::modules::update_checker::UpdateStatus;
+
+    UpdateCheckResult result;
+    result.status = UpdateStatus::InProgress;
+    result.source = source;
+    result.installedVersion = kInstalledPluginVersion;
+    result.manifestUrl = kUpdateManifestUrl;
+    result.errorClass = "none";
+    return result;
+}
+
+bool AutomaticUpdateNoticeRequested() {
+    using xvatsim::modules::update_checker::UpdateStatus;
+    if (!gUpdateSessionResult.has_value() ||
+        gUpdateSessionResult->status != UpdateStatus::Available) {
+        return false;
+    }
+    return gDismissedUpdateNoticeVersion != gUpdateSessionResult->latestVersion;
+}
+
+xvatsim::brain::OverlayUpdateSnapshot BuildOverlayUpdateSnapshot() {
+    xvatsim::brain::OverlayUpdateSnapshot snapshot;
+    snapshot.installedVersion = kInstalledPluginVersion;
+    snapshot.manualNoticeRequested = gManualUpdateNoticeOpen;
+    snapshot.automaticNoticeRequested = AutomaticUpdateNoticeRequested();
+
+    if (!gUpdateSessionResult.has_value()) {
+        return snapshot;
+    }
+
+    snapshot.status = ToOverlayUpdateStatus(gUpdateSessionResult->status);
+    snapshot.latestVersion = gUpdateSessionResult->latestVersion;
+    snapshot.downloadPageUrl = gUpdateSessionResult->downloadPageUrl;
+    snapshot.errorClass = gUpdateSessionResult->errorClass;
+    snapshot.critical = gUpdateSessionResult->critical;
+    return snapshot;
+}
+
+void HandleUpdateNoticeDismissRequest() {
+    if (!gOverlayWindow.ConsumeSystemNoticeDismissRequest()) {
+        return;
+    }
+
+    using xvatsim::modules::update_checker::UpdateStatus;
+    if (gUpdateSessionResult.has_value() &&
+        gUpdateSessionResult->status == UpdateStatus::Available) {
+        gDismissedUpdateNoticeVersion = gUpdateSessionResult->latestVersion;
+    }
+    gManualUpdateNoticeOpen = false;
+
+    if (gUpdateSessionResult.has_value()) {
+        AppendDiagnosticsLogLine(
+            FormatUpdateDiagnosticLine(
+                *gUpdateSessionResult,
+                false,
+                false,
+                true));
     }
 }
 
 void RequestUpdateCheck(
     xvatsim::modules::update_checker::UpdateCheckSource source,
     bool bypassCadence) {
+    (void)bypassCadence;
+
     using xvatsim::modules::update_checker::UpdateCheckResult;
     using xvatsim::modules::update_checker::UpdateCheckSource;
     using xvatsim::modules::update_checker::UpdateStatus;
 
     const auto nowUnixSeconds = CurrentUnixSeconds();
-    if (source == UpdateCheckSource::Automatic && !bypassCadence) {
+    if (source == UpdateCheckSource::Automatic) {
         if (gUpdateSessionResult.has_value() || gUpdateChecker.InProgress()) {
-            return;
-        }
-        const auto lastCheckSeconds =
-            gPluginSettings.lastUpdateCheckUnixSeconds;
-        if (lastCheckSeconds > 0 &&
-            (nowUnixSeconds - lastCheckSeconds) <
-                kAutomaticUpdateCheckCadenceSeconds) {
             return;
         }
     }
 
     if (gUpdateChecker.InProgress()) {
         if (source == UpdateCheckSource::Manual) {
-            UpdateCheckResult inProgressResult;
-            inProgressResult.status = UpdateStatus::InProgress;
-            inProgressResult.source = source;
-            inProgressResult.installedVersion = kInstalledPluginVersion;
-            inProgressResult.manifestUrl = kUpdateManifestUrl;
-            inProgressResult.errorClass = "none";
-            ShowTransientStatusLine(FormatManualUpdateStatus(inProgressResult));
+            gUpdateSessionResult = MakeUpdateInProgressResult(source);
+            gManualUpdateNoticeOpen = true;
             AppendDiagnosticsLogLine(
                 FormatUpdateDiagnosticLine(
-                    inProgressResult,
-                    false,
+                    *gUpdateSessionResult,
+                    true,
                     true,
                     false));
         }
@@ -2566,6 +2614,22 @@ void RequestUpdateCheck(
     }
 
     if (!gUpdateChecker.StartCheck(BuildUpdateCheckRequest(source))) {
+        if (source == UpdateCheckSource::Manual) {
+            UpdateCheckResult failedResult;
+            failedResult.status = UpdateStatus::CheckFailed;
+            failedResult.source = source;
+            failedResult.installedVersion = kInstalledPluginVersion;
+            failedResult.manifestUrl = kUpdateManifestUrl;
+            failedResult.errorClass = "start-failed";
+            gUpdateSessionResult = failedResult;
+            gManualUpdateNoticeOpen = true;
+            AppendDiagnosticsLogLine(
+                FormatUpdateDiagnosticLine(
+                    *gUpdateSessionResult,
+                    true,
+                    true,
+                    false));
+        }
         return;
     }
 
@@ -2573,7 +2637,14 @@ void RequestUpdateCheck(
         gPluginSettings.lastUpdateCheckUnixSeconds = nowUnixSeconds;
         SavePluginSettings();
     } else {
-        ShowTransientStatusLine("UPDATE checking...");
+        gUpdateSessionResult = MakeUpdateInProgressResult(source);
+        gManualUpdateNoticeOpen = true;
+        AppendDiagnosticsLogLine(
+            FormatUpdateDiagnosticLine(
+                *gUpdateSessionResult,
+                true,
+                true,
+                false));
     }
 }
 
@@ -2587,6 +2658,7 @@ void RequestManualUpdateCheck() {
     RequestUpdateCheck(
         xvatsim::modules::update_checker::UpdateCheckSource::Manual,
         true);
+    RefreshOverlayFromBrain();
 }
 
 void HarvestUpdateCheckerResult() {
@@ -2603,82 +2675,19 @@ void HarvestUpdateCheckerResult() {
         result->source == UpdateCheckSource::Automatic;
     const auto available =
         result->status == UpdateStatus::Available;
-    const auto shouldQueue = automatic && available;
-    if (shouldQueue) {
-        gUpdateNoticeQueued = true;
-        gUpdateNoticeShown = false;
-        gUpdateNoticeVisibleUntilSeconds = 0;
-    }
-
     if (!automatic) {
-        ShowTransientStatusLine(FormatManualUpdateStatus(*result));
+        gManualUpdateNoticeOpen = true;
     }
 
+    const auto noticeRequested =
+        gManualUpdateNoticeOpen ||
+        (automatic && available && AutomaticUpdateNoticeRequested());
     AppendDiagnosticsLogLine(
         FormatUpdateDiagnosticLine(
             *result,
-            shouldQueue,
-            !automatic,
+            noticeRequested,
+            noticeRequested,
             false));
-}
-
-void ApplyUpdateNoticeBanner(
-    xvatsim::brain::OverlayViewModel* overlayModel) {
-    using xvatsim::modules::update_checker::UpdateStatus;
-
-    if (overlayModel == nullptr ||
-        !gUpdateNoticeQueued ||
-        !gUpdateSessionResult.has_value() ||
-        gUpdateSessionResult->status != UpdateStatus::Available) {
-        return;
-    }
-
-    const auto nowSeconds = CurrentTickSeconds();
-    if (!gUpdateNoticeShown) {
-        gUpdateNoticeShown = true;
-        gUpdateNoticeVisibleUntilSeconds =
-            nowSeconds + kUpdateNoticeVisibleSeconds;
-        AppendDiagnosticsLogLine(
-            FormatUpdateDiagnosticLine(
-                *gUpdateSessionResult,
-                true,
-                true,
-                false));
-    }
-
-    if (nowSeconds > gUpdateNoticeVisibleUntilSeconds) {
-        gUpdateNoticeQueued = false;
-        AppendDiagnosticsLogLine(
-            FormatUpdateDiagnosticLine(
-                *gUpdateSessionResult,
-                false,
-                false,
-                true));
-        return;
-    }
-
-    std::vector<xvatsim::brain::OverlayTextLine> lines;
-    lines.reserve(overlayModel->bodyLines.size() + 2);
-    if (!overlayModel->bodyLines.empty()) {
-        lines.push_back(overlayModel->bodyLines.front());
-    }
-    lines.push_back({
-        (gUpdateSessionResult->critical
-             ? "Critical XVatsim update available"
-             : "XVatsim " + gUpdateSessionResult->latestVersion +
-                   " update available"),
-        xvatsim::brain::OverlayTone::Next,
-    });
-    lines.push_back({
-        "Download from X-Plane.org",
-        xvatsim::brain::OverlayTone::Normal,
-    });
-    const auto beginIndex = overlayModel->bodyLines.empty() ? 0 : 1;
-    lines.insert(
-        lines.end(),
-        overlayModel->bodyLines.begin() + beginIndex,
-        overlayModel->bodyLines.end());
-    overlayModel->bodyLines = std::move(lines);
 }
 
 void ApplyDisplayOverrideMode(
@@ -2802,6 +2811,10 @@ void RenderSessionBoundaryFrame(
                xvatsim::brain::BrainOwnedDisplayOverrideMode::ForcedSleep) {
         shouldWake = false;
     }
+    const auto updateSnapshot = BuildOverlayUpdateSnapshot();
+    if (xvatsim::brain::OverlayUpdateRequestsWake(updateSnapshot)) {
+        shouldWake = true;
+    }
 
     if (!shouldWake) {
         RenderDormantBoundaryFrame(
@@ -2819,7 +2832,8 @@ void RenderSessionBoundaryFrame(
         xvatsim::brain::ControllerFeedSnapshot{},
         xvatsim::brain::TransceiverResolutionSnapshot{},
         xvatsim::brain::FinalDisplaySnapshot{},
-        xvatsim::brain::ManualQuerySnapshot{});
+        xvatsim::brain::ManualQuerySnapshot{},
+        updateSnapshot);
     overlayModel.headerRightText.clear();
     gOverlayWindow.Update(overlayModel);
     PersistOverlayGeometryIfChanged();
@@ -3321,7 +3335,7 @@ void RegisterPluginMenu() {
         return;
     }
 
-    gPluginMenuItemIndex = XPLMAppendMenuItem(pluginsMenu, "XVatsim 1.0.3", nullptr, 1);
+    gPluginMenuItemIndex = XPLMAppendMenuItem(pluginsMenu, "XVatsim 1.0.4", nullptr, 1);
     if (gPluginMenuItemIndex < 0) {
         gPluginMenuItemIndex = -1;
         XPLMDebugString("[XVatsim] Plugin menu item registration failed.\n");
@@ -3329,7 +3343,7 @@ void RegisterPluginMenu() {
     }
 
     gPluginMenu = XPLMCreateMenu(
-        "XVatsim 1.0.3",
+        "XVatsim 1.0.4",
         pluginsMenu,
         gPluginMenuItemIndex,
         PluginMenuHandler,
@@ -3548,6 +3562,7 @@ void RefreshOverlayFromBrainEngineer3() {
     auto& diagnostics = gDiagnosticsState.frame;
     diagnostics.valid = true;
     HarvestUpdateCheckerResult();
+    HandleUpdateNoticeDismissRequest();
     RequestAutomaticUpdateCheckIfDue();
 
     auto timingStarted = std::chrono::steady_clock::now();
@@ -3861,16 +3876,24 @@ void RefreshOverlayFromBrainEngineer3() {
     wakeInput.enrouteInitialHoldActive = enrouteInitialHoldActive;
     const auto wakeDecision =
         xvatsim::brain::DecideBrainOwnedOverlayWake(wakeInput);
-    diagnostics.shouldWake = wakeDecision.shouldWake;
+    const auto updateSnapshot = BuildOverlayUpdateSnapshot();
+    const auto updateNoticeWake =
+        xvatsim::brain::OverlayUpdateRequestsWake(updateSnapshot);
+    const auto shouldWakeOverlay =
+        wakeDecision.shouldWake || updateNoticeWake;
+    diagnostics.shouldWake = shouldWakeOverlay;
 
     gOverlayWindow.SetAutomaticMode(
         gBrainOwnedRuntimeState.displayOverrideMode ==
         xvatsim::brain::BrainOwnedDisplayOverrideMode::Auto);
 
-    diagnostics.wakeReason = wakeDecision.reason;
+    diagnostics.wakeReason =
+        (updateNoticeWake && !wakeDecision.shouldWake)
+            ? "update-notice"
+            : wakeDecision.reason;
     diagnostics.wakeDecisionUs = ElapsedMicrosecondsSince(timingStarted);
 
-    if (!wakeDecision.shouldWake) {
+    if (!shouldWakeOverlay) {
         xvatsim::brain::OverlayViewModel overlayModel;
         overlayModel.mode = xvatsim::brain::OverlayMode::Dormant;
         overlayModel.visible = false;
@@ -3922,7 +3945,8 @@ void RefreshOverlayFromBrainEngineer3() {
         controllerFeedSnapshot,
         transceiverResolutionSnapshot,
         finalDisplaySnapshot,
-        gBrainOwnedRuntimeState.manualQuerySnapshot);
+        gBrainOwnedRuntimeState.manualQuerySnapshot,
+        updateSnapshot);
     diagnostics.overlayBuildUs = ElapsedMicrosecondsSince(timingStarted);
     diagnostics.overlayBuildMs = diagnostics.overlayBuildUs / 1000;
     RecordDiagnosticJob(
@@ -3951,10 +3975,6 @@ void RefreshOverlayFromBrainEngineer3() {
         ApplyControllerMessageCard(
             gBrainOwnedRuntimeState.controllerMessageState,
             &overlayModel);
-    }
-    if (!controllerMessageVisible &&
-        !gBrainOwnedRuntimeState.manualQuerySnapshot.visible) {
-        ApplyUpdateNoticeBanner(&overlayModel);
     }
 
     timingStarted = std::chrono::steady_clock::now();

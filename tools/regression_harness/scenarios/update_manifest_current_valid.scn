@@ -1,10 +1,15 @@
 name=Update manifest reports installed version current
 
-update.installed_version=1.0.3
-update.manifest_payload={"schema":1,"product":"XVatsim","latest_version":"1.0.3","minimum_supported_version":"1.0.0","package_sha256":"ABCDEF","plugin_sha256":"123456","download_page_url":"https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/","update_policy":"notify_only","critical":false,"message":"XVatsim 1.0.3 is current.","release_notes":["Current version test"]}
+update.installed_version=1.0.4
+update.manifest_payload={"schema":1,"product":"XVatsim","latest_version":"1.0.4","minimum_supported_version":"1.0.0","package_sha256":"ABCDEF","plugin_sha256":"123456","download_page_url":"https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/","update_policy":"notify_only","critical":false,"message":"XVatsim 1.0.4 is current.","release_notes":["Current version test"]}
 
 expect.update_status=current
-expect.update_latest_version=1.0.3
+expect.update_latest_version=1.0.4
 expect.update_critical=false
 expect.update_download_page_url=https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/
 expect.update_error_class=none
+expect.overlay_version_text=V1.0.4
+expect.overlay_version_alternate_text=
+expect.overlay_version_tone=Current
+expect.overlay_version_rotates=false
+expect.overlay_notice_visible=false

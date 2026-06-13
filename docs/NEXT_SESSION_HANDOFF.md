@@ -2,33 +2,39 @@
 
 Date noted: 2026-06-13
 
-## Current Product State - V1.0.3 Freeware Patch Release
+## Current Product State - V1.0.4 Freeware Patch Release
 
-XVatsim V1.0.3 is the current freeware Windows/X-Plane 12/xPilot release.
+XVatsim V1.0.4 is the current freeware Windows/X-Plane 12/xPilot release.
 
-Active V1.0.3 freeware package:
+Active V1.0.4 freeware package:
 
-- `releases\XVatsim_1.0.3_Freeware_Windows_XP12.zip`
+- `releases\XVatsim_1.0.4_Freeware_Windows_XP12.zip`
 - Package SHA-256:
-  `C81CFE2095BFA2B615D5D273ECE3856DB4ADBA8922950E852D6317D6D2CBA180`
+  `7D215C941192E85133FD2CE69B6F87E808C21F5DDB53ED48B7B31A0950A5CF39`
 - Packaged plugin/runtime SHA-256:
-  `8FF264BD52690EC51DA0E5D22C95438CE637198C4A5B00937D3C0B000FFF5645`
+  `58BC6C9AAAB3CB1E4DDFEE3DAF16BBD7655C3E670A3EE1C78BB0C28F3FECD07B`
 
 Installed simulator plugin:
 
 - `C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl`
 - Installed SHA-256:
   `037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72`
-- Installed version remains V1.0.2 intentionally so Darron can test the
-  notify-only update check against the public V1.0.3 manifest.
+- Installed version remains intentionally unchanged so Darron can test the
+  notify-only update check against the public V1.0.4 manifest.
 - Previous installed build backup:
   `C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl.bak-20260603-102134-7AF0EDE64524`
 
 The X-Plane.org Store submission path is no longer active for Version 1 because
 the store requested a Mac version. Version 1 is a freeware Windows release.
 
-V1.0.3 patch summary:
+V1.0.4 patch summary:
 
+- Added a top-right overlay version chip below `READY`.
+- Green chip means current, gray means unknown, and amber rotating version/UPDATE
+  means a newer build is available.
+- Replaced clipped footer update text with a dismissible update notice panel.
+- Automatic update checks now run once per simulator/plugin session so a new
+  manifest is not hidden by an old 24-hour check timestamp.
 - Added weighted brain-owned terminal controller relevance evidence.
 - Prevented one terminal-owner text mismatch from hiding a controller when
   multiple VATSIM, radio, route, and source-owned authority facts support
@@ -37,14 +43,14 @@ V1.0.3 patch summary:
   neutral for VATSIM pseudo-frequency cases.
 - Added score/vote/neutral/family/confidence/final-action diagnostics.
 - Added visible installed-version text to the overlay and plugin menu.
-- Updated `docs\xvatsim_update.json` to advertise V1.0.3.
+- Updated `docs\xvatsim_update.json` to advertise V1.0.4.
 
 Freeware package validation:
 
 - Fresh Release plugin and harness build passed.
 - Full regression harness passed: `263 / 263`.
-- Freeware package builder passed for V1.0.3.
-- User guide PDF was regenerated from the V1.0.3 Markdown source.
+- Freeware package builder passed for V1.0.4.
+- User guide PDF was regenerated from the V1.0.4 Markdown source.
 - Package file set verified.
 - Packaged plugin hash matched the verified Release runtime hash.
 - Package text scan found no store-submission, serial-key, or proof-of-purchase

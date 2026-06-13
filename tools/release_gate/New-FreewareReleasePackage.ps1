@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.0.3",
+    [string]$Version = "1.0.4",
     [string]$PlatformName = "Windows_XP12"
 )
 
@@ -187,6 +187,10 @@ XVatsim Freeware Changelog
 Version: $Version
 
 Patch release:
+- Adds a persistent top-right overlay version chip.
+- Shows the installed version in green when current, gray while unknown, and an amber rotating version/UPDATE chip when a newer version is available.
+- Replaces clipped update footer text with a dismissible update notice panel for automatic and manual update checks.
+- Runs one automatic update check per simulator/plugin session so a newly published manifest is not hidden by an old 24-hour timestamp.
 - Adds a weighted brain evidence ledger for terminal APP/DEP controller relevance.
 - Prevents one terminal-owner text mismatch from hiding a controller when multiple independent VATSIM/radio/route facts support displaying it.
 - Includes FAA/NASR airport frequency evidence as a low-weight positive only; FAA misses are neutral because VATSIM can use virtual frequencies.

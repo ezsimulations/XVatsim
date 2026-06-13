@@ -1,6 +1,6 @@
 # XVatsim Freeware User Guide
 
-Version 1.0.3
+Version 1.0.4
 
 Updated: June 2026
 
@@ -72,10 +72,19 @@ Color and labels matter:
 - `ASST OFF`: Standby Assist is disabled.
 - `MODE C *Active*`: transponder Mode C is active.
 - `TX` and `RX`: transmit and receive state for COM1 and COM2.
+- Top-right version text: green means the installed version is current, gray
+  means update status is not known yet, and amber rotating version/UPDATE text
+  means a newer XVatsim package is available.
 
 Tuning a frequency does not make a row green by itself. XVatsim colors controller rows from route and authority context, not from radio tuning alone.
 
-In Version 1.0.3, the brain owns the final radio-board order, terminal controller relevance decisions, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
+In Version 1.0.4, the brain owns the final radio-board order, terminal controller relevance decisions, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
+
+When an update is available, XVatsim shows a dismissible update notice panel
+with the installed version, latest version, and X-Plane.org download reminder.
+Manual update checks use the same notice panel for available, current, and
+failed results, so update status is not clipped into the bottom route/status
+line.
 
 ![Center frequency display](assets/05_center_frequency_display.jpg)
 

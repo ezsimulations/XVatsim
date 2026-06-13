@@ -70,6 +70,14 @@ struct ScenarioExpectations {
     std::vector<std::string> displayCallsigns;
     std::vector<std::string> overlayBodyLines;
     std::vector<std::string> overlayBodyTones;
+    std::optional<std::string> overlayVersionText;
+    std::optional<std::string> overlayVersionAlternateText;
+    std::optional<std::string> overlayVersionTone;
+    std::optional<bool> overlayVersionRotates;
+    std::optional<bool> overlayNoticeVisible;
+    std::optional<std::string> overlayNoticeSeverity;
+    std::optional<std::string> overlayNoticeTitle;
+    std::vector<std::string> overlayNoticeBodyLines;
     std::optional<bool> departureCollectedAvailable;
     std::vector<std::string> departureCollectedCallsigns;
     std::optional<bool> arrivalAirspaceAvailable;
@@ -320,7 +328,7 @@ struct ScenarioData {
     std::vector<std::string> sourcePackageTerminalAuthorityJsons;
     std::vector<std::string> sourceRegistryJsons;
     std::string updateManifestPayload;
-    std::string updateInstalledVersion = "1.0.3";
+    std::string updateInstalledVersion = "1.0.4";
     std::string updateManifestUrl =
         "https://ezsimulations.github.io/XVatsim/xvatsim_update.json";
     std::unordered_map<std::string, std::string> sourceRegistryPayloadsByUrl;
@@ -695,6 +703,59 @@ std::vector<std::string> ExtractOverlayBodyTones(
         tones.push_back(OverlayToneToken(line.tone));
     }
     return tones;
+}
+
+std::string OverlayVersionToneToken(
+    xvatsim::brain::OverlayVersionTone tone) {
+    switch (tone) {
+        case xvatsim::brain::OverlayVersionTone::Current:
+            return "Current";
+        case xvatsim::brain::OverlayVersionTone::UpdateAvailable:
+            return "UpdateAvailable";
+        case xvatsim::brain::OverlayVersionTone::Error:
+            return "Error";
+        case xvatsim::brain::OverlayVersionTone::Unknown:
+        default:
+            return "Unknown";
+    }
+}
+
+std::string OverlayNoticeSeverityToken(
+    xvatsim::brain::OverlayNoticeSeverity severity) {
+    switch (severity) {
+        case xvatsim::brain::OverlayNoticeSeverity::Success:
+            return "Success";
+        case xvatsim::brain::OverlayNoticeSeverity::Warning:
+            return "Warning";
+        case xvatsim::brain::OverlayNoticeSeverity::Error:
+            return "Error";
+        case xvatsim::brain::OverlayNoticeSeverity::Info:
+        default:
+            return "Info";
+    }
+}
+
+std::vector<std::string> ExtractOverlayNoticeBodyLines(
+    const xvatsim::brain::OverlayViewModel& overlayModel) {
+    return overlayModel.systemNotice.bodyLines;
+}
+
+xvatsim::brain::OverlayUpdateStatus OverlayUpdateStatusFromChecker(
+    xvatsim::modules::update_checker::UpdateStatus status) {
+    using xvatsim::modules::update_checker::UpdateStatus;
+    switch (status) {
+        case UpdateStatus::Available:
+            return xvatsim::brain::OverlayUpdateStatus::Available;
+        case UpdateStatus::Current:
+            return xvatsim::brain::OverlayUpdateStatus::Current;
+        case UpdateStatus::CheckFailed:
+            return xvatsim::brain::OverlayUpdateStatus::Failed;
+        case UpdateStatus::InProgress:
+            return xvatsim::brain::OverlayUpdateStatus::Checking;
+        case UpdateStatus::Unknown:
+        default:
+            return xvatsim::brain::OverlayUpdateStatus::Unknown;
+    }
 }
 
 std::vector<std::string> ExtractSectorIdentifiers(
@@ -2586,6 +2647,46 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "expect.overlay_body_tones") {
         scenario->expectations.overlayBodyTones = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.overlay_version_text") {
+        scenario->expectations.overlayVersionText = value;
+        return true;
+    }
+    if (key == "expect.overlay_version_alternate_text") {
+        scenario->expectations.overlayVersionAlternateText = value;
+        return true;
+    }
+    if (key == "expect.overlay_version_tone") {
+        scenario->expectations.overlayVersionTone = value;
+        return true;
+    }
+    if (key == "expect.overlay_version_rotates") {
+        bool parsed = false;
+        if (!ParseBool(value, &parsed)) {
+            return false;
+        }
+        scenario->expectations.overlayVersionRotates = parsed;
+        return true;
+    }
+    if (key == "expect.overlay_notice_visible") {
+        bool parsed = false;
+        if (!ParseBool(value, &parsed)) {
+            return false;
+        }
+        scenario->expectations.overlayNoticeVisible = parsed;
+        return true;
+    }
+    if (key == "expect.overlay_notice_severity") {
+        scenario->expectations.overlayNoticeSeverity = value;
+        return true;
+    }
+    if (key == "expect.overlay_notice_title") {
+        scenario->expectations.overlayNoticeTitle = value;
+        return true;
+    }
+    if (key == "expect.overlay_notice_body_lines") {
+        scenario->expectations.overlayNoticeBodyLines = Split(value, '|');
         return true;
     }
     if (key == "expect.departure_collected_available") {
@@ -5284,6 +5385,29 @@ int main(int argc, char** argv) {
         scenario.radioStateSnapshot,
         scenario.routeSectorSnapshot,
         scenario.authorityEnrouteHandoff ? &authorityRelevanceSnapshot : nullptr);
+    xvatsim::modules::update_checker::UpdateCheckResult updateCheckResult;
+    if (!scenario.updateManifestPayload.empty()) {
+        xvatsim::modules::update_checker::UpdateCheckRequest updateRequest;
+        updateRequest.installedVersion = scenario.updateInstalledVersion;
+        updateRequest.manifestUrl = scenario.updateManifestUrl;
+        updateRequest.source =
+            xvatsim::modules::update_checker::UpdateCheckSource::Automatic;
+        updateCheckResult =
+            xvatsim::modules::update_checker::EvaluateUpdateManifestPayload(
+                updateRequest,
+                scenario.updateManifestPayload);
+    }
+    xvatsim::brain::OverlayUpdateSnapshot overlayUpdateSnapshot;
+    overlayUpdateSnapshot.installedVersion = scenario.updateInstalledVersion;
+    overlayUpdateSnapshot.status =
+        OverlayUpdateStatusFromChecker(updateCheckResult.status);
+    overlayUpdateSnapshot.latestVersion = updateCheckResult.latestVersion;
+    overlayUpdateSnapshot.downloadPageUrl = updateCheckResult.downloadPageUrl;
+    overlayUpdateSnapshot.errorClass = updateCheckResult.errorClass;
+    overlayUpdateSnapshot.critical = updateCheckResult.critical;
+    overlayUpdateSnapshot.automaticNoticeRequested =
+        updateCheckResult.status ==
+        xvatsim::modules::update_checker::UpdateStatus::Available;
     const auto overlayWorkflowStage =
         scenario.overlayWorkflowStage.value_or(handoffDecision.stage);
     const auto overlayModel =
@@ -5296,7 +5420,8 @@ int main(int argc, char** argv) {
             controllerFeedSnapshot,
             scenario.transceiverResolutionSnapshot,
             displayBoard,
-            xvatsim::brain::ManualQuerySnapshot{});
+            xvatsim::brain::ManualQuerySnapshot{},
+            overlayUpdateSnapshot);
     auto routePlanSnapshot = scenario.networkPlanSnapshot;
     if (routePlanSnapshot.routeText.empty()) {
         routePlanSnapshot.routeText = scenario.workflowState.flightContext.routeText;
@@ -5431,18 +5556,6 @@ int main(int argc, char** argv) {
     const auto sourceManifest =
         xvatsim::core::source_data::ParseMapDataManifestJson(
             scenario.sourceManifestJson);
-    xvatsim::modules::update_checker::UpdateCheckResult updateCheckResult;
-    if (!scenario.updateManifestPayload.empty()) {
-        xvatsim::modules::update_checker::UpdateCheckRequest updateRequest;
-        updateRequest.installedVersion = scenario.updateInstalledVersion;
-        updateRequest.manifestUrl = scenario.updateManifestUrl;
-        updateRequest.source =
-            xvatsim::modules::update_checker::UpdateCheckSource::Automatic;
-        updateCheckResult =
-            xvatsim::modules::update_checker::EvaluateUpdateManifestPayload(
-                updateRequest,
-                scenario.updateManifestPayload);
-    }
     const auto vatglassesSourcePackagePayload =
         xvatsim::core::source_data::BuildVatGlassesDynamicSourcePayload(
             scenario.sourcePackagePositionsJson,
@@ -5654,6 +5767,28 @@ int main(int argc, char** argv) {
     std::cout << "OverlayBodyTones:";
     for (const auto& tone : ExtractOverlayBodyTones(overlayModel)) {
         std::cout << " " << tone;
+    }
+    std::cout << "\n";
+    std::cout << "OverlayVersionText: "
+              << overlayModel.version.text << "\n";
+    std::cout << "OverlayVersionAlternateText: "
+              << overlayModel.version.alternateText << "\n";
+    std::cout << "OverlayVersionTone: "
+              << OverlayVersionToneToken(overlayModel.version.tone) << "\n";
+    std::cout << "OverlayVersionRotates: "
+              << (overlayModel.version.rotateAlternate ? "true" : "false")
+              << "\n";
+    std::cout << "OverlayNoticeVisible: "
+              << (overlayModel.systemNotice.visible ? "true" : "false")
+              << "\n";
+    std::cout << "OverlayNoticeSeverity: "
+              << OverlayNoticeSeverityToken(overlayModel.systemNotice.severity)
+              << "\n";
+    std::cout << "OverlayNoticeTitle: "
+              << overlayModel.systemNotice.title << "\n";
+    std::cout << "OverlayNoticeBodyLines:";
+    for (const auto& line : ExtractOverlayNoticeBodyLines(overlayModel)) {
+        std::cout << " " << line;
     }
     std::cout << "\n";
     std::cout << "DepartureCollectedAvailable: "
@@ -6192,6 +6327,76 @@ int main(int argc, char** argv) {
             "overlayBodyTones",
             scenario.expectations.overlayBodyTones,
             ExtractOverlayBodyTones(overlayModel));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (scenario.expectations.overlayVersionText.has_value() &&
+        overlayModel.version.text != *scenario.expectations.overlayVersionText) {
+        return PrintMismatch(
+            "overlayVersionText",
+            *scenario.expectations.overlayVersionText,
+            overlayModel.version.text);
+    }
+
+    if (scenario.expectations.overlayVersionAlternateText.has_value() &&
+        overlayModel.version.alternateText !=
+            *scenario.expectations.overlayVersionAlternateText) {
+        return PrintMismatch(
+            "overlayVersionAlternateText",
+            *scenario.expectations.overlayVersionAlternateText,
+            overlayModel.version.alternateText);
+    }
+
+    if (scenario.expectations.overlayVersionTone.has_value() &&
+        OverlayVersionToneToken(overlayModel.version.tone) !=
+            *scenario.expectations.overlayVersionTone) {
+        return PrintMismatch(
+            "overlayVersionTone",
+            *scenario.expectations.overlayVersionTone,
+            OverlayVersionToneToken(overlayModel.version.tone));
+    }
+
+    if (scenario.expectations.overlayVersionRotates.has_value() &&
+        overlayModel.version.rotateAlternate !=
+            *scenario.expectations.overlayVersionRotates) {
+        return PrintMismatch(
+            "overlayVersionRotates",
+            *scenario.expectations.overlayVersionRotates ? "true" : "false",
+            overlayModel.version.rotateAlternate ? "true" : "false");
+    }
+
+    if (scenario.expectations.overlayNoticeVisible.has_value() &&
+        overlayModel.systemNotice.visible !=
+            *scenario.expectations.overlayNoticeVisible) {
+        return PrintMismatch(
+            "overlayNoticeVisible",
+            *scenario.expectations.overlayNoticeVisible ? "true" : "false",
+            overlayModel.systemNotice.visible ? "true" : "false");
+    }
+
+    if (scenario.expectations.overlayNoticeSeverity.has_value() &&
+        OverlayNoticeSeverityToken(overlayModel.systemNotice.severity) !=
+            *scenario.expectations.overlayNoticeSeverity) {
+        return PrintMismatch(
+            "overlayNoticeSeverity",
+            *scenario.expectations.overlayNoticeSeverity,
+            OverlayNoticeSeverityToken(overlayModel.systemNotice.severity));
+    }
+
+    if (scenario.expectations.overlayNoticeTitle.has_value() &&
+        overlayModel.systemNotice.title !=
+            *scenario.expectations.overlayNoticeTitle) {
+        return PrintMismatch(
+            "overlayNoticeTitle",
+            *scenario.expectations.overlayNoticeTitle,
+            overlayModel.systemNotice.title);
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "overlayNoticeBodyLines",
+            scenario.expectations.overlayNoticeBodyLines,
+            ExtractOverlayNoticeBodyLines(overlayModel));
         mismatch.has_value()) {
         return *mismatch;
     }

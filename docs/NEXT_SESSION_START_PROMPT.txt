@@ -28,24 +28,28 @@ Installed file timestamp:
 
 Last verified state:
 
-- XVatsim V1.0.3 is the current freeware Windows/X-Plane 12/xPilot release.
+- XVatsim V1.0.4 is the current freeware Windows/X-Plane 12/xPilot release.
 - Release plugin and harness build passed.
 - Full regression harness passed: 263 / 263.
-- Installed X-Plane plugin is intentionally still V1.0.2 with the hash above so
-  Darron can test the public V1.0.3 update notification.
-- Packaged V1.0.3 plugin/runtime SHA256:
-  8FF264BD52690EC51DA0E5D22C95438CE637198C4A5B00937D3C0B000FFF5645.
+- Installed X-Plane plugin is intentionally unchanged with the hash above so
+  Darron can test the public V1.0.4 update notification.
+- Packaged V1.0.4 plugin/runtime SHA256:
+  58BC6C9AAAB3CB1E4DDFEE3DAF16BBD7655C3E670A3EE1C78BB0C28F3FECD07B.
 - Freeware package:
-  releases\XVatsim_1.0.3_Freeware_Windows_XP12.zip
+  releases\XVatsim_1.0.4_Freeware_Windows_XP12.zip
 - Package SHA256:
-  C81CFE2095BFA2B615D5D273ECE3856DB4ADBA8922950E852D6317D6D2CBA180.
+  7D215C941192E85133FD2CE69B6F87E808C21F5DDB53ED48B7B31A0950A5CF39.
 - Package size:
-  1407605 bytes.
+  1409597 bytes.
 - Public update manifest:
   docs\xvatsim_update.json
 
-Latest source closeout included in the packaged V1.0.3 plugin:
+Latest source closeout included in the packaged V1.0.4 plugin:
 
+- Top-right overlay version chip shows current/unknown/update state.
+- Update available uses amber version/UPDATE rotation and a dismissible notice
+  panel instead of clipped footer text.
+- One automatic update check runs per simulator/plugin session.
 - Weighted brain-owned terminal controller relevance evidence prevents one
   string mismatch from hiding a controller when multiple source families say yes.
 - FAA/NASR frequency facts are included as low-weight context only; FAA misses

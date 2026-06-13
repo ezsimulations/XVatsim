@@ -26,6 +26,7 @@ public:
     bool ConsumeSubmittedText(std::string* outText);
     bool ConsumeAcknowledgeRequest();
     bool ConsumeRecallRequest();
+    bool ConsumeSystemNoticeDismissRequest();
     void SetWindowTopLeft(int left, int top);
     bool GetWindowTopLeft(int* outLeft, int* outTop) const;
     bool ConsumePositionChanged(int* outLeft, int* outTop);
@@ -70,6 +71,7 @@ private:
     bool IsInOverlayRegion(int x, int y) const;
     bool IsInAcknowledgeAction(int x, int y) const;
     bool IsInRecallAction(int x, int y) const;
+    bool IsInSystemNoticeDismissAction(int x, int y) const;
     ResizeCorner ResolveResizeCorner(int x, int y) const;
     void ClampScrollOffset();
     void UpdateAnimationState();
@@ -91,6 +93,7 @@ private:
     std::string pendingSubmittedText_;
     bool hasPendingAcknowledgeRequest_ = false;
     bool hasPendingRecallRequest_ = false;
+    bool hasPendingSystemNoticeDismissRequest_ = false;
     bool dragging_ = false;
     bool resizing_ = false;
     ResizeCorner activeResizeCorner_ = ResizeCorner::None;

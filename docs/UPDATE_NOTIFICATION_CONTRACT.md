@@ -1,11 +1,10 @@
 # Update Notification Contract
 
-Status: Approved, implemented, and live-tested for the 1.0.2 freeware
-release.
+Status: Revised and implemented for the 1.0.4 freeware release.
 
-This contract defines the future in-plugin update notification behavior for
-XVatsim. Darron approved this contract for the local 1.0.2 candidate before
-implementation.
+This contract defines the in-plugin update notification behavior for XVatsim.
+Version 1.0.4 revises the original banner design after field testing proved
+that footer/status-line update text was too easy to miss or clip.
 
 This contract also carries the approved design direction for brain-owned
 frequency ordering and standby-assist ownership. The two work items were
@@ -32,9 +31,13 @@ notify-only: users download the new ZIP from the X-Plane.org file page.
 
 - The plugin may check quietly in the background after plugin load.
 - The plugin must not block the X-Plane flight loop while checking.
-- The plugin should persist the last check time and avoid automatic checks more
-  often than once every 24 hours.
-- A manual menu action may bypass the 24-hour automatic-check interval.
+- The plugin performs one quiet automatic update check per simulator/plugin
+  session.
+- A previous persisted check timestamp must not suppress the first check of a
+  new session, because a newly published manifest can appear after the previous
+  session's check.
+- A manual menu action always requests a fresh check unless another check is
+  already running.
 - The result should be cached for the current simulator session.
 
 ## Version Decision
@@ -51,36 +54,35 @@ notify-only: users download the new ZIP from the X-Plane.org file page.
 - Unknown or malformed manifest fields must fail closed and must not produce a
   false update notice.
 
-## Hidden UI Rule
+## Header Version Chip
 
-- Before battery power and xPilot connection, the update checker must not wake
-  the overlay just to say the version is current or an update is available.
-- While hidden, the plugin may log diagnostics only:
-  - `updateStatus=current`
-  - `updateStatus=available latest=<version>`
-  - `updateStatus=check-failed`
-- Normal controller/radio display ownership remains unchanged.
+- The overlay header shows the installed version in the space below the phase
+  chip such as `READY`.
+- Green version text means the installed version is current.
+- Gray version text means update status is unknown or not completed.
+- Amber rotating installed-version/`UPDATE` text means the manifest reports a
+  newer version.
+- Red is reserved for an actual check or manifest failure surfaced by a manual
+  user action.
 
-## Natural Wake Notification
+## Update Notice Panel
 
-- If an update is available, the notification is queued while the overlay is
-  hidden.
-- The queued notice appears the first time the overlay naturally wakes after
-  battery power and xPilot connection.
-- The update notice must be a small status/banner line and must not replace the
-  active ATC board.
-- Suggested text:
-  - `XVatsim <version> update available`
-  - `Download from X-Plane.org`
-- The banner should be dismissible or naturally expire so it does not distract
-  from active ATC.
+- If an update is available, the overlay shows a dismissible system notice panel
+  instead of inserting long update text into the radio board or route/footer
+  line.
+- The notice includes installed version, latest version, and the X-Plane.org
+  download reminder.
+- The notice may wake the overlay after plugin/session startup so users are not
+  required to manually open the menu to discover that a release is available.
+- Dismissal suppresses the same available version for the current simulator
+  session. A newer available version may show again.
 
 ## Current Version Behavior
 
 - The plugin should not show `XVatsim is current` on every normal flight.
 - Current/valid status should remain silent during automatic checks.
 - Current/valid status may be shown only after a manual user action such as
-  `XVatsim > Check for Updates`.
+  `XVatsim > Check for Updates`; the manual result uses the same notice panel.
 - Current/valid status should still be written to diagnostics.
 
 ## Critical Update Behavior
@@ -101,7 +103,8 @@ notify-only: users download the new ZIP from the X-Plane.org file page.
   - current version valid,
   - check failed,
   - check skipped/offline.
-- Manual check output may open the overlay briefly as a user-requested message.
+- Manual check output opens the overlay notice panel and requires user
+  dismissal. It must not be squeezed into the bottom route/status line.
 
 ## Diagnostics
 
@@ -111,7 +114,7 @@ Every automatic or manual check should log:
 - installed version
 - latest manifest version when available
 - status: `current`, `available`, `check-failed`, or `disabled`
-- whether the notice was queued, shown, dismissed, or expired
+- whether the notice was requested, visible, or dismissed
 - manifest URL
 - HTTP/fetch error class when applicable, without noisy payload dumps
 
@@ -121,8 +124,7 @@ Every automatic or manual check should log:
 - No automatic ZIP download.
 - No plugin replacement while X-Plane is running.
 - No forced browser launch.
-- No update notice that wakes the overlay before the normal battery/xPilot
-  readiness rule, except for critical update behavior after battery power.
+- No clipping update text into the route/status footer.
 
 ## Brain-Owned Frequency Intent
 
