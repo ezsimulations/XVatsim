@@ -1272,6 +1272,16 @@ std::vector<AuthorityPositionSourceRecord> ParseVatGlassesPositionObjectRecords(
 
         const auto prefixes = FirstJsonStringArrayField(objectPayload, {"pre", "prefixes"});
         const auto type = FirstJsonStringField(objectPayload, {"type"});
+        std::vector<std::string> normalizedPrefixes;
+        if (baseRecord.kind == AuthorityKind::Center) {
+            for (const auto& prefix : prefixes) {
+                const auto normalizedPrefix = NormalizeAuthorityToken(prefix);
+                if (!normalizedPrefix.empty()) {
+                    normalizedPrefixes.push_back(normalizedPrefix);
+                }
+            }
+            SortUnique(&normalizedPrefixes);
+        }
         const auto generatedPatterns = BuildVatGlassesCallsignPatterns(prefixes, type);
         baseRecord.controllerCallsignPatterns.insert(
             baseRecord.controllerCallsignPatterns.end(),
@@ -1298,23 +1308,41 @@ std::vector<AuthorityPositionSourceRecord> ParseVatGlassesPositionObjectRecords(
         }
 
         const auto ownerGroups = groupsByOwner.find(ownerKey);
-        if (ownerGroups == groupsByOwner.end() || ownerGroups->second.empty()) {
-            baseRecord.polygonKey = FirstJsonStringField(
-                objectPayload,
-                {"polygon_key", "polygonKey", "polygon", "sector", "airspace_id", "airspaceId"});
-            if (!baseRecord.polygonKey.empty()) {
-                baseRecord.proofDetail =
-                    "position=" + ownerKey +
-                    ";staticPolygon=" + NormalizeAuthorityToken(baseRecord.polygonKey);
+        std::unordered_set<std::string> emittedPolygonKeys;
+        auto pushStaticRecord = [&](
+            const std::string& rawPolygonKey,
+            const std::string& proofTag) {
+            const auto polygonKey = NormalizeAuthorityToken(rawPolygonKey);
+            if (polygonKey.empty() ||
+                !emittedPolygonKeys.insert(polygonKey).second) {
+                return;
             }
-            records.push_back(std::move(baseRecord));
-            continue;
+
+            auto record = baseRecord;
+            record.polygonKey = polygonKey;
+            record.proofDetail = "position=" + ownerKey + ";" + proofTag + "=" + polygonKey;
+            records.push_back(std::move(record));
+        };
+
+        const auto explicitPolygonKey = FirstJsonStringField(
+            objectPayload,
+            {"polygon_key", "polygonKey", "polygon", "sector", "airspace_id", "airspaceId"});
+        pushStaticRecord(explicitPolygonKey, "staticPolygon");
+        pushStaticRecord(ownerKey, "staticOwnerGroup");
+        if (ownerGroups != groupsByOwner.end()) {
+            for (const auto& group : ownerGroups->second) {
+                pushStaticRecord(group, "staticOwnerGroup");
+            }
+        }
+        if (baseRecord.kind == AuthorityKind::Center) {
+            for (const auto& prefix : normalizedPrefixes) {
+                pushStaticRecord(prefix, "sourcePre");
+            }
         }
 
-        baseRecord.polygonKey = ownerKey;
-        baseRecord.proofDetail =
-            "position=" + ownerKey + ";staticOwnerGroup=" + ownerKey;
-        records.push_back(std::move(baseRecord));
+        if (emittedPolygonKeys.empty()) {
+            records.push_back(std::move(baseRecord));
+        }
     }
 
     return records;
@@ -2089,8 +2117,48 @@ ControllerAuthorityCatalog CompileAuthorityPositionCatalog(
             authority.controllerFrequencies.push_back(normalizedFrequency);
         }
         SortUnique(&authority.lookupKeys);
+        SortUnique(&authority.controllerPrefixes);
         SortUnique(&authority.controllerCallsignPatterns);
         SortUnique(&authority.controllerFrequencies);
+
+        auto existingAuthority = std::find_if(
+            catalog.authorities.begin(),
+            catalog.authorities.end(),
+            [&](const ControllerAuthority& candidate) {
+                return candidate.id == authority.id;
+            });
+        if (existingAuthority != catalog.authorities.end()) {
+            for (const auto& lookupKey : authority.lookupKeys) {
+                AddLookupKey(&existingAuthority->lookupKeys, lookupKey);
+            }
+            if (existingAuthority->polygonKey.empty() &&
+                !authority.polygonKey.empty()) {
+                existingAuthority->polygonKey = authority.polygonKey;
+            }
+            existingAuthority->controllerPrefixes.insert(
+                existingAuthority->controllerPrefixes.end(),
+                authority.controllerPrefixes.begin(),
+                authority.controllerPrefixes.end());
+            existingAuthority->controllerCallsignPatterns.insert(
+                existingAuthority->controllerCallsignPatterns.end(),
+                authority.controllerCallsignPatterns.begin(),
+                authority.controllerCallsignPatterns.end());
+            existingAuthority->controllerFrequencies.insert(
+                existingAuthority->controllerFrequencies.end(),
+                authority.controllerFrequencies.begin(),
+                authority.controllerFrequencies.end());
+            if (!authority.proofDetail.empty()) {
+                if (!existingAuthority->proofDetail.empty()) {
+                    existingAuthority->proofDetail.push_back('|');
+                }
+                existingAuthority->proofDetail += authority.proofDetail;
+            }
+            SortUnique(&existingAuthority->lookupKeys);
+            SortUnique(&existingAuthority->controllerPrefixes);
+            SortUnique(&existingAuthority->controllerCallsignPatterns);
+            SortUnique(&existingAuthority->controllerFrequencies);
+            continue;
+        }
 
         if (authority.polygonKey.empty()) {
             catalog.dataGaps.push_back({

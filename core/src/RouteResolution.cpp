@@ -1,6 +1,7 @@
 #include "XVatsim/core/RouteResolution.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -168,6 +169,25 @@ std::vector<std::string> SplitAirwayNames(const std::string& airwayNamesToken) {
         airwayNames.push_back(normalized);
     }
     return airwayNames;
+}
+
+std::string TrimAsciiWhitespace(std::string value) {
+    const auto notSpace = [](unsigned char ch) {
+        return std::isspace(ch) == 0;
+    };
+
+    value.erase(
+        value.begin(),
+        std::find_if(value.begin(), value.end(), notSpace));
+    value.erase(
+        std::find_if(value.rbegin(), value.rend(), notSpace).base(),
+        value.end());
+    return value;
+}
+
+bool IsXPlaneAirwayPayloadNonRecordLine(const std::string& line) {
+    const auto trimmed = TrimAsciiWhitespace(line);
+    return trimmed.empty() || trimmed == "I" || trimmed == "99";
 }
 
 std::string BuildExactNavNodeKey(
@@ -2231,7 +2251,7 @@ AirwayGraph BuildAirwayGraphFromPayloads(
     std::istringstream stream(airwayPayload);
     std::string line;
     while (std::getline(stream, line)) {
-        if (line.empty() || line[0] == 'I') {
+        if (IsXPlaneAirwayPayloadNonRecordLine(line)) {
             continue;
         }
 

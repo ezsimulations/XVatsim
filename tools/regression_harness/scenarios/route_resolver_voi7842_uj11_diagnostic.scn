@@ -1,0 +1,55 @@
+name=Route Resolver VOI7842 UJ11 Diagnostic
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=22.0
+aircraft.longitude_deg=-102.0
+
+plan.matched=true
+plan.departure_icao=MMAS
+plan.departure_lat=21.7056
+plan.departure_lon=-102.3184
+plan.has_departure_coordinates=true
+plan.destination_icao=KMDW
+plan.destination_lat=41.7868
+plan.destination_lon=-87.7522
+plan.has_destination_coordinates=true
+plan.route_text=IGSAM UJ11 CDR UJ40 NLD
+
+graph.fix_payload=22.509583333 -102.051361111  IGSAM ENRT MM 4530263 IGSAM
+graph.fix_payload=22.644444444 -102.005833333  LLANO ENRT MM 4530258 LLANO
+graph.fix_payload=23.380833333 -101.755555556  IDEAL ENRT MM 4530258 IDEAL
+graph.fix_payload=23.576111111 -101.688611111  URVIK ENRT MM 2105426 URVIK
+graph.fix_payload=24.761611111 -101.246972222  FLANE ENRT MM 4530258 FLANE
+graph.fix_payload=24.998333333 -101.151666667  OMEVO ENRT MM 4530258 OMEVO
+graph.fix_payload=25.857222222 -100.709166667  NOVUL ENRT MM 4530258 NOVUL
+graph.fix_payload=26.011944444 -100.598888889  GABLA ENRT MM 4530258 GABLA
+graph.fix_payload=26.541944444 -100.218611111  NOTAL ENRT MM 4530258 NOTAL
+graph.fix_payload=26.737944444 -100.076777778  SASES ENRT MM 4530258 SASES
+graph.fix_payload=27.089722222 -99.820833333  ONKAL ENRT MM 4530258 ONKAL
+
+graph.nav_payload=3  24.159722222 -101.487386111     6191    11710   130      7.000  CDR ENRT MM CONCEPCION(CONCEPCION DEL VOR/DME
+graph.nav_payload=3  25.546113889 -100.929811111     4633    11610   125      6.000  SLW ENRT MM SALTILLO VOR/DME
+graph.nav_payload=3  27.439388889  -99.564583333      500    11260   130      5.000  NLD ENRT MM NEWLA (NUEVO LAREDO) VOR/DME
+
+graph.airway_payload=IGSAM MM 11 LLANO MM 11 N 2 200 600 UJ11
+graph.airway_payload=IDEAL MM 11 LLANO MM 11 N 2 200 600 UJ11
+graph.airway_payload=IDEAL MM 11 URVIK MM 11 N 2 200 600 UJ11
+graph.airway_payload=CDR MM  3 URVIK MM 11 N 2 200 600 UJ11
+graph.airway_payload=CDR MM  3 FLANE MM 11 N 2 200 600 UJ40
+graph.airway_payload=FLANE MM 11 OMEVO MM 11 N 2 200 600 UJ40
+graph.airway_payload=SLW MM  3 OMEVO MM 11 N 2 200 600 UJ40
+graph.airway_payload=SLW MM  3 NOVUL MM 11 N 2 200 600 UJ40
+graph.airway_payload=GABLA MM 11 NOVUL MM 11 N 2 200 600 UJ40
+graph.airway_payload=GABLA MM 11 NOTAL MM 11 N 2 200 600 UJ40
+graph.airway_payload=NOTAL MM 11 SASES MM 11 N 2 200 600 UJ40
+graph.airway_payload=ONKAL MM 11 SASES MM 11 N 2 200 600 UJ40
+graph.airway_payload=NLD MM  3 ONKAL MM 11 N 2 200 600 UJ40
+
+expect.route_token_kinds=IGSAM:Point,UJ11:Airway,CDR:Point,UJ40:Airway,NLD:Point
+expect.resolved_waypoints=ACFT,IGSAM,LLANO,IDEAL,URVIK,CDR,FLANE,OMEVO,SLW,NOVUL,GABLA,NOTAL,SASES,ONKAL,NLD,KMDW
+expect.resolved_tokens=IGSAM,CDR,NLD
+expect.expanded_tokens=UJ11,UJ40
+expect.unresolved_tokens=
+expect.unresolved_airway_tokens=

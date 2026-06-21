@@ -1,0 +1,30 @@
+name=Route Sector Authority Metadata Requires Linked Owner Or Pre
+now_seconds=1000
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.5
+
+plan.departure_icao=UAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.5
+plan.has_departure_coordinates=true
+plan.destination_icao=VHHH
+plan.destination_lat=0.0
+plan.destination_lon=1.5
+plan.has_destination_coordinates=true
+
+resolver.route_resolve=true
+resolver.center_feature=label=ZZZZ;tokens=ZZZZ;polygon=-1,0|-1,2|1,2|1,0
+resolver.authority_catalog_fir=DUMMY|Dummy Control|DMY|DUMMY
+resolver.ownership_json={"airspace":[{"group":"ZWUQ","owner":["WU"]}],"positions":{"WU":{"callsign":"Urumqi Control","frequency":"118.900","pre":["ZWUQ"],"type":"CTR"},"BJF":{"callsign":"Beijing Family"},"WUA":{"callsign":"Urumqi Approach","frequency":"120.250","pre":["ZZZZ"],"type":"APP"},"WWT":{"callsign":"Tianshan Tower","frequency":"118.100","pre":["ZZZZ"],"type":"TWR"}}}
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_authority_gaps=current:ZZZZ
+expect.resolver_route_current_sectors=ZZZZ
+expect.resolver_route_next_sectors=<none>
+expect.resolver_route_current_controller_prefixes=ZZZZ:
+expect.resolver_route_current_controller_patterns=ZZZZ:

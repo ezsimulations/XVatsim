@@ -260,6 +260,7 @@ struct ScenarioExpectations {
     std::vector<std::string> airportFrequencyArrivalRecords;
     std::vector<std::string> brainControllerRelevanceDepartureCallsigns;
     std::vector<std::string> brainControllerRelevanceArrivalCallsigns;
+    std::vector<std::string> brainControllerRelevanceEnrouteCallsigns;
     std::vector<std::string> brainControllerRelevanceCompletions;
     std::vector<std::string> phasePublisherReuseLifecycle;
     std::vector<std::string> phasePublisherIsolationLifecycle;
@@ -508,6 +509,9 @@ struct ScenarioData {
         "https://ezsimulations.github.io/XVatsim/xvatsim_update.json";
     std::unordered_map<std::string, std::string> sourceRegistryPayloadsByUrl;
     xvatsim::core::route::AirwayGraph routeGraph;
+    std::string routeGraphFixPayload;
+    std::string routeGraphNavPayload;
+    std::string routeGraphAirwayPayload;
     std::unordered_map<std::string, xvatsim::core::route::ProcedureCatalogEntry> proceduresByName;
     std::vector<xvatsim::brain::RouteWaypointSnapshot> routeWaypoints;
     std::vector<xvatsim::core::route::SectorFeature> traversalFeatures;
@@ -5741,6 +5745,11 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
             Split(value, ',');
         return true;
     }
+    if (key == "expect.brain_controller_relevance_enroute_callsigns") {
+        scenario->expectations.brainControllerRelevanceEnrouteCallsigns =
+            Split(value, ',');
+        return true;
+    }
     if (key == "expect.brain_controller_relevance_completions") {
         scenario->expectations.brainControllerRelevanceCompletions =
             Split(value, ',');
@@ -9707,6 +9716,21 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
             }
             continue;
         }
+        if (key == "graph.fix_payload") {
+            scenario->routeGraphFixPayload += value;
+            scenario->routeGraphFixPayload.push_back('\n');
+            continue;
+        }
+        if (key == "graph.nav_payload") {
+            scenario->routeGraphNavPayload += value;
+            scenario->routeGraphNavPayload.push_back('\n');
+            continue;
+        }
+        if (key == "graph.airway_payload") {
+            scenario->routeGraphAirwayPayload += value;
+            scenario->routeGraphAirwayPayload.push_back('\n');
+            continue;
+        }
         if (key == "procedure.entry") {
             auto addProcedureEntry = [&](const std::string& rawName,
                                          bool hasSid,
@@ -9900,6 +9924,15 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
 
     if (scenario->name.empty()) {
         scenario->name = path.stem().string();
+    }
+
+    if (!scenario->routeGraphFixPayload.empty() ||
+        !scenario->routeGraphNavPayload.empty() ||
+        !scenario->routeGraphAirwayPayload.empty()) {
+        scenario->routeGraph = xvatsim::core::route::BuildAirwayGraphFromPayloads(
+            scenario->routeGraphFixPayload,
+            scenario->routeGraphNavPayload,
+            scenario->routeGraphAirwayPayload);
     }
 
     if (scenario->departureAirportSectorSnapshot.airportIcao.empty()) {
@@ -14303,6 +14336,14 @@ int main(int argc, char** argv) {
             "brainControllerRelevanceArrivalCallsigns",
             scenario.expectations.brainControllerRelevanceArrivalCallsigns,
             ExtractCallsigns(controllerRelevanceOutput.arrivalBoard));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "brainControllerRelevanceEnrouteCallsigns",
+            scenario.expectations.brainControllerRelevanceEnrouteCallsigns,
+            ExtractCallsigns(controllerRelevanceOutput.enrouteBoard));
         mismatch.has_value()) {
         return *mismatch;
     }

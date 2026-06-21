@@ -1549,8 +1549,7 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
             if (includeEnrouteGroups) {
                 const auto routeMatch =
                     MatchCenterToRoutePolygon(input, candidate);
-                if (routeMatch.matched || !routeMatch.hasRouteMetadata ||
-                    station.tuned) {
+                if (routeMatch.matched || station.tuned) {
                     const auto relation =
                         routeMatch.matched
                             ? routeMatch.displayRelation
@@ -1574,12 +1573,12 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                     completionRelation = relation;
                     reason = routeMatch.matched
                                  ? routeMatch.reason
-                                 : (station.tuned
-                                        ? "center-tuned-current-radio"
-                                        : "center-route-metadata-unavailable-reachable");
+                                 : "center-tuned-current-radio";
                 } else {
                     completionRelation = DisplayRelation::Hidden;
-                    reason = routeMatch.reason;
+                    reason = routeMatch.hasRouteMetadata
+                                 ? routeMatch.reason
+                                 : "center-route-authority-unavailable-radio-only-blocked";
                 }
             } else {
                 completionRelation = DisplayRelation::Hidden;

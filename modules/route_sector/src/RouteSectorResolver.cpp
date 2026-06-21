@@ -1272,6 +1272,9 @@ void MergeOwnershipAuthorityRecords(
     auto mergeRecords = [&](
         const std::vector<xvatsim::core::authority::AuthorityPositionSourceRecord>& records) {
         for (const auto& record : records) {
+            if (record.kind != xvatsim::core::authority::AuthorityKind::Center) {
+                continue;
+            }
             MergeExplicitAuthorityPatterns(
                 patternsByKey,
                 record.polygonKey,
@@ -4093,6 +4096,11 @@ std::string TrimAsciiWhitespace(std::string value) {
     return value;
 }
 
+bool IsXPlaneAirwayPayloadNonRecordLine(const std::string& line) {
+    const auto trimmed = TrimAsciiWhitespace(line);
+    return trimmed.empty() || trimmed == "I" || trimmed == "99";
+}
+
 std::vector<std::string> SplitCsvLine(const std::string& line) {
     std::vector<std::string> fields;
     std::stringstream stream(line);
@@ -5071,7 +5079,7 @@ const AirwayGraph& GetAirwayGraph() {
     std::istringstream stream(LoadAirwayDataPayload());
     std::string line;
     while (std::getline(stream, line)) {
-        if (line.empty() || line[0] == 'I') {
+        if (IsXPlaneAirwayPayloadNonRecordLine(line)) {
             continue;
         }
 

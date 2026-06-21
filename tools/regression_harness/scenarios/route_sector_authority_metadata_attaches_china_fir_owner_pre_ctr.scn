@@ -1,0 +1,46 @@
+name=Route Sector Authority Metadata Attaches China FIR Owner Pre CTR
+now_seconds=1000
+
+xpilot.connected=true
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.5
+
+plan.departure_icao=UAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.5
+plan.has_departure_coordinates=true
+plan.destination_icao=VHHH
+plan.destination_lat=0.0
+plan.destination_lon=9.5
+plan.has_destination_coordinates=true
+
+controller.entry=callsign=GULF_E_FSS;frequency=133.600;facility=1;actionable=true;atis=false
+
+resolver.route_resolve=true
+resolver.center_feature=label=ZWUQ;tokens=ZWUQ;polygon=-1,0|-1,1|1,1|1,0
+resolver.center_feature=label=ZWWW;tokens=ZWWW;polygon=-1,1|-1,2|1,2|1,1
+resolver.center_feature=label=ZLHW;tokens=ZLHW;polygon=-1,2|-1,3|1,3|1,2
+resolver.center_feature=label=ZLLL;tokens=ZLLL;polygon=-1,3|-1,4|1,4|1,3
+resolver.center_feature=label=ZPKM;tokens=ZPKM;polygon=-1,4|-1,5|1,5|1,4
+resolver.center_feature=label=ZUUU;tokens=ZUUU;polygon=-1,5|-1,6|1,6|1,5
+resolver.center_feature=label=ZUGY;tokens=ZUGY;polygon=-1,6|-1,7|1,7|1,6
+resolver.center_feature=label=ZGGG;tokens=ZGGG;polygon=-1,7|-1,8|1,8|1,7
+resolver.center_feature=label=ZGNN;tokens=ZGNN;polygon=-1,8|-1,9|1,9|1,8
+resolver.center_feature=label=ZGZU;tokens=ZGZU;polygon=-1,9|-1,10|1,10|1,9
+resolver.authority_catalog_fir=DUMMY|Dummy Control|DMY|DUMMY
+resolver.ownership_json={"airspace":[{"group":"ZWWW","owner":["WUS","BJF"]},{"group":"ZLLL","owner":["LZ","BJF"]},{"group":"ZUUU","owner":["CD","BJF","CDA","UUT"]},{"group":"ZUGY","owner":["GY"]},{"group":"ZGGG","owner":["GZ","BJF"]},{"group":"ZGNN","owner":["NN","BJF"]}],"positions":{"WU":{"callsign":"Urumqi Control","frequency":"118.900","pre":["ZWUQ"],"type":"CTR"},"WUS":{"callsign":"Urumqi Control","frequency":"118.975","pre":["ZWWW"],"type":"CTR"},"LZH":{"callsign":"Lanzhou Control","frequency":"134.700","pre":["ZLHW"],"type":"CTR"},"LZ":{"callsign":"Lanzhou Control","frequency":"123.750","pre":["ZLLL"],"type":"CTR"},"KMG":{"callsign":"Kunming Control","frequency":"125.750","pre":["ZPKM"],"type":"CTR"},"CD":{"callsign":"Chengdu Control","frequency":"133.800","pre":["ZUUU"],"type":"CTR"},"GY":{"callsign":"Guiyang Control","frequency":"120.700","pre":["ZUGY"],"type":"CTR"},"GZ":{"callsign":"Guangzhou Control","frequency":"128.350","pre":["ZGGG"],"type":"CTR"},"NN":{"callsign":"Nanning Control","frequency":"132.700","pre":["ZGNN"],"type":"CTR"},"GZZ":{"callsign":"Guangzhou Control","frequency":"132.750","pre":["ZGZU"],"type":"CTR"},"BJF":{"callsign":"Beijing Family"},"CDA":{"callsign":"Chengdu Approach","frequency":"124.850","pre":["ZUUU"],"type":"APP"},"UUT":{"callsign":"Shuangliu Tower","frequency":"123.000","pre":["ZUUU"],"type":"TWR"}}}
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_authority_gaps=<none>
+expect.resolver_route_current_sectors=ZWUQ
+expect.resolver_route_next_sectors=ZWWW,ZLHW,ZLLL,ZPKM,ZUUU,ZUGY,ZGGG,ZGNN,ZGZU
+expect.resolver_route_current_controller_prefixes=ZWUQ:
+expect.resolver_route_current_controller_patterns=ZWUQ:ZWUQ_*_CTR>ZWUQ_CTR
+expect.resolver_route_next_controller_prefixes=ZGGG:,ZGNN:,ZGZU:,ZLHW:,ZLLL:,ZPKM:,ZUGY:,ZUUU:,ZWWW:
+expect.resolver_route_next_controller_patterns=ZGGG:ZGGG_*_CTR>ZGGG_CTR,ZGNN:ZGNN_*_CTR>ZGNN_CTR,ZGZU:ZGZU_*_CTR>ZGZU_CTR,ZLHW:ZLHW_*_CTR>ZLHW_CTR,ZLLL:ZLLL_*_CTR>ZLLL_CTR,ZPKM:ZPKM_*_CTR>ZPKM_CTR,ZUGY:ZUGY_*_CTR>ZUGY_CTR,ZUUU:ZUUU_*_CTR>ZUUU_CTR,ZWWW:ZWWW_*_CTR>ZWWW_CTR
+expect.resolver_enroute_available=false
+expect.resolver_enroute_callsigns=<none>
