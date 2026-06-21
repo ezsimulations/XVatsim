@@ -1,0 +1,42 @@
+name=Route Sector Authority Proof Evidence Records Duplicated ATIS Missing Ownership
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.5
+aircraft.longitude_deg=112.5
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.5
+plan.destination_lon=114.0
+plan.has_destination_coordinates=true
+
+radio.com1_active=118.000
+radio.com2_active=122.800
+
+controller.entry=callsign=HKG_CTR;frequency=126.300;facility=6;actionable=true;atis=false;text_atis=Covering ZZZ_CTR
+
+resolver.route_resolve=true
+resolver.center_feature=label=VHHK;tokens=VHHK;polygon=0,112|1,112|1,113|0,113
+resolver.authority_catalog_fir=VHHK|Hong Kong||VHHK
+resolver.ownership_json={"positions":{"HKG_W_CTR":{"callsign_pattern":"HKG_W_CTR","type":"CTR","frequency":"127.100","callsign":"Hong Kong West Radar"}},"airspace":{"HKGW-AIRSPACE":{"id":"Hong Kong West","group":"VHHK","sectors":[{"points":[["000000","1120000"],["010000","1120000"],["010000","1130000"],["000000","1130000"]]}]}},"ownership":{"airspace":{"HKGW-AIRSPACE":["HKG_W_CTR"]}}}
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_current_sectors=VHHK
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_evidence_visibility=scheduled=1,source=1,evidence=1,dropped=0,compatOnly=1,compatRelevant=0,feed=1/0,route=1/0/1,stage=ARRIVAL_PREP,window=200,deferred=0,routeKeys=1,matchKeys=8,tx=0/0/1/0
+expect.resolver_authority_duplicated_atis_proof_evidence_contains=HKG_CTR:token=ZZZ_CTR:text=1:tokens=COVERING|ZZZ_CTR:aliases=<none>:auth=:src=:kind=:polygon=:allowed=0:routePolygon=0:facility=1:missingOwner=1:oldProof=0:reason=missing-source-ownership
+expect.resolver_authority_preview_summary=authority=brain-evidence,source=1,evidence=1,compatRelevant=0,previewSurvivors=0,previewRejected=2,oldMismatch=0,droppedBeforeBrain=0,compatOnly=1,liveOwned=1
+expect.resolver_authority_preview_decisions_contains=controller:HKG_CTR:<empty>:<empty>:<empty>:<empty>:<empty>:brain-preview-authority-relevance-rejected-no-usable-proof:compatibility-proof-not-survivor:old=0,duplicated-atis-proof:HKG_CTR:<empty>:<empty>:<empty>:ATIS_COVERED:ZZZ_CTR:DUPLICATED_ATIS_DERIVED:brain-preview-authority-relevance-rejected-duplicated-atis-proof:missing-source-ownership:old=0
+expect.resolver_authority_diagnostics=HKG_CTR:missing-source-ownership:DUPLICATED_ATIS_DERIVED:ZZZ_CTR
+expect.resolver_authority_relevant_matches=<none>
+expect.resolver_enroute_available=false
+expect.resolver_enroute_callsigns=<none>

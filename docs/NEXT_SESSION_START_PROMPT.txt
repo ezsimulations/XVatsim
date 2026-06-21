@@ -1,219 +1,42 @@
-We are working in C:\Users\DARRON\OneDrive\Documents\XVatsim.
+Start the next XVatsim session from a clean mental slate. There is no chat history.
 
-Before doing anything, read these files in this order:
+Repo:
+C:\Users\DARRON\OneDrive\Documents\XVatsim
 
-1. docs\NEXT_SESSION_HANDOFF.md
-2. docs\BRAIN_OWNED_RUNTIME_CONTRACT.md
-3. docs\FAA_NASR_FREQUENCY_DECISION_HARDENING_RECAP.md
-4. docs\LIVE_BATTLE_TEST_RELEASE_GATE_CONTRACT.md
-5. docs\BRAIN_OWNED_RUNTIME_AUDIT.md
+First read:
+1. docs/NEXT_SESSION_HANDOFF.md
+2. outputs/source_owned_stable_key_shadow_gate_report.md
 
-Treat docs\BRAIN_OWNED_RUNTIME_CONTRACT.md as the bible.
+Then scan:
+git status --short
+Get-ChildItem outputs | Sort-Object LastWriteTime -Descending | Select-Object -First 30 Name,LastWriteTime,Length
 
-Core rule:
+Last known green state:
+- Step 63 complete.
+- Build passed with:
+  & 'C:\Users\DARRON\Documents\bin\cmake.exe' --build build --config RelWithDebInfo
+- Focused Step 63 scenarios passed: 20.
+- Full saved regression passed: 408 scenarios.
 
-Brain decides. Modules produce facts. UI displays brain-approved facts.
+Current recovery status:
+- CTAF/UNICOM completion bypass is retired as live authority.
+- CTAF/UNICOM compatibility diagnostics are diagnostic-only.
+- Public/header CTAF/UNICOM aliases liveRowEmitted and completionBypassCompatibilityOnly remain present but deprecated.
+- Direct CTAF standby assist is live only behind explicit default-off direct CTAF gate and existing standby assist gate.
+- UNICOM remains excluded from live standby assist.
+- BrainDisplayIntent now has overlay cap, source linkage, phase reuse, plan context, stable key, upstream source-key, source-owned fallback stable key, dry-run parity, and default-off shadow gate diagnostics.
+- Source-owned fallback stable key behavior consumption remains disabled.
+- Step 63 shadow gate defaults OFF. Gate ON runs shadow comparison only.
 
-Current installed X-Plane plugin:
+Do not:
+- broad-clean the dirty worktree;
+- reset or revert user/session changes;
+- restore CTAF/UNICOM live bypass authority;
+- change display/dedupe/completion/reuse/cap behavior unless the user explicitly scopes it;
+- modify transceiver_resolver, route_sector, or HNL unless explicitly scoped.
 
-C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl
+Likely next direction, only if the user asks:
+- Continue stable-key migration after Step 63 with another default-off readiness/product gate.
+- Live source-owned key consumption must remain blocked unless shadow parity is clean, plan context exists, and all CTAF/standby/display guardrails pass.
 
-Installed SHA256:
-
-037430F5BB2BFF346AB8E8621CF9CE30D5E78625E1FD518CB18A09382F4D9F72
-
-Installed file timestamp:
-
-6/7/2026 4:14:27 PM local time
-
-Last verified state:
-
-- XVatsim V1.0.4 is the current freeware Windows/X-Plane 12/xPilot release.
-- Release plugin and harness build passed.
-- Full regression harness passed: 263 / 263.
-- Installed X-Plane plugin is intentionally unchanged with the hash above so
-  Darron can test the public V1.0.4 update notification.
-- Packaged V1.0.4 plugin/runtime SHA256:
-  58BC6C9AAAB3CB1E4DDFEE3DAF16BBD7655C3E670A3EE1C78BB0C28F3FECD07B.
-- Freeware package:
-  releases\XVatsim_1.0.4_Freeware_Windows_XP12.zip
-- Package SHA256:
-  7D215C941192E85133FD2CE69B6F87E808C21F5DDB53ED48B7B31A0950A5CF39.
-- Package size:
-  1409597 bytes.
-- Public update manifest:
-  docs\xvatsim_update.json
-
-Latest source closeout included in the packaged V1.0.4 plugin:
-
-- Top-right overlay version chip shows current/unknown/update state.
-- Update available uses amber version/UPDATE rotation and a dismissible notice
-  panel instead of clipped footer text.
-- One automatic update check runs per simulator/plugin session.
-- Weighted brain-owned terminal controller relevance evidence prevents one
-  string mismatch from hiding a controller when multiple source families say yes.
-- FAA/NASR frequency facts are included as low-weight context only; FAA misses
-  are neutral for VATSIM pseudo-frequency cases.
-- Controller relevance diagnostics report votes, scores, neutral facts,
-  non-FAA evidence families, confidence, and final display/hide action.
-- The overlay and plugin menu show the installed version.
-
-Previous historical closeout included in earlier installed plugin:
-
-- Live UPS2183 KONT -> KDFW exposed a display-contract bug with SCT_APP.
-- Controller Relevance correctly accepted SCT_APP 128.050 as CURRENT_POLYGON.
-- The final non-center display row lost that accepted-completion relation and
-  old Engineer 1/2 next/online/standby display assumptions made the row look
-  orange/standby.
-- Source was changed so accepted-completion relation facts flow into Brain
-  Display Intent, radio tuning changes invalidate stale relevance reuse,
-  standby assist refreshes tuned state from radios, and overlay tone comes only
-  from final displayRelation.
-- Controller row text is now limited to Active and Standby.
-- NEXT, ONLINE, sector ACTIVE, and OFFLINE text badges are not Engineer 3
-  controller-row display states.
-- Green/orange is color-only relation truth from the brain: current polygon is
-  green; next/arrival-prep is orange.
-- Harness build passed.
-- New SCT display scenario passed.
-- Full regression harness passed: 251 / 251.
-- Release plugin build/install was later performed into X-Plane.
-- Installed XPL timestamp/hash were verified after Battle Test #1:
-  5/22/2026 9:43:18 PM local,
-  SHA256 81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A.
-
-Successful Battle Test #1:
-
-- Flight: UPS325 KSDF -> MMMX.
-- Loaded the VATSIM flight plan at KSDF.
-- MEM Center was identified online and displayed orange while it was in
-  polygon2 / NEXT_POLYGON.
-- Crossing into polygon2 made MEM Center green as CURRENT_POLYGON.
-- ATL Center then displayed orange while it was in polygon3 / NEXT_POLYGON.
-- Crossing into polygon3 made ATL Center green as CURRENT_POLYGON.
-- Dialing a controller frequency correctly displayed Active for the COM1 active
-  frequency.
-- The COM1 standby frequency correctly displayed Standby.
-- At the 200 NM arrival wake, the UI correctly displayed no CTAF/UNICOM
-  122.800.
-- Logs confirmed healthy under-the-hood behavior:
-  route resolved exactly with no authority gaps, MEM/ATL candidate-completion
-  relations transitioned correctly, irrelevant terminal candidates were
-  rejected/hidden, no heavy fallback took over, old authority remained
-  quarantined, and the plugin loaded/enabled/disabled cleanly.
-- This is Battle Test #1 PASS for installed hash
-  81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A.
-
-Successful Battle Test #2:
-
-- Date: 2026-05-25.
-- Flight: UA1224 / UAL1224 KLAX -> KLAS.
-- Loaded the VATSIM flight plan for KLAX -> KLAS.
-- Route diagnostic resolved exactly:
-  `KLAX->KLAS rawRoute="ORCKA5 MISEN RNDRZ4"` and
-  `ROUTE 3 pts 1/0 sectors exact`.
-- Installed XPL timestamp/hash were verified:
-  5/22/2026 9:43:18 PM local,
-  SHA256 81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A.
-- XVatsim correctly identified and displayed LAX_S_TWR 120.950 as
-  CURRENT_POLYGON / departure-airport-match.
-- XVatsim correctly identified and displayed the two departure TRACON
-  facilities:
-  LAX_S_DEP 124.300 as departure-terminal-owner-match:LAX_DEP,
-  and SCT_APP 128.050 as departure-terminal-owner-match:SCT_APP.
-- XVatsim correctly identified and displayed LAX Center:
-  LAX_251_CTR / LAX_25_CTR 126.525 as CURRENT_POLYGON /
-  center-current-polygon-match.
-- Irrelevant candidates were rejected/hidden with reasons:
-  SAN_W_APP as terminal-owner mismatch, OAK_62_CTR as not route-polygon
-  matched, and unrelated SAN local rows as phase/airport filtered.
-- Logs showed healthy under-the-hood behavior:
-  route resolved exactly with no authority gaps, candidate completions were
-  logged, accepted rows were displayed from brain-approved completion facts,
-  irrelevant candidates were hidden with reasons, old authority remained
-  quarantined, no heavy fallback took over, steady-state refreshes were light,
-  and the plugin loaded/enabled/disabled cleanly.
-- This is Battle Test #2 PASS for installed hash
-  81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A.
-
-Successful Battle Test #3:
-
-- Date: 2026-05-25.
-- Flight: UAL1045 KSFO -> KGEG.
-- Loaded the VATSIM flight plan for KSFO -> KGEG.
-- Route diagnostic resolved exactly:
-  `KSFO->KGEG rawRoute="TRUKN2 DEDHD KNZIE/N0451F350 BREWW KS12I GEG"` and
-  `ROUTE 7 pts 1/1 sectors exact`.
-- Installed XPL timestamp/hash were verified:
-  5/22/2026 9:43:18 PM local,
-  SHA256 81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A.
-- XVatsim correctly identified and displayed SFO_TWR 120.500 as
-  CURRENT_POLYGON / departure-airport-match.
-- XVatsim correctly identified and displayed Seattle Center:
-  SEA_16_CTR 135.450 as NEXT_POLYGON / center-next-polygon-match while KZOA
-  was current and KZSE was next.
-- Crossing into KZSE made SEA_16_CTR 135.450 CURRENT_POLYGON /
-  center-current-polygon-match.
-- At the 200 NM arrival wake, the UI properly displayed CTAF.
-- Irrelevant candidates were rejected/hidden with reasons:
-  PDX local rows as phase/airport filtered, and BOI/BZN/EUG/SLC APP_DEP rows
-  as arrival terminal-owner mismatches against GEG_APP.
-- Logs showed healthy under-the-hood behavior:
-  route resolved exactly with no authority gaps, candidate completions were
-  logged, accepted rows were displayed from brain-approved completion facts,
-  irrelevant candidates were hidden with reasons, old authority remained
-  quarantined, no heavy fallback took over, steady-state refreshes were light,
-  and the plugin loaded/enabled/disabled cleanly.
-- This is Battle Test #3 PASS for installed hash
-  81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A.
-
-What just happened:
-
-- The FAA/NASR `FRQ.csv` airport-frequency module was added as a removable
-  worker fact source.
-- The brain now carries departure/arrival airport-frequency facts and feeds
-  them into Controller Relevance.
-- Controller Relevance now uses endpoint FAA frequency evidence in decisions,
-  not only diagnostics.
-- KONT/KLAX SoCal ambiguity is covered: KONT APP/DEP frequency 127.000 is
-  accepted, while KLAX SoCal frequency 124.300 is rejected for KONT when KONT
-  FAA APP/DEP facts are present.
-- SimAware terminal/airport text remains useful but is no longer allowed to be
-  the only proof when exact FAA endpoint role facts contradict it.
-
-Important live boundary:
-
-- The decision path and parser/cache worker are implemented and harness-proven.
-- The live FAA/NASR source-acquisition path still needs a future approved gate.
-- Do not claim a live flight has proven FAA/NASR disambiguation until live
-  diagnostics show the departure/arrival FAA frequency cache is populated.
-
-Repo cleanliness rules:
-
-- No code requiring decisions goes into the plugin.
-- The plugin is the X-Plane shell only.
-- Decision code goes in the brain module.
-- Modules are workers only.
-- Modules do not talk to each other.
-- All communication goes through the brain.
-- If a new fact source is needed, prefer a new removable module with one clear
-  job instead of patching unrelated code.
-- UI display color comes from the final brain-approved display relation, not
-  from tuning, online, standby, or module facts.
-- UI text for controller rows is only Active or Standby. Anything like NEXT,
-  ONLINE, sector ACTIVE, or OFFLINE is old Engineer 1/2 display thinking and
-  must not be reintroduced.
-
-Before any source-code edit:
-
-- Present a Contract Gate.
-- List files, ownership boundary, whether the plugin is touched, Version 1
-  reason, bad code to delete/replace, and regression proof.
-- Wait for explicit approval.
-
-Live logs to watch:
-
-C:\X-Plane 12\Resources\plugins\XVatsim\logs\xvatsim_diagnostics.log
-C:\X-Plane 12\Log.txt
-
-Do not start broad architecture cleanup unless Darron explicitly asks for it.
+When the user gives the next step, implement narrowly, add focused scenarios, build, run focused scenarios, run full saved regression, and write the required report under outputs/.

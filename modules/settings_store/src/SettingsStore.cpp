@@ -181,6 +181,17 @@ bool TryParseBool(const std::string& value, bool* outValue) {
     return false;
 }
 
+std::string NormalizeSourceOwnedLiveConsumptionSettingsSource(
+    const std::string& value) {
+    const auto normalizedValue = NormalizeToken(value);
+    if (normalizedValue == "settings-store" ||
+        normalizedValue == "settings_store" ||
+        normalizedValue == "settingsstore") {
+        return "settings-store";
+    }
+    return "unknown";
+}
+
 float ClampFloat(float value, float minimumValue, float maximumValue, float fallbackValue) {
     if (!std::isfinite(value)) {
         return fallbackValue;
@@ -190,6 +201,38 @@ float ClampFloat(float value, float minimumValue, float maximumValue, float fall
 }
 
 PluginSettings NormalizeSettings(PluginSettings settings) {
+    if (settings.directCtafStandbyAssistGateSource.empty()) {
+        settings.directCtafStandbyAssistGateSource = "default";
+    }
+    if (settings.directCtafStandbyAssistGateSource != "settings-store" &&
+        settings.directCtafStandbyAssistGateSource != "default" &&
+        settings.directCtafStandbyAssistGateSource != "harness" &&
+        settings.directCtafStandbyAssistGateSource != "unknown") {
+        settings.directCtafStandbyAssistGateSource = "unknown";
+    }
+    if (settings.sourceOwnedFallbackStableKeyLiveConsumptionGateSource
+            .empty()) {
+        settings.sourceOwnedFallbackStableKeyLiveConsumptionGateSource =
+            settings.sourceOwnedFallbackStableKeyLiveConsumptionEnabled
+                ? "unknown"
+                : "default";
+    }
+    if (settings.sourceOwnedFallbackStableKeyLiveConsumptionGateSource !=
+            "settings-store" &&
+        settings.sourceOwnedFallbackStableKeyLiveConsumptionGateSource !=
+            "default" &&
+        settings.sourceOwnedFallbackStableKeyLiveConsumptionGateSource !=
+            "unknown") {
+        settings.sourceOwnedFallbackStableKeyLiveConsumptionGateSource =
+            "unknown";
+    }
+    if (settings.sourceOwnedFallbackStableKeyLiveConsumptionEnabled &&
+        settings.sourceOwnedFallbackStableKeyLiveConsumptionGateSource ==
+            "default") {
+        settings.sourceOwnedFallbackStableKeyLiveConsumptionGateSource =
+            "unknown";
+    }
+
     settings.overlayOpacity = ClampFloat(
         settings.overlayOpacity,
         kMinOverlayOpacity,
@@ -257,6 +300,7 @@ PluginSettings SettingsStore::Load() const {
     bool hasWindowTop = false;
     int windowLeft = 0;
     int windowTop = 0;
+    bool sourceOwnedLiveConsumptionSourceLoaded = false;
 
     std::string line;
     int lineCount = 0;
@@ -281,6 +325,39 @@ PluginSettings SettingsStore::Load() const {
 
         if (key == "standby_assist") {
             TryParseBool(value, &settings.standbyAssistEnabled);
+            continue;
+        }
+
+        if (key == "direct_ctaf_standby_assist" ||
+            key == "standby_assist_direct_ctaf") {
+            TryParseBool(value, &settings.directCtafStandbyAssistEnabled);
+            settings.directCtafStandbyAssistGateSource = "settings-store";
+            continue;
+        }
+
+        if (key == "source_owned_fallback_stable_key_live_consumption" ||
+            key ==
+                "source_owned_fallback_stable_key_live_consumption_enabled") {
+            if (TryParseBool(
+                    value,
+                    &settings
+                         .sourceOwnedFallbackStableKeyLiveConsumptionEnabled)) {
+                if (!sourceOwnedLiveConsumptionSourceLoaded) {
+                    settings
+                        .sourceOwnedFallbackStableKeyLiveConsumptionGateSource =
+                        "settings-store";
+                }
+            }
+            continue;
+        }
+
+        if (key ==
+                "source_owned_fallback_stable_key_live_consumption_source" ||
+            key ==
+                "source_owned_fallback_stable_key_live_consumption_gate_source") {
+            sourceOwnedLiveConsumptionSourceLoaded = true;
+            settings.sourceOwnedFallbackStableKeyLiveConsumptionGateSource =
+                NormalizeSourceOwnedLiveConsumptionSettingsSource(value);
             continue;
         }
 
@@ -355,6 +432,26 @@ bool SettingsStore::Save(const PluginSettings& settings) const {
         output << "display_mode=" << SerializeDisplayMode(normalizedSettings.displayMode) << "\n";
         output << "standby_assist="
                << (normalizedSettings.standbyAssistEnabled ? "true" : "false") << "\n";
+        output << "direct_ctaf_standby_assist="
+               << (normalizedSettings.directCtafStandbyAssistEnabled ? "true" : "false")
+               << "\n";
+        if (normalizedSettings
+                .sourceOwnedFallbackStableKeyLiveConsumptionEnabled ||
+            normalizedSettings
+                    .sourceOwnedFallbackStableKeyLiveConsumptionGateSource !=
+                "default") {
+            output << "source_owned_fallback_stable_key_live_consumption="
+                   << (normalizedSettings
+                               .sourceOwnedFallbackStableKeyLiveConsumptionEnabled
+                           ? "true"
+                           : "false")
+                   << "\n";
+            output
+                << "source_owned_fallback_stable_key_live_consumption_source="
+                << normalizedSettings
+                       .sourceOwnedFallbackStableKeyLiveConsumptionGateSource
+                << "\n";
+        }
         output << std::fixed << std::setprecision(2);
         output << "overlay_opacity=" << normalizedSettings.overlayOpacity << "\n";
         output << "overlay_scale=" << normalizedSettings.overlayScale << "\n";

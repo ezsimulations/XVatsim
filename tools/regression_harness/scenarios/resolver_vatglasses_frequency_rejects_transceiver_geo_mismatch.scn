@@ -39,6 +39,9 @@ expect.resolver_route_current_sectors=VHHK
 expect.resolver_authority_relevance_available=true
 expect.resolver_authority_status=AUTHORITY candidates=1 authorities=2 polygons=2 routeKeys=1 active=0 relevant=0 diagnostics=1 activationGaps=0
 expect.resolver_authority_diagnostics=HKG_W_CTR:transceiver-geo-mismatch:VATGLASSES:TRW:VATGLASSES:TRW-AIRSPACE_0:distance=4397nm
+expect.resolver_authority_active_polygon_evidence_contains=HKG_W_CTR:VATGLASSES:TRW:VATGLASSES:TRW-AIRSPACE_0:key=TRW-AIRSPACE_0:src=VATGLASSES:kind=center:proof=VATGLASSES_DYNAMIC_OWNER:active=1:routeKey=1:routeCompat=1:geoCompat=0:oldRelevant=0:reason=transceiver-geo-mismatch
+expect.resolver_authority_preview_summary=authority=brain-evidence,source=1,evidence=1,compatRelevant=0,previewSurvivors=0,previewRejected=3,oldMismatch=0,droppedBeforeBrain=0,compatOnly=1,liveOwned=1
+expect.resolver_authority_preview_decisions_contains=HKG_W_CTR:VATGLASSES:TRW:VATGLASSES:TRW-AIRSPACE_0:TRW-AIRSPACE_0:HKG_*_CTR:VATGLASSES_DYNAMIC_OWNER:brain-preview-authority-relevance-rejected-transceiver-geo-mismatch:transceiver-geo-mismatch:old=0,controller:HKG_W_CTR:<empty>:<empty>:<empty>:<empty>:<empty>:brain-preview-authority-relevance-rejected-route-scope:authority-decision-not-relevant:old=0,transceiver-proof:HKG_W_CTR:<empty>:<empty>:<empty>:<empty>:TRANSCEIVER_GEO_ROUTE:brain-preview-authority-relevance-rejected-transceiver-proof:blocked-by-direct-active-proof:old=0
 expect.resolver_authority_relevant_matches=<none>
 expect.resolver_enroute_available=false
 expect.resolver_enroute_callsigns=<none>

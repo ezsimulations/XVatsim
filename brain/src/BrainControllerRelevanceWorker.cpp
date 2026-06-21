@@ -909,6 +909,379 @@ const RelevantAuthoritySnapshot* FindRelevantSourceAuthority(
     return nullptr;
 }
 
+constexpr const char* kAuthorityRelevancePreviewSurvivor =
+    "brain-preview-authority-relevance-survivor";
+constexpr const char* kAuthorityRelevancePreviewRejectedNonActionable =
+    "brain-preview-authority-relevance-rejected-non-actionable";
+constexpr const char* kAuthorityRelevancePreviewRejectedAtis =
+    "brain-preview-authority-relevance-rejected-atis";
+constexpr const char* kAuthorityRelevancePreviewRejectedGuardFrequency =
+    "brain-preview-authority-relevance-rejected-guard-frequency";
+constexpr const char* kAuthorityRelevancePreviewRejectedNotAuthorityCandidate =
+    "brain-preview-authority-relevance-rejected-not-authority-candidate";
+constexpr const char* kAuthorityRelevancePreviewRejectedUnmappedController =
+    "brain-preview-authority-relevance-rejected-unmapped-controller";
+constexpr const char* kAuthorityRelevancePreviewRejectedRouteScope =
+    "brain-preview-authority-relevance-rejected-route-scope";
+constexpr const char* kAuthorityRelevancePreviewRejectedActiveNotRelevant =
+    "brain-preview-authority-relevance-rejected-active-not-relevant";
+constexpr const char* kAuthorityRelevancePreviewRejectedTransceiverGeoMismatch =
+    "brain-preview-authority-relevance-rejected-transceiver-geo-mismatch";
+constexpr const char* kAuthorityRelevancePreviewRejectedTransceiverProof =
+    "brain-preview-authority-relevance-rejected-transceiver-proof";
+constexpr const char* kAuthorityRelevancePreviewRejectedDuplicatedAtisProof =
+    "brain-preview-authority-relevance-rejected-duplicated-atis-proof";
+constexpr const char* kAuthorityRelevancePreviewRejectedNoUsableProof =
+    "brain-preview-authority-relevance-rejected-no-usable-proof";
+
+bool HasEvidenceReason(
+    const std::vector<std::string>& reasons,
+    const std::string& reason) {
+    return std::find(reasons.begin(), reasons.end(), reason) != reasons.end();
+}
+
+bool RelevantAuthorityMatchesActiveEvidence(
+    const RelevantAuthoritySnapshot& relevant,
+    const AuthorityPolygonEvidenceSnapshot& activeEvidence) {
+    return relevant.callsign == activeEvidence.callsign &&
+           relevant.authorityId == activeEvidence.authorityId &&
+           relevant.polygonId == activeEvidence.polygonId &&
+           relevant.polygonKey == activeEvidence.polygonKey &&
+           relevant.matchedPattern == activeEvidence.matchedPattern;
+}
+
+bool PreviewDecisionMatchesRelevantAuthority(
+    const BrainAuthorityRelevancePreviewDecision& decision,
+    const RelevantAuthoritySnapshot& relevant) {
+    return decision.callsign == relevant.callsign &&
+           decision.authorityId == relevant.authorityId &&
+           decision.polygonId == relevant.polygonId &&
+           decision.polygonKey == relevant.polygonKey &&
+           decision.matchedPattern == relevant.matchedPattern;
+}
+
+bool HasAuthorityRelevanceEvidenceLedger(
+    const AuthorityRelevanceSnapshot& snapshot) {
+    return snapshot.evidence.source.scheduled ||
+           snapshot.evidence.source.sourceControllerCountKnown ||
+           !snapshot.evidence.controllerEvidence.empty() ||
+           !snapshot.evidence.polygonEvidence.empty() ||
+           !snapshot.evidence.activePolygonEvidence.empty() ||
+           !snapshot.evidence.transceiverRouteProofEvidence.empty() ||
+           !snapshot.evidence.duplicatedAtisProofEvidence.empty();
+}
+
+const std::vector<RelevantAuthoritySnapshot>& CompatibilityRelevantAuthorities(
+    const AuthorityRelevanceSnapshot& snapshot) {
+    if (snapshot.liveRelevantAuthoritiesBrainOwned ||
+        !snapshot.compatibilityRelevantAuthorities.empty()) {
+        return snapshot.compatibilityRelevantAuthorities;
+    }
+    return snapshot.relevantAuthorities;
+}
+
+bool CallsignHasRelevantAuthority(
+    const AuthorityRelevanceSnapshot& snapshot,
+    const std::string& callsign) {
+    const auto normalizedCallsign = NormalizeCallsign(callsign);
+    const auto& compatibilityRelevantAuthorities =
+        CompatibilityRelevantAuthorities(snapshot);
+    return std::any_of(
+        compatibilityRelevantAuthorities.begin(),
+        compatibilityRelevantAuthorities.end(),
+        [&](const auto& relevant) {
+            return NormalizeCallsign(relevant.callsign) == normalizedCallsign;
+        });
+}
+
+BrainAuthorityRelevancePreviewDecision BuildControllerAuthorityRelevanceRejection(
+    const AuthorityControllerEvidenceSnapshot& controller,
+    const std::string& decision,
+    const std::string& reason) {
+    BrainAuthorityRelevancePreviewDecision previewDecision;
+    previewDecision.evidenceKind = "controller";
+    previewDecision.callsign = controller.callsign;
+    previewDecision.decision = decision;
+    previewDecision.reason = reason;
+    return previewDecision;
+}
+
+BrainAuthorityRelevancePreviewDecision BuildPolygonAuthorityRelevanceDecision(
+    const std::string& evidenceKind,
+    const AuthorityPolygonEvidenceSnapshot& polygon,
+    const std::string& decision,
+    const std::string& reason) {
+    BrainAuthorityRelevancePreviewDecision previewDecision;
+    previewDecision.evidenceKind = evidenceKind;
+    previewDecision.callsign = polygon.callsign;
+    previewDecision.authorityId = polygon.authorityId;
+    previewDecision.polygonId = polygon.polygonId;
+    previewDecision.polygonKey = polygon.polygonKey;
+    previewDecision.matchedPattern = polygon.matchedPattern;
+    previewDecision.proofSource = polygon.activeProofSource;
+    previewDecision.decision = decision;
+    previewDecision.reason = reason;
+    return previewDecision;
+}
+
+BrainAuthorityRelevancePreviewDecision BuildTransceiverProofRejection(
+    const AuthorityTransceiverRouteProofEvidenceSnapshot& proof) {
+    BrainAuthorityRelevancePreviewDecision previewDecision;
+    previewDecision.evidenceKind = "transceiver-proof";
+    previewDecision.callsign = proof.callsign;
+    previewDecision.polygonId = proof.polygonId;
+    previewDecision.polygonKey = proof.polygonKey;
+    previewDecision.proofSource = "TRANSCEIVER_GEO_ROUTE";
+    previewDecision.decision =
+        kAuthorityRelevancePreviewRejectedTransceiverProof;
+    previewDecision.reason =
+        proof.proofRejectionReason.empty()
+            ? "transceiver-proof-rejected"
+            : proof.proofRejectionReason;
+    return previewDecision;
+}
+
+BrainAuthorityRelevancePreviewDecision BuildDuplicatedAtisProofRejection(
+    const AuthorityDuplicatedAtisProofEvidenceSnapshot& proof) {
+    BrainAuthorityRelevancePreviewDecision previewDecision;
+    previewDecision.evidenceKind = "duplicated-atis-proof";
+    previewDecision.callsign = proof.callsign;
+    previewDecision.authorityId = proof.authorityId;
+    previewDecision.polygonKey = proof.polygonKey;
+    previewDecision.matchedPattern =
+        proof.coveredToken.empty() ? std::string{} : "ATIS_COVERED:" + proof.coveredToken;
+    previewDecision.proofSource = "DUPLICATED_ATIS_DERIVED";
+    previewDecision.decision =
+        kAuthorityRelevancePreviewRejectedDuplicatedAtisProof;
+    previewDecision.reason =
+        proof.proofRejectionReason.empty()
+            ? "duplicated-atis-proof-rejected"
+            : proof.proofRejectionReason;
+    return previewDecision;
+}
+
+std::string ControllerAuthorityRelevanceRejectDecision(
+    const AuthorityControllerEvidenceSnapshot& controller,
+    std::string* outReason) {
+    if (!controller.actionable) {
+        if (outReason != nullptr) {
+            *outReason = "controller-not-actionable";
+        }
+        return kAuthorityRelevancePreviewRejectedNonActionable;
+    }
+    if (controller.atis) {
+        if (outReason != nullptr) {
+            *outReason = "controller-atis";
+        }
+        return kAuthorityRelevancePreviewRejectedAtis;
+    }
+    if (controller.guardFrequency) {
+        if (outReason != nullptr) {
+            *outReason = "guard-frequency";
+        }
+        return kAuthorityRelevancePreviewRejectedGuardFrequency;
+    }
+    if (HasEvidenceReason(controller.evidenceReasons, "not-authority-candidate")) {
+        if (outReason != nullptr) {
+            *outReason = "not-authority-candidate";
+        }
+        return kAuthorityRelevancePreviewRejectedNotAuthorityCandidate;
+    }
+    if (HasEvidenceReason(controller.evidenceReasons, "unmapped-controller")) {
+        if (outReason != nullptr) {
+            *outReason = "unmapped-controller";
+        }
+        return kAuthorityRelevancePreviewRejectedUnmappedController;
+    }
+    if (HasEvidenceReason(
+            controller.evidenceReasons,
+            "no-route-scoped-authority-decision") ||
+        HasEvidenceReason(
+            controller.evidenceReasons,
+            "airport-local-no-authority-decision")) {
+        if (outReason != nullptr) {
+            *outReason = "no-route-scoped-authority-decision";
+        }
+        return kAuthorityRelevancePreviewRejectedRouteScope;
+    }
+    if (HasEvidenceReason(
+            controller.evidenceReasons,
+            "transceiver-station-pending-compatibility-proof") ||
+        HasEvidenceReason(
+            controller.evidenceReasons,
+            "duplicated-atis-pending-compatibility-proof")) {
+        if (outReason != nullptr) {
+            *outReason = "compatibility-proof-not-survivor";
+        }
+        return kAuthorityRelevancePreviewRejectedNoUsableProof;
+    }
+    if (!controller.authorityDecisions.empty()) {
+        if (outReason != nullptr) {
+            *outReason = "authority-decision-not-relevant";
+        }
+        return kAuthorityRelevancePreviewRejectedRouteScope;
+    }
+    if (outReason != nullptr) {
+        *outReason = "no-usable-proof";
+    }
+    return kAuthorityRelevancePreviewRejectedNoUsableProof;
+}
+
+std::string ActivePolygonAuthorityRelevanceRejectDecision(
+    const AuthorityPolygonEvidenceSnapshot& activePolygon,
+    std::string* outReason) {
+    const auto reason =
+        activePolygon.compatibilityFilteredReason.empty()
+            ? std::string("active-not-relevant")
+            : activePolygon.compatibilityFilteredReason;
+    if (outReason != nullptr) {
+        *outReason = reason;
+    }
+    if (reason == "transceiver-geo-mismatch" ||
+        !activePolygon.geometryCompatible) {
+        return kAuthorityRelevancePreviewRejectedTransceiverGeoMismatch;
+    }
+    if (reason == "route-key-filtered" ||
+        (!activePolygon.routeKeyCompatible &&
+         activePolygon.compatibilityFilteredReason != "active-not-relevant")) {
+        return kAuthorityRelevancePreviewRejectedRouteScope;
+    }
+    if (reason == "duplicate-active-key") {
+        return kAuthorityRelevancePreviewRejectedNoUsableProof;
+    }
+    return kAuthorityRelevancePreviewRejectedActiveNotRelevant;
+}
+
+BrainAuthorityRelevanceDecisionPreview
+BuildBrainAuthorityRelevanceDecisionPreviewInternal(
+    const AuthorityRelevanceSnapshot& authorityRelevance) {
+    BrainAuthorityRelevanceDecisionPreview preview;
+    const auto& compatibilityRelevantAuthorities =
+        CompatibilityRelevantAuthorities(authorityRelevance);
+    preview.summary.authority =
+        authorityRelevance.liveRelevantAuthoritiesBrainOwned
+            ? "brain-evidence"
+            : "preview-only";
+    preview.summary.sourceControllerCount =
+        authorityRelevance.evidence.source.sourceControllerCount;
+    preview.summary.evidenceControllerCount =
+        static_cast<int>(authorityRelevance.evidence.controllerEvidence.size());
+    preview.summary.compatibilityRelevantAuthorityCount =
+        static_cast<int>(compatibilityRelevantAuthorities.size());
+    preview.summary.droppedBeforeBrainControllers =
+        authorityRelevance.droppedBeforeBrainControllers;
+    preview.summary.relevantAuthoritiesCompatibilityOnly =
+        authorityRelevance.relevantAuthoritiesCompatibilityOnly;
+    preview.summary.liveRelevantAuthoritiesBrainOwned =
+        authorityRelevance.liveRelevantAuthoritiesBrainOwned;
+
+    for (const auto& controller :
+         authorityRelevance.evidence.controllerEvidence) {
+        if (CallsignHasRelevantAuthority(authorityRelevance, controller.callsign)) {
+            continue;
+        }
+        std::string reason;
+        const auto decision =
+            ControllerAuthorityRelevanceRejectDecision(controller, &reason);
+        preview.decisions.push_back(
+            BuildControllerAuthorityRelevanceRejection(
+                controller,
+                decision,
+                reason));
+    }
+
+    for (const auto& polygon : authorityRelevance.evidence.polygonEvidence) {
+        if (polygon.oldScopedOutReason.empty() ||
+            polygon.oldCompatibilityRelevantSurvivor) {
+            continue;
+        }
+        preview.decisions.push_back(
+            BuildPolygonAuthorityRelevanceDecision(
+                "route-scope-polygon",
+                polygon,
+                kAuthorityRelevancePreviewRejectedRouteScope,
+                polygon.oldScopedOutReason));
+    }
+
+    for (const auto& activePolygon :
+         authorityRelevance.evidence.activePolygonEvidence) {
+        if (activePolygon.oldCompatibilityRelevantSurvivor) {
+            auto decision = BuildPolygonAuthorityRelevanceDecision(
+                "active-polygon",
+                activePolygon,
+                kAuthorityRelevancePreviewSurvivor,
+                "old-relevant-authority");
+            decision.matchesOldSurvivor =
+                std::any_of(
+                    compatibilityRelevantAuthorities.begin(),
+                    compatibilityRelevantAuthorities.end(),
+                    [&](const auto& relevant) {
+                        return RelevantAuthorityMatchesActiveEvidence(
+                            relevant,
+                            activePolygon);
+                    });
+            preview.decisions.push_back(std::move(decision));
+            continue;
+        }
+
+        std::string reason;
+        const auto decision =
+            ActivePolygonAuthorityRelevanceRejectDecision(activePolygon, &reason);
+        preview.decisions.push_back(
+            BuildPolygonAuthorityRelevanceDecision(
+                "active-polygon",
+                activePolygon,
+                decision,
+                reason));
+    }
+
+    for (const auto& proof :
+         authorityRelevance.evidence.transceiverRouteProofEvidence) {
+        if (proof.oldProofSurvivor) {
+            continue;
+        }
+        preview.decisions.push_back(BuildTransceiverProofRejection(proof));
+    }
+
+    for (const auto& proof :
+         authorityRelevance.evidence.duplicatedAtisProofEvidence) {
+        if (proof.oldProofSurvivor) {
+            continue;
+        }
+        preview.decisions.push_back(BuildDuplicatedAtisProofRejection(proof));
+    }
+
+    for (const auto& decision : preview.decisions) {
+        if (decision.decision == kAuthorityRelevancePreviewSurvivor) {
+            ++preview.summary.previewSurvivorCount;
+        } else {
+            ++preview.summary.previewRejectedCount;
+        }
+    }
+
+    for (const auto& relevant : compatibilityRelevantAuthorities) {
+        const auto matched = std::any_of(
+            preview.decisions.begin(),
+            preview.decisions.end(),
+            [&](const auto& decision) {
+                return decision.decision == kAuthorityRelevancePreviewSurvivor &&
+                       PreviewDecisionMatchesRelevantAuthority(decision, relevant);
+            });
+        if (!matched) {
+            ++preview.summary.oldSurvivorMismatchCount;
+        }
+    }
+
+    for (const auto& decision : preview.decisions) {
+        if (decision.decision == kAuthorityRelevancePreviewSurvivor &&
+            !decision.matchesOldSurvivor) {
+            ++preview.summary.oldSurvivorMismatchCount;
+        }
+    }
+
+    return preview;
+}
+
 TerminalDecisionEvidence BuildTerminalDecisionEvidence(
     const BrainControllerRelevanceWorkerInput& input,
     const RadioReachableControllerCandidate& candidate,
@@ -1037,6 +1410,55 @@ void AppendSelectedCenterStations(
 
 }  // namespace
 
+BrainAuthorityRelevanceDecisionPreview
+BuildBrainAuthorityRelevanceDecisionPreview(
+    const AuthorityRelevanceSnapshot& authorityRelevance) {
+    return BuildBrainAuthorityRelevanceDecisionPreviewInternal(authorityRelevance);
+}
+
+AuthorityRelevanceSnapshot BuildBrainOwnedAuthorityRelevanceSnapshot(
+    AuthorityRelevanceSnapshot authorityRelevance,
+    const BrainAuthorityRelevanceDecisionPreview& preview) {
+    if (!HasAuthorityRelevanceEvidenceLedger(authorityRelevance)) {
+        return authorityRelevance;
+    }
+
+    // Preserve route_sector's old survivor construction strictly as
+    // compatibility data. From this point on, relevantAuthorities is the
+    // brain-owned live projection built from evidence decisions.
+    if (!authorityRelevance.liveRelevantAuthoritiesBrainOwned &&
+        authorityRelevance.compatibilityRelevantAuthorities.empty()) {
+        authorityRelevance.compatibilityRelevantAuthorities =
+            authorityRelevance.relevantAuthorities;
+    }
+
+    const auto compatibilityRelevantAuthorities =
+        authorityRelevance.compatibilityRelevantAuthorities;
+    authorityRelevance.relevantAuthorities.clear();
+    authorityRelevance.relevantAuthorities.reserve(
+        compatibilityRelevantAuthorities.size());
+
+    for (const auto& relevant : compatibilityRelevantAuthorities) {
+        const auto acceptedByBrain = std::any_of(
+            preview.decisions.begin(),
+            preview.decisions.end(),
+            [&](const auto& decision) {
+                return decision.decision == kAuthorityRelevancePreviewSurvivor &&
+                       PreviewDecisionMatchesRelevantAuthority(decision, relevant);
+            });
+        if (acceptedByBrain) {
+            authorityRelevance.relevantAuthorities.push_back(relevant);
+        }
+    }
+
+    authorityRelevance.compatibilityRelevantAuthorityCount =
+        static_cast<int>(
+            authorityRelevance.compatibilityRelevantAuthorities.size());
+    authorityRelevance.liveRelevantAuthoritiesBrainOwned = true;
+    authorityRelevance.relevantAuthoritiesCompatibilityOnly = true;
+    return authorityRelevance;
+}
+
 BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
     const BrainControllerRelevanceWorkerInput& input) {
     BrainControllerRelevanceWorkerOutput output;
@@ -1081,6 +1503,11 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
         station.sectorActive = role == StationRole::Center && station.tuned;
         station.hasRouteEntryDistance = candidate.hasDistanceNm;
         station.routeEntryDistanceNm = candidate.distanceNm;
+        station.sourceEvidenceId =
+            "radio-reachable:" + CandidateStableKey(candidate);
+        station.sourceEvidenceType = "radio-reachable-controller";
+        station.sourceEvidenceDomain = "controller-relevance";
+        station.sourceEvidenceLinkStatus = "linked";
 
         if (role == StationRole::Other ||
             candidate.group == RadioReachableFacilityGroup::Atis) {

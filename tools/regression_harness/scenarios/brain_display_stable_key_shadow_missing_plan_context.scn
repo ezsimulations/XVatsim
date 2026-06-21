@@ -1,0 +1,13 @@
+name=Brain display source-owned stable key shadow missing plan context blocks opt-in
+
+display_intent.stage=Enroute
+stable_key.source_owned_fallback_shadow=true
+
+enroute.station=role=Center;callsign=SHADOW_NOPLAN_CTR;frequency=124.600;online=true
+
+expect.display_source=Enroute
+expect.brain_display_intent_decision_summary=accepted=1,decisions=1,displayedFinal=0,hiddenAfterAccept=1,filteredAfterAccept=0,duplicates=0,stageSuppressed=0,missing=0
+expect.brain_display_overlay_cap_summary=decisions=1,capLimit=40,candidates=0,visibleAfterCap=0,cappedHidden=0,moreAtc=0,contributes=0,nonCappedHidden=1,duplicates=0,stageDeferred=0,brainOwned=1,behaviorChanged=0
+expect.brain_display_stable_key_consumer_dry_run_summary=decisions=1,sourceOwnedPresent=1,migrationReady=0,dedupeGroupWouldChange=0,duplicateSuppressionWouldChange=0,completionIdentityWouldChange=0,phaseReuseWouldChange=0,rowOrderingWouldChange=0,overlayCapWouldChange=0,moreAtcWouldChange=0,drift=0,safeForOptIn=0,behaviorConsumerEnabled=0,displayBehaviorChanged=0
+expect.brain_display_stable_key_shadow_summary=decisions=1,gateEnabled=1,attempted=1,skipped=0,hashMismatch=0,rowOrderingMismatch=0,dedupeMismatch=0,duplicateSuppressionMismatch=0,completionIdentityMismatch=0,phaseReuseMismatch=0,overlayCapMismatch=0,moreAtcMismatch=0,missingPlanBlocked=1,drift=0,safeForFutureLiveOptIn=0,behaviorConsumerEnabled=0,behaviorChanged=0
+expect.brain_display_stable_key_shadow_decisions_contains=SHADOW_NOPLAN_CTR@124.600:role=CTR:endpoint=enroute:airport=<none>:gateEnabled=1:gateSource=harness:attempted=1,hashMatches=1:rowOrderingMatches=1:dedupeMatches=1:duplicateSuppressionMatches=1:completionIdentityMatches=1:phaseReuseMatches=1:overlayCapMatches=1:moreAtcMatches=1:missingPlanBlocked=1:drift=0:driftReason=missing-plan-context:safeForFutureLiveOptIn=0

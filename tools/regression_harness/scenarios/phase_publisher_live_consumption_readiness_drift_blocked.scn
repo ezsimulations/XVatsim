@@ -1,0 +1,11 @@
+name=Phase publisher source-owned stable key live consumption readiness drift blocked
+
+phase_publisher_reuse_probe=source-owned-plan-context-drift
+stable_key.source_owned_fallback_shadow=true
+stable_key.source_owned_fallback_live_consumption_proposal=true
+
+expect.phase_publisher_reuse_ledger_summary=decisions=2,fresh=1,reused=0,displaced=1,blocked=0,stale=0,planMismatch=0,stageMismatch=0,frequencyMismatch=0,roleMismatch=0,noCandidate=0,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_stable_key_consumer_dry_run_summary=decisions=2,sourceOwnedPresent=2,migrationReady=2,dedupeGroupWouldChange=0,duplicateSuppressionWouldChange=0,completionIdentityWouldChange=0,phaseReuseWouldChange=1,rowOrderingWouldChange=0,overlayCapWouldChange=0,moreAtcWouldChange=0,drift=1,safeForOptIn=1,behaviorConsumerEnabled=0,displayBehaviorChanged=0
+expect.phase_publisher_stable_key_shadow_summary=decisions=2,gateEnabled=2,attempted=2,skipped=0,hashMismatch=1,rowOrderingMismatch=0,dedupeMismatch=0,duplicateSuppressionMismatch=0,completionIdentityMismatch=0,phaseReuseMismatch=1,overlayCapMismatch=0,moreAtcMismatch=0,missingPlanBlocked=0,drift=1,safeForFutureLiveOptIn=1,behaviorConsumerEnabled=0,behaviorChanged=0
+expect.phase_publisher_stable_key_live_consumption_readiness_summary=decisions=2,proposalGateArmed=2,shadowParityClean=1,planContextAvailable=2,missingPlanBlocked=0,driftBlocked=1,shadowNotAttemptedBlocked=0,readinessBlocked=1,readyForFutureLiveConsumption=1,liveBehaviorConsumerEnabled=0,shadowBehaviorConsumerEnabled=0,behaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=DRIFT_SRC@124.550:decision=displaced-by-fresh-current-row,dryRunPhaseCurrent=1:dryRunPhaseSourceOwned=0:dryRunPhaseWouldChange=1,dryRunDrift=1:dryRunDriftReason=source-owned-phase-reuse-match-drift,shadowDrift=1:shadowDriftReason=source-owned-phase-reuse-match-drift:shadowSafeForFutureLiveOptIn=0,liveShadowParityClean=0:livePlanContextAvailable=1:liveReadyForFutureOptIn=0:liveBlockedReason=source-owned-phase-reuse-match-drift:liveBehaviorConsumer=0

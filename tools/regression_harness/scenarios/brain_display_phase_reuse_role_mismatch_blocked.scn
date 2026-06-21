@@ -1,0 +1,5 @@
+name=Brain display phase reuse ledger role mismatch blocks reuse
+phase_publisher_reuse_probe=blocked-role-mismatch
+expect.phase_publisher_reuse_ledger_summary=decisions=2,fresh=1,reused=0,displaced=0,blocked=1,stale=0,planMismatch=0,stageMismatch=0,frequencyMismatch=0,roleMismatch=1,noCandidate=0,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_stable_key_summary=decisions=2,present=2,missing=0,fallback=2,synthetic=0,legacy=0,duplicated=0,changedAcrossReuse=1,unsafeSameKey=0,linkedDisplay=0,linkedCap=0,linkedPhase=2,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=ROLE_CTR@124.900:decision=fresh-current-row:displayDecision=<none>:capDecision=<none>,ROLE_CTR@124.900:decision=blocked-role-mismatch,blockedReason=role-mismatch,currentIndex=0,ROLE_CTR@124.900:decision=blocked-role-mismatch,stableKey=row|enroute||6|ROLE_CTR|124.900:stableKeyPresent=1:stableKeySource=generated-fallback:stableKeyStatus=fallback-derived,keyContinuityKnown=1:keyChangedAcrossReuse=1:unsafeSameKey=0:keyWarning=1:keyWarningReason=changed-across-reuse

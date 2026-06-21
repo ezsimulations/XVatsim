@@ -32,6 +32,9 @@ expect.resolver_route_available=true
 expect.resolver_route_resolved=true
 expect.resolver_route_current_sectors=VHHK
 expect.resolver_authority_relevance_available=true
+expect.resolver_authority_duplicated_atis_proof_evidence_contains=HKG_CTR:token=HKG_W_CTR:text=1:tokens=COVERING|HKG_W_CTR:aliases=HKG_W_CTR:auth=VATGLASSES:HKG_W_CTR:src=VATGLASSES:kind=center:polygon=HKGW-AIRSPACE:allowed=1:routePolygon=1:facility=1:missingOwner=0:oldProof=1:reason=<none>
+expect.resolver_authority_preview_summary=authority=brain-evidence,source=1,evidence=1,compatRelevant=1,previewSurvivors=1,previewRejected=0,oldMismatch=0,droppedBeforeBrain=0,compatOnly=1,liveOwned=1
+expect.resolver_authority_preview_decisions_contains=active-polygon:HKG_CTR:VATGLASSES:HKG_W_CTR:VATGLASSES:HKGW-AIRSPACE_0:HKGW-AIRSPACE_0:ATIS_COVERED:HKG_W_CTR:DUPLICATED_ATIS_DERIVED:brain-preview-authority-relevance-survivor:old-relevant-authority:old=1
 expect.resolver_authority_relevant_matches=HKG_CTR:VATGLASSES:HKG_W_CTR:VATGLASSES:HKGW-AIRSPACE_0:aircraft=1:route=1:entry=0
 expect.resolver_authority_proof_sources=HKG_CTR:DUPLICATED_ATIS_DERIVED
 expect.resolver_authority_proof_detail_contains=HKG_CTR:authoritySource=VATGLASSES,coveredPosition=HKG_W_CTR,proofItems=facility-type>atis-covered-position>source-owned-position>route-relevant-polygon,routeRelevance=aircraft-inside+route-intersects

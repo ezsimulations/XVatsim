@@ -1,0 +1,16 @@
+name=Source-owned live consumption settings true missing plan blocked
+
+display_intent.stage=Enroute
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Enroute
+ctaf_unicom.accept_board_rows=true
+stable_key.source_owned_fallback_shadow=true
+stable_key.source_owned_fallback_live_consumption_proposal=true
+settings.source_owned_fallback_stable_key_live_consumption=true
+
+controller.entry=callsign=SET_NOPLAN_CTR;frequency=124.640;facility=6
+enroute.station=role=Center;callsign=SET_NOPLAN_CTR;frequency=124.640;online=true;polygonKey=KZAB
+
+expect.ctaf_unicom_publisher_stable_key_live_consumption_readiness_summary=decisions=1,proposalGateArmed=1,shadowParityClean=1,planContextAvailable=0,missingPlanBlocked=1,driftBlocked=0,shadowNotAttemptedBlocked=0,readinessBlocked=1,readyForFutureLiveConsumption=0,liveBehaviorConsumerEnabled=0,shadowBehaviorConsumerEnabled=0,behaviorChanged=0
+expect.ctaf_unicom_publisher_stable_key_live_consumption_summary=decisions=1,gateArmed=1,allowed=0,blocked=1,sourceOwnedConsumed=0,generatedFallbackConsumed=1,missingPlanBlocked=1,shadowGateOffBlocked=0,shadowParityNotAttemptedBlocked=0,shadowDriftBlocked=0,hashMismatchBlocked=0,rowOrderingMismatchBlocked=0,dedupeMismatchBlocked=0,duplicateSuppressionMismatchBlocked=0,completionIdentityMismatchBlocked=0,phaseReuseMismatchBlocked=0,overlayCapMismatchBlocked=0,moreAtcMismatchBlocked=0,missingSourceOwnedKeyBlocked=0,migrationNotReadyBlocked=0,defaultModeProtected=0,behaviorChanged=0
+expect.ctaf_unicom_publisher_stable_key_live_consumption_decisions_contains=SET_NOPLAN_CTR@124.640:role=CTR:endpoint=enroute:airport=<none>,planContextAvailable=0:shadowGateEnabled=1:shadowAttempted=1:shadowParityClean=1,liveGateSource=settings-store:allowed=0:blockedReason=missing-plan-context:consumedKeyType=generated-fallback:behaviorChanged=0

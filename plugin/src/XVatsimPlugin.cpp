@@ -615,10 +615,106 @@ void ResetStandbyAssistLatch() {
         &gBrainOwnedRuntimeState);
 }
 
+std::string SanitizeLogText(std::string value, std::size_t maxChars);
+void RecordDiagnosticJob(
+    std::string name,
+    std::string reason,
+    long long durationMs,
+    std::string cacheStatus,
+    std::string result,
+    std::string sourceGenerations,
+    std::string routeKey);
+
+std::string SummarizeBrainStandbyAssist(
+    const xvatsim::brain::BrainOwnedStandbyAssistPlanOutput& plan,
+    const xvatsim::brain::BrainOwnedStandbyAssistSideEffectDecision& decision) {
+    const auto& summary = decision.standbySummary;
+    std::ostringstream stream;
+    stream << "evidence=" << summary.standbyEvidenceCount
+           << ",candidates=" << summary.standbyCandidateCount
+           << ",advisory=" << summary.advisoryCandidateCount
+           << ",selected=" << summary.selectedTargetCount
+           << ",writeDecisions=" << summary.writeDecisionCount
+           << ",writeAttempts=" << summary.writeAttemptCount
+           << ",writeSuccess=" << summary.writeSuccessCount
+           << ",writeFailure=" << summary.writeFailureCount
+           << ",writerResults=" << summary.writerResultCount
+           << ",writerSuccess=" << summary.writerSuccessCount
+           << ",writerFailure=" << summary.writerFailureCount
+           << ",writerBlocked=" << summary.writerBlockedBeforeWriteCount
+           << ",writerUnknown=" << summary.writerUnknownResultCount
+           << ",writerNoTarget=" << summary.writerNoTargetCount
+           << ",writerNoWrite=" << summary.writerNoWriteRequestedCount
+           << ",writerControllerSource="
+           << summary.writerControllerSourceCount
+           << ",writerDirectCtafSource="
+           << summary.writerDirectCtafSourceCount
+           << ",empty=" << summary.skippedEmptyFrequencyCount
+           << ",pending=" << summary.skippedPendingLookupCount
+           << ",failed=" << summary.skippedLookupFailedCount
+           << ",guard=" << summary.skippedGuardFrequencyCount
+           << ",roleSkip=" << summary.skippedRoleNotEligibleCount
+           << ",activeSkip=" << summary.skippedAlreadyActiveCount
+           << ",brainOwned="
+           << (summary.standbyRecommendationsBrainOwned ? 1 : 0)
+           << ",standbyAssistEnabled="
+           << (plan.settingsDiagnostics.standbyAssistEnabled ? 1 : 0)
+           << ",directCtafStandbyAssistEnabled="
+           << (plan.settingsDiagnostics.directCtafStandbyAssistEnabled ? 1 : 0)
+           << ",directCtafGateSource="
+           << SanitizeLogText(plan.settingsDiagnostics.directCtafGateSource, 32)
+           << ",directCtafGateEffective="
+           << (plan.settingsDiagnostics.directCtafGateEffective ? 1 : 0)
+           << ",hasTarget=" << (plan.hasTarget ? 1 : 0)
+           << ",standbyDecision="
+           << SanitizeLogText(decision.standbyDecisionId, 96)
+           << ",writeAllowed=" << (decision.writeAllowed ? 1 : 0)
+           << ",writeAttempted=" << (decision.writeAttempted ? 1 : 0)
+           << ",writeSucceededKnown="
+           << (decision.writeSucceededKnown ? 1 : 0)
+           << ",writeSucceeded=" << (decision.writeSucceeded ? 1 : 0)
+           << ",writerResultKnown="
+           << (decision.writerResult.writerResultKnown ? 1 : 0)
+           << ",writerResultCode="
+           << SanitizeLogText(
+                  decision.writerResult.writerResultCode.empty()
+                      ? std::string("none")
+                      : decision.writerResult.writerResultCode,
+                  64)
+           << ",writerFailureReason="
+           << SanitizeLogText(
+                  decision.writerResult.writerFailureReason.empty()
+                      ? std::string("none")
+                      : decision.writerResult.writerFailureReason,
+                  64)
+           << ",writerFailureDomain="
+           << SanitizeLogText(
+                  decision.writerResult.writerFailureDomain.empty()
+                      ? std::string("none")
+                      : decision.writerResult.writerFailureDomain,
+                  64)
+           << ",writerSource="
+           << SanitizeLogText(
+                  decision.writerResult.writerResultSource.empty()
+                      ? std::string("none")
+                      : decision.writerResult.writerResultSource,
+                  64)
+           << ",failure="
+           << SanitizeLogText(decision.failureReason.empty()
+                                  ? std::string("none")
+                                  : decision.failureReason,
+                              64)
+           << ",marker="
+           << (decision.displayStandbyMarkerApplied ? 1 : 0);
+    return stream.str();
+}
+
 void ApplyStandbyRecommendation(
     xvatsim::brain::WorkflowStage workflowStage,
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot,
     const xvatsim::brain::RadioStateSnapshot& radioStateSnapshot,
+    const std::vector<xvatsim::brain::BrainOwnedStandbyAssistAdvisoryCandidate>&
+        ctafUnicomAdvisoryCandidates,
     xvatsim::brain::FinalDisplaySnapshot* boardSnapshot) {
     if (boardSnapshot == nullptr) {
         return;
@@ -628,28 +724,54 @@ void ApplyStandbyRecommendation(
     standbyInput.workflowStage = workflowStage;
     standbyInput.planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(networkPlanSnapshot);
     standbyInput.radios = radioStateSnapshot;
+    standbyInput.standbyAssistEnabled = gPluginSettings.standbyAssistEnabled;
+    standbyInput.directCtafStandbyAssistEnabled =
+        gPluginSettings.directCtafStandbyAssistEnabled;
+    standbyInput.directCtafGateSource =
+        gPluginSettings.directCtafStandbyAssistGateSource;
     standbyInput.board = *boardSnapshot;
+    standbyInput.ctafUnicomAdvisoryCandidates =
+        ctafUnicomAdvisoryCandidates;
     const auto standbyPlan =
         xvatsim::brain::BuildBrainOwnedStandbyAssistPlan(standbyInput);
     *boardSnapshot = standbyPlan.board;
 
-    const auto sideEffectDecision =
+    auto sideEffectDecision =
         xvatsim::brain::DecideBrainOwnedStandbyAssistSideEffect(
             &gBrainOwnedRuntimeState,
             standbyPlan,
             gPluginSettings.standbyAssistEnabled);
 
     auto standbyLoaded = sideEffectDecision.standbyLoaded;
+    auto writerResult = sideEffectDecision.writerResult;
     if (sideEffectDecision.shouldWriteCom1Standby) {
         standbyLoaded =
             gRadioStateSampler.SetCom1StandbyFrequency(
                 sideEffectDecision.targetFrequency);
+        writerResult =
+            xvatsim::brain::BuildBrainOwnedStandbyAssistWriterResult(
+                sideEffectDecision,
+                standbyLoaded);
     }
+    sideEffectDecision =
+        xvatsim::brain::CompleteBrainOwnedStandbyAssistSideEffectDecision(
+            standbyPlan,
+            sideEffectDecision,
+            writerResult);
 
     *boardSnapshot =
         xvatsim::brain::ApplyBrainOwnedStandbyAssistResult(
             standbyPlan,
             standbyLoaded);
+
+    RecordDiagnosticJob(
+        "BrainStandbyAssist",
+        "decision-ledger",
+        0,
+        "brain-owned",
+        SummarizeBrainStandbyAssist(standbyPlan, sideEffectDecision),
+        {},
+        standbyInput.planKey);
 }
 
 void ResetCruiseTargetState() {
@@ -1163,6 +1285,32 @@ xvatsim::brain::BrainOwnedCtafLookupFact BuildBrainOwnedCtafLookupFact(
     fact.resolved = ctafLookup.resolved;
     fact.available = ctafLookup.available;
     fact.frequency = ctafLookup.frequency;
+    fact.lookupAttempted = !airportIcao.empty();
+    fact.cacheHit = ctafLookup.resolved;
+    if (ctafLookup.lastAttemptTickSeconds > 0) {
+        fact.lastAttemptAgeSeconds =
+            std::max<long long>(
+                0,
+                CurrentTickSeconds() - ctafLookup.lastAttemptTickSeconds);
+    }
+    fact.fetchInProgress =
+        !ctafLookup.resolved && ctafLookup.failureCount == 0 &&
+        ctafLookup.lastAttemptTickSeconds > 0;
+    fact.requestSucceeded = ctafLookup.resolved;
+    fact.statusCodeClass =
+        ctafLookup.available
+            ? "2xx"
+            : (ctafLookup.resolved
+                   ? "resolved-no-ctaf"
+                   : (ctafLookup.failureCount > 0 ? "failure" : ""));
+    fact.failureCount = ctafLookup.failureCount;
+    if (!ctafLookup.resolved) {
+        fact.pendingReason =
+            fact.fetchInProgress
+                ? "fetch-in-progress"
+                : (ctafLookup.failureCount > 0 ? "lookup-failed"
+                                               : "unresolved-pending");
+    }
     return fact;
 }
 
@@ -1271,6 +1419,15 @@ xvatsim::brain::BrainOwnedPublisherOutput RunBrainPublisher(
     publisherFacts.enrouteBoard = relevanceOutput.enrouteBoard;
     publisherFacts.completions = relevanceOutput.completions;
     publisherFacts.publishReason = "brain-owned-ui-publish";
+    publisherFacts.productPlanKey = planKey;
+    publisherFacts.productPlanKeySource =
+        planKey.empty() ? "unavailable" : "live-product";
+    publisherFacts.productPlanKeyMissingReason =
+        planKey.empty() ? "plugin-plan-key-empty" : "";
+    publisherFacts.sourceOwnedFallbackStableKeyLiveConsumptionEnabled =
+        gPluginSettings.sourceOwnedFallbackStableKeyLiveConsumptionEnabled;
+    publisherFacts.sourceOwnedFallbackStableKeyLiveConsumptionGateSource =
+        gPluginSettings.sourceOwnedFallbackStableKeyLiveConsumptionGateSource;
     const auto& flightContext = gBrainOwnedRuntimeState.flightContext;
     publisherFacts.departureCtaf =
         BuildBrainOwnedCtafLookupFact(
@@ -3837,6 +3994,7 @@ void RefreshOverlayFromBrainEngineer3() {
         workflowStage,
         effectiveNetworkPlanSnapshot,
         radioStateSnapshot,
+        publisherOutput.ctafUnicomStandbyAdvisoryCandidates,
         &finalDisplaySnapshot);
     diagnostics.standbyAssistUs = ElapsedMicrosecondsSince(timingStarted);
 

@@ -1,0 +1,17 @@
+name=Brain display source-owned stable key dry-run duplicate fallback polygon rows
+
+display_intent.stage=Enroute
+display_intent.current_polygon=KZAB
+stable_key.source_owned_fallback_shadow=true
+
+enroute.station=role=Center;callsign=DUP_CTR;frequency=124.500;online=true;polygonKey=KZAB
+enroute.station=role=Center;callsign=DUP_CTR;frequency=124.500;online=true;polygonKey=KZAB
+
+expect.display_source=Enroute
+expect.display_callsigns=DUP_CTR
+expect.brain_display_intent_rows=DUP_CTR:CURRENT_POLYGON:ACTIVE
+expect.brain_display_intent_decision_summary=accepted=2,decisions=2,displayedFinal=1,hiddenAfterAccept=1,filteredAfterAccept=0,duplicates=1,stageSuppressed=0,missing=0
+expect.brain_display_stable_key_consumer_dry_run_summary=decisions=2,sourceOwnedPresent=2,migrationReady=2,dedupeGroupWouldChange=0,duplicateSuppressionWouldChange=0,completionIdentityWouldChange=0,phaseReuseWouldChange=0,rowOrderingWouldChange=0,overlayCapWouldChange=0,moreAtcWouldChange=0,drift=0,safeForOptIn=2,behaviorConsumerEnabled=0,displayBehaviorChanged=0
+expect.brain_display_stable_key_consumer_dry_run_decisions_contains=DUP_CTR@124.500:role=CTR:endpoint=enroute,currentKey=row|enroute||6|DUP_CTR|124500:sourceOwnedKey=source-owned:fallback-polygon-geometry|DUP_CTR|6|124500|current=KZAB;next=none;arrival=none;stage=Enroute,dedupeCurrent=6|DUP_CTR|124500:dedupeSourceOwned=source-owned:fallback-polygon-geometry|DUP_CTR|6|124500|current=KZAB;next=none;arrival=none;stage=Enroute:dedupeWouldChange=0:duplicateSuppressionWouldChange=0:completionIdentityWouldChange=0,drift=0,safeForOptIn=1
+expect.brain_display_stable_key_shadow_summary=decisions=2,gateEnabled=2,attempted=2,skipped=0,hashMismatch=0,rowOrderingMismatch=0,dedupeMismatch=0,duplicateSuppressionMismatch=0,completionIdentityMismatch=0,phaseReuseMismatch=0,overlayCapMismatch=0,moreAtcMismatch=0,missingPlanBlocked=0,drift=0,safeForFutureLiveOptIn=2,behaviorConsumerEnabled=0,behaviorChanged=0
+expect.brain_display_stable_key_shadow_decisions_contains=DUP_CTR@124.500:role=CTR:endpoint=enroute:airport=<none>:gateEnabled=1:gateSource=harness:attempted=1,dedupeMatches=1:duplicateSuppressionMatches=1:completionIdentityMatches=1:phaseReuseMatches=1:overlayCapMatches=1:moreAtcMatches=1:missingPlanBlocked=0:drift=0,driftReason=<none>:safeForFutureLiveOptIn=1

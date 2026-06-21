@@ -1,0 +1,4 @@
+name=Phase publisher plan key linkage changed plan
+phase_publisher_reuse_probe=live-changed-plan
+expect.phase_publisher_plan_context_summary=decisions=2,available=2,missing=0,liveProduct=2,harness=0,missingContext=1,continuityKnown=1,continuityUnknown=1,liveMismatch=1,harnessMismatch=0,brainOwned=1,publishBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=CHANGE_CTR@125.600:decision=blocked-plan-mismatch,previousProductPlan=live-plan-a:currentProductPlan=live-plan-b,planContinuityKnown=1:planContinuity=changed-plan,planMismatchSource=live-product:planContextLinked=1

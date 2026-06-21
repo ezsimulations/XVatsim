@@ -1,0 +1,18 @@
+name=Standby assist writer result pending CTAF no writer
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;fetchInProgress=true;resolved=false;available=false;age=5;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;fetchInProgress=true;resolved=false;available=false;age=8;failures=0
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.direct_ctaf_enabled=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|KAAA|KBBB
+
+radio.valid=true
+
+expect.standby_assist_writer_result_contains=known=1,code=no-write-requested,failureReason=skip-pending-lookup,failureDomain=planner,inputFrequency=<empty>,targetCom=none,writeAttempted=0,writeSucceeded=0,source=none
+expect.standby_assist_writer_counter_summary=writerResults=1,writerSuccess=0,writerFailure=0,writerBlocked=1,writerUnknown=0,writerDatarefMissing=0,writerDatarefNotWritable=0,writerInvalidFrequency=0,writerNoTarget=0,writerNoWriteRequested=1,writerControllerSource=0,writerDirectCtafSource=0

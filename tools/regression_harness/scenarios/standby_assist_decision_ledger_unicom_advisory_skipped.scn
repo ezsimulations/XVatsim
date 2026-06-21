@@ -1,0 +1,15 @@
+name=Standby assist decision ledger UNICOM fallback advisory skipped
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;cacheHit=true;requestSucceeded=true;status=resolved-no-ctaf;resolved=true;available=false;age=30;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;cacheHit=true;requestSucceeded=true;status=resolved-no-ctaf;resolved=true;available=false;age=44;failures=0
+
+standby_assist.apply=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|KAAA|KBBB
+
+radio.valid=true
+
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,role=UNICOM,fallback=1,final=skip-role-not-eligible,sourceDecision=ctaf-unicom-preview:arrival:KBBB,role=UNICOM,fallback=1,final=skip-role-not-eligible
+expect.ctaf_unicom_advisory_authority_summary=authority=brain-evidence,source=2,preview=2,live=2,historicalCompatibilityRows=2,mismatch=0,diagnosticCompatibilityProjectionOnly=1,legacyDiagnosticBypassFlag=1,brainOwned=1,bypassRetired=1,liveBypassAuthority=0,diagnosticBypassRows=2,brainAdvisoryLiveRows=2,duplicateLive=0,retirementSafe=1,noLiveBypassAuthority=1,compatibilityRowsDiagnosticOnly=1,liveRowsBrainAdvisoryOwned=1,legacyBypassFieldsQuarantined=1

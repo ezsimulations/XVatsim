@@ -1,0 +1,5 @@
+name=Brain display phase reuse ledger fresh current displaces previous
+phase_publisher_reuse_probe=displaced-by-fresh-current-row
+expect.phase_publisher_reuse_ledger_summary=decisions=2,fresh=1,reused=0,displaced=1,blocked=0,stale=0,planMismatch=0,stageMismatch=0,frequencyMismatch=0,roleMismatch=0,noCandidate=0,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_stable_key_summary=decisions=2,present=2,missing=0,fallback=2,synthetic=0,legacy=0,duplicated=0,changedAcrossReuse=0,unsafeSameKey=0,linkedDisplay=0,linkedCap=0,linkedPhase=2,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=NEW_CTR@124.400:decision=fresh-current-row,OLD_CTR@124.300:decision=displaced-by-fresh-current-row,displaced=1,blockedReason=fresh-current-evidence-accepted,NEW_CTR@124.400:decision=fresh-current-row:displayDecision=<none>:capDecision=<none>:sourceDecision=<none>:sourceEvidence=<none>:subject=6|NEW_CTR|124.400,stableKey=row|enroute||6|NEW_CTR|124.400:stableKeyPresent=1:stableKeySource=generated-fallback:stableKeyStatus=fallback-derived

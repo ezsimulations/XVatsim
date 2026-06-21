@@ -17,6 +17,141 @@ struct BrainRadioRangeWorkerInput {
     std::string planKey;
 };
 
+struct BrainRadioRangePreviewDecision {
+    std::string callsign;
+    std::string frequency;
+    std::string decision;
+    std::string reason;
+    // Compares against the legacy compatibility projection only. This is not
+    // used as radio board authority when liveCandidatesBrainOwned is true.
+    bool matchesOldSurvivor = false;
+    bool hasStation = false;
+    double distanceNm = 0.0;
+    double score = 0.0;
+    double latitudeDeg = 0.0;
+    double longitudeDeg = 0.0;
+};
+
+struct BrainRadioRangePreviewSummary {
+    int evidenceControllerCount = 0;
+    // Legacy compatibility candidates retained for regression comparison.
+    int oldSurvivorCount = 0;
+    int previewSurvivorCount = 0;
+    int previewRejectedCount = 0;
+    int oldSurvivorMismatchCount = 0;
+    bool liveCandidatesBrainOwned = false;
+    bool resolverCandidatesCompatibilityOnly = false;
+    int droppedBeforeBrainControllers = 0;
+};
+
+struct BrainRadioRangeDecisionPreview {
+    std::vector<BrainRadioRangePreviewDecision> decisions;
+    BrainRadioRangePreviewSummary summary;
+};
+
+struct BrainAuthorityStationsPreviewDecision {
+    std::string callsign;
+    std::string frequency;
+    std::string decision;
+    std::string reason;
+    bool matchesOldSurvivor = false;
+    bool hasStation = false;
+    int stationIndex = -1;
+    double latitudeDeg = 0.0;
+    double longitudeDeg = 0.0;
+};
+
+struct BrainAuthorityStationsPreviewSummary {
+    std::string path;
+    int evidenceControllerCount = 0;
+    int oldSurvivorCount = 0;
+    int previewSurvivorCount = 0;
+    int previewRejectedCount = 0;
+    int oldSurvivorMismatchCount = 0;
+    bool liveCandidatesBrainOwned = false;
+    bool resolverCandidatesCompatibilityOnly = false;
+    int droppedBeforeBrainControllers = 0;
+};
+
+struct BrainAuthorityStationsDecisionPreview {
+    std::vector<BrainAuthorityStationsPreviewDecision> decisions;
+    BrainAuthorityStationsPreviewSummary summary;
+};
+
+struct BrainAirportCoveragePreviewDecision {
+    std::string callsign;
+    std::string frequency;
+    std::string decision;
+    std::string reason;
+    bool matchesOldSurvivor = false;
+    bool hasStation = false;
+    int stationIndex = -1;
+    double distanceNm = 0.0;
+    double score = 0.0;
+    double latitudeDeg = 0.0;
+    double longitudeDeg = 0.0;
+};
+
+struct BrainAirportCoveragePreviewSummary {
+    std::string path;
+    int evidenceControllerCount = 0;
+    int oldSurvivorCount = 0;
+    int previewSurvivorCount = 0;
+    int previewRejectedCount = 0;
+    int oldSurvivorMismatchCount = 0;
+    bool liveCandidatesBrainOwned = false;
+    bool resolverCandidatesCompatibilityOnly = false;
+    int droppedBeforeBrainControllers = 0;
+};
+
+struct BrainAirportCoverageDecisionPreview {
+    std::vector<BrainAirportCoveragePreviewDecision> decisions;
+    BrainAirportCoveragePreviewSummary summary;
+};
+
+struct BrainAuthorityRelevancePreviewDecision {
+    std::string evidenceKind;
+    std::string callsign;
+    std::string authorityId;
+    std::string polygonId;
+    std::string polygonKey;
+    std::string matchedPattern;
+    std::string proofSource;
+    std::string decision;
+    std::string reason;
+    bool matchesOldSurvivor = false;
+};
+
+struct BrainAuthorityRelevancePreviewSummary {
+    std::string authority = "preview-only";
+    int sourceControllerCount = 0;
+    int evidenceControllerCount = 0;
+    int compatibilityRelevantAuthorityCount = 0;
+    int previewSurvivorCount = 0;
+    int previewRejectedCount = 0;
+    int oldSurvivorMismatchCount = 0;
+    int droppedBeforeBrainControllers = 0;
+    bool relevantAuthoritiesCompatibilityOnly = false;
+    bool liveRelevantAuthoritiesBrainOwned = false;
+};
+
+struct BrainAuthorityRelevanceDecisionPreview {
+    std::vector<BrainAuthorityRelevancePreviewDecision> decisions;
+    BrainAuthorityRelevancePreviewSummary summary;
+};
+
+BrainAuthorityRelevanceDecisionPreview
+BuildBrainAuthorityRelevanceDecisionPreview(
+    const AuthorityRelevanceSnapshot& authorityRelevance);
+
+// Brain-owned live projection for route_sector authority relevance evidence.
+// route_sector compatibility survivors remain available for comparison when
+// evidence exists, but migrated live consumers must use relevantAuthorities
+// after this projection.
+AuthorityRelevanceSnapshot BuildBrainOwnedAuthorityRelevanceSnapshot(
+    AuthorityRelevanceSnapshot authorityRelevance,
+    const BrainAuthorityRelevanceDecisionPreview& preview);
+
 struct BrainRadioRangeWorkerOutput {
     bool available = false;
     bool stale = true;
@@ -24,12 +159,38 @@ struct BrainRadioRangeWorkerOutput {
     TransceiverResolutionSnapshot transceivers;
     RadioReachableControllerSnapshot radioBoard;
     RadioReachableCandidateDiff diff;
+    BrainRadioRangeDecisionPreview decisionPreview;
 };
 
+// Brain-owned live projection for normal Resolve radio-range evidence.
+// When transceiver evidence exists, the radio board is built from brain
+// decisions, not the resolver compatibility candidates vector.
 BrainRadioRangeWorkerOutput BuildBrainRadioRangeWorkerOutput(
     const BrainRadioRangeWorkerInput& input,
     const TransceiverResolutionSnapshot& transceivers,
     double nowSeconds);
+
+BrainAuthorityStationsDecisionPreview
+BuildBrainAuthorityStationsDecisionPreview(
+    const TransceiverResolutionSnapshot& transceivers);
+
+// Brain-owned live projection for ResolveAuthorityStations evidence.
+// The resolver's candidates vector remains compatibility-only when evidence
+// exists and must not be used as decision authority by migrated callers.
+TransceiverResolutionSnapshot BuildBrainOwnedAuthorityStationsCandidateSnapshot(
+    TransceiverResolutionSnapshot transceivers,
+    const BrainAuthorityStationsDecisionPreview& preview);
+
+BrainAirportCoverageDecisionPreview
+BuildBrainAirportCoverageDecisionPreview(
+    const TransceiverResolutionSnapshot& transceivers);
+
+// Brain-owned live projection for ResolveAirportCoverage evidence.
+// The resolver's candidates vector remains compatibility-only when evidence
+// exists and must not be used as decision authority by migrated callers.
+TransceiverResolutionSnapshot BuildBrainOwnedAirportCoverageCandidateSnapshot(
+    TransceiverResolutionSnapshot transceivers,
+    const BrainAirportCoverageDecisionPreview& preview);
 
 struct BrainRoutePolygonWorkerInput {
     AircraftStateSnapshot aircraft;

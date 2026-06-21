@@ -1,0 +1,19 @@
+name=Brain display intent filtered and unknown relation rows have decisions
+
+display_intent.stage=Departure
+display_intent.progress_nm=0
+
+enroute.station=role=Center;callsign=FILTER_CTR;frequency=125.000;online=true;polygonKey=PHZH
+enroute.station=role=Center;callsign=UNKNOWN_CTR;frequency=126.000;online=true;polygonKey=PHZH
+enroute.station=role=Center;callsign=HIDDEN_FACT_CTR;frequency=127.000;online=true;polygonKey=PHZH
+
+display_intent.relation=callsign=FILTER_CTR;frequency=125.000;relation=Filtered
+display_intent.relation=callsign=UNKNOWN_CTR;frequency=126.000;relation=Unknown
+display_intent.relation=callsign=HIDDEN_FACT_CTR;frequency=127.000;relation=Hidden
+
+expect.display_source=Departure
+expect.display_callsigns=<NONE>
+expect.brain_display_intent_rows=<NONE>
+expect.brain_display_intent_decision_summary=accepted=3,decisions=3,displayedFinal=0,hiddenAfterAccept=3,filteredAfterAccept=1,duplicates=0,stageSuppressed=0,missing=0
+expect.brain_display_intent_fail_soft_summary=preview=3,keepDisplay=0,keepHide=0,displayWithWarning=1,stageDefer=0,lowerPriorityDisplay=0,hardBlockHide=0,needsMoreEvidence=2,currentHideButFailSoftWouldShowOrWarn=1
+expect.brain_display_intent_decisions_contains=FILTER_CTR@125.000:decision=display-rejected-filtered:reason=relation-fact-filtered,FILTER_CTR@125.000:decision=display-rejected-filtered:reason=relation-fact-filtered:role=CTR:source=Enroute:stage=Departure:accepted=1:relationFact=1/FILTERED:fallback=1/HIDDEN:final=FILTERED:displayable=1:displayed=0:duplicate=0:stageSuppressed=0:confidence=medium:score=0.00/0.65:hardBlock=0:scoreSummary=confidence=medium/positive=0.00/negative=0.65/hardBlock=0/winner=negative/recommendation=prefer-display-with-warning:failSoft=prefer-display-with-warning:failSoftReason=filtered-accepted-row-needs-fail-soft-warning:failSoftWouldShowOrWarn=1,UNKNOWN_CTR@126.000:decision=display-rejected-unknown:reason=relation-fact-unknown,UNKNOWN_CTR@126.000:decision=display-rejected-unknown:reason=relation-fact-unknown:role=CTR:source=Enroute:stage=Departure:accepted=1:relationFact=1/UNKNOWN:fallback=1/HIDDEN:final=UNKNOWN:displayable=1:displayed=0:duplicate=0:stageSuppressed=0:confidence=medium:score=0.00/0.65:hardBlock=0:scoreSummary=confidence=medium/positive=0.00/negative=0.65/hardBlock=0/winner=negative/recommendation=needs-more-evidence:failSoft=needs-more-evidence:failSoftReason=unknown-relation-is-not-automatic-hide:failSoftWouldShowOrWarn=0,HIDDEN_FACT_CTR@127.000:decision=display-rejected-center-fallback-hidden:reason=relation-fact-hidden,HIDDEN_FACT_CTR@127.000:decision=display-rejected-center-fallback-hidden:reason=relation-fact-hidden:role=CTR:source=Enroute:stage=Departure:accepted=1:relationFact=1/HIDDEN:fallback=1/HIDDEN:final=HIDDEN:displayable=1:displayed=0:duplicate=0:stageSuppressed=0:confidence=medium:score=0.00/0.65:hardBlock=0:scoreSummary=confidence=medium/positive=0.00/negative=0.65/hardBlock=0/winner=negative/recommendation=needs-more-evidence:failSoft=needs-more-evidence:failSoftReason=hidden-relation-fact-is-not-high-confidence-negative:failSoftWouldShowOrWarn=0

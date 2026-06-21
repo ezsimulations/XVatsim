@@ -1,0 +1,20 @@
+name=Source-owned live consumption settings false default off
+
+display_intent.stage=Enroute
+display_intent.current_polygon=KZAB
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Enroute
+ctaf_unicom.product_plan_key=KZAB-plan
+ctaf_unicom.accept_board_rows=true
+stable_key.source_owned_fallback_shadow=true
+stable_key.source_owned_fallback_live_consumption_proposal=true
+settings.source_owned_fallback_stable_key_live_consumption=false
+
+controller.entry=callsign=SET_FALSE_CTR;frequency=124.620;facility=6
+enroute.station=role=Center;callsign=SET_FALSE_CTR;frequency=124.620;online=true;polygonKey=KZAB
+
+expect.ctaf_unicom_publisher_rows=SET_FALSE_CTR:CURRENT_POLYGON:ACTIVE
+expect.ctaf_unicom_publisher_stable_key_live_consumption_summary=decisions=1,gateArmed=0,allowed=0,blocked=1,sourceOwnedConsumed=0,generatedFallbackConsumed=1,missingPlanBlocked=0,shadowGateOffBlocked=0,shadowParityNotAttemptedBlocked=0,shadowDriftBlocked=0,hashMismatchBlocked=0,rowOrderingMismatchBlocked=0,dedupeMismatchBlocked=0,duplicateSuppressionMismatchBlocked=0,completionIdentityMismatchBlocked=0,phaseReuseMismatchBlocked=0,overlayCapMismatchBlocked=0,moreAtcMismatchBlocked=0,missingSourceOwnedKeyBlocked=0,migrationNotReadyBlocked=0,defaultModeProtected=1,behaviorChanged=0
+expect.ctaf_unicom_publisher_stable_key_live_consumption_decisions_contains=SET_FALSE_CTR@124.620:role=CTR:endpoint=enroute:airport=<none>,liveGateArmed=0:liveGateSource=settings-store:allowed=0:blockedReason=live-consumption-gate-not-armed:consumedKeyType=generated-fallback:behaviorChanged=0:defaultModeProtected=1
+expect.ctaf_unicom_publisher_phase_stable_key_live_consumption_summary=decisions=1,gateArmed=0,allowed=0,blocked=1,sourceOwnedConsumed=0,generatedFallbackConsumed=1,missingPlanBlocked=0,shadowGateOffBlocked=0,shadowParityNotAttemptedBlocked=0,shadowDriftBlocked=0,hashMismatchBlocked=0,rowOrderingMismatchBlocked=0,dedupeMismatchBlocked=0,duplicateSuppressionMismatchBlocked=0,completionIdentityMismatchBlocked=0,phaseReuseMismatchBlocked=0,overlayCapMismatchBlocked=0,moreAtcMismatchBlocked=0,missingSourceOwnedKeyBlocked=0,migrationNotReadyBlocked=0,defaultModeProtected=1,behaviorChanged=0
+expect.ctaf_unicom_publisher_phase_reuse_ledger_decisions_contains=SET_FALSE_CTR@124.620:decision=fresh-current-row,liveGateArmed=0:liveGateSource=settings-store:liveAllowed=0:liveGateBlockedReason=live-consumption-gate-not-armed:liveConsumedKeyType=generated-fallback:liveDecisionBehaviorChanged=0:liveDefaultModeProtected=1

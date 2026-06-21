@@ -1,0 +1,13 @@
+name=Brain display source-owned stable key shadow gate off default
+
+display_intent.stage=Enroute
+display_intent.current_polygon=KZAB
+
+enroute.station=role=Center;callsign=SHADOW_OFF_CTR;frequency=124.500;online=true;polygonKey=KZAB
+
+expect.display_source=Enroute
+expect.display_callsigns=SHADOW_OFF_CTR
+expect.brain_display_intent_rows=SHADOW_OFF_CTR:CURRENT_POLYGON:ACTIVE
+expect.brain_display_stable_key_consumer_dry_run_summary=decisions=1,sourceOwnedPresent=1,migrationReady=1,dedupeGroupWouldChange=0,duplicateSuppressionWouldChange=0,completionIdentityWouldChange=0,phaseReuseWouldChange=0,rowOrderingWouldChange=0,overlayCapWouldChange=0,moreAtcWouldChange=0,drift=0,safeForOptIn=1,behaviorConsumerEnabled=0,displayBehaviorChanged=0
+expect.brain_display_stable_key_shadow_summary=decisions=1,gateEnabled=0,attempted=0,skipped=1,hashMismatch=0,rowOrderingMismatch=0,dedupeMismatch=0,duplicateSuppressionMismatch=0,completionIdentityMismatch=0,phaseReuseMismatch=0,overlayCapMismatch=0,moreAtcMismatch=0,missingPlanBlocked=0,drift=0,safeForFutureLiveOptIn=0,behaviorConsumerEnabled=0,behaviorChanged=0
+expect.brain_display_stable_key_shadow_decisions_contains=SHADOW_OFF_CTR@124.500:role=CTR:endpoint=enroute:airport=<none>:gateEnabled=0:gateSource=default:attempted=0:skipped=shadow-gate-disabled,hashMatches=1:rowOrderingMatches=1:dedupeMatches=1:duplicateSuppressionMatches=1:completionIdentityMatches=1:phaseReuseMatches=1:overlayCapMatches=1:moreAtcMatches=1:missingPlanBlocked=0:drift=0,driftReason=<none>:safeForFutureLiveOptIn=0

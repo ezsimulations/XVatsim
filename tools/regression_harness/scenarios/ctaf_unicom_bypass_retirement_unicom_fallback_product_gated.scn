@@ -1,0 +1,9 @@
+name=CTAF UNICOM bypass retirement UNICOM fallback product gated
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;cacheHit=true;requestSucceeded=true;status=resolved-no-ctaf;resolved=true;available=false;age=30;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;cacheHit=true;requestSucceeded=true;status=resolved-no-ctaf;resolved=true;available=false;age=44;failures=0
+
+expect.ctaf_unicom_bypass_audit_summary=audit=2,legacyDiagnosticBypassRows=2,brainRows=2,matching=2,missing=0,mismatch=0,safe=2,blocked=0,pending=0,failed=0,empty=0,unicom=2,standbyAdvisory=2,standbyBypass=0,policy=2,resolvedBlockers=0,stillBlocked=0,policyNonDisplayable=0,policyDeferred=0,policyFailed=0,policyEmpty=0,duplicateSuppressed=0,missingEvidencePolicy=0,wouldLoseFrequency=0,wouldLoseVisibility=0,bypassSafe=2,bypassUnsafe=0,bypassRetired=1,liveBypassAuthority=0,diagnosticBypassRows=2,brainAdvisoryLive=2,missingEvidenceWarningCount=0,fallbackWarnings=0,missingEvidenceWarnings=0,duplicateLiveRows=0,pendingNonDisplayable=0,failedNonDisplayable=0,emptyNonDisplayable=0,retiredCompatibilityRows=2,retirementSafe=1,noLiveBypassAuthority=1,compatibilityRowsDiagnosticOnly=1,liveRowsBrainAdvisoryOwned=1,standbyRowsAdvisoryOwned=1,legacyBypassFieldsQuarantined=1,diagnosticCompatibilityProjectionOnly=1,legacyCompatibilityOnly=1,ready=1
+expect.ctaf_unicom_bypass_audit_decisions_contains=advisory=ctaf-unicom-preview:departure:KAAA,role=UNICOM:freq=122.800:diagnosticCompatibilityWouldDisplay=1:bypassRequired=1:diagnosticCompatibilityReason=completion-bypass-retired-diagnostic-only:bypassReason=completion-bypass-retired-diagnostic-only,advisoryWouldEmit=1:matches=1,unicom=1:standbyAdvisory=1:standbyBypass=0,bypassRetired=1:bypassLiveAuthority=0:bypassDiagnosticOnly=1,liveRowAuthority=brain-advisory:standbyAuthority=brain-advisory

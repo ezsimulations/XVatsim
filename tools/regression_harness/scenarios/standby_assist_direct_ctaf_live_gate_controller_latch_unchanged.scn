@@ -1,0 +1,24 @@
+name=Standby assist direct CTAF live gate controller latch unchanged
+
+display_intent.stage=Departure
+display_intent.current_polygon=KZOA
+
+radio.valid=true
+radio.com1_active=120.500
+radio.com1_standby=125.350
+
+departure.station=role=Tower;callsign=KSFO_TWR;frequency=120.500;online=true
+departure.station=role=Approach;callsign=NCT_APP;frequency=125.350;online=true;polygonKey=KZOA
+
+display_intent.relation=callsign=NCT_APP;frequency=125.350;relation=CurrentPolygon
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.direct_ctaf_enabled=true
+standby_assist.stage=Departure
+standby_assist.plan_key=UAL3936|KSFO|CYVR
+
+expect.standby_assist_decisions_contains=callsign=NCT_APP:role=APP:freq=125.350,com1Standby=1,targetCom=COM1_STANDBY,eligible=1,liveWriteEligible=0,productGateEnabled=1,actualSelectedTargetSource=controller-display-row,actualSelectedTargetFrequency=125.350,actualWriteEligible=0,final=skip-already-standby
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:standby-decision:1:display-row|none|none|APP|NCT_APP|125350,standbyDecision=standby-decision:1:display-row|none|none|APP|NCT_APP|125350,enabled=1,latchKey=UAL3936|KSFO|CYVR|1|120500|NCT_APP|125350,latchConsumed=1,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=COM1_STANDBY,targetFrequency=125.350,failure=already-com1-standby,marker=1
+expect.overlay_body_lines=xPilot not loaded|TWR KSFO_TWR 120.500 *Active*|APP NCT_APP 125.350 *Standby*

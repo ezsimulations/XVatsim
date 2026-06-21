@@ -1,0 +1,4 @@
+name=Brain display phase reuse ledger fresh current row
+phase_publisher_reuse_probe=fresh-current-row
+expect.phase_publisher_reuse_ledger_summary=decisions=1,fresh=1,reused=0,displaced=0,blocked=0,stale=0,planMismatch=0,stageMismatch=0,frequencyMismatch=0,roleMismatch=0,noCandidate=0,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=decision=fresh-current-row,displayDecision=display:fresh:capDecision=overlay-cap|0,sourceEvidence=source:fresh,freshAvailable=1:freshAccepted=1:freshIncomplete=0,sourceLinked=1:sourceStatus=linked

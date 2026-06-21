@@ -1,0 +1,12 @@
+name=Phase publisher source-owned stable key live consumption reuse current incomplete
+
+phase_publisher_reuse_probe=source-owned-reused-last-proven-row
+stable_key.source_owned_fallback_shadow=true
+stable_key.source_owned_fallback_live_consumption_proposal=true
+stable_key.source_owned_fallback_live_consumption=true
+
+expect.phase_publisher_reuse_ledger_summary=decisions=1,fresh=0,reused=1,displaced=0,blocked=0,stale=0,planMismatch=0,stageMismatch=0,frequencyMismatch=0,roleMismatch=0,noCandidate=0,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_stable_key_shadow_summary=decisions=1,gateEnabled=1,attempted=1,skipped=0,hashMismatch=0,rowOrderingMismatch=0,dedupeMismatch=0,duplicateSuppressionMismatch=0,completionIdentityMismatch=0,phaseReuseMismatch=0,overlayCapMismatch=0,moreAtcMismatch=0,missingPlanBlocked=0,drift=0,safeForFutureLiveOptIn=1,behaviorConsumerEnabled=0,behaviorChanged=0
+expect.phase_publisher_stable_key_live_consumption_readiness_summary=decisions=1,proposalGateArmed=1,shadowParityClean=1,planContextAvailable=1,missingPlanBlocked=0,driftBlocked=0,shadowNotAttemptedBlocked=0,readinessBlocked=0,readyForFutureLiveConsumption=1,liveBehaviorConsumerEnabled=0,shadowBehaviorConsumerEnabled=0,behaviorChanged=0
+expect.phase_publisher_stable_key_live_consumption_summary=decisions=1,gateArmed=1,allowed=1,blocked=0,sourceOwnedConsumed=1,generatedFallbackConsumed=0,missingPlanBlocked=0,shadowGateOffBlocked=0,shadowParityNotAttemptedBlocked=0,shadowDriftBlocked=0,hashMismatchBlocked=0,rowOrderingMismatchBlocked=0,dedupeMismatchBlocked=0,duplicateSuppressionMismatchBlocked=0,completionIdentityMismatchBlocked=0,phaseReuseMismatchBlocked=0,overlayCapMismatchBlocked=0,moreAtcMismatchBlocked=0,missingSourceOwnedKeyBlocked=0,migrationNotReadyBlocked=0,defaultModeProtected=0,behaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=SRC_CTR@124.200:decision=reused-last-proven-row,liveReadyForFutureOptIn=1:liveBlockedReason=<none>:liveBehaviorConsumer=0,liveGateArmed=1:liveGateSource=harness:liveAllowed=1:liveGateBlockedReason=<none>:liveConsumedKeyType=source-owned:liveDecisionBehaviorChanged=0:liveDefaultModeProtected=0

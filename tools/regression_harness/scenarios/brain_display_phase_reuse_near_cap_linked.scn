@@ -1,0 +1,5 @@
+name=Brain display phase reuse ledger reused row near overlay cap linked
+phase_publisher_reuse_probe=reused-near-cap-linked
+expect.phase_publisher_reuse_ledger_summary=decisions=1,fresh=0,reused=1,displaced=0,blocked=0,stale=0,planMismatch=0,stageMismatch=0,frequencyMismatch=0,roleMismatch=0,noCandidate=0,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_stable_key_summary=decisions=1,present=1,missing=0,fallback=0,synthetic=0,legacy=0,duplicated=0,changedAcrossReuse=0,unsafeSameKey=0,linkedDisplay=1,linkedCap=1,linkedPhase=1,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=CAP_CTR@125.100:decision=reused-last-proven-row,displayDecision=display:cap39:capDecision=overlay-cap|39,sourceEvidence=source:cap39,sourceLinked=1:sourceStatus=linked,stableKey=source-evidence|source:cap39:stableKeyPresent=1:stableKeySource=source-evidence:stableKeyStatus=stable

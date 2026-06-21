@@ -1,0 +1,4 @@
+name=Brain display phase reuse ledger no reuse candidate
+phase_publisher_reuse_probe=no-reuse-candidate
+expect.phase_publisher_reuse_ledger_summary=decisions=1,fresh=0,reused=0,displaced=0,blocked=0,stale=0,planMismatch=0,stageMismatch=0,frequencyMismatch=0,roleMismatch=0,noCandidate=1,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=decision=no-reuse-candidate,subject=no-reuse-candidate,currentStage=Enroute,blockedReason=no-last-proven-snapshot

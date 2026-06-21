@@ -32,6 +32,9 @@ expect.resolver_route_available=true
 expect.resolver_route_resolved=true
 expect.resolver_route_current_sectors=VHHK
 expect.resolver_authority_relevance_available=true
+expect.resolver_authority_duplicated_atis_proof_evidence_contains=HKG_APP:token=HKG_W_CTR:text=1:tokens=COVERING|HKG_W_CTR:aliases=HKG_W_CTR:auth=VATGLASSES:HKG_W_CTR:src=VATGLASSES:kind=center:polygon=HKGW-AIRSPACE:allowed=1:routePolygon=1:facility=0:missingOwner=0:oldProof=0:reason=facility-mismatch
+expect.resolver_authority_preview_summary=authority=brain-evidence,source=1,evidence=1,compatRelevant=0,previewSurvivors=0,previewRejected=2,oldMismatch=0,droppedBeforeBrain=0,compatOnly=1,liveOwned=1
+expect.resolver_authority_preview_decisions_contains=controller:HKG_APP:<empty>:<empty>:<empty>:<empty>:<empty>:brain-preview-authority-relevance-rejected-no-usable-proof:compatibility-proof-not-survivor:old=0,duplicated-atis-proof:HKG_APP:VATGLASSES:HKG_W_CTR:<empty>:HKGW-AIRSPACE:ATIS_COVERED:HKG_W_CTR:DUPLICATED_ATIS_DERIVED:brain-preview-authority-relevance-rejected-duplicated-atis-proof:facility-mismatch:old=0
 expect.resolver_authority_diagnostics=HKG_APP:facility-mismatch:DUPLICATED_ATIS_DERIVED:VATGLASSES:HKG_W_CTR:HKGW-AIRSPACE:ATIS_COVERED:HKG_W_CTR
 expect.resolver_authority_relevant_matches=<none>
 expect.resolver_enroute_available=false

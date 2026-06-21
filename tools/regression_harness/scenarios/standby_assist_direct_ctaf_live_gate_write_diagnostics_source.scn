@@ -1,0 +1,21 @@
+name=Standby assist direct CTAF live gate write diagnostics source
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=12;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=123.450;age=20;failures=0
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.direct_ctaf_enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|KAAA|KBBB
+
+radio.valid=true
+
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,role=CTAF,freq=122.950,productGateEnabled=1,directCtafLivePromotionAllowed=1,livePromotionReason=promoted-direct-ctaf,actualSelectedTargetSource=direct-ctaf-advisory,actualSelectedTargetFrequency=122.950,actualWriteEligible=1,final=recommend-com1-standby
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:standby-decision:1:ctaf-unicom-advisory|departure|KAAA|CTAF|KAAA|122950,standbyDecision=standby-decision:1:ctaf-unicom-advisory|departure|KAAA|CTAF|KAAA|122950,enabled=1,latchKey=HARNESS|KAAA|KBBB|1||KAAA|122950,latchConsumed=1,writeAllowed=1,writeAttempted=1,writeSucceededKnown=1,writeSucceeded=1,writerTarget=COM1_STANDBY,targetFrequency=122.950,failure=<none>,marker=1
+expect.standby_assist_side_effect_actual_summary=actualSelectedTargetSource=direct-ctaf-advisory,actualSelectedTargetFrequency=122.950,actualWriteEligible=1,actualWriteAttempted=1,actualWriteSucceededKnown=1,actualWriteSucceeded=1
+expect.overlay_body_lines=xPilot not loaded|CTAF KAAA 122.950 *Standby*

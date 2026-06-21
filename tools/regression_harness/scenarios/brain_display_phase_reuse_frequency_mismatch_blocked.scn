@@ -1,0 +1,5 @@
+name=Brain display phase reuse ledger frequency mismatch blocks reuse
+phase_publisher_reuse_probe=blocked-frequency-mismatch
+expect.phase_publisher_reuse_ledger_summary=decisions=2,fresh=1,reused=0,displaced=0,blocked=1,stale=0,planMismatch=0,stageMismatch=0,frequencyMismatch=1,roleMismatch=0,noCandidate=0,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_stable_key_summary=decisions=2,present=2,missing=0,fallback=2,synthetic=0,legacy=0,duplicated=0,changedAcrossReuse=1,unsafeSameKey=0,linkedDisplay=0,linkedCap=0,linkedPhase=2,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=FREQ_CTR@124.800:decision=fresh-current-row,FREQ_CTR@124.700:decision=blocked-frequency-mismatch,blockedReason=frequency-mismatch,currentIndex=0,FREQ_CTR@124.700:decision=blocked-frequency-mismatch,stableKey=row|enroute||6|FREQ_CTR|124.700:stableKeyPresent=1:stableKeySource=generated-fallback:stableKeyStatus=fallback-derived,keyContinuityKnown=1:keyChangedAcrossReuse=1:unsafeSameKey=0:keyWarning=1:keyWarningReason=changed-across-reuse

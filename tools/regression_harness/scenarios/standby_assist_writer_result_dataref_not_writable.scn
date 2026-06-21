@@ -1,0 +1,23 @@
+name=Standby assist writer result dataref not writable
+
+display_intent.stage=Departure
+display_intent.current_polygon=KZOA
+
+radio.valid=true
+radio.com1_active=120.500
+
+departure.station=role=Tower;callsign=KSFO_TWR;frequency=120.500;online=true
+departure.station=role=Approach;callsign=NCT_APP;frequency=125.350;online=true;polygonKey=KZOA
+
+display_intent.relation=callsign=NCT_APP;frequency=125.350;relation=CurrentPolygon
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.write_succeeded=false
+standby_assist.writer_result_code=com1-standby-dataref-not-writable
+standby_assist.stage=Departure
+standby_assist.plan_key=UAL3936|KSFO|CYVR
+
+expect.standby_assist_writer_result_contains=known=1,code=com1-standby-dataref-not-writable,failureReason=com1-standby-dataref-not-writable,failureDomain=dataref,inputFrequency=125.350,targetCom=COM1_STANDBY,datarefAvailable=1,datarefWritable=0,writeAttempted=1,writeSucceeded=0,blockedBeforeSimWrite=1,source=controller-display-row
+expect.standby_assist_writer_counter_summary=writerResults=1,writerSuccess=0,writerFailure=1,writerBlocked=1,writerUnknown=0,writerDatarefMissing=0,writerDatarefNotWritable=1,writerInvalidFrequency=0,writerNoTarget=0,writerNoWriteRequested=0,writerControllerSource=1,writerDirectCtafSource=0

@@ -1,0 +1,9 @@
+name=Source-owned live consumption settings true drift blocked
+
+phase_publisher_reuse_probe=source-owned-plan-context-drift
+stable_key.source_owned_fallback_shadow=true
+stable_key.source_owned_fallback_live_consumption_proposal=true
+settings.source_owned_fallback_stable_key_live_consumption=true
+
+expect.phase_publisher_stable_key_live_consumption_summary=decisions=2,gateArmed=2,allowed=1,blocked=1,sourceOwnedConsumed=1,generatedFallbackConsumed=1,missingPlanBlocked=0,shadowGateOffBlocked=0,shadowParityNotAttemptedBlocked=0,shadowDriftBlocked=1,hashMismatchBlocked=1,rowOrderingMismatchBlocked=0,dedupeMismatchBlocked=0,duplicateSuppressionMismatchBlocked=0,completionIdentityMismatchBlocked=0,phaseReuseMismatchBlocked=1,overlayCapMismatchBlocked=0,moreAtcMismatchBlocked=0,missingSourceOwnedKeyBlocked=0,migrationNotReadyBlocked=0,defaultModeProtected=0,behaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=DRIFT_SRC@124.550:decision=displaced-by-fresh-current-row,liveGateSource=settings-store:liveAllowed=0:liveGateBlockedReason=source-owned-phase-reuse-match-drift:liveConsumedKeyType=generated-fallback:liveDecisionBehaviorChanged=0,shadowDrift=1:shadowDriftReason=source-owned-phase-reuse-match-drift:shadowSafeForFutureLiveOptIn=0

@@ -1,0 +1,15 @@
+name=CTAF UNICOM source evidence available CTAF
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+departure.station=role=CTAF;callsign=OLD_CTAF;frequency=111.111;online=true
+ctaf_unicom.departure=airport=KAAA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=12;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=123.450;age=20;failures=0
+
+expect.ctaf_unicom_evidence_summary=source=2,projection=2,legacyDiagnosticLiveRows=2,diagnosticCompatibilityProjectionOnly=1,legacyDiagnosticBypassFlag=1,historicalCompatibilityRows=2,compatibilityRowsDiagnosticOnly=1,legacyBypassFieldsQuarantined=1,advisory=0
+expect.ctaf_unicom_source_evidence=arrival:id=ctaf-unicom:arrival:KBBB:airport=KBBB:attempted=1:skipped=<none>:cacheHit=1:fetch=0:request=1:status=2xx:resolved=1:available=1:freq=123.450:age=20:failures=0:fallbackEligible=0:fallbackFreq=<empty>:confidence=high:reason=ctaf-available:pending=<none>,departure:id=ctaf-unicom:departure:KAAA:airport=KAAA:attempted=1:skipped=<none>:cacheHit=1:fetch=0:request=1:status=2xx:resolved=1:available=1:freq=122.950:age=12:failures=0:fallbackEligible=0:fallbackFreq=<empty>:confidence=high:reason=ctaf-available:pending=<none>
+expect.ctaf_unicom_projection_evidence=arrival:source=ctaf-unicom:arrival:KBBB:role=CTAF:freq=123.450:fallback=0:empty=0:legacyRemoved=0:duplicates=0:diagnosticCompatibilityProjectionOnly=1:legacyDiagnosticBypass=1:bypassRetired=1:bypassLiveAuthority=0:bypassDiagnosticOnly=1:legacyDiagnosticLiveRowEmitted=1,departure:source=ctaf-unicom:departure:KAAA:role=CTAF:freq=122.950:fallback=0:empty=0:legacyRemoved=1:duplicates=0:diagnosticCompatibilityProjectionOnly=1:legacyDiagnosticBypass=1:bypassRetired=1:bypassLiveAuthority=0:bypassDiagnosticOnly=1:legacyDiagnosticLiveRowEmitted=1
+expect.ctaf_unicom_advisory_preview_summary=source=2,projection=2,preview=2,wouldEmit=2,matches=2,mismatch=0,diagnosticCompatibilityProjectionOnly=1,legacyDiagnosticBypassFlag=1
+expect.ctaf_unicom_advisory_preview_decisions=arrival:id=ctaf-unicom-preview:arrival:KBBB:source=ctaf-unicom:arrival:KBBB:airport=KBBB:decision=ctaf-display:role=CTAF:freq=123.450:fallback=0:sourceConfidence=high:confidence=high:score=0.90/0.05:hardBlock=0:reason=available-ctaf-source:wouldEmit=1:matches=1,departure:id=ctaf-unicom-preview:departure:KAAA:source=ctaf-unicom:departure:KAAA:airport=KAAA:decision=ctaf-display:role=CTAF:freq=122.950:fallback=0:sourceConfidence=high:confidence=high:score=0.90/0.05:hardBlock=0:reason=available-ctaf-source:wouldEmit=1:matches=1
+expect.ctaf_unicom_advisory_authority_summary=authority=brain-evidence,source=2,preview=2,live=2,historicalCompatibilityRows=2,mismatch=0,diagnosticCompatibilityProjectionOnly=1,legacyDiagnosticBypassFlag=1,brainOwned=1,bypassRetired=1,liveBypassAuthority=0,diagnosticBypassRows=2,brainAdvisoryLiveRows=2,duplicateLive=0,retirementSafe=1,noLiveBypassAuthority=1,compatibilityRowsDiagnosticOnly=1,liveRowsBrainAdvisoryOwned=1,legacyBypassFieldsQuarantined=1
+expect.ctaf_unicom_publisher_rows=KAAA:UNKNOWN

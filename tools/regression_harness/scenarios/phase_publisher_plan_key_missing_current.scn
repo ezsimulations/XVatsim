@@ -1,0 +1,4 @@
+name=Phase publisher plan key linkage missing product plan key
+phase_publisher_reuse_probe=missing-product-plan-key
+expect.phase_publisher_plan_context_summary=decisions=1,available=0,missing=1,liveProduct=0,harness=0,missingContext=1,continuityKnown=0,continuityUnknown=1,liveMismatch=0,harnessMismatch=0,brainOwned=1,publishBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=productPlan=<none>:productPlanAvailable=0:productPlanSource=unavailable,productPlanMissingReason=product-plan-key-missing-in-probe,planContinuity=missing-current-plan,planMismatchSource=unavailable:planContextLinked=0

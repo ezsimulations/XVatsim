@@ -1,0 +1,13 @@
+name=Brain display source-owned stable key parity reports missing plan context
+
+display_intent.stage=Enroute
+
+enroute.station=role=Center;callsign=DIST_CTR;frequency=124.600;online=true;routeEntryDistanceNm=0
+
+expect.display_source=Enroute
+expect.display_callsigns=DIST_CTR
+expect.brain_display_intent_rows=DIST_CTR:CURRENT_POLYGON:ACTIVE
+expect.brain_display_source_owned_stable_key_summary=decisions=1,present=1,generatedFallback=1,matches=1,mismatch=0,planAvailable=0,planMissing=1,migrationReady=0,behaviorConsumerEnabled=0,behaviorChanged=0
+expect.brain_display_stable_key_consumer_dry_run_summary=decisions=1,sourceOwnedPresent=1,migrationReady=0,dedupeGroupWouldChange=0,duplicateSuppressionWouldChange=0,completionIdentityWouldChange=0,phaseReuseWouldChange=0,rowOrderingWouldChange=0,overlayCapWouldChange=0,moreAtcWouldChange=0,drift=0,safeForOptIn=0,behaviorConsumerEnabled=0,displayBehaviorChanged=0
+expect.brain_display_stable_key_consumer_dry_run_decisions_contains=DIST_CTR@124.600:role=CTR:endpoint=enroute,currentKey=row|enroute||6|DIST_CTR|124600:sourceOwnedKey=source-owned:fallback-polygon-geometry|DIST_CTR|6|124600|plan-context-unavailable,sourceOwnedPresent=1:migrationReady=0:behaviorConsumer=0,dedupeWouldChange=0:duplicateSuppressionWouldChange=0:completionIdentityWouldChange=0,phaseWouldChange=0:rowOrderingWouldChange=0:overlayCapWouldChange=0:moreAtcWouldChange=0:drift=0,safeForOptIn=0:blockedReason=missing-plan-context
+expect.brain_display_stable_key_audit_decisions_contains=DIST_CTR|124600:stableKey=row|enroute||6|DIST_CTR|124600:present=1:source=generated-fallback:status=fallback-derived,sourceOwnedKey=source-owned:fallback-polygon-geometry|DIST_CTR|6|124600|plan-context-unavailable:sourceOwnedPresent=1:sourceOwnedSource=source-owned,generatedFallbackKey=row|enroute||6|DIST_CTR|124600:sourceOwnedMatchesFallback=1:sourceOwnedMismatchReason=<none>:sourceOwnedPlanContext=plan-context-unavailable:sourceOwnedPlanAvailable=0:sourceOwnedPlanSource=unavailable:sourceOwnedMigrationReady=0:sourceOwnedBehaviorConsumer=0

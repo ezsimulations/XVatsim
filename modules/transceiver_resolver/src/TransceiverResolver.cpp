@@ -46,6 +46,8 @@ constexpr long long kAuthorityStationResolveCadenceSeconds = 15;
 constexpr double kResolveMovementThresholdNm = 0.05;
 constexpr double kResolveAltitudeThresholdFt = 500.0;
 constexpr double kAirportCoverageAircraftAglFt = 5000.0;
+constexpr const char* kResolutionPathAuthorityStations = "authority-stations";
+constexpr const char* kResolutionPathAirportCoverage = "airport-coverage";
 
 struct WinHttpHandle {
     WinHttpHandle() = default;
@@ -75,6 +77,14 @@ struct WinHttpHandle {
     }
 
     HINTERNET handle = nullptr;
+};
+
+struct DisplayFrequencyResolution {
+    std::string frequency;
+    std::string source = "none";
+    std::string unavailableReason;
+    bool controllerFrequencyGuard = false;
+    bool transceiverFrequencyGuard = false;
 };
 
 long long CurrentTickSeconds() {
@@ -277,19 +287,58 @@ bool IsGuardFrequency(const std::string& frequency) {
     return normalizedFrequency == "121500" || normalizedFrequency == "199998";
 }
 
+DisplayFrequencyResolution ResolveDisplayFrequencyEvidence(
+    const std::string& controllerFrequency,
+    const std::string& transceiverFrequency) {
+    DisplayFrequencyResolution resolution;
+    const auto controllerHasFrequency = !controllerFrequency.empty();
+    const auto transceiverHasFrequency = !transceiverFrequency.empty();
+    resolution.controllerFrequencyGuard =
+        controllerHasFrequency && IsGuardFrequency(controllerFrequency);
+    resolution.transceiverFrequencyGuard =
+        transceiverHasFrequency && IsGuardFrequency(transceiverFrequency);
+
+    if (controllerHasFrequency && !resolution.controllerFrequencyGuard) {
+        resolution.frequency = controllerFrequency;
+        resolution.source = "controller";
+        return resolution;
+    }
+
+    if (transceiverHasFrequency && !resolution.transceiverFrequencyGuard) {
+        resolution.frequency = transceiverFrequency;
+        resolution.source = "transceiver";
+        return resolution;
+    }
+
+    if (!controllerHasFrequency && !transceiverHasFrequency) {
+        resolution.unavailableReason = "both-empty";
+    } else if (resolution.controllerFrequencyGuard &&
+               resolution.transceiverFrequencyGuard) {
+        resolution.unavailableReason = "both-guard";
+    } else if (resolution.controllerFrequencyGuard &&
+               !transceiverHasFrequency) {
+        resolution.unavailableReason = "controller-guard-transceiver-empty";
+    } else if (!controllerHasFrequency &&
+               resolution.transceiverFrequencyGuard) {
+        resolution.unavailableReason = "controller-empty-transceiver-guard";
+    } else {
+        resolution.unavailableReason = "no-display-frequency";
+    }
+    return resolution;
+}
+
 std::string ResolveDisplayFrequency(
     const std::string& controllerFrequency,
     const std::string& transceiverFrequency) {
-    if (!controllerFrequency.empty() && !IsGuardFrequency(controllerFrequency)) {
-        return controllerFrequency;
-    }
-    if (!transceiverFrequency.empty() && !IsGuardFrequency(transceiverFrequency)) {
-        return transceiverFrequency;
-    }
-    return {};
+    return ResolveDisplayFrequencyEvidence(
+               controllerFrequency,
+               transceiverFrequency)
+        .frequency;
 }
 
-std::vector<CachedTransceiver> ParseTransceivers(const std::string& payload) {
+std::vector<CachedTransceiver> ParseTransceivers(
+    const std::string& payload,
+    brain::TransceiverParserHygieneCounters* counters = nullptr) {
     using namespace winrt;
     using namespace winrt::Windows::Data::Json;
 
@@ -304,6 +353,9 @@ std::vector<CachedTransceiver> ParseTransceivers(const std::string& payload) {
 
     std::vector<CachedTransceiver> parsedTransceivers;
     if (payload.empty()) {
+        if (counters != nullptr) {
+            ++counters->emptyPayload;
+        }
         return parsedTransceivers;
     }
 
@@ -314,12 +366,18 @@ std::vector<CachedTransceiver> ParseTransceivers(const std::string& payload) {
             const auto callsign =
                 NormalizeCallsign(to_string(client.GetNamedString(L"callsign", L"")));
             if (callsign.empty()) {
+                if (counters != nullptr) {
+                    ++counters->invalidClientCallsign;
+                }
                 continue;
             }
             const auto transceivers = client.GetNamedArray(L"transceivers", JsonArray{});
 
             for (uint32_t transceiverIndex = 0; transceiverIndex < transceivers.Size(); ++transceiverIndex) {
                 if (parsedTransceivers.size() >= kMaxTransceivers) {
+                    if (counters != nullptr) {
+                        counters->maxTransceiverTruncation = true;
+                    }
                     return parsedTransceivers;
                 }
 
@@ -336,17 +394,40 @@ std::vector<CachedTransceiver> ParseTransceivers(const std::string& payload) {
                         L"heightMslM",
                         transceiver.GetNamedNumber(L"heightAglM", 0.0));
                 parsed.heightAglFt = heightMslM * kMetersToFeet;
-                if (parsed.callsign.empty() ||
-                    parsed.frequency.empty() ||
-                    !IsValidPosition(parsed.latitudeDeg, parsed.longitudeDeg) ||
+                const auto invalidCallsign = parsed.callsign.empty();
+                const auto invalidFrequency = parsed.frequency.empty();
+                const auto invalidPosition =
+                    !IsValidPosition(parsed.latitudeDeg, parsed.longitudeDeg);
+                const auto invalidHeight =
                     !std::isfinite(parsed.heightAglFt) ||
-                    parsed.heightAglFt < 0.0) {
+                    parsed.heightAglFt < 0.0;
+                if (invalidCallsign ||
+                    invalidFrequency ||
+                    invalidPosition ||
+                    invalidHeight) {
+                    if (counters != nullptr) {
+                        if (invalidCallsign) {
+                            ++counters->invalidClientCallsign;
+                        }
+                        if (invalidFrequency) {
+                            ++counters->invalidTransceiverFrequency;
+                        }
+                        if (invalidPosition) {
+                            ++counters->invalidPosition;
+                        }
+                        if (invalidHeight) {
+                            ++counters->invalidHeight;
+                        }
+                    }
                     continue;
                 }
                 parsedTransceivers.push_back(std::move(parsed));
             }
         }
     } catch (...) {
+        if (counters != nullptr) {
+            ++counters->parseException;
+        }
         return {};
     }
 
@@ -382,6 +463,475 @@ double RadioHorizonNm(double aircraftAglFt, double transceiverAglFt) {
     return 1.23 * (std::sqrt(safeAircraftAglFt) + std::sqrt(safeTransceiverAglFt));
 }
 
+brain::TransceiverStationEvidenceSnapshot BuildStationEvidence(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::ControllerSnapshot& controller,
+    const CachedTransceiver& transceiver,
+    double maxCandidateDistanceNm) {
+    brain::TransceiverStationEvidenceSnapshot evidence;
+    evidence.sourceFrequency = transceiver.frequency;
+    evidence.latitudeDeg = transceiver.latitudeDeg;
+    evidence.longitudeDeg = transceiver.longitudeDeg;
+    evidence.heightAglFt = transceiver.heightAglFt;
+    evidence.hasAircraftDistance = true;
+    evidence.aircraftDistanceNm = GreatCircleDistanceNm(
+        aircraftState.latitudeDeg,
+        aircraftState.longitudeDeg,
+        transceiver.latitudeDeg,
+        transceiver.longitudeDeg);
+    evidence.maxCandidateDistanceNm = maxCandidateDistanceNm;
+    evidence.withinMaxCandidateDistance =
+        evidence.aircraftDistanceNm <= maxCandidateDistanceNm;
+
+    const auto controllerVisualRangeNm =
+        controller.visualRangeNm > 0
+            ? static_cast<double>(controller.visualRangeNm)
+            : 0.0;
+    evidence.receivableRangeNm = std::max(
+        {kMinReceivableRangeNm,
+         controllerVisualRangeNm,
+         RadioHorizonNm(
+             aircraftState.altitudeAglFt,
+             transceiver.heightAglFt)});
+    evidence.hasReceivableRange = true;
+    evidence.withinReceivableRange =
+        evidence.aircraftDistanceNm <= evidence.receivableRangeNm;
+    evidence.score =
+        evidence.receivableRangeNm - evidence.aircraftDistanceNm;
+    evidence.transceiverFrequencyGuard =
+        !transceiver.frequency.empty() && IsGuardFrequency(transceiver.frequency);
+    return evidence;
+}
+
+void PopulateControllerFeedSourceEvidence(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    brain::TransceiverSourceEvidenceSnapshot* evidence) {
+    if (evidence == nullptr) {
+        return;
+    }
+
+    if (!controllerFeedSnapshot.available || controllerFeedSnapshot.stale) {
+        evidence->sourceControllerCountKnown = false;
+        evidence->sourceControllerCount = 0;
+        return;
+    }
+
+    evidence->sourceControllerCountKnown = true;
+    evidence->sourceControllerCount =
+        static_cast<int>(controllerFeedSnapshot.Controllers().size());
+}
+
+bool NormalResolveStationUsableForCompatibilityProjection(
+    const brain::TransceiverStationEvidenceSnapshot& station) {
+    return station.withinMaxCandidateDistance &&
+           station.withinReceivableRange;
+}
+
+bool NormalResolveStationBetterForCompatibilityProjection(
+    const brain::TransceiverStationEvidenceSnapshot& candidate,
+    const brain::TransceiverStationEvidenceSnapshot& currentBest) {
+    if (candidate.score != currentBest.score) {
+        return candidate.score > currentBest.score;
+    }
+    return candidate.aircraftDistanceNm < currentBest.aircraftDistanceNm;
+}
+
+const brain::TransceiverStationEvidenceSnapshot*
+FindNormalResolveCompatibilityStation(
+    const brain::TransceiverControllerEvidenceSnapshot& evidence) {
+    const brain::TransceiverStationEvidenceSnapshot* best = nullptr;
+    for (const auto& station : evidence.stations) {
+        if (!NormalResolveStationUsableForCompatibilityProjection(station)) {
+            continue;
+        }
+        if (best == nullptr ||
+            NormalResolveStationBetterForCompatibilityProjection(
+                station,
+                *best)) {
+            best = &station;
+        }
+    }
+    return best;
+}
+
+bool HasNormalResolveOverMaxStation(
+    const brain::TransceiverControllerEvidenceSnapshot& evidence) {
+    return std::any_of(
+        evidence.stations.begin(),
+        evidence.stations.end(),
+        [](const auto& station) {
+            return !station.withinMaxCandidateDistance;
+        });
+}
+
+void PopulateNormalResolveCompatibilityCandidates(
+    brain::TransceiverResolutionSnapshot* snapshot) {
+    if (snapshot == nullptr) {
+        return;
+    }
+
+    snapshot->candidatesCompatibilityOnly = true;
+    snapshot->candidates.clear();
+    snapshot->distanceRejectedControllers = 0;
+
+    // Compatibility projection only. BrainRadioRangeWorker owns the live
+    // accept/reject decision from controllerEvidence when evidence exists.
+    for (const auto& evidence : snapshot->controllerEvidence) {
+        if (!evidence.actionable || !evidence.hasTransceiverEntry) {
+            continue;
+        }
+
+        const auto* bestStation =
+            FindNormalResolveCompatibilityStation(evidence);
+        if (bestStation == nullptr) {
+            if (HasNormalResolveOverMaxStation(evidence)) {
+                ++snapshot->distanceRejectedControllers;
+            }
+            continue;
+        }
+
+        if (evidence.resolvedDisplayFrequency.empty()) {
+            continue;
+        }
+
+        brain::ReceivableControllerSnapshot candidate;
+        candidate.callsign = evidence.callsign;
+        candidate.frequency = evidence.resolvedDisplayFrequency;
+        candidate.distanceNm = bestStation->aircraftDistanceNm;
+        candidate.score = bestStation->score;
+        candidate.latitudeDeg = bestStation->latitudeDeg;
+        candidate.longitudeDeg = bestStation->longitudeDeg;
+        snapshot->candidates.push_back(std::move(candidate));
+    }
+}
+
+brain::TransceiverStationEvidenceSnapshot BuildAuthorityStationEvidence(
+    const CachedTransceiver& transceiver) {
+    brain::TransceiverStationEvidenceSnapshot evidence;
+    evidence.sourceFrequency = transceiver.frequency;
+    evidence.latitudeDeg = transceiver.latitudeDeg;
+    evidence.longitudeDeg = transceiver.longitudeDeg;
+    evidence.heightAglFt = transceiver.heightAglFt;
+    evidence.score = 0.0;
+    evidence.transceiverFrequencyGuard =
+        !transceiver.frequency.empty() && IsGuardFrequency(transceiver.frequency);
+    return evidence;
+}
+
+std::string PathReasonFromDisplayUnavailableReason(
+    const std::string& unavailableReason) {
+    if (unavailableReason.find("guard") != std::string::npos) {
+        return "guard-frequency";
+    }
+    if (unavailableReason.find("empty") != std::string::npos) {
+        return "empty-frequency";
+    }
+    return unavailableReason.empty()
+               ? std::string("no-display-frequency")
+               : unavailableReason;
+}
+
+void PopulateAuthorityStationsEvidenceAndCompatibilityCandidates(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const std::unordered_map<std::string, std::vector<CachedTransceiver>>& indexedTransceivers,
+    bool emitCompatibilityCandidates,
+    const std::string& pathUnavailableReason,
+    brain::TransceiverResolutionSnapshot* snapshot) {
+    if (snapshot == nullptr ||
+        !controllerFeedSnapshot.available ||
+        controllerFeedSnapshot.stale) {
+        return;
+    }
+
+    snapshot->resolutionPath = kResolutionPathAuthorityStations;
+    snapshot->candidatesCompatibilityOnly = true;
+    snapshot->controllerEvidence.clear();
+    if (emitCompatibilityCandidates) {
+        snapshot->candidates.clear();
+    }
+
+    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
+        brain::TransceiverControllerEvidenceSnapshot evidence;
+        evidence.callsign = controller.callsign;
+        evidence.controllerFrequency = controller.frequency;
+        evidence.facility = controller.facility;
+        evidence.actionable = controller.actionable;
+        evidence.atis = controller.atis;
+        evidence.visualRangeNm = controller.visualRangeNm;
+        evidence.controllerFrequencyGuard =
+            !controller.frequency.empty() && IsGuardFrequency(controller.frequency);
+
+        const auto transceiverEntry = indexedTransceivers.find(controller.callsign);
+        evidence.hasTransceiverEntry =
+            transceiverEntry != indexedTransceivers.end();
+        evidence.matchingTransceiverCount =
+            evidence.hasTransceiverEntry
+                ? static_cast<int>(transceiverEntry->second.size())
+                : 0;
+
+        std::string firstUnavailableDisplayReason;
+        if (evidence.hasTransceiverEntry) {
+            evidence.stations.reserve(transceiverEntry->second.size());
+            for (const auto& transceiver : transceiverEntry->second) {
+                auto stationEvidence = BuildAuthorityStationEvidence(transceiver);
+                evidence.transceiverFrequencyGuard =
+                    evidence.transceiverFrequencyGuard ||
+                    stationEvidence.transceiverFrequencyGuard;
+
+                const auto displayResolution = ResolveDisplayFrequencyEvidence(
+                    controller.frequency,
+                    transceiver.frequency);
+                evidence.controllerFrequencyGuard =
+                    evidence.controllerFrequencyGuard ||
+                    displayResolution.controllerFrequencyGuard;
+                evidence.transceiverFrequencyGuard =
+                    evidence.transceiverFrequencyGuard ||
+                    displayResolution.transceiverFrequencyGuard;
+                if (!displayResolution.frequency.empty()) {
+                    if (evidence.resolvedDisplayFrequency.empty()) {
+                        evidence.resolvedDisplayFrequency =
+                            displayResolution.frequency;
+                        evidence.displayFrequencySource =
+                            displayResolution.source;
+                        evidence.displayFrequencyUnavailableReason.clear();
+                    }
+                    if (emitCompatibilityCandidates &&
+                        pathUnavailableReason.empty() &&
+                        controller.actionable) {
+                        brain::ReceivableControllerSnapshot candidate;
+                        candidate.callsign = controller.callsign;
+                        candidate.frequency = displayResolution.frequency;
+                        candidate.distanceNm = 0.0;
+                        candidate.score = 0.0;
+                        candidate.latitudeDeg = transceiver.latitudeDeg;
+                        candidate.longitudeDeg = transceiver.longitudeDeg;
+                        snapshot->candidates.push_back(std::move(candidate));
+                    }
+                } else if (firstUnavailableDisplayReason.empty()) {
+                    firstUnavailableDisplayReason =
+                        displayResolution.unavailableReason;
+                }
+
+                evidence.stations.push_back(std::move(stationEvidence));
+            }
+        }
+
+        if (evidence.resolvedDisplayFrequency.empty()) {
+            evidence.displayFrequencySource = "none";
+            evidence.displayFrequencyUnavailableReason =
+                evidence.hasTransceiverEntry
+                    ? firstUnavailableDisplayReason
+                    : std::string("missing-transceiver");
+            if (evidence.displayFrequencyUnavailableReason.empty()) {
+                evidence.displayFrequencyUnavailableReason =
+                    "no-display-frequency";
+            }
+        }
+
+        if (!pathUnavailableReason.empty()) {
+            evidence.pathUnavailableReason = pathUnavailableReason;
+        } else if (!evidence.actionable) {
+            evidence.pathUnavailableReason = "non-actionable";
+        } else if (!evidence.hasTransceiverEntry) {
+            evidence.pathUnavailableReason = "missing-transceiver";
+        } else if (evidence.resolvedDisplayFrequency.empty()) {
+            evidence.pathUnavailableReason =
+                PathReasonFromDisplayUnavailableReason(
+                    evidence.displayFrequencyUnavailableReason);
+        }
+
+        snapshot->controllerEvidence.push_back(std::move(evidence));
+    }
+
+    const auto sourceControllerCount =
+        static_cast<int>(controllerFeedSnapshot.Controllers().size());
+    const auto evidenceControllerCount =
+        static_cast<int>(snapshot->controllerEvidence.size());
+    snapshot->droppedBeforeBrainControllers =
+        std::max(0, sourceControllerCount - evidenceControllerCount);
+}
+
+brain::TransceiverStationEvidenceSnapshot BuildAirportCoverageStationEvidence(
+    const brain::ControllerSnapshot& controller,
+    const CachedTransceiver& transceiver,
+    double airportLatitudeDeg,
+    double airportLongitudeDeg) {
+    brain::TransceiverStationEvidenceSnapshot evidence;
+    evidence.sourceFrequency = transceiver.frequency;
+    evidence.latitudeDeg = transceiver.latitudeDeg;
+    evidence.longitudeDeg = transceiver.longitudeDeg;
+    evidence.heightAglFt = transceiver.heightAglFt;
+    evidence.hasAircraftDistance = true;
+    evidence.aircraftDistanceNm = GreatCircleDistanceNm(
+        airportLatitudeDeg,
+        airportLongitudeDeg,
+        transceiver.latitudeDeg,
+        transceiver.longitudeDeg);
+
+    const auto controllerVisualRangeNm =
+        controller.visualRangeNm > 0
+            ? static_cast<double>(controller.visualRangeNm)
+            : 0.0;
+    evidence.receivableRangeNm = std::max(
+        kMinReceivableRangeNm,
+        std::max(
+            controllerVisualRangeNm,
+            RadioHorizonNm(
+                kAirportCoverageAircraftAglFt,
+                transceiver.heightAglFt)));
+    evidence.hasReceivableRange = true;
+    evidence.withinReceivableRange =
+        evidence.aircraftDistanceNm <= evidence.receivableRangeNm;
+    // Airport coverage has no separate max-candidate envelope. Keep this
+    // field non-filtering so old radio-range diagnostics do not misread it.
+    evidence.maxCandidateDistanceNm = evidence.receivableRangeNm;
+    evidence.withinMaxCandidateDistance = true;
+    evidence.score =
+        evidence.receivableRangeNm - evidence.aircraftDistanceNm;
+    evidence.transceiverFrequencyGuard =
+        !transceiver.frequency.empty() && IsGuardFrequency(transceiver.frequency);
+    return evidence;
+}
+
+void PopulateAirportCoverageEvidenceAndCompatibilityCandidates(
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const std::unordered_map<std::string, std::vector<CachedTransceiver>>& indexedTransceivers,
+    bool emitCompatibilityCandidates,
+    const std::string& pathUnavailableReason,
+    double airportLatitudeDeg,
+    double airportLongitudeDeg,
+    brain::TransceiverResolutionSnapshot* snapshot) {
+    if (snapshot == nullptr ||
+        !controllerFeedSnapshot.available ||
+        controllerFeedSnapshot.stale) {
+        return;
+    }
+
+    snapshot->resolutionPath = kResolutionPathAirportCoverage;
+    snapshot->candidatesCompatibilityOnly = true;
+    snapshot->controllerEvidence.clear();
+    if (emitCompatibilityCandidates) {
+        snapshot->candidates.clear();
+    }
+
+    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
+        brain::TransceiverControllerEvidenceSnapshot evidence;
+        evidence.callsign = controller.callsign;
+        evidence.controllerFrequency = controller.frequency;
+        evidence.facility = controller.facility;
+        evidence.actionable = controller.actionable;
+        evidence.atis = controller.atis;
+        evidence.visualRangeNm = controller.visualRangeNm;
+        evidence.controllerFrequencyGuard =
+            !controller.frequency.empty() && IsGuardFrequency(controller.frequency);
+
+        const auto transceiverEntry = indexedTransceivers.find(controller.callsign);
+        evidence.hasTransceiverEntry =
+            transceiverEntry != indexedTransceivers.end();
+        evidence.matchingTransceiverCount =
+            evidence.hasTransceiverEntry
+                ? static_cast<int>(transceiverEntry->second.size())
+                : 0;
+
+        double bestScore = -1.0;
+        double bestDistanceNm = 0.0;
+        double bestLatitudeDeg = 0.0;
+        double bestLongitudeDeg = 0.0;
+        std::string bestTransceiverFrequency;
+        std::size_t bestEvidenceIndex = std::numeric_limits<std::size_t>::max();
+
+        if (evidence.hasTransceiverEntry) {
+            evidence.stations.reserve(transceiverEntry->second.size());
+            for (const auto& transceiver : transceiverEntry->second) {
+                auto stationEvidence = BuildAirportCoverageStationEvidence(
+                    controller,
+                    transceiver,
+                    airportLatitudeDeg,
+                    airportLongitudeDeg);
+                evidence.transceiverFrequencyGuard =
+                    evidence.transceiverFrequencyGuard ||
+                    stationEvidence.transceiverFrequencyGuard;
+
+                if (stationEvidence.withinReceivableRange &&
+                    stationEvidence.score > bestScore) {
+                    bestScore = stationEvidence.score;
+                    bestDistanceNm = stationEvidence.aircraftDistanceNm;
+                    bestTransceiverFrequency = transceiver.frequency;
+                    bestLatitudeDeg = transceiver.latitudeDeg;
+                    bestLongitudeDeg = transceiver.longitudeDeg;
+                    bestEvidenceIndex = evidence.stations.size();
+                }
+
+                evidence.stations.push_back(std::move(stationEvidence));
+            }
+        }
+
+        if (bestEvidenceIndex < evidence.stations.size()) {
+            evidence.stations[bestEvidenceIndex].bestByModuleScore = true;
+            const auto displayResolution = ResolveDisplayFrequencyEvidence(
+                controller.frequency,
+                bestTransceiverFrequency);
+            evidence.resolvedDisplayFrequency = displayResolution.frequency;
+            evidence.displayFrequencySource = displayResolution.source;
+            evidence.displayFrequencyUnavailableReason =
+                displayResolution.unavailableReason;
+            evidence.controllerFrequencyGuard =
+                evidence.controllerFrequencyGuard ||
+                displayResolution.controllerFrequencyGuard;
+            if (!bestTransceiverFrequency.empty()) {
+                evidence.transceiverFrequencyGuard =
+                    evidence.transceiverFrequencyGuard ||
+                    displayResolution.transceiverFrequencyGuard;
+            }
+
+            if (emitCompatibilityCandidates &&
+                pathUnavailableReason.empty() &&
+                controller.actionable &&
+                !displayResolution.frequency.empty()) {
+                brain::ReceivableControllerSnapshot candidate;
+                candidate.callsign = controller.callsign;
+                candidate.frequency = displayResolution.frequency;
+                candidate.distanceNm = bestDistanceNm;
+                candidate.score = bestScore;
+                candidate.latitudeDeg = bestLatitudeDeg;
+                candidate.longitudeDeg = bestLongitudeDeg;
+                snapshot->candidates.push_back(std::move(candidate));
+            }
+        } else if (!evidence.hasTransceiverEntry) {
+            evidence.displayFrequencySource = "none";
+            evidence.displayFrequencyUnavailableReason =
+                "missing-transceiver";
+        } else {
+            evidence.displayFrequencySource = "none";
+            evidence.displayFrequencyUnavailableReason =
+                "no-airport-covering-station";
+        }
+
+        if (!pathUnavailableReason.empty()) {
+            evidence.pathUnavailableReason = pathUnavailableReason;
+        } else if (!evidence.actionable) {
+            evidence.pathUnavailableReason = "non-actionable";
+        } else if (!evidence.hasTransceiverEntry) {
+            evidence.pathUnavailableReason = "missing-transceiver";
+        } else if (bestEvidenceIndex >= evidence.stations.size()) {
+            evidence.pathUnavailableReason = "no-airport-covering-station";
+        } else if (evidence.resolvedDisplayFrequency.empty()) {
+            evidence.pathUnavailableReason =
+                PathReasonFromDisplayUnavailableReason(
+                    evidence.displayFrequencyUnavailableReason);
+        }
+
+        snapshot->controllerEvidence.push_back(std::move(evidence));
+    }
+
+    const auto sourceControllerCount =
+        static_cast<int>(controllerFeedSnapshot.Controllers().size());
+    const auto evidenceControllerCount =
+        static_cast<int>(snapshot->controllerEvidence.size());
+    snapshot->droppedBeforeBrainControllers =
+        std::max(0, sourceControllerCount - evidenceControllerCount);
+}
+
 std::unordered_map<std::string, std::vector<CachedTransceiver>> IndexTransceiversByCallsign(
     const std::vector<CachedTransceiver>& transceivers) {
     std::unordered_map<std::string, std::vector<CachedTransceiver>> indexed;
@@ -399,6 +949,7 @@ brain::TransceiverResolutionSnapshot ResolveReceivableControllers(
     brain::TransceiverResolutionSnapshot snapshot;
     snapshot.available = !indexedTransceivers.empty();
     snapshot.stale = isStaleFeed;
+    snapshot.candidatesCompatibilityOnly = true;
     snapshot.maxCandidateDistanceNm =
         brain::kBrainOwnedMaxRadioBoardCandidateDistanceNm;
     snapshot.statusLine = isStaleFeed ? "RX feed stale" : "RX feed active";
@@ -427,80 +978,105 @@ brain::TransceiverResolutionSnapshot ResolveReceivableControllers(
     }
 
     for (const auto& controller : controllerFeedSnapshot.Controllers()) {
-        if (!controller.actionable) {
-            continue;
-        }
+        brain::TransceiverControllerEvidenceSnapshot controllerEvidence;
+        controllerEvidence.callsign = controller.callsign;
+        controllerEvidence.controllerFrequency = controller.frequency;
+        controllerEvidence.facility = controller.facility;
+        controllerEvidence.actionable = controller.actionable;
+        controllerEvidence.atis = controller.atis;
+        controllerEvidence.visualRangeNm = controller.visualRangeNm;
+        controllerEvidence.controllerFrequencyGuard =
+            !controller.frequency.empty() && IsGuardFrequency(controller.frequency);
 
         const auto transceiverEntry = indexedTransceivers.find(controller.callsign);
-        if (transceiverEntry == indexedTransceivers.end()) {
-            continue;
-        }
+        controllerEvidence.hasTransceiverEntry =
+            transceiverEntry != indexedTransceivers.end();
+        controllerEvidence.matchingTransceiverCount =
+            controllerEvidence.hasTransceiverEntry
+                ? static_cast<int>(transceiverEntry->second.size())
+                : 0;
 
-        double bestDistanceNm = std::numeric_limits<double>::max();
         double bestScore = -1.0;
         std::string bestTransceiverFrequency;
-        double bestLatitudeDeg = 0.0;
-        double bestLongitudeDeg = 0.0;
         bool rejectedByDistanceEnvelope = false;
+        std::size_t bestEvidenceIndex = std::numeric_limits<std::size_t>::max();
 
-        for (const auto& transceiver : transceiverEntry->second) {
-            const auto distanceNm = GreatCircleDistanceNm(
-                aircraftState.latitudeDeg,
-                aircraftState.longitudeDeg,
-                transceiver.latitudeDeg,
-                transceiver.longitudeDeg);
-            if (distanceNm > snapshot.maxCandidateDistanceNm) {
-                rejectedByDistanceEnvelope = true;
-                continue;
+        if (controllerEvidence.hasTransceiverEntry) {
+            controllerEvidence.stations.reserve(transceiverEntry->second.size());
+            for (const auto& transceiver : transceiverEntry->second) {
+                auto stationEvidence = BuildStationEvidence(
+                    aircraftState,
+                    controller,
+                    transceiver,
+                    snapshot.maxCandidateDistanceNm);
+                controllerEvidence.transceiverFrequencyGuard =
+                    controllerEvidence.transceiverFrequencyGuard ||
+                    stationEvidence.transceiverFrequencyGuard;
+                if (!stationEvidence.withinMaxCandidateDistance) {
+                    rejectedByDistanceEnvelope = true;
+                    controllerEvidence.stations.push_back(
+                        std::move(stationEvidence));
+                    continue;
+                }
+
+                if (!stationEvidence.withinReceivableRange) {
+                    controllerEvidence.stations.push_back(
+                        std::move(stationEvidence));
+                    continue;
+                }
+
+                const auto score = stationEvidence.score;
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestTransceiverFrequency = transceiver.frequency;
+                    bestEvidenceIndex = controllerEvidence.stations.size();
+                }
+                controllerEvidence.stations.push_back(std::move(stationEvidence));
             }
+        }
 
-            const auto controllerVisualRangeNm =
-                controller.visualRangeNm > 0
-                    ? static_cast<double>(controller.visualRangeNm)
-                    : 0.0;
-            const auto receivableRangeNm = std::max(
-                {kMinReceivableRangeNm,
-                 controllerVisualRangeNm,
-                 RadioHorizonNm(
-                     aircraftState.altitudeAglFt,
-                     transceiver.heightAglFt)});
-
-            if (distanceNm > receivableRangeNm) {
-                continue;
-            }
-
-            const auto score = receivableRangeNm - distanceNm;
-            if (score > bestScore) {
-                bestScore = score;
-                bestDistanceNm = distanceNm;
-                bestTransceiverFrequency = transceiver.frequency;
-                bestLatitudeDeg = transceiver.latitudeDeg;
-                bestLongitudeDeg = transceiver.longitudeDeg;
-            }
+        if (bestEvidenceIndex < controllerEvidence.stations.size()) {
+            controllerEvidence.stations[bestEvidenceIndex].bestByModuleScore = true;
         }
 
         if (bestScore >= 0.0) {
-            const auto displayFrequency = ResolveDisplayFrequency(
+            const auto displayResolution = ResolveDisplayFrequencyEvidence(
                 controller.frequency,
                 bestTransceiverFrequency);
-            if (displayFrequency.empty()) {
-                continue;
+            controllerEvidence.resolvedDisplayFrequency =
+                displayResolution.frequency;
+            controllerEvidence.displayFrequencySource = displayResolution.source;
+            controllerEvidence.displayFrequencyUnavailableReason =
+                displayResolution.unavailableReason;
+            controllerEvidence.controllerFrequencyGuard =
+                displayResolution.controllerFrequencyGuard;
+            if (!bestTransceiverFrequency.empty()) {
+                controllerEvidence.transceiverFrequencyGuard =
+                    controllerEvidence.transceiverFrequencyGuard ||
+                    displayResolution.transceiverFrequencyGuard;
             }
-            brain::ReceivableControllerSnapshot candidate;
-            candidate.callsign = controller.callsign;
-            candidate.frequency = displayFrequency;
-            candidate.distanceNm = bestDistanceNm;
-            candidate.score = bestScore;
-            candidate.latitudeDeg = bestLatitudeDeg;
-            candidate.longitudeDeg = bestLongitudeDeg;
-            snapshot.candidates.push_back(std::move(candidate));
-            continue;
+        } else if (!controllerEvidence.hasTransceiverEntry) {
+            controllerEvidence.displayFrequencySource = "none";
+            controllerEvidence.displayFrequencyUnavailableReason =
+                "missing-transceiver";
+        } else {
+            controllerEvidence.displayFrequencySource = "none";
+            controllerEvidence.displayFrequencyUnavailableReason =
+                rejectedByDistanceEnvelope
+                    ? "over-max-or-no-receivable-transceiver"
+                    : "no-receivable-transceiver";
         }
 
-        if (rejectedByDistanceEnvelope) {
-            ++snapshot.distanceRejectedControllers;
-        }
+        snapshot.controllerEvidence.push_back(controllerEvidence);
     }
+
+    const auto sourceControllerCount =
+        static_cast<int>(controllerFeedSnapshot.Controllers().size());
+    const auto evidenceControllerCount =
+        static_cast<int>(snapshot.controllerEvidence.size());
+    snapshot.droppedBeforeBrainControllers =
+        std::max(0, sourceControllerCount - evidenceControllerCount);
+    PopulateNormalResolveCompatibilityCandidates(&snapshot);
 
     std::sort(
         snapshot.candidates.begin(),
@@ -533,6 +1109,8 @@ brain::TransceiverResolutionSnapshot ResolveAuthorityStations(
     brain::TransceiverResolutionSnapshot snapshot;
     snapshot.available = !indexedTransceivers.empty();
     snapshot.stale = isStaleFeed;
+    snapshot.resolutionPath = kResolutionPathAuthorityStations;
+    snapshot.candidatesCompatibilityOnly = true;
     snapshot.statusLine =
         isStaleFeed ? "AUTHORITY stations feed stale" : "AUTHORITY stations active";
 
@@ -553,34 +1131,12 @@ brain::TransceiverResolutionSnapshot ResolveAuthorityStations(
         return snapshot;
     }
 
-    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
-        if (!controller.actionable) {
-            continue;
-        }
-
-        const auto transceiverEntry = indexedTransceivers.find(controller.callsign);
-        if (transceiverEntry == indexedTransceivers.end()) {
-            continue;
-        }
-
-        for (const auto& transceiver : transceiverEntry->second) {
-            const auto displayFrequency = ResolveDisplayFrequency(
-                controller.frequency,
-                transceiver.frequency);
-            if (displayFrequency.empty()) {
-                continue;
-            }
-
-            brain::ReceivableControllerSnapshot candidate;
-            candidate.callsign = controller.callsign;
-            candidate.frequency = displayFrequency;
-            candidate.distanceNm = 0.0;
-            candidate.score = 0.0;
-            candidate.latitudeDeg = transceiver.latitudeDeg;
-            candidate.longitudeDeg = transceiver.longitudeDeg;
-            snapshot.candidates.push_back(std::move(candidate));
-        }
-    }
+    PopulateAuthorityStationsEvidenceAndCompatibilityCandidates(
+        controllerFeedSnapshot,
+        indexedTransceivers,
+        true,
+        {},
+        &snapshot);
 
     std::sort(
         snapshot.candidates.begin(),
@@ -612,6 +1168,8 @@ brain::TransceiverResolutionSnapshot ResolveAirportCoveredControllers(
     brain::TransceiverResolutionSnapshot snapshot;
     snapshot.available = !indexedTransceivers.empty();
     snapshot.stale = isStaleFeed;
+    snapshot.resolutionPath = kResolutionPathAirportCoverage;
+    snapshot.candidatesCompatibilityOnly = true;
     snapshot.statusLine = isStaleFeed ? "AIRSPACE feed stale" : "AIRSPACE feed active";
 
     if (isStaleFeed) {
@@ -631,71 +1189,14 @@ brain::TransceiverResolutionSnapshot ResolveAirportCoveredControllers(
         return snapshot;
     }
 
-    for (const auto& controller : controllerFeedSnapshot.Controllers()) {
-        if (!controller.actionable) {
-            continue;
-        }
-
-        const auto transceiverEntry = indexedTransceivers.find(controller.callsign);
-        if (transceiverEntry == indexedTransceivers.end()) {
-            continue;
-        }
-
-        double bestDistanceNm = std::numeric_limits<double>::max();
-        double bestScore = -1.0;
-        std::string bestTransceiverFrequency;
-        double bestLatitudeDeg = 0.0;
-        double bestLongitudeDeg = 0.0;
-
-        for (const auto& transceiver : transceiverEntry->second) {
-            const auto distanceNm = GreatCircleDistanceNm(
-                airportLatitudeDeg,
-                airportLongitudeDeg,
-                transceiver.latitudeDeg,
-                transceiver.longitudeDeg);
-            const auto controllerVisualRangeNm =
-                controller.visualRangeNm > 0 ? static_cast<double>(controller.visualRangeNm) : 0.0;
-            const auto radioRangeNm = RadioHorizonNm(
-                kAirportCoverageAircraftAglFt,
-                transceiver.heightAglFt);
-            const auto coverageRangeNm = std::max(
-                kMinReceivableRangeNm,
-                std::max(controllerVisualRangeNm, radioRangeNm));
-
-            if (distanceNm > coverageRangeNm) {
-                continue;
-            }
-
-            const auto score = coverageRangeNm - distanceNm;
-            if (score > bestScore) {
-                bestScore = score;
-                bestDistanceNm = distanceNm;
-                bestTransceiverFrequency = transceiver.frequency;
-                bestLatitudeDeg = transceiver.latitudeDeg;
-                bestLongitudeDeg = transceiver.longitudeDeg;
-            }
-        }
-
-        if (bestScore < 0.0) {
-            continue;
-        }
-
-        const auto displayFrequency = ResolveDisplayFrequency(
-            controller.frequency,
-            bestTransceiverFrequency);
-        if (displayFrequency.empty()) {
-            continue;
-        }
-
-        brain::ReceivableControllerSnapshot candidate;
-        candidate.callsign = controller.callsign;
-        candidate.frequency = displayFrequency;
-        candidate.distanceNm = bestDistanceNm;
-        candidate.score = bestScore;
-        candidate.latitudeDeg = bestLatitudeDeg;
-        candidate.longitudeDeg = bestLongitudeDeg;
-        snapshot.candidates.push_back(std::move(candidate));
-    }
+    PopulateAirportCoverageEvidenceAndCompatibilityCandidates(
+        controllerFeedSnapshot,
+        indexedTransceivers,
+        true,
+        {},
+        airportLatitudeDeg,
+        airportLongitudeDeg,
+        &snapshot);
 
     std::sort(
         snapshot.candidates.begin(),
@@ -763,9 +1264,13 @@ void TransceiverResolver::Reset() {
     cachedTransceivers_.clear();
     indexedTransceivers_.clear();
     pendingTransceivers_.clear();
+    cachedParserCounters_ = {};
+    pendingParserCounters_ = {};
     hasFeedCache_ = false;
     hasPendingFeed_ = false;
     lastFetchSucceeded_ = false;
+    lastRefreshAttemptedFetch_ = false;
+    lastRefreshFailureReason_.clear();
     lastFetchTickSeconds_ = 0;
     lastSuccessfulFetchTickSeconds_ = 0;
     hasResolveCache_ = false;
@@ -789,6 +1294,33 @@ void TransceiverResolver::Reset() {
     fetchInProgress_ = false;
 }
 
+brain::TransceiverSourceEvidenceSnapshot
+TransceiverResolver::BuildSourceEvidence(
+    long long nowSeconds,
+    bool refreshSucceeded,
+    bool holdoverUsed,
+    bool holdoverExpired) const {
+    brain::TransceiverSourceEvidenceSnapshot evidence;
+    evidence.feedCacheExists = hasFeedCache_;
+    evidence.cachedTransceiverCount =
+        static_cast<int>(cachedTransceivers_.size());
+    evidence.cacheFresh = IsFeedCacheFresh(nowSeconds);
+    evidence.cacheStale = !evidence.cacheFresh;
+    evidence.holdoverUsed = holdoverUsed;
+    evidence.holdoverExpired = holdoverExpired;
+    evidence.hasFeedAgeSeconds = lastSuccessfulFetchTickSeconds_ != 0;
+    evidence.feedAgeSeconds =
+        evidence.hasFeedAgeSeconds ? FeedCacheAgeSeconds(nowSeconds) : 0;
+    evidence.fetchAttempted = lastRefreshAttemptedFetch_;
+    evidence.fetchInProgress = fetchInProgress_.load();
+    evidence.fetchFailed =
+        !refreshSucceeded && !evidence.fetchInProgress &&
+        !lastRefreshFailureReason_.empty();
+    evidence.failureReason = lastRefreshFailureReason_;
+    evidence.parser = cachedParserCounters_;
+    return evidence;
+}
+
 brain::TransceiverResolutionSnapshot TransceiverResolver::Resolve(
     const brain::AircraftStateSnapshot& aircraftState,
     const brain::ControllerFeedSnapshot& controllerFeedSnapshot) {
@@ -801,7 +1333,16 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::Resolve(
         brain::TransceiverResolutionSnapshot snapshot;
         snapshot.available = false;
         snapshot.stale = true;
+        snapshot.candidatesCompatibilityOnly = true;
         snapshot.statusLine = "RX feed unavailable";
+        snapshot.sourceEvidence = BuildSourceEvidence(
+            nowSeconds,
+            refreshSucceeded,
+            false,
+            false);
+        PopulateControllerFeedSourceEvidence(
+            controllerFeedSnapshot,
+            &snapshot.sourceEvidence);
         return snapshot;
     }
 
@@ -809,7 +1350,16 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::Resolve(
         brain::TransceiverResolutionSnapshot snapshot;
         snapshot.available = false;
         snapshot.stale = true;
+        snapshot.candidatesCompatibilityOnly = true;
         snapshot.statusLine = "RX feed holdover expired";
+        snapshot.sourceEvidence = BuildSourceEvidence(
+            nowSeconds,
+            refreshSucceeded,
+            false,
+            true);
+        PopulateControllerFeedSourceEvidence(
+            controllerFeedSnapshot,
+            &snapshot.sourceEvidence);
         return snapshot;
     }
 
@@ -841,6 +1391,14 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::Resolve(
     if (!feedChanged && !cadenceExpired && !movedEnough && !holdoverStateChanged) {
         auto snapshot = cachedSnapshot_;
         snapshot.stale = false;
+        snapshot.sourceEvidence = BuildSourceEvidence(
+            nowSeconds,
+            refreshSucceeded,
+            useHoldover,
+            false);
+        PopulateControllerFeedSourceEvidence(
+            controllerFeedSnapshot,
+            &snapshot.sourceEvidence);
         return snapshot;
     }
 
@@ -854,6 +1412,14 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::Resolve(
             " holdover=1 feedAgeSeconds=" +
             std::to_string(FeedCacheAgeSeconds(nowSeconds));
     }
+    snapshot.sourceEvidence = BuildSourceEvidence(
+        nowSeconds,
+        refreshSucceeded,
+        useHoldover,
+        false);
+    PopulateControllerFeedSourceEvidence(
+        controllerFeedSnapshot,
+        &snapshot.sourceEvidence);
     cachedSnapshot_ = snapshot;
     lastResolveUsedHoldover_ = useHoldover;
     hasResolveCache_ = true;
@@ -873,7 +1439,23 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::ResolveAuthorityStatio
         brain::TransceiverResolutionSnapshot snapshot;
         snapshot.available = false;
         snapshot.stale = true;
+        snapshot.resolutionPath = kResolutionPathAuthorityStations;
+        snapshot.candidatesCompatibilityOnly = true;
         snapshot.statusLine = "AUTHORITY stations feed unavailable";
+        PopulateAuthorityStationsEvidenceAndCompatibilityCandidates(
+            controllerFeedSnapshot,
+            indexedTransceivers_,
+            false,
+            "transceiver-feed-unavailable",
+            &snapshot);
+        snapshot.sourceEvidence = BuildSourceEvidence(
+            CurrentTickSeconds(),
+            refreshSucceeded,
+            false,
+            false);
+        PopulateControllerFeedSourceEvidence(
+            controllerFeedSnapshot,
+            &snapshot.sourceEvidence);
         return snapshot;
     }
 
@@ -881,7 +1463,23 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::ResolveAuthorityStatio
         brain::TransceiverResolutionSnapshot snapshot;
         snapshot.available = false;
         snapshot.stale = true;
+        snapshot.resolutionPath = kResolutionPathAuthorityStations;
+        snapshot.candidatesCompatibilityOnly = true;
         snapshot.statusLine = "AUTHORITY stations feed stale";
+        PopulateAuthorityStationsEvidenceAndCompatibilityCandidates(
+            controllerFeedSnapshot,
+            indexedTransceivers_,
+            false,
+            "transceiver-feed-stale",
+            &snapshot);
+        snapshot.sourceEvidence = BuildSourceEvidence(
+            CurrentTickSeconds(),
+            refreshSucceeded,
+            false,
+            true);
+        PopulateControllerFeedSourceEvidence(
+            controllerFeedSnapshot,
+            &snapshot.sourceEvidence);
         return snapshot;
     }
 
@@ -898,6 +1496,14 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::ResolveAuthorityStatio
     if (!feedChanged && !cadenceExpired) {
         auto snapshot = cachedAuthorityStationSnapshot_;
         snapshot.stale = false;
+        snapshot.sourceEvidence = BuildSourceEvidence(
+            nowSeconds,
+            refreshSucceeded,
+            false,
+            false);
+        PopulateControllerFeedSourceEvidence(
+            controllerFeedSnapshot,
+            &snapshot.sourceEvidence);
         return snapshot;
     }
 
@@ -905,6 +1511,14 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::ResolveAuthorityStatio
         controllerFeedSnapshot,
         indexedTransceivers_,
         false);
+    snapshot.sourceEvidence = BuildSourceEvidence(
+        nowSeconds,
+        refreshSucceeded,
+        false,
+        false);
+    PopulateControllerFeedSourceEvidence(
+        controllerFeedSnapshot,
+        &snapshot.sourceEvidence);
     cachedAuthorityStationSnapshot_ = snapshot;
     hasAuthorityStationCache_ = true;
     lastAuthorityStationResolveTickSeconds_ = nowSeconds;
@@ -923,7 +1537,25 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::ResolveAirportCoverage
         brain::TransceiverResolutionSnapshot snapshot;
         snapshot.available = false;
         snapshot.stale = true;
+        snapshot.resolutionPath = kResolutionPathAirportCoverage;
+        snapshot.candidatesCompatibilityOnly = true;
         snapshot.statusLine = "AIRSPACE waiting for airport";
+        PopulateAirportCoverageEvidenceAndCompatibilityCandidates(
+            controllerFeedSnapshot,
+            indexedTransceivers_,
+            false,
+            "airport-coordinates-unavailable",
+            airportLatitudeDeg,
+            airportLongitudeDeg,
+            &snapshot);
+        snapshot.sourceEvidence = BuildSourceEvidence(
+            CurrentTickSeconds(),
+            refreshSucceeded,
+            false,
+            false);
+        PopulateControllerFeedSourceEvidence(
+            controllerFeedSnapshot,
+            &snapshot.sourceEvidence);
         return snapshot;
     }
 
@@ -931,7 +1563,25 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::ResolveAirportCoverage
         brain::TransceiverResolutionSnapshot snapshot;
         snapshot.available = false;
         snapshot.stale = true;
+        snapshot.resolutionPath = kResolutionPathAirportCoverage;
+        snapshot.candidatesCompatibilityOnly = true;
         snapshot.statusLine = "AIRSPACE feed unavailable";
+        PopulateAirportCoverageEvidenceAndCompatibilityCandidates(
+            controllerFeedSnapshot,
+            indexedTransceivers_,
+            false,
+            "transceiver-feed-unavailable",
+            airportLatitudeDeg,
+            airportLongitudeDeg,
+            &snapshot);
+        snapshot.sourceEvidence = BuildSourceEvidence(
+            CurrentTickSeconds(),
+            refreshSucceeded,
+            false,
+            false);
+        PopulateControllerFeedSourceEvidence(
+            controllerFeedSnapshot,
+            &snapshot.sourceEvidence);
         return snapshot;
     }
 
@@ -939,7 +1589,25 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::ResolveAirportCoverage
         brain::TransceiverResolutionSnapshot snapshot;
         snapshot.available = false;
         snapshot.stale = true;
+        snapshot.resolutionPath = kResolutionPathAirportCoverage;
+        snapshot.candidatesCompatibilityOnly = true;
         snapshot.statusLine = "AIRSPACE feed stale";
+        PopulateAirportCoverageEvidenceAndCompatibilityCandidates(
+            controllerFeedSnapshot,
+            indexedTransceivers_,
+            false,
+            "transceiver-feed-stale",
+            airportLatitudeDeg,
+            airportLongitudeDeg,
+            &snapshot);
+        snapshot.sourceEvidence = BuildSourceEvidence(
+            CurrentTickSeconds(),
+            refreshSucceeded,
+            false,
+            true);
+        PopulateControllerFeedSourceEvidence(
+            controllerFeedSnapshot,
+            &snapshot.sourceEvidence);
         return snapshot;
     }
 
@@ -966,6 +1634,14 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::ResolveAirportCoverage
     if (!feedChanged && !cadenceExpired && !movedEnough) {
         auto snapshot = cachedAirportCoverageSnapshot_;
         snapshot.stale = false;
+        snapshot.sourceEvidence = BuildSourceEvidence(
+            nowSeconds,
+            refreshSucceeded,
+            false,
+            false);
+        PopulateControllerFeedSourceEvidence(
+            controllerFeedSnapshot,
+            &snapshot.sourceEvidence);
         return snapshot;
     }
 
@@ -975,6 +1651,14 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::ResolveAirportCoverage
         false,
         airportLatitudeDeg,
         airportLongitudeDeg);
+    snapshot.sourceEvidence = BuildSourceEvidence(
+        nowSeconds,
+        refreshSucceeded,
+        false,
+        false);
+    PopulateControllerFeedSourceEvidence(
+        controllerFeedSnapshot,
+        &snapshot.sourceEvidence);
     cachedAirportCoverageSnapshot_ = snapshot;
     hasAirportCoverageCache_ = true;
     lastAirportCoverageResolveTickSeconds_ = nowSeconds;
@@ -986,6 +1670,8 @@ brain::TransceiverResolutionSnapshot TransceiverResolver::ResolveAirportCoverage
 
 bool TransceiverResolver::RefreshFeedIfNeeded() {
     const auto nowSeconds = CurrentTickSeconds();
+    lastRefreshAttemptedFetch_ = false;
+    lastRefreshFailureReason_.clear();
     HarvestPendingFetch();
 
     const auto fetchHung =
@@ -995,29 +1681,42 @@ bool TransceiverResolver::RefreshFeedIfNeeded() {
     if (fetchHung) {
         hasResolveCache_ = false;
         hasAirportCoverageCache_ = false;
+        lastRefreshFailureReason_ = "fetch-hung";
         return false;
     }
 
     const auto cadenceSeconds =
         lastFetchSucceeded_ ? kRefreshCadenceSeconds : kFailureBackoffSeconds;
     if (hasFeedCache_ && (nowSeconds - lastFetchTickSeconds_) < cadenceSeconds) {
-        return IsFeedCacheFresh(nowSeconds);
+        const auto fresh = IsFeedCacheFresh(nowSeconds);
+        if (!fresh) {
+            lastRefreshFailureReason_ = "cache-stale";
+        }
+        return fresh;
     }
 
     if (!hasFeedCache_ &&
         lastFetchTickSeconds_ != 0 &&
         (nowSeconds - lastFetchTickSeconds_) < cadenceSeconds) {
+        lastRefreshFailureReason_ = "fetch-backoff";
         return false;
     }
 
+    lastRefreshAttemptedFetch_ = true;
     if (!fetchInProgress_.load() && !StartAsyncFetch(nowSeconds)) {
         lastFetchSucceeded_ = false;
         hasResolveCache_ = false;
         hasAirportCoverageCache_ = false;
+        lastRefreshFailureReason_ = "fetch-start-failed";
         return false;
     }
 
-    return IsFeedCacheFresh(nowSeconds);
+    const auto fresh = IsFeedCacheFresh(nowSeconds);
+    if (!fresh && lastRefreshFailureReason_.empty()) {
+        lastRefreshFailureReason_ =
+            fetchInProgress_.load() ? "fetch-in-progress" : "cache-stale";
+    }
+    return fresh;
 }
 
 bool TransceiverResolver::StartAsyncFetch(long long nowSeconds) {
@@ -1032,6 +1731,7 @@ bool TransceiverResolver::StartAsyncFetch(long long nowSeconds) {
     {
         std::lock_guard<std::mutex> lock(fetchMutex_);
         pendingTransceivers_.clear();
+        pendingParserCounters_ = {};
         hasPendingFeed_ = false;
     }
 
@@ -1039,16 +1739,19 @@ bool TransceiverResolver::StartAsyncFetch(long long nowSeconds) {
     try {
         fetchThread_ = std::thread([this]() {
             std::vector<CachedTransceiver> parsedTransceivers;
+            brain::TransceiverParserHygieneCounters parserCounters;
             try {
                 const auto payload = DownloadJsonDocument();
-                parsedTransceivers = ParseTransceivers(payload);
+                parsedTransceivers = ParseTransceivers(payload, &parserCounters);
             } catch (...) {
                 parsedTransceivers.clear();
+                ++parserCounters.parseException;
             }
 
             try {
                 std::lock_guard<std::mutex> lock(fetchMutex_);
                 pendingTransceivers_ = std::move(parsedTransceivers);
+                pendingParserCounters_ = parserCounters;
                 hasPendingFeed_ = true;
             } catch (...) {
             }
@@ -1102,7 +1805,10 @@ void TransceiverResolver::HarvestPendingFetch() {
     hasPendingFeed_ = false;
     if (pendingTransceivers_.empty()) {
         pendingTransceivers_.clear();
+        cachedParserCounters_ = pendingParserCounters_;
+        pendingParserCounters_ = {};
         lastFetchSucceeded_ = false;
+        lastRefreshFailureReason_ = "empty-parsed-feed";
         hasResolveCache_ = false;
         hasAirportCoverageCache_ = false;
         return;
@@ -1111,6 +1817,8 @@ void TransceiverResolver::HarvestPendingFetch() {
     cachedTransceivers_ = pendingTransceivers_;
     indexedTransceivers_ = IndexTransceiversByCallsign(cachedTransceivers_);
     pendingTransceivers_.clear();
+    cachedParserCounters_ = pendingParserCounters_;
+    pendingParserCounters_ = {};
     hasFeedCache_ = true;
     lastFetchSucceeded_ = true;
     lastSuccessfulFetchTickSeconds_ = CurrentTickSeconds();
@@ -1132,9 +1840,13 @@ void TransceiverResolver::SeedFeedCacheForTesting(
     cachedTransceivers_ = std::move(transceivers);
     indexedTransceivers_ = IndexTransceiversByCallsign(cachedTransceivers_);
     pendingTransceivers_.clear();
+    cachedParserCounters_ = {};
+    pendingParserCounters_ = {};
     hasFeedCache_ = !cachedTransceivers_.empty();
     hasPendingFeed_ = false;
     lastFetchSucceeded_ = lastFetchSucceeded && hasFeedCache_;
+    lastRefreshAttemptedFetch_ = false;
+    lastRefreshFailureReason_.clear();
     lastFetchTickSeconds_ = nowSeconds;
     lastSuccessfulFetchTickSeconds_ =
         hasFeedCache_ ? std::max<long long>(1, nowSeconds - cacheAgeSeconds) : 0;

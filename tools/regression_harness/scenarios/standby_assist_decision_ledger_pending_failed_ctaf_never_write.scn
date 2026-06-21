@@ -1,0 +1,18 @@
+name=Standby assist decision ledger pending failed CTAF never write eligible
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;fetchInProgress=true;resolved=false;available=false;age=5;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;requestSucceeded=false;status=failure;resolved=false;available=false;age=60;failures=2;pending=lookup-failed
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|KAAA|KBBB
+
+radio.valid=true
+
+expect.standby_assist_summary=evidence=2,candidates=0,advisory=2,selected=0,writeDecisions=0,writeAttempts=0,writeSuccess=0,writeFailure=0,empty=0,pending=1,failed=1,guard=0,roleSkip=0,activeSkip=0,brainOwned=1
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,advisory=defer-pending,eligible=0,final=skip-pending-lookup,sourceDecision=ctaf-unicom-preview:arrival:KBBB,advisory=lookup-failed,eligible=0,final=skip-lookup-failed
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:no-target,standbyDecision=<none>,enabled=1,latchKey=<none>,latchConsumed=0,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=none,targetFrequency=<empty>,failure=no-target,marker=0

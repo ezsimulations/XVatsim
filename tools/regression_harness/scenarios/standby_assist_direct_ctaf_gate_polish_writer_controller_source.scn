@@ -1,0 +1,23 @@
+name=Standby assist direct CTAF gate polish writer controller source
+
+display_intent.stage=Departure
+display_intent.current_polygon=KZOA
+
+radio.valid=true
+radio.com1_active=120.500
+
+departure.station=role=Tower;callsign=KSFO_TWR;frequency=120.500;online=true
+departure.station=role=Approach;callsign=NCT_APP;frequency=125.350;online=true;polygonKey=KZOA
+
+display_intent.relation=callsign=NCT_APP;frequency=125.350;relation=CurrentPolygon
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Departure
+standby_assist.plan_key=UAL3936|KSFO|CYVR
+
+expect.standby_assist_settings_diagnostics=standbyAssistEnabled=1,directCtafStandbyAssistEnabled=0,directCtafGateSource=default,directCtafGateEffective=0
+expect.standby_assist_decisions_contains=callsign=NCT_APP:role=APP:freq=125.350,featureGateRequired=not-required,featureGateSatisfied=1,actualSelectedTargetSource=controller-display-row,final=recommend-com1-standby
+expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=125.350,source=controller-display-row

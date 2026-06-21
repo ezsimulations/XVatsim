@@ -1,0 +1,4 @@
+name=Brain display phase reuse ledger stage mismatch blocks reuse
+phase_publisher_reuse_probe=blocked-stage-mismatch
+expect.phase_publisher_reuse_ledger_summary=decisions=1,fresh=0,reused=0,displaced=0,blocked=1,stale=0,planMismatch=0,stageMismatch=1,frequencyMismatch=0,roleMismatch=0,noCandidate=0,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=STAGE_CTR@124.600:decision=blocked-stage-mismatch,previousStage=Enroute:currentStage=Arrival,blockedReason=stage-mismatch

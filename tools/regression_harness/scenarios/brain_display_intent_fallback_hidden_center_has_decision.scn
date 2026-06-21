@@ -1,0 +1,16 @@
+name=Brain display intent fallback hidden center has decision
+
+display_intent.stage=Departure
+display_intent.progress_nm=0
+display_intent.current_polygon=KZAK
+display_intent.next_polygon=KZOA
+display_intent.arrival_polygon=KZOA
+
+enroute.station=role=Center;callsign=HNL_02_CTR;frequency=126.500;online=true;polygonKey=PHZH
+
+expect.display_source=Departure
+expect.display_callsigns=<NONE>
+expect.brain_display_intent_rows=<NONE>
+expect.brain_display_intent_decision_summary=accepted=1,decisions=1,displayedFinal=0,hiddenAfterAccept=1,filteredAfterAccept=0,duplicates=0,stageSuppressed=0,missing=0
+expect.brain_display_intent_fail_soft_summary=preview=1,keepDisplay=0,keepHide=0,displayWithWarning=1,stageDefer=0,lowerPriorityDisplay=0,hardBlockHide=0,needsMoreEvidence=0,currentHideButFailSoftWouldShowOrWarn=1
+expect.brain_display_intent_decisions_contains=HNL_02_CTR@126.500:decision=display-rejected-center-fallback-hidden:reason=fallback-hidden,HNL_02_CTR@126.500:decision=display-rejected-center-fallback-hidden:reason=fallback-hidden:role=CTR:source=Enroute:stage=Departure:accepted=1:relationFact=0/UNKNOWN:fallback=1/HIDDEN:final=HIDDEN:displayable=1:displayed=0:duplicate=0:stageSuppressed=0:confidence=fallback:score=0.00/0.15:hardBlock=0:scoreSummary=confidence=fallback/positive=0.00/negative=0.15/hardBlock=0/winner=negative/recommendation=prefer-display-with-warning:failSoft=prefer-display-with-warning:failSoftReason=fallback-hidden-accepted-row-fail-soft:failSoftWouldShowOrWarn=1

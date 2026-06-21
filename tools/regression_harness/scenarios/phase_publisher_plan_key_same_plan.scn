@@ -1,0 +1,4 @@
+name=Phase publisher plan key linkage same plan
+phase_publisher_reuse_probe=live-same-plan
+expect.phase_publisher_plan_context_summary=decisions=1,available=1,missing=0,liveProduct=1,harness=0,missingContext=0,continuityKnown=1,continuityUnknown=0,liveMismatch=0,harnessMismatch=0,brainOwned=1,publishBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=decision=reused-last-proven-row,previousProductPlan=live-plan-a:currentProductPlan=live-plan-a,planContinuityKnown=1:planContinuity=same-plan,planMismatchSource=live-product:planContextLinked=1

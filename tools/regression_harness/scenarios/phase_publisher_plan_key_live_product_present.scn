@@ -1,0 +1,4 @@
+name=Phase publisher plan key linkage live product present
+phase_publisher_reuse_probe=live-product-plan-present
+expect.phase_publisher_plan_context_summary=decisions=1,available=1,missing=0,liveProduct=1,harness=0,missingContext=1,continuityKnown=0,continuityUnknown=1,liveMismatch=0,harnessMismatch=0,brainOwned=1,publishBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=productPlan=live-plan-a:productPlanAvailable=1:productPlanSource=live-product,planContinuity=missing-previous-plan,planMismatchSource=live-product:planContextLinked=1

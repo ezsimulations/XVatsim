@@ -1,0 +1,4 @@
+name=Brain display phase reuse ledger plan mismatch blocks reuse
+phase_publisher_reuse_probe=blocked-plan-mismatch
+expect.phase_publisher_reuse_ledger_summary=decisions=2,fresh=1,reused=0,displaced=0,blocked=1,stale=0,planMismatch=1,stageMismatch=0,frequencyMismatch=0,roleMismatch=0,noCandidate=0,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=PLAN_CTR@124.500:decision=fresh-current-row,PLAN_CTR@124.500:decision=blocked-plan-mismatch,previousPlan=plan-a:currentPlan=plan-b,blockedReason=plan-mismatch

@@ -1,0 +1,33 @@
+name=Standby assist CTAF UNICOM preview controller target unchanged
+
+display_intent.stage=Departure
+display_intent.progress_nm=0
+display_intent.current_polygon=KZOA
+display_intent.next_polygon=KZSE
+
+radio.valid=true
+radio.com1_active=120.500
+radio.com2_active=135.450
+
+departure.station=role=Delivery;callsign=KSFO_DEL;frequency=118.200;online=true
+departure.station=role=Ground;callsign=KSFO_GND;frequency=121.800;online=true
+departure.station=role=Tower;callsign=KSFO_TWR;frequency=120.500;online=true
+departure.station=role=Approach;callsign=NCT_APP;frequency=125.350;online=true;polygonKey=KZOA
+departure.station=role=Ctaf;callsign=KSFO;frequency=122.950;online=true
+enroute.station=role=Center;callsign=OAK_42_CTR;frequency=127.800;online=true;polygonKey=KZOA
+enroute.station=role=Center;callsign=SEA_16_CTR;frequency=135.450;online=true;polygonKey=KZSE;tuned=true;routeEntryDistanceNm=85
+
+display_intent.relation=callsign=NCT_APP;frequency=125.350;relation=CurrentPolygon
+display_intent.relation=callsign=OAK_42_CTR;frequency=127.800;relation=CurrentPolygon
+display_intent.relation=callsign=SEA_16_CTR;frequency=135.450;relation=NextPolygon;routeEntryDistanceNm=85
+
+standby_assist.apply=true
+standby_assist.stage=Departure
+standby_assist.plan_key=UAL3936|KSFO|CYVR
+standby_assist.loaded=true
+
+expect.standby_assist_summary=evidence=7,candidates=7,advisory=0,selected=1,writeDecisions=0,writeAttempts=0,writeSuccess=0,writeFailure=0,empty=0,pending=0,failed=0,guard=0,roleSkip=1,activeSkip=2,brainOwned=1
+expect.standby_assist_decisions_contains=callsign=NCT_APP:role=APP:freq=125.350,relation=CURRENT_POLYGON,liveEligible=1,liveWriteEligible=1,final=recommend-com1-standby,callsign=KSFO:role=CTAF:freq=122.950,liveEligible=0,previewRecommendation=not-advisory-preview,final=skip-role-not-eligible
+expect.display_source=Departure
+expect.display_callsigns=KSFO_DEL,KSFO_GND,KSFO_TWR,NCT_APP,OAK_42_CTR,SEA_16_CTR,KSFO
+expect.overlay_body_lines=xPilot not loaded|DEL KSFO_DEL 118.200|GND KSFO_GND 121.800|TWR KSFO_TWR 120.500 *Active*|APP NCT_APP 125.350 *Standby*|CTR OAK_42_CTR 127.800|CTR SEA_16_CTR 135.450 85nm|CTAF KSFO 122.950

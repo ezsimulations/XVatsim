@@ -1,0 +1,15 @@
+name=Brain display intent duplicate suppression has decision
+
+display_intent.stage=Departure
+display_intent.progress_nm=0
+display_intent.current_polygon=KZAK
+
+enroute.station=role=Center;callsign=DUP_CTR;frequency=127.700;online=true;polygonKey=KZAK
+enroute.station=role=Center;callsign=DUP_CTR;frequency=127.700;online=true;polygonKey=KZAK
+
+expect.display_source=Departure
+expect.display_callsigns=DUP_CTR
+expect.brain_display_intent_rows=DUP_CTR:CURRENT_POLYGON:ACTIVE
+expect.brain_display_intent_decision_summary=accepted=2,decisions=2,displayedFinal=1,hiddenAfterAccept=1,filteredAfterAccept=0,duplicates=1,stageSuppressed=0,missing=0
+expect.brain_display_intent_fail_soft_summary=preview=2,keepDisplay=1,keepHide=1,displayWithWarning=0,stageDefer=0,lowerPriorityDisplay=0,hardBlockHide=0,needsMoreEvidence=0,currentHideButFailSoftWouldShowOrWarn=0
+expect.brain_display_intent_decisions_contains=DUP_CTR@127.700:decision=display-accepted:reason=fallback-relation-displayable,DUP_CTR@127.700:decision=display-rejected-duplicate:reason=duplicate-station-key,DUP_CTR@127.700:decision=display-rejected-duplicate:reason=duplicate-station-key:role=CTR:source=Enroute:stage=Departure:accepted=1:relationFact=0/UNKNOWN:fallback=1/CURRENT_POLYGON:final=CURRENT_POLYGON:displayable=1:displayed=0:duplicate=1:stageSuppressed=0:confidence=medium:score=0.00/0.65:hardBlock=0:scoreSummary=confidence=medium/positive=0.00/negative=0.65/hardBlock=0/winner=negative/recommendation=keep-current-hide:failSoft=keep-current-hide:failSoftReason=identical-role-callsign-frequency-duplicate:failSoftWouldShowOrWarn=0:duplicateKey=6|DUP_CTR|127700:kept=enroute|6|DUP_CTR|127700|0:dropped=enroute|6|DUP_CTR|127700|1

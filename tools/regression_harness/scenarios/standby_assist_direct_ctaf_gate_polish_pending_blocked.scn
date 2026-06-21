@@ -1,0 +1,19 @@
+name=Standby assist direct CTAF gate polish pending blocked
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;fetchInProgress=true;resolved=false;available=false;age=5;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;fetchInProgress=true;resolved=false;available=false;age=8;failures=0
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.direct_ctaf_enabled=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|KAAA|KBBB
+
+radio.valid=true
+
+expect.standby_assist_settings_diagnostics=standbyAssistEnabled=1,directCtafStandbyAssistEnabled=1,directCtafGateSource=harness,directCtafGateEffective=1
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,featureGateRequired=direct-ctaf-standby-assist,featureGateSatisfied=1,livePromotionBlockedReason=skip-pending-lookup,dryRunBlockedByFrequencyState=1,final=skip-pending-lookup
+expect.standby_assist_writer_result_contains=code=no-write-requested,failureReason=skip-pending-lookup,writeAttempted=0,source=none

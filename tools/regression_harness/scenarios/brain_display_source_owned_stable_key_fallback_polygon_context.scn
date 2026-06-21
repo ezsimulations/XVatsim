@@ -1,0 +1,14 @@
+name=Brain display source-owned stable key parity for fallback polygon context
+
+display_intent.stage=Enroute
+display_intent.current_polygon=KZAB
+
+enroute.station=role=Center;callsign=POLY_CTR;frequency=124.500;online=true;polygonKey=KZAB
+
+expect.display_source=Enroute
+expect.display_callsigns=POLY_CTR
+expect.brain_display_intent_rows=POLY_CTR:CURRENT_POLYGON:ACTIVE
+expect.brain_display_source_owned_stable_key_summary=decisions=1,present=1,generatedFallback=1,matches=1,mismatch=0,planAvailable=1,planMissing=0,migrationReady=1,behaviorConsumerEnabled=0,behaviorChanged=0
+expect.brain_display_stable_key_consumer_dry_run_summary=decisions=1,sourceOwnedPresent=1,migrationReady=1,dedupeGroupWouldChange=0,duplicateSuppressionWouldChange=0,completionIdentityWouldChange=0,phaseReuseWouldChange=0,rowOrderingWouldChange=0,overlayCapWouldChange=0,moreAtcWouldChange=0,drift=0,safeForOptIn=1,behaviorConsumerEnabled=0,displayBehaviorChanged=0
+expect.brain_display_stable_key_consumer_dry_run_decisions_contains=POLY_CTR@124.500:role=CTR:endpoint=enroute,currentKey=row|enroute||6|POLY_CTR|124500:sourceOwnedKey=source-owned:fallback-polygon-geometry|POLY_CTR|6|124500|current=KZAB;next=none;arrival=none;stage=Enroute,sourceOwnedPresent=1:migrationReady=1:behaviorConsumer=0,dedupeWouldChange=0:duplicateSuppressionWouldChange=0:completionIdentityWouldChange=0,phaseWouldChange=0:rowOrderingWouldChange=0:overlayCapWouldChange=0:moreAtcWouldChange=0:drift=0,safeForOptIn=1
+expect.brain_display_stable_key_audit_decisions_contains=POLY_CTR|124500:stableKey=row|enroute||6|POLY_CTR|124500:present=1:source=generated-fallback:status=fallback-derived,sourceOwnedKey=source-owned:fallback-polygon-geometry|POLY_CTR|6|124500|current=KZAB;next=none;arrival=none;stage=Enroute:sourceOwnedPresent=1:sourceOwnedSource=source-owned,generatedFallbackKey=row|enroute||6|POLY_CTR|124500:sourceOwnedMatchesFallback=1:sourceOwnedMismatchReason=<none>:sourceOwnedPlanContext=current=KZAB;next=none;arrival=none;stage=Enroute:sourceOwnedPlanAvailable=1:sourceOwnedPlanSource=display-intent-polygon-context:sourceOwnedMigrationReady=1:sourceOwnedBehaviorConsumer=0

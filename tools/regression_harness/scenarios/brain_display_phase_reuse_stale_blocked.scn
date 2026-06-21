@@ -1,0 +1,4 @@
+name=Brain display phase reuse ledger stale reuse blocked
+phase_publisher_reuse_probe=blocked-stale-reuse
+expect.phase_publisher_reuse_ledger_summary=decisions=2,fresh=1,reused=0,displaced=0,blocked=1,stale=1,planMismatch=0,stageMismatch=0,frequencyMismatch=0,roleMismatch=0,noCandidate=0,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=STALE_CTR@125.000:decision=fresh-current-row,STALE_CTR@125.000:decision=blocked-stale-reuse,staleBlocked=1,blockedReason=previous-snapshot-stale

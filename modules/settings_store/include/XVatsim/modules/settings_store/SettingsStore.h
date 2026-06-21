@@ -13,6 +13,11 @@ enum class StoredDisplayMode {
 struct PluginSettings {
     StoredDisplayMode displayMode = StoredDisplayMode::Auto;
     bool standbyAssistEnabled = false;
+    bool directCtafStandbyAssistEnabled = false;
+    std::string directCtafStandbyAssistGateSource = "default";
+    bool sourceOwnedFallbackStableKeyLiveConsumptionEnabled = false;
+    std::string sourceOwnedFallbackStableKeyLiveConsumptionGateSource =
+        "default";
     bool hasWindowPosition = false;
     int windowLeft = 0;
     int windowTop = 0;

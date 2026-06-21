@@ -1,0 +1,19 @@
+name=Standby assist writer result direct CTAF gate on success
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=12;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=123.450;age=20;failures=0
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.direct_ctaf_enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|KAAA|KBBB
+
+radio.valid=true
+
+expect.standby_assist_writer_result_contains=known=1,code=write-succeeded,failureReason=<none>,inputFrequency=122.950,normalizedFrequency=122950,targetCom=COM1_STANDBY,validationPassed=1,writeAttempted=1,writeSucceeded=1,source=direct-ctaf-advisory
+expect.standby_assist_writer_counter_summary=writerResults=1,writerSuccess=1,writerFailure=0,writerBlocked=0,writerUnknown=0,writerDatarefMissing=0,writerDatarefNotWritable=0,writerInvalidFrequency=0,writerNoTarget=0,writerNoWriteRequested=0,writerControllerSource=0,writerDirectCtafSource=1

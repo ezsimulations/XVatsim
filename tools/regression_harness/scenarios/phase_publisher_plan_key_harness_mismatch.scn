@@ -1,0 +1,4 @@
+name=Phase publisher plan key linkage harness mismatch remains distinct
+phase_publisher_reuse_probe=blocked-plan-mismatch
+expect.phase_publisher_plan_context_summary=decisions=2,available=2,missing=0,liveProduct=0,harness=2,missingContext=1,continuityKnown=1,continuityUnknown=1,liveMismatch=0,harnessMismatch=1,brainOwned=1,publishBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=PLAN_CTR@124.500:decision=blocked-plan-mismatch,productPlanSource=harness,previousProductPlan=plan-a:currentProductPlan=plan-b,planContinuityKnown=1:planContinuity=harness-probe,planMismatchSource=harness-probe:planContextLinked=1

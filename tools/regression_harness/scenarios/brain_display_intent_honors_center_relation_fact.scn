@@ -1,0 +1,18 @@
+name=Brain display intent honors brain accepted center relation fact
+
+display_intent.stage=Departure
+display_intent.progress_nm=0
+display_intent.current_polygon=KZAK
+display_intent.next_polygon=KZOA
+display_intent.arrival_polygon=KZOA
+
+enroute.station=role=Center;callsign=HNL_02_CTR;frequency=126.500;online=true;polygonKey=PHZH
+
+display_intent.relation=callsign=HNL_02_CTR;frequency=126.500;relation=CurrentPolygon
+
+expect.display_source=Departure
+expect.display_callsigns=HNL_02_CTR
+expect.brain_display_intent_rows=HNL_02_CTR:CURRENT_POLYGON:ACTIVE
+expect.brain_display_intent_decision_summary=accepted=1,decisions=1,displayedFinal=1,hiddenAfterAccept=0,filteredAfterAccept=0,duplicates=0,stageSuppressed=0,missing=0
+expect.brain_display_intent_fail_soft_summary=preview=1,keepDisplay=1,keepHide=0,displayWithWarning=0,stageDefer=0,lowerPriorityDisplay=0,hardBlockHide=0,needsMoreEvidence=0,currentHideButFailSoftWouldShowOrWarn=0
+expect.brain_display_intent_decisions_contains=HNL_02_CTR@126.500:decision=display-accepted:reason=relation-fact-applied,HNL_02_CTR@126.500:decision=display-accepted:reason=relation-fact-applied:role=CTR:source=Enroute:stage=Departure:accepted=1:relationFact=1/CURRENT_POLYGON:fallback=0/HIDDEN:final=CURRENT_POLYGON:displayable=1:displayed=1:duplicate=0:stageSuppressed=0:confidence=high:score=0.90/0.00:hardBlock=0:scoreSummary=confidence=high/positive=0.90/negative=0.00/hardBlock=0/winner=positive/recommendation=keep-current-display:failSoft=keep-current-display:failSoftReason=current-display-already-keeps-candidate:failSoftWouldShowOrWarn=0

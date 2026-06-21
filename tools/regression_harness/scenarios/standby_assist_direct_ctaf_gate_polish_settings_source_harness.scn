@@ -1,0 +1,20 @@
+name=Standby assist direct CTAF gate polish settings source harness
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=12;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=123.450;age=20;failures=0
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.direct_ctaf_enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|KAAA|KBBB
+
+radio.valid=true
+
+expect.standby_assist_settings_diagnostics=standbyAssistEnabled=1,directCtafStandbyAssistEnabled=1,directCtafGateSource=harness,directCtafGateEffective=1
+expect.standby_assist_decisions_contains=featureGateRequired=direct-ctaf-standby-assist,featureGateSatisfied=1,featureGateBlockedReason=<none>,actualSelectedTargetSource=direct-ctaf-advisory,final=recommend-com1-standby
+expect.standby_assist_writer_result_contains=code=write-succeeded,source=direct-ctaf-advisory

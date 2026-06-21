@@ -1,0 +1,4 @@
+name=Phase publisher plan key linkage missing previous plan context
+phase_publisher_reuse_probe=missing-previous-plan
+expect.phase_publisher_plan_context_summary=decisions=2,available=2,missing=0,liveProduct=2,harness=0,missingContext=2,continuityKnown=0,continuityUnknown=2,liveMismatch=0,harnessMismatch=0,brainOwned=1,publishBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=PREV_MISSING_CTR@125.700:decision=displaced-by-fresh-current-row,previousProductPlan=<none>:currentProductPlan=live-plan-a,planContinuityKnown=0:planContinuity=missing-previous-plan,planMismatchSource=live-product:planContextLinked=1

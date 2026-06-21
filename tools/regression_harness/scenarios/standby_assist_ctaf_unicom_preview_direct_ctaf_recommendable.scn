@@ -1,0 +1,18 @@
+name=Standby assist CTAF UNICOM preview direct CTAF recommendable
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=12;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=123.450;age=20;failures=0
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|KAAA|KBBB
+
+radio.valid=true
+
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,role=CTAF,freq=122.950,liveEligible=0,previewEligible=1,previewRecommendation=preview-recommend-com1-standby,previewSkip=<none>,liveWriteEligible=0,advisoryProductGate=direct-ctaf-preview-only,advisoryWritePolicy=preview-only-no-write,advisoryFrequencyResolutionState=resolved-direct-ctaf,advisoryCandidateType=direct-ctaf,final=skip-role-not-eligible
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:no-target,standbyDecision=<none>,enabled=1,latchKey=<none>,latchConsumed=0,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=none,targetFrequency=<empty>,failure=no-target,marker=0
+expect.ctaf_unicom_advisory_authority_summary=authority=brain-evidence,source=2,preview=2,live=2,historicalCompatibilityRows=2,mismatch=0,diagnosticCompatibilityProjectionOnly=1,legacyDiagnosticBypassFlag=1,brainOwned=1,bypassRetired=1,liveBypassAuthority=0,diagnosticBypassRows=2,brainAdvisoryLiveRows=2,duplicateLive=0,retirementSafe=1,noLiveBypassAuthority=1,compatibilityRowsDiagnosticOnly=1,liveRowsBrainAdvisoryOwned=1,legacyBypassFieldsQuarantined=1

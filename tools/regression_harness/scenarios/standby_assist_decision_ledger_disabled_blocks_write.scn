@@ -1,0 +1,23 @@
+name=Standby assist decision ledger disabled blocks write
+
+display_intent.stage=Departure
+display_intent.current_polygon=KZOA
+
+radio.valid=true
+radio.com1_active=120.500
+
+departure.station=role=Tower;callsign=KSFO_TWR;frequency=120.500;online=true
+departure.station=role=Approach;callsign=NCT_APP;frequency=125.350;online=true;polygonKey=KZOA
+
+display_intent.relation=callsign=NCT_APP;frequency=125.350;relation=CurrentPolygon
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=false
+standby_assist.stage=Departure
+standby_assist.plan_key=UAL3936|KSFO|CYVR
+
+expect.standby_assist_summary=evidence=2,candidates=2,advisory=0,selected=1,writeDecisions=0,writeAttempts=0,writeSuccess=0,writeFailure=0,empty=0,pending=0,failed=0,guard=0,roleSkip=0,activeSkip=1,brainOwned=1
+expect.standby_assist_decisions_contains=callsign=NCT_APP:role=APP:freq=125.350,final=recommend-com1-standby
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:standby-decision:1:display-row|none|none|APP|NCT_APP|125350,standbyDecision=standby-decision:1:display-row|none|none|APP|NCT_APP|125350,enabled=0,latchKey=UAL3936|KSFO|CYVR|1|120500|NCT_APP|125350,latchConsumed=0,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=COM1_STANDBY,targetFrequency=125.350,failure=standby-assist-disabled,marker=0
+expect.overlay_body_lines=xPilot not loaded|TWR KSFO_TWR 120.500 *Active*|APP NCT_APP 125.350

@@ -1,0 +1,17 @@
+name=Standby assist CTAF UNICOM preview UNICOM product gated
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;cacheHit=true;requestSucceeded=true;status=resolved-no-ctaf;resolved=true;available=false;age=30;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;cacheHit=true;requestSucceeded=true;status=resolved-no-ctaf;resolved=true;available=false;age=44;failures=0
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|KAAA|KBBB
+
+radio.valid=true
+
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,role=UNICOM,freq=122.800,fallback=1,liveEligible=0,previewEligible=0,previewRecommendation=preview-product-gated,previewSkip=product-decision-required,liveWriteEligible=0,advisoryProductGate=product-decision-required,advisoryWritePolicy=product-gated-no-write,advisoryFrequencyResolutionState=resolved-unicom-fallback,advisoryCandidateType=unicom-fallback,final=skip-role-not-eligible
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:no-target,standbyDecision=<none>,enabled=1,latchKey=<none>,latchConsumed=0,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=none,targetFrequency=<empty>,failure=no-target,marker=0

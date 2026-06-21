@@ -1,0 +1,10 @@
+name=CTAF UNICOM bypass retirement duplicate projection mismatch
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+departure.station=role=CTAF;callsign=OLD_CTAF;frequency=111.111;online=true
+ctaf_unicom.departure=airport=KAAA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=12;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=123.450;age=20;failures=0
+
+expect.ctaf_unicom_bypass_audit_summary=audit=2,legacyDiagnosticBypassRows=2,brainRows=2,matching=2,missing=0,mismatch=1,safe=1,blocked=1,pending=0,failed=0,empty=0,unicom=0,standbyAdvisory=2,standbyBypass=0,policy=2,resolvedBlockers=1,stillBlocked=0,policyNonDisplayable=0,policyDeferred=0,policyFailed=0,policyEmpty=0,duplicateSuppressed=1,missingEvidencePolicy=0,wouldLoseFrequency=0,wouldLoseVisibility=0,bypassSafe=2,bypassUnsafe=0,bypassRetired=1,liveBypassAuthority=0,diagnosticBypassRows=2,brainAdvisoryLive=2,missingEvidenceWarningCount=0,fallbackWarnings=0,missingEvidenceWarnings=0,duplicateLiveRows=0,pendingNonDisplayable=0,failedNonDisplayable=0,emptyNonDisplayable=0,retiredCompatibilityRows=2,retirementSafe=1,noLiveBypassAuthority=1,compatibilityRowsDiagnosticOnly=1,liveRowsBrainAdvisoryOwned=1,standbyRowsAdvisoryOwned=1,legacyBypassFieldsQuarantined=1,diagnosticCompatibilityProjectionOnly=1,legacyCompatibilityOnly=1,ready=1
+expect.ctaf_unicom_bypass_audit_decisions_contains=advisory=ctaf-unicom-preview:departure:KAAA,role=CTAF:freq=122.950:diagnosticCompatibilityWouldDisplay=1:bypassRequired=1:diagnosticCompatibilityReason=completion-bypass-retired-diagnostic-only:bypassReason=completion-bypass-retired-diagnostic-only,advisoryWouldEmit=1:matches=1,safe=0:blocked=duplicate-compatibility-row,compatibilityOnly=1:mismatch=duplicate-compatibility-row,policy=compatibility-duplicate-suppressed,duplicateSuppressed=1,standbyAdvisory=1:standbyBypass=0,safeToRemoveBypass=1,bypassLiveAuthority=0,duplicateReason=legacy-ctaf-unicom-row-removed-before-advisory-projection

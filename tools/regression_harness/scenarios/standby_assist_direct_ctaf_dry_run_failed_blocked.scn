@@ -1,0 +1,17 @@
+name=Standby assist direct CTAF dry-run failed blocked
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;requestSucceeded=false;status=failure;resolved=false;available=false;age=60;failures=2;pending=lookup-failed
+ctaf_unicom.arrival=airport=KBBB;attempted=true;requestSucceeded=false;status=failure;resolved=false;available=false;age=61;failures=3;pending=lookup-failed
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|KAAA|KBBB
+
+radio.valid=true
+
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,advisory=lookup-failed,previewRecommendation=preview-not-ready,liveEligible=0,liveWriteEligible=0,dryRunLiveEligible=0,dryRunLiveRecommendation=dry-run-not-ready,dryRunSkip=skip-lookup-failed,dryRunSafetyGate=frequency-state,dryRunBlockedByFrequencyState=1,dryRunPromotionClass=unknown,final=skip-lookup-failed
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:no-target,standbyDecision=<none>,enabled=1,latchKey=<none>,latchConsumed=0,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=none,targetFrequency=<empty>,failure=no-target,marker=0

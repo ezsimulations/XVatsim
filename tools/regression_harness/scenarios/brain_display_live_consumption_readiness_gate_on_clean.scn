@@ -1,0 +1,15 @@
+name=Brain display source-owned stable key live consumption readiness armed clean
+
+display_intent.stage=Enroute
+display_intent.current_polygon=KZAB
+stable_key.source_owned_fallback_shadow=true
+stable_key.source_owned_fallback_live_consumption_proposal=true
+
+enroute.station=role=Center;callsign=LIVE_READY_CTR;frequency=124.520;online=true;polygonKey=KZAB
+
+expect.display_source=Enroute
+expect.display_callsigns=LIVE_READY_CTR
+expect.brain_display_intent_rows=LIVE_READY_CTR:CURRENT_POLYGON:ACTIVE
+expect.brain_display_stable_key_shadow_summary=decisions=1,gateEnabled=1,attempted=1,skipped=0,hashMismatch=0,rowOrderingMismatch=0,dedupeMismatch=0,duplicateSuppressionMismatch=0,completionIdentityMismatch=0,phaseReuseMismatch=0,overlayCapMismatch=0,moreAtcMismatch=0,missingPlanBlocked=0,drift=0,safeForFutureLiveOptIn=1,behaviorConsumerEnabled=0,behaviorChanged=0
+expect.brain_display_stable_key_live_consumption_readiness_summary=decisions=1,proposalGateArmed=1,shadowParityClean=1,planContextAvailable=1,missingPlanBlocked=0,driftBlocked=0,shadowNotAttemptedBlocked=0,readinessBlocked=0,readyForFutureLiveConsumption=1,liveBehaviorConsumerEnabled=0,shadowBehaviorConsumerEnabled=0,behaviorChanged=0
+expect.brain_display_stable_key_live_consumption_readiness_decisions_contains=LIVE_READY_CTR@124.520:role=CTR:endpoint=enroute:airport=<none>:proposalGateArmed=1:proposalGateSource=harness:shadowGateEnabled=1:shadowAttempted=1:shadowParityClean=1:planContextAvailable=1:shadowDrift=0:blockedReason=<none>:readyForFutureLiveConsumption=1:liveBehaviorConsumer=0:shadowBehaviorConsumer=0

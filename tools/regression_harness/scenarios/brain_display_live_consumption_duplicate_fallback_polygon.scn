@@ -1,0 +1,18 @@
+name=Brain display source-owned stable key live consumption duplicate fallback polygon parity
+
+display_intent.stage=Enroute
+display_intent.current_polygon=KZAB
+stable_key.source_owned_fallback_shadow=true
+stable_key.source_owned_fallback_live_consumption_proposal=true
+stable_key.source_owned_fallback_live_consumption=true
+
+enroute.station=role=Center;callsign=DUP_LIVE_CTR;frequency=124.500;online=true;polygonKey=KZAB
+enroute.station=role=Center;callsign=DUP_LIVE_CTR;frequency=124.500;online=true;polygonKey=KZAB
+
+expect.display_source=Enroute
+expect.display_callsigns=DUP_LIVE_CTR
+expect.brain_display_intent_rows=DUP_LIVE_CTR:CURRENT_POLYGON:ACTIVE
+expect.brain_display_intent_decision_summary=accepted=2,decisions=2,displayedFinal=1,hiddenAfterAccept=1,filteredAfterAccept=0,duplicates=1,stageSuppressed=0,missing=0
+expect.brain_display_stable_key_shadow_summary=decisions=2,gateEnabled=2,attempted=2,skipped=0,hashMismatch=0,rowOrderingMismatch=0,dedupeMismatch=0,duplicateSuppressionMismatch=0,completionIdentityMismatch=0,phaseReuseMismatch=0,overlayCapMismatch=0,moreAtcMismatch=0,missingPlanBlocked=0,drift=0,safeForFutureLiveOptIn=2,behaviorConsumerEnabled=0,behaviorChanged=0
+expect.brain_display_stable_key_live_consumption_summary=decisions=2,gateArmed=2,allowed=2,blocked=0,sourceOwnedConsumed=2,generatedFallbackConsumed=0,missingPlanBlocked=0,shadowGateOffBlocked=0,shadowParityNotAttemptedBlocked=0,shadowDriftBlocked=0,hashMismatchBlocked=0,rowOrderingMismatchBlocked=0,dedupeMismatchBlocked=0,duplicateSuppressionMismatchBlocked=0,completionIdentityMismatchBlocked=0,phaseReuseMismatchBlocked=0,overlayCapMismatchBlocked=0,moreAtcMismatchBlocked=0,missingSourceOwnedKeyBlocked=0,migrationNotReadyBlocked=0,defaultModeProtected=0,behaviorChanged=0
+expect.brain_display_stable_key_live_consumption_decisions_contains=DUP_LIVE_CTR@124.500:role=CTR:endpoint=enroute:airport=<none>,shadowDedupeMatches=1:shadowDuplicateSuppressionMatches=1:shadowCompletionIdentityMatches=1,proposalGateArmed=1:liveGateArmed=1:liveGateSource=harness:allowed=1:blockedReason=<none>:consumedKeyType=source-owned:behaviorChanged=0

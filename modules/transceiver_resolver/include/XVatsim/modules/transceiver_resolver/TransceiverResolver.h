@@ -24,6 +24,9 @@ public:
     TransceiverResolver() = default;
     ~TransceiverResolver();
 
+    // Resolver outputs are evidence ledgers. For migrated paths, returned
+    // candidates are legacy compatibility projections; brain-owned workers
+    // are responsible for live accept/reject/display candidate decisions.
     brain::TransceiverResolutionSnapshot Resolve(
         const brain::AircraftStateSnapshot& aircraftState,
         const brain::ControllerFeedSnapshot& controllerFeedSnapshot);
@@ -47,13 +50,22 @@ private:
     bool IsFeedCacheFresh(long long nowSeconds) const;
     bool IsFeedCacheUsableAsHoldover(long long nowSeconds) const;
     long long FeedCacheAgeSeconds(long long nowSeconds) const;
+    brain::TransceiverSourceEvidenceSnapshot BuildSourceEvidence(
+        long long nowSeconds,
+        bool refreshSucceeded,
+        bool holdoverUsed,
+        bool holdoverExpired) const;
 
     std::vector<CachedTransceiver> cachedTransceivers_{};
     std::unordered_map<std::string, std::vector<CachedTransceiver>> indexedTransceivers_{};
     std::vector<CachedTransceiver> pendingTransceivers_{};
+    brain::TransceiverParserHygieneCounters cachedParserCounters_{};
+    brain::TransceiverParserHygieneCounters pendingParserCounters_{};
     bool hasFeedCache_ = false;
     bool hasPendingFeed_ = false;
     bool lastFetchSucceeded_ = false;
+    bool lastRefreshAttemptedFetch_ = false;
+    std::string lastRefreshFailureReason_{};
     long long lastFetchTickSeconds_ = 0;
     long long lastSuccessfulFetchTickSeconds_ = 0;
     bool hasResolveCache_ = false;

@@ -1,0 +1,62 @@
+name=Route Sector Authority Evidence Records Filtered Controllers
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=39.635150
+aircraft.longitude_deg=-111.141675
+
+plan.matched=true
+plan.stale=false
+plan.departure_icao=KSFO
+plan.departure_lat=37.618806
+plan.departure_lon=-122.375417
+plan.has_departure_coordinates=true
+plan.destination_icao=KMCI
+plan.destination_lat=39.297611
+plan.destination_lon=-94.713889
+plan.has_destination_coordinates=true
+plan.route_text=TRUKN2 TIPRE Q126 BRAFF DPEAK JSONN4
+
+radio.com1_active=118.000
+radio.com2_active=122.800
+
+controller.entry=callsign=NORMAL_CTR;frequency=126.000;facility=6;actionable=true;atis=false
+controller.entry=callsign=LOCAL_TWR;frequency=120.500;facility=4;actionable=true;atis=false
+controller.entry=callsign=NONACT_CTR;frequency=126.100;facility=6;actionable=false;atis=false
+controller.entry=callsign=ATIS_CTR;frequency=126.200;facility=6;actionable=true;atis=true
+controller.entry=callsign=GUARD_CTR;frequency=121.500;facility=6;actionable=true;atis=false
+controller.entry=callsign=OBS_CTR;frequency=126.300;facility=0;actionable=true;atis=false
+
+preflight.fms_line=I
+preflight.fms_line=1100 Version
+preflight.fms_line=CYCLE 2605
+preflight.fms_line=ADEP KSFO
+preflight.fms_line=ADES KMCI
+preflight.fms_line=NUMENR 4
+preflight.fms_line=1 KSFO ADEP 13.000000 37.618806 -122.375417
+preflight.fms_line=11 DRRSI DRCT 35000.000000 39.635150 -111.141675
+preflight.fms_line=11 BRAFF DRCT 35000.000000 40.143228 -104.390764
+preflight.fms_line=1 KMCI ADES 3500.000000 39.297611 -94.713889
+
+resolver.route_resolve=true
+resolver.use_preflight_cache=true
+resolver.center_feature=label=TEST;tokens=TEST;polygon=37,-119|41,-119|41,-109|37,-109
+resolver.authority_catalog_fir=TEST|Test Center||TEST
+resolver.ownership_json={"positions":[{"id":"NORMAL_CTR","polygon_key":"TEST","kind":"center","callsign_patterns":["NORMAL_CTR"]}]}
+
+expect.preflight_parse_ok=true
+expect.preflight_validation_accepted=true
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_current_sectors=<none>
+expect.resolver_route_next_sectors=TEST
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_evidence_visibility=scheduled=1,source=6,evidence=6,dropped=0,compatOnly=1,compatRelevant=1,feed=1/0,route=1/0/1,stage=NEAR_ROUTE_WINDOW,window=200,deferred=0,routeKeys=1,matchKeys=2,tx=0/0/1/0
+expect.resolver_authority_controller_evidence=ATIS_CTR:freq=126.200:fac=6:act=1:atis=1:guard=0:empty=0:local=0:airspace=0:considered=1:reasons=atis|not-authority-candidate:decisions=0:active=0,GUARD_CTR:freq=121.500:fac=6:act=1:atis=0:guard=1:empty=0:local=0:airspace=0:considered=1:reasons=guard-frequency|not-authority-candidate:decisions=0:active=0,LOCAL_TWR:freq=120.500:fac=4:act=1:atis=0:guard=0:empty=0:local=1:airspace=0:considered=1:reasons=airport-local-no-authority-decision:decisions=0:active=0,NONACT_CTR:freq=126.100:fac=6:act=0:atis=0:guard=0:empty=0:local=0:airspace=0:considered=1:reasons=non-actionable|not-authority-candidate:decisions=0:active=0,NORMAL_CTR:freq=126.000:fac=6:act=1:atis=0:guard=0:empty=0:local=0:airspace=1:considered=1:reasons=<none>:decisions=1:active=1,OBS_CTR:freq=126.300:fac=0:act=1:atis=0:guard=0:empty=0:local=0:airspace=0:considered=1:reasons=not-authority-candidate:decisions=0:active=0
+expect.resolver_authority_decision_evidence=NORMAL_CTR:VATGLASSES:NORMAL_CTR:VATGLASSES:center:TEST:accepted=1:routeScope=1:oldRelevant=1:pattern=NORMAL_CTR:reject=<none>
+expect.resolver_authority_preview_summary=authority=brain-evidence,source=6,evidence=6,compatRelevant=1,previewSurvivors=1,previewRejected=5,oldMismatch=0,droppedBeforeBrain=0,compatOnly=1,liveOwned=1
+expect.resolver_authority_preview_decisions_contains=NORMAL_CTR:VATGLASSES:NORMAL_CTR:VATSPY_BOUNDARY:TEST:TEST:NORMAL_CTR,brain-preview-authority-relevance-survivor:old-relevant-authority:old=1,controller:NONACT_CTR:<empty>:<empty>:<empty>:<empty>:<empty>:brain-preview-authority-relevance-rejected-non-actionable:controller-not-actionable:old=0,controller:ATIS_CTR:<empty>:<empty>:<empty>:<empty>:<empty>:brain-preview-authority-relevance-rejected-atis:controller-atis:old=0,controller:GUARD_CTR:<empty>:<empty>:<empty>:<empty>:<empty>:brain-preview-authority-relevance-rejected-guard-frequency:guard-frequency:old=0,controller:OBS_CTR:<empty>:<empty>:<empty>:<empty>:<empty>:brain-preview-authority-relevance-rejected-not-authority-candidate:not-authority-candidate:old=0,controller:LOCAL_TWR:<empty>:<empty>:<empty>:<empty>:<empty>:brain-preview-authority-relevance-rejected-route-scope:no-route-scoped-authority-decision:old=0
+expect.resolver_authority_relevant_matches=NORMAL_CTR:VATGLASSES:NORMAL_CTR:VATSPY_BOUNDARY:TEST:aircraft=1:route=1:entry=166

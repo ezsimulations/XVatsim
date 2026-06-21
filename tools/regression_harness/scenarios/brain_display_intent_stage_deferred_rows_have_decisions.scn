@@ -1,0 +1,19 @@
+name=Brain display intent stage deferred rows have decisions
+
+display_intent.stage=Departure
+display_intent.progress_nm=0
+display_intent.current_polygon=KZAK
+display_intent.next_polygon=KZOA
+display_intent.arrival_polygon=PHZH
+
+arrival.station=role=Approach;callsign=ARR_APP;frequency=124.300;online=true
+enroute.station=role=Center;callsign=ARRPREP_CTR;frequency=128.800;online=true;polygonKey=PHZH
+
+display_intent.relation=callsign=ARRPREP_CTR;frequency=128.800;relation=ArrivalPrep
+
+expect.display_source=Departure
+expect.display_callsigns=<NONE>
+expect.brain_display_intent_rows=<NONE>
+expect.brain_display_intent_decision_summary=accepted=2,decisions=2,displayedFinal=0,hiddenAfterAccept=2,filteredAfterAccept=0,duplicates=0,stageSuppressed=2,missing=0
+expect.brain_display_intent_fail_soft_summary=preview=2,keepDisplay=0,keepHide=0,displayWithWarning=0,stageDefer=2,lowerPriorityDisplay=0,hardBlockHide=0,needsMoreEvidence=0,currentHideButFailSoftWouldShowOrWarn=0
+expect.brain_display_intent_decisions_contains=ARR_APP@124.300:decision=display-deferred-by-stage:reason=stage=Departure/source=arrival/board-not-selected,ARR_APP@124.300:decision=display-deferred-by-stage:reason=stage=Departure/source=arrival/board-not-selected:role=APP_DEP:source=Arrival:stage=Departure:accepted=1:relationFact=0/UNKNOWN:fallback=0/UNKNOWN:final=UNKNOWN:displayable=1:displayed=0:duplicate=0:stageSuppressed=1:confidence=medium:score=0.00/0.65:hardBlock=0:scoreSummary=confidence=medium/positive=0.00/negative=0.65/hardBlock=0/winner=negative/recommendation=prefer-stage-defer:failSoft=prefer-stage-defer:failSoftReason=stage-policy-defer-with-explicit-reason:failSoftWouldShowOrWarn=0,ARRPREP_CTR@128.800:decision=display-deferred-by-stage:reason=stage=Departure/source=enroute/relation=ARRIVAL_PREP-excluded,ARRPREP_CTR@128.800:decision=display-deferred-by-stage:reason=stage=Departure/source=enroute/relation=ARRIVAL_PREP-excluded:role=CTR:source=Enroute:stage=Departure:accepted=1:relationFact=1/ARRIVAL_PREP:fallback=0/ARRIVAL_PREP:final=ARRIVAL_PREP:displayable=1:displayed=0:duplicate=0:stageSuppressed=1:confidence=medium:score=0.55/0.70:hardBlock=0:scoreSummary=confidence=medium/positive=0.55/negative=0.70/hardBlock=0/winner=negative/recommendation=prefer-stage-defer:failSoft=prefer-stage-defer:failSoftReason=stage-policy-defer-with-explicit-reason:failSoftWouldShowOrWarn=0

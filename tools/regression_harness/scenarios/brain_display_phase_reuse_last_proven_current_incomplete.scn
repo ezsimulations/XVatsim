@@ -1,0 +1,5 @@
+name=Brain display phase reuse ledger reuses last proven when current incomplete
+phase_publisher_reuse_probe=reused-last-proven-row
+expect.phase_publisher_reuse_ledger_summary=decisions=1,fresh=0,reused=1,displaced=0,blocked=0,stale=0,planMismatch=0,stageMismatch=0,frequencyMismatch=0,roleMismatch=0,noCandidate=0,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_stable_key_summary=decisions=1,present=1,missing=0,fallback=0,synthetic=0,legacy=0,duplicated=0,changedAcrossReuse=0,unsafeSameKey=0,linkedDisplay=1,linkedCap=1,linkedPhase=1,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=decision=reused-last-proven-row,displayDecision=display:reuse:capDecision=overlay-cap|0,sourceEvidence=source:reuse,candidate=1:reused=1:freshAvailable=0:freshAccepted=0:freshIncomplete=1,reusedBecauseIncomplete=1,allowed=1,stableKey=source-evidence|source:reuse:stableKeyPresent=1:stableKeySource=source-evidence:stableKeyStatus=stable,keyContinuityKnown=1:keyChangedAcrossReuse=0:unsafeSameKey=0:keyWarning=0

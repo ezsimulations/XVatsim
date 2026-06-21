@@ -1,0 +1,12 @@
+name=Phase publisher source-owned stable key live consumption drift blocked
+
+phase_publisher_reuse_probe=source-owned-plan-context-drift
+stable_key.source_owned_fallback_shadow=true
+stable_key.source_owned_fallback_live_consumption_proposal=true
+stable_key.source_owned_fallback_live_consumption=true
+
+expect.phase_publisher_reuse_ledger_summary=decisions=2,fresh=1,reused=0,displaced=1,blocked=0,stale=0,planMismatch=0,stageMismatch=0,frequencyMismatch=0,roleMismatch=0,noCandidate=0,brainOwned=1,displayBehaviorChanged=0
+expect.phase_publisher_stable_key_shadow_summary=decisions=2,gateEnabled=2,attempted=2,skipped=0,hashMismatch=1,rowOrderingMismatch=0,dedupeMismatch=0,duplicateSuppressionMismatch=0,completionIdentityMismatch=0,phaseReuseMismatch=1,overlayCapMismatch=0,moreAtcMismatch=0,missingPlanBlocked=0,drift=1,safeForFutureLiveOptIn=1,behaviorConsumerEnabled=0,behaviorChanged=0
+expect.phase_publisher_stable_key_live_consumption_readiness_summary=decisions=2,proposalGateArmed=2,shadowParityClean=1,planContextAvailable=2,missingPlanBlocked=0,driftBlocked=1,shadowNotAttemptedBlocked=0,readinessBlocked=1,readyForFutureLiveConsumption=1,liveBehaviorConsumerEnabled=0,shadowBehaviorConsumerEnabled=0,behaviorChanged=0
+expect.phase_publisher_stable_key_live_consumption_summary=decisions=2,gateArmed=2,allowed=1,blocked=1,sourceOwnedConsumed=1,generatedFallbackConsumed=1,missingPlanBlocked=0,shadowGateOffBlocked=0,shadowParityNotAttemptedBlocked=0,shadowDriftBlocked=1,hashMismatchBlocked=1,rowOrderingMismatchBlocked=0,dedupeMismatchBlocked=0,duplicateSuppressionMismatchBlocked=0,completionIdentityMismatchBlocked=0,phaseReuseMismatchBlocked=1,overlayCapMismatchBlocked=0,moreAtcMismatchBlocked=0,missingSourceOwnedKeyBlocked=0,migrationNotReadyBlocked=0,defaultModeProtected=0,behaviorChanged=0
+expect.phase_publisher_reuse_ledger_decisions=DRIFT_SRC@124.550:decision=displaced-by-fresh-current-row,dryRunPhaseWouldChange=1,dryRunDrift=1:dryRunDriftReason=source-owned-phase-reuse-match-drift,shadowDrift=1:shadowDriftReason=source-owned-phase-reuse-match-drift:shadowSafeForFutureLiveOptIn=0,liveReadyForFutureOptIn=0:liveBlockedReason=source-owned-phase-reuse-match-drift:liveBehaviorConsumer=0,liveGateArmed=1:liveGateSource=harness:liveAllowed=0:liveGateBlockedReason=source-owned-phase-reuse-match-drift:liveConsumedKeyType=generated-fallback:liveDecisionBehaviorChanged=0

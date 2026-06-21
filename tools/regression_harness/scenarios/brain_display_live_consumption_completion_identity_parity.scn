@@ -1,0 +1,16 @@
+name=Brain display source-owned stable key live consumption completion identity parity
+
+display_intent.stage=Enroute
+display_intent.current_polygon=KZAB
+stable_key.source_owned_fallback_shadow=true
+stable_key.source_owned_fallback_live_consumption_proposal=true
+stable_key.source_owned_fallback_live_consumption=true
+
+enroute.station=role=Center;callsign=COMP_ID_CTR;frequency=124.560;online=true;polygonKey=KZAB
+
+expect.display_source=Enroute
+expect.display_callsigns=COMP_ID_CTR
+expect.brain_display_intent_rows=COMP_ID_CTR:CURRENT_POLYGON:ACTIVE
+expect.brain_display_stable_key_shadow_summary=decisions=1,gateEnabled=1,attempted=1,skipped=0,hashMismatch=0,rowOrderingMismatch=0,dedupeMismatch=0,duplicateSuppressionMismatch=0,completionIdentityMismatch=0,phaseReuseMismatch=0,overlayCapMismatch=0,moreAtcMismatch=0,missingPlanBlocked=0,drift=0,safeForFutureLiveOptIn=1,behaviorConsumerEnabled=0,behaviorChanged=0
+expect.brain_display_stable_key_live_consumption_summary=decisions=1,gateArmed=1,allowed=1,blocked=0,sourceOwnedConsumed=1,generatedFallbackConsumed=0,missingPlanBlocked=0,shadowGateOffBlocked=0,shadowParityNotAttemptedBlocked=0,shadowDriftBlocked=0,hashMismatchBlocked=0,rowOrderingMismatchBlocked=0,dedupeMismatchBlocked=0,duplicateSuppressionMismatchBlocked=0,completionIdentityMismatchBlocked=0,phaseReuseMismatchBlocked=0,overlayCapMismatchBlocked=0,moreAtcMismatchBlocked=0,missingSourceOwnedKeyBlocked=0,migrationNotReadyBlocked=0,defaultModeProtected=0,behaviorChanged=0
+expect.brain_display_stable_key_live_consumption_decisions_contains=COMP_ID_CTR@124.560:role=CTR:endpoint=enroute:airport=<none>,shadowCompletionIdentityMatches=1:shadowPhaseReuseMatches=1,proposalGateArmed=1:liveGateArmed=1:liveGateSource=harness:allowed=1:blockedReason=<none>:consumedKeyType=source-owned:behaviorChanged=0

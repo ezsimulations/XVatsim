@@ -1,0 +1,20 @@
+name=CTAF UNICOM missing evidence audit standby gate on requires advisory
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=12;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=123.450;age=20;failures=0
+ctaf_unicom.omit_departure_advisory_decision=true
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.direct_ctaf_enabled=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|KAAA|KBBB
+
+radio.valid=true
+
+expect.ctaf_unicom_missing_evidence_audit_summary=audit=1,missingSource=0,missingAdvisory=1,incompleteAdvisory=0,oldCompatibilityWouldDisplay=1,wouldLoseFrequency=1,wouldLoseVisibility=1,warningOnly=1,liveAuthorityRestored=0,liveCompatibilityFallbackUsed=0,standbyConsumesWarning=0,authorityInvariantPreserved=1,operatorActionRequired=1
+expect.ctaf_unicom_missing_evidence_audit_decisions_contains=warningOnly=1,liveAuthorityRestored=0:liveCompatibilityFallbackUsed=0:standbyConsumesWarning=0
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:no-target,standbyDecision=<none>,enabled=1,latchKey=<none>,latchConsumed=0,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=none,targetFrequency=<empty>,failure=no-target,marker=0

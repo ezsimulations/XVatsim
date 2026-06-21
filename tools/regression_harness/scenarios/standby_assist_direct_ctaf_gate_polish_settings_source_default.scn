@@ -1,0 +1,12 @@
+name=Standby assist direct CTAF gate polish settings source default
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|DEFAULT
+
+radio.valid=true
+
+expect.standby_assist_settings_diagnostics=standbyAssistEnabled=1,directCtafStandbyAssistEnabled=0,directCtafGateSource=default,directCtafGateEffective=0
+expect.standby_assist_writer_result_contains=code=no-target,failureReason=no-target,source=none

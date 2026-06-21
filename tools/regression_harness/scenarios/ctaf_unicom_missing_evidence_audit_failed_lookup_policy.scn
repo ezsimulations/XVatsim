@@ -1,0 +1,9 @@
+name=CTAF UNICOM missing evidence audit failed lookup policy
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;requestSucceeded=false;status=failure;resolved=false;available=false;age=60;failures=2;pending=lookup-failed
+ctaf_unicom.arrival=airport=KBBB;attempted=true;requestSucceeded=false;status=failure;resolved=false;available=false;age=61;failures=3;pending=lookup-failed
+
+expect.ctaf_unicom_bypass_audit_decisions_contains=blocked=lookup-failed,policy=failed-lookup-non-displayable,missingEvidencePolicy=0
+expect.ctaf_unicom_missing_evidence_audit_summary=audit=0,missingSource=0,missingAdvisory=0,incompleteAdvisory=0,oldCompatibilityWouldDisplay=0,wouldLoseFrequency=0,wouldLoseVisibility=0,warningOnly=0,liveAuthorityRestored=0,liveCompatibilityFallbackUsed=0,standbyConsumesWarning=0,authorityInvariantPreserved=0,operatorActionRequired=0

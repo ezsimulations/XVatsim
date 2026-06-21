@@ -1,0 +1,18 @@
+name=Standby assist direct CTAF live gate on UNICOM excluded
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;cacheHit=true;requestSucceeded=true;status=resolved-no-ctaf;resolved=true;available=false;age=30;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;cacheHit=true;requestSucceeded=true;status=resolved-no-ctaf;resolved=true;available=false;age=44;failures=0
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.direct_ctaf_enabled=true
+standby_assist.stage=Departure
+standby_assist.plan_key=HARNESS|KAAA|KBBB
+
+radio.valid=true
+
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,role=UNICOM,freq=122.800,previewRecommendation=preview-product-gated,liveWriteEligible=0,productGateEnabled=1,directCtafLivePromotionAllowed=0,livePromotionBlockedReason=unicom-excluded,actualSelectedTargetSource=none,actualWriteEligible=0,dryRunLiveEligible=0,dryRunLiveRecommendation=dry-run-excluded-unicom,dryRunSkip=unicom-excluded,dryRunSafetyGate=unicom-excluded,dryRunPromotionClass=unicom-excluded,advisoryProductGate=product-decision-required,final=skip-role-not-eligible
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:no-target,standbyDecision=<none>,enabled=1,latchKey=<none>,latchConsumed=0,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=none,targetFrequency=<empty>,failure=no-target,marker=0

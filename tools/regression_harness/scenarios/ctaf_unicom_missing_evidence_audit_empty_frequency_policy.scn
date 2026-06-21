@@ -1,0 +1,9 @@
+name=CTAF UNICOM missing evidence audit empty frequency policy
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Departure
+ctaf_unicom.departure=airport=KAAA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=;age=12;failures=0
+ctaf_unicom.arrival=airport=KBBB;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=;age=20;failures=0
+
+expect.ctaf_unicom_bypass_audit_decisions_contains=blocked=empty-frequency,policy=empty-frequency-non-displayable,missingEvidencePolicy=0
+expect.ctaf_unicom_missing_evidence_audit_summary=audit=0,missingSource=0,missingAdvisory=0,incompleteAdvisory=0,oldCompatibilityWouldDisplay=0,wouldLoseFrequency=0,wouldLoseVisibility=0,warningOnly=0,liveAuthorityRestored=0,liveCompatibilityFallbackUsed=0,standbyConsumesWarning=0,authorityInvariantPreserved=0,operatorActionRequired=0
