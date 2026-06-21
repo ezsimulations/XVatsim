@@ -1,4 +1,4 @@
-name=Standby assist direct CTAF gate polish UNICOM excluded
+name=Standby assist direct CTAF gate polish UNICOM write
 
 ctaf_unicom.probe=true
 ctaf_unicom.stage=Departure
@@ -9,11 +9,12 @@ standby_assist.apply=true
 standby_assist.side_effect=true
 standby_assist.enabled=true
 standby_assist.direct_ctaf_enabled=true
+standby_assist.write_succeeded=true
 standby_assist.stage=Departure
 standby_assist.plan_key=HARNESS|KAAA|KBBB
 
 radio.valid=true
 
 expect.standby_assist_settings_diagnostics=standbyAssistEnabled=1,directCtafStandbyAssistEnabled=1,directCtafGateSource=harness,directCtafGateEffective=1
-expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,role=UNICOM,featureGateRequired=direct-ctaf-standby-assist,featureGateSatisfied=0,featureGateBlockedReason=unicom-excluded,livePromotionBlockedReason=unicom-excluded,dryRunLiveRecommendation=dry-run-excluded-unicom,final=skip-role-not-eligible
-expect.standby_assist_writer_result_contains=code=no-write-requested,failureReason=unicom-excluded,writeAttempted=0,source=none
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,role=UNICOM,featureGateRequired=direct-ctaf-standby-assist,featureGateSatisfied=1,featureGateBlockedReason=<none>,livePromotionReason=promoted-unicom-fallback,dryRunLiveRecommendation=dry-run-recommend-com1-standby,actualSelectedTargetSource=unicom-fallback-advisory,actualSelectedTargetFrequency=122.800,final=recommend-com1-standby
+expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=122.800,writeAttempted=1,writeSucceeded=1,source=unicom-fallback-advisory

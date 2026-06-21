@@ -1,4 +1,4 @@
-name=Standby assist direct CTAF live gate on UNICOM excluded
+name=Standby assist direct CTAF live gate on UNICOM standby
 
 ctaf_unicom.probe=true
 ctaf_unicom.stage=Departure
@@ -9,10 +9,11 @@ standby_assist.apply=true
 standby_assist.side_effect=true
 standby_assist.enabled=true
 standby_assist.direct_ctaf_enabled=true
+standby_assist.write_succeeded=true
 standby_assist.stage=Departure
 standby_assist.plan_key=HARNESS|KAAA|KBBB
 
 radio.valid=true
 
-expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,role=UNICOM,freq=122.800,previewRecommendation=preview-product-gated,liveWriteEligible=0,productGateEnabled=1,directCtafLivePromotionAllowed=0,livePromotionBlockedReason=unicom-excluded,actualSelectedTargetSource=none,actualWriteEligible=0,dryRunLiveEligible=0,dryRunLiveRecommendation=dry-run-excluded-unicom,dryRunSkip=unicom-excluded,dryRunSafetyGate=unicom-excluded,dryRunPromotionClass=unicom-excluded,advisoryProductGate=product-decision-required,final=skip-role-not-eligible
-expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:no-target,standbyDecision=<none>,enabled=1,latchKey=<none>,latchConsumed=0,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=none,targetFrequency=<empty>,failure=no-target,marker=0
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,role=UNICOM,freq=122.800,previewRecommendation=preview-recommend-com1-standby,targetCom=COM1_STANDBY,liveWriteEligible=1,productGateEnabled=1,directCtafLivePromotionAllowed=1,livePromotionReason=promoted-unicom-fallback,actualSelectedTargetSource=unicom-fallback-advisory,actualSelectedTargetFrequency=122.800,actualWriteEligible=1,dryRunLiveEligible=1,dryRunLiveRecommendation=dry-run-recommend-com1-standby,dryRunSkip=<none>,dryRunSafetyGate=pass,dryRunPromotionClass=unicom-fallback,advisoryProductGate=ctaf-unicom-standby-assist,final=recommend-com1-standby
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:standby-decision:1:ctaf-unicom-advisory|departure|KAAA|UNICOM|KAAA|122800,standbyDecision=standby-decision:1:ctaf-unicom-advisory|departure|KAAA|UNICOM|KAAA|122800,enabled=1,latchKey=HARNESS|KAAA|KBBB|1||KAAA|122800,latchConsumed=1,writeAllowed=1,writeAttempted=1,writeSucceededKnown=1,writeSucceeded=1,writerTarget=COM1_STANDBY,targetFrequency=122.800,failure=<none>,marker=1

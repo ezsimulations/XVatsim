@@ -1,4 +1,4 @@
-name=Standby assist direct CTAF dry-run UNICOM excluded
+name=Standby assist direct CTAF dry-run UNICOM ready
 
 ctaf_unicom.probe=true
 ctaf_unicom.stage=Departure
@@ -13,5 +13,5 @@ standby_assist.plan_key=HARNESS|KAAA|KBBB
 
 radio.valid=true
 
-expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,role=UNICOM,freq=122.800,previewRecommendation=preview-product-gated,liveEligible=0,liveWriteEligible=0,dryRunLiveEligible=0,dryRunLiveRecommendation=dry-run-excluded-unicom,dryRunSkip=unicom-excluded,dryRunSafetyGate=unicom-excluded,dryRunPromotionClass=unicom-excluded,advisoryProductGate=product-decision-required,final=skip-role-not-eligible
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:departure:KAAA,role=UNICOM,freq=122.800,previewRecommendation=preview-recommend-com1-standby,liveEligible=0,liveWriteEligible=0,dryRunLiveEligible=1,dryRunLiveRecommendation=dry-run-recommend-com1-standby,dryRunSkip=<none>,dryRunSafetyGate=pass,dryRunPromotionClass=unicom-fallback,advisoryProductGate=ctaf-unicom-standby-assist,livePromotionBlockedReason=product-gate-disabled,final=skip-role-not-eligible
 expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:no-target,standbyDecision=<none>,enabled=1,latchKey=<none>,latchConsumed=0,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=none,targetFrequency=<empty>,failure=no-target,marker=0

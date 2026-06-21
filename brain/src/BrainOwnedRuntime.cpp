@@ -830,7 +830,7 @@ std::string StandbyAdvisoryProductGate(
     const std::string& advisoryCandidateType,
     const std::string& frequencyResolutionState) {
     if (advisoryCandidateType == "unicom-fallback") {
-        return "product-decision-required";
+        return "ctaf-unicom-standby-assist";
     }
     if (frequencyResolutionState == "resolved-direct-ctaf") {
         return "direct-ctaf-preview-only";
@@ -851,7 +851,7 @@ std::string StandbyAdvisoryWritePolicy(
     const std::string& advisoryCandidateType,
     const std::string& frequencyResolutionState) {
     if (advisoryCandidateType == "unicom-fallback") {
-        return "product-gated-no-write";
+        return "ctaf-unicom-gated-write";
     }
     if (frequencyResolutionState == "pending-lookup" ||
         frequencyResolutionState == "failed-lookup") {
@@ -910,12 +910,8 @@ void ApplyAdvisoryPreviewRecommendation(
         decision->previewSkipReason = "skip-guard-frequency";
         return;
     }
-    if (decision->advisoryCandidateType == "unicom-fallback") {
-        decision->previewRecommendation = "preview-product-gated";
-        decision->previewSkipReason = "product-decision-required";
-        return;
-    }
-    if (decision->advisoryCandidateType != "direct-ctaf") {
+    if (decision->advisoryCandidateType != "direct-ctaf" &&
+        decision->advisoryCandidateType != "unicom-fallback") {
         decision->previewRecommendation = "preview-not-ready";
         decision->previewSkipReason = "needs-more-evidence";
         return;
@@ -955,18 +951,13 @@ void ApplyDirectCtafDryRunReadiness(
         return;
     }
 
-    if (decision->advisoryCandidateType == "unicom-fallback") {
-        decision->dryRunLiveRecommendation = "dry-run-excluded-unicom";
-        decision->dryRunSkipReason = "unicom-excluded";
-        decision->dryRunSafetyGate = "unicom-excluded";
-        decision->dryRunPromotionClass = "unicom-excluded";
-        return;
+    if (decision->advisoryCandidateType == "direct-ctaf") {
+        decision->dryRunPromotionClass = "direct-ctaf-only";
+    } else if (decision->advisoryCandidateType == "unicom-fallback") {
+        decision->dryRunPromotionClass = "unicom-fallback";
+    } else {
+        decision->dryRunPromotionClass = "unknown";
     }
-
-    decision->dryRunPromotionClass =
-        decision->advisoryCandidateType == "direct-ctaf"
-            ? "direct-ctaf-only"
-            : "unknown";
 
     const auto stageSupported =
         IsStandbyWorkflowStageSupported(input.workflowStage);
@@ -975,7 +966,9 @@ void ApplyDirectCtafDryRunReadiness(
     const auto normalizedFrequency = NormalizeFrequency(decision->frequency);
     const auto hasFrequency = !normalizedFrequency.empty();
 
-    if (decision->advisoryCandidateType == "direct-ctaf" && hasFrequency) {
+    if ((decision->advisoryCandidateType == "direct-ctaf" ||
+         decision->advisoryCandidateType == "unicom-fallback") &&
+        hasFrequency) {
         decision->dryRunTargetCom = "COM1_STANDBY";
         decision->dryRunTargetFrequency = decision->frequency;
     }
@@ -1006,10 +999,11 @@ void ApplyDirectCtafDryRunReadiness(
         decision->dryRunBlockedByFrequencyState = true;
         return;
     }
-    if (decision->advisoryCandidateType != "direct-ctaf") {
-        decision->dryRunLiveRecommendation = "dry-run-not-direct-ctaf";
-        decision->dryRunSkipReason = "not-direct-ctaf";
-        decision->dryRunSafetyGate = "not-direct-ctaf";
+    if (decision->advisoryCandidateType != "direct-ctaf" &&
+        decision->advisoryCandidateType != "unicom-fallback") {
+        decision->dryRunLiveRecommendation = "dry-run-not-ctaf-unicom";
+        decision->dryRunSkipReason = "not-ctaf-unicom";
+        decision->dryRunSafetyGate = "not-ctaf-unicom";
         return;
     }
     if (!hasFrequency ||
@@ -1097,9 +1091,15 @@ void ApplyDirectCtafLivePromotionLedger(
     }
     if (selectedDirectCtafTarget) {
         decision->directCtafLivePromotionAllowed = true;
-        decision->livePromotionReason = "promoted-direct-ctaf";
+        decision->livePromotionReason =
+            decision->advisoryCandidateType == "unicom-fallback"
+                ? "promoted-unicom-fallback"
+                : "promoted-direct-ctaf";
         decision->promotedFromDryRun = decision->dryRunLiveEligible;
-        decision->actualSelectedTargetSource = "direct-ctaf-advisory";
+        decision->actualSelectedTargetSource =
+            decision->advisoryCandidateType == "unicom-fallback"
+                ? "unicom-fallback-advisory"
+                : "direct-ctaf-advisory";
         decision->actualSelectedTargetFrequency = decision->frequency;
         decision->actualWriteEligible = true;
         decision->targetCom = "COM1_STANDBY";
@@ -1111,12 +1111,9 @@ void ApplyDirectCtafLivePromotionLedger(
         return;
     }
 
-    if (decision->advisoryCandidateType != "direct-ctaf") {
-        if (decision->advisoryCandidateType == "unicom-fallback") {
-            decision->livePromotionBlockedReason = "unicom-excluded";
-            decision->featureGateSatisfied = false;
-            decision->featureGateBlockedReason = "unicom-excluded";
-        } else if (decision->advisoryCandidateType == "pending-lookup") {
+    if (decision->advisoryCandidateType != "direct-ctaf" &&
+        decision->advisoryCandidateType != "unicom-fallback") {
+        if (decision->advisoryCandidateType == "pending-lookup") {
             decision->livePromotionBlockedReason = "skip-pending-lookup";
             decision->featureGateBlockedReason =
                 decision->featureGateSatisfied
@@ -1129,9 +1126,9 @@ void ApplyDirectCtafLivePromotionLedger(
                     ? std::string()
                     : std::string("product-gate-disabled");
         } else {
-            decision->livePromotionBlockedReason = "not-direct-ctaf";
+            decision->livePromotionBlockedReason = "not-ctaf-unicom";
             decision->featureGateSatisfied = false;
-            decision->featureGateBlockedReason = "not-direct-ctaf";
+            decision->featureGateBlockedReason = "not-ctaf-unicom";
         }
         return;
     }
@@ -1479,8 +1476,9 @@ std::vector<BrainOwnedStandbyRecommendationDecision> BuildStandbyDecisionLedger(
         output.actualSelectedTargetSource == "controller-display-row";
     for (const auto& advisoryCandidate :
          input.ctafUnicomAdvisoryCandidates) {
-        const auto selectedDirectCtafTarget =
-            output.actualSelectedTargetSource == "direct-ctaf-advisory" &&
+        const auto selectedAdvisoryTarget =
+            (output.actualSelectedTargetSource == "direct-ctaf-advisory" ||
+             output.actualSelectedTargetSource == "unicom-fallback-advisory") &&
             output.targetAdvisorySourceDecisionId ==
                 advisoryCandidate.sourceDecisionId;
         decisions.push_back(
@@ -1489,14 +1487,14 @@ std::vector<BrainOwnedStandbyRecommendationDecision> BuildStandbyDecisionLedger(
                 advisoryCandidate,
                 decisionIndex,
                 existingControllerTargetSelected,
-                selectedDirectCtafTarget));
+                selectedAdvisoryTarget));
         ++decisionIndex;
     }
 
     return decisions;
 }
 
-bool TryPromoteDirectCtafStandbyTarget(
+bool TryPromoteCtafUnicomStandbyTarget(
     const BrainOwnedStandbyAssistPlanInput& input,
     BrainOwnedStandbyAssistPlanOutput* output) {
     if (output == nullptr || output->hasTarget ||
@@ -1512,10 +1510,14 @@ bool TryPromoteDirectCtafStandbyTarget(
                 0,
                 false,
                 false);
-        if (!decision.dryRunLiveEligible ||
-            decision.advisoryCandidateType != "direct-ctaf" ||
-            decision.advisoryFrequencyResolutionState !=
-                "resolved-direct-ctaf") {
+        const auto resolvedCtafOrUnicom =
+            (decision.advisoryCandidateType == "direct-ctaf" &&
+             decision.advisoryFrequencyResolutionState ==
+                 "resolved-direct-ctaf") ||
+            (decision.advisoryCandidateType == "unicom-fallback" &&
+             decision.advisoryFrequencyResolutionState ==
+                 "resolved-unicom-fallback");
+        if (!decision.dryRunLiveEligible || !resolvedCtafOrUnicom) {
             continue;
         }
 
@@ -1529,7 +1531,10 @@ bool TryPromoteDirectCtafStandbyTarget(
         output->targetStationIndex = *boardIndex;
         output->targetFrequency = candidate.projectedFrequency;
         output->targetAdvisorySourceDecisionId = candidate.sourceDecisionId;
-        output->actualSelectedTargetSource = "direct-ctaf-advisory";
+        output->actualSelectedTargetSource =
+            decision.advisoryCandidateType == "unicom-fallback"
+                ? "unicom-fallback-advisory"
+                : "direct-ctaf-advisory";
         output->actualSelectedTargetFrequency = candidate.projectedFrequency;
         const auto& targetStation = output->board.stations[*boardIndex];
         output->latchKey =
@@ -1598,11 +1603,6 @@ std::string SelectStandbyNoTargetWriterResultCode(
     for (const auto& decision : plan.standbyDecisions) {
         if (decision.livePromotionBlockedReason == "product-gate-disabled") {
             setReason("product-gate-disabled");
-            return "no-write-requested";
-        }
-        if (decision.livePromotionBlockedReason == "unicom-excluded" ||
-            decision.advisoryCandidateType == "unicom-fallback") {
-            setReason("unicom-excluded");
             return "no-write-requested";
         }
     }
@@ -5621,8 +5621,10 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
                         decision.standbyDecisionId;
                     break;
                 }
-                if (output.actualSelectedTargetSource ==
-                        "direct-ctaf-advisory" &&
+                if ((output.actualSelectedTargetSource ==
+                         "direct-ctaf-advisory" ||
+                     output.actualSelectedTargetSource ==
+                         "unicom-fallback-advisory") &&
                     decision.sourceDomain == "ctaf-unicom-advisory" &&
                     decision.sourceDecisionId ==
                         output.targetAdvisorySourceDecisionId) {
@@ -5662,7 +5664,7 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     }
 
     if (orderedEligibleIndices.empty()) {
-        TryPromoteDirectCtafStandbyTarget(input, &output);
+        TryPromoteCtafUnicomStandbyTarget(input, &output);
         return finalize();
     }
 
@@ -5679,14 +5681,14 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
         ++targetPosition;
     }
     if (targetPosition >= orderedEligibleIndices.size()) {
-        TryPromoteDirectCtafStandbyTarget(input, &output);
+        TryPromoteCtafUnicomStandbyTarget(input, &output);
         return finalize();
     }
 
     const auto targetIndex = orderedEligibleIndices[targetPosition];
     const auto& targetStation = output.board.stations[targetIndex];
     if (targetStation.frequency.empty()) {
-        TryPromoteDirectCtafStandbyTarget(input, &output);
+        TryPromoteCtafUnicomStandbyTarget(input, &output);
         return finalize();
     }
 
