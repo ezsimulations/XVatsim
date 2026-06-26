@@ -5,38 +5,42 @@ C:\Users\DARRON\OneDrive\Documents\XVatsim
 
 First read:
 1. docs/NEXT_SESSION_HANDOFF.md
-2. outputs/source_owned_stable_key_shadow_gate_report.md
+2. outputs/brain_ownership_recovery_final_closeout_report.md
+3. outputs/source_owned_fallback_stable_key_migration_closeout_report.md
 
 Then scan:
 git status --short
+git log -5 --oneline
 Get-ChildItem outputs | Sort-Object LastWriteTime -Descending | Select-Object -First 30 Name,LastWriteTime,Length
 
-Last known green state:
-- Step 63 complete.
-- Build passed with:
-  & 'C:\Users\DARRON\Documents\bin\cmake.exe' --build build --config RelWithDebInfo
-- Focused Step 63 scenarios passed: 20.
-- Full saved regression passed: 408 scenarios.
+Current known head after live-tested hotfix:
+- 3cddba5 fix: allow UNICOM fallback standby assist
+- 88c1b12 chore: close brain ownership recovery arc
 
-Current recovery status:
-- CTAF/UNICOM completion bypass is retired as live authority.
-- CTAF/UNICOM compatibility diagnostics are diagnostic-only.
-- Public/header CTAF/UNICOM aliases liveRowEmitted and completionBypassCompatibilityOnly remain present but deprecated.
-- Direct CTAF standby assist is live only behind explicit default-off direct CTAF gate and existing standby assist gate.
-- UNICOM remains excluded from live standby assist.
-- BrainDisplayIntent now has overlay cap, source linkage, phase reuse, plan context, stable key, upstream source-key, source-owned fallback stable key, dry-run parity, and default-off shadow gate diagnostics.
-- Source-owned fallback stable key behavior consumption remains disabled.
-- Step 63 shadow gate defaults OFF. Gate ON runs shadow comparison only.
+Current status:
+- Brain ownership recovery arc is closed.
+- CTAF/UNICOM completion bypass remains retired as live authority.
+- Direct CTAF and resolved NO CTAF / UNICOM fallback are both eligible for COM1 standby assist only when standby assist plus the CTAF/UNICOM advisory gate are enabled and brain-owned safety checks pass.
+- Controller standby targets still win.
+- Source-owned fallback stable-key live consumption remains internal/default OFF.
+- Public exposure/default-on for source-owned fallback stable-key consumption remain blocked.
+- route_sector and transceiver_resolver authority ownership audits are closed.
+
+Live testing:
+- User is doing more online testing before final cleanup, Git update, and Freeware Package V1.2.0 production.
+- Do not package or commit final release work until user confirms live testing is complete.
+
+Deferred official bug-fix note:
+- Reduce unchanged radio-board-candidate-diff diagnostic log churn in plugin/src/XVatsimPlugin.cpp.
+- This is diagnostic logging hygiene only. Do not change brain authority or runtime behavior.
 
 Do not:
-- broad-clean the dirty worktree;
-- reset or revert user/session changes;
+- rely on prior chat;
 - restore CTAF/UNICOM live bypass authority;
-- change display/dedupe/completion/reuse/cap behavior unless the user explicitly scopes it;
-- modify transceiver_resolver, route_sector, or HNL unless explicitly scoped.
+- change display/dedupe/completion/reuse/cap behavior unless explicitly scoped;
+- make source-owned fallback stable-key live consumption default ON;
+- expose internal stable-key settings publicly;
+- modify route_sector, transceiver_resolver, or HNL unless explicitly scoped;
+- broad-clean or refactor.
 
-Likely next direction, only if the user asks:
-- Continue stable-key migration after Step 63 with another default-off readiness/product gate.
-- Live source-owned key consumption must remain blocked unless shadow parity is clean, plan context exists, and all CTAF/standby/display guardrails pass.
-
-When the user gives the next step, implement narrowly, add focused scenarios, build, run focused scenarios, run full saved regression, and write the required report under outputs/.
+When the user gives the next task, use a narrow Contract Gate for code changes, build, run focused guardrails, run full regression for code changes, and commit only when asked.

@@ -1,6 +1,6 @@
 # XVatsim Next Session Handoff
 
-Last updated from the Step 63 closeout session.
+Last updated after the live-tested CTAF/UNICOM standby assist hotfix on 2026-06-20.
 
 This file is intentionally self-contained. Assume the next Codex session has no chat history. Start here, then scan the repo before making changes.
 
@@ -14,53 +14,88 @@ This file is intentionally self-contained. Assume the next Codex session has no 
 
 2. Read this file completely.
 
-3. Read the latest report:
-
-   ```text
-   outputs/source_owned_stable_key_shadow_gate_report.md
-   ```
-
-4. Scan the working tree:
+3. Check current state:
 
    ```powershell
    git status --short
+   git log -5 --oneline
    Get-ChildItem outputs | Sort-Object LastWriteTime -Descending | Select-Object -First 30 Name,LastWriteTime,Length
    ```
 
-5. Do not assume the worktree is clean. It is not. Many modified and untracked files are intentional artifacts from the brain ownership recovery work.
+4. If the user asks to package or close out, first confirm whether live online testing is complete.
 
-6. If asked to continue with the next step, wait for the user's exact Step 64 scope and hard limits, then follow the established pattern: narrow implementation, focused scenarios, build, full saved regression, report.
+5. Do not rely on prior chat. The relevant state is recorded below.
 
-## Current Repo Status
+## Current Git State
 
-The repo is mid-recovery and intentionally dirty. Do not reset, revert, prune, or broad-clean unless the user explicitly asks.
+Known latest commits:
 
-Known last green baseline:
+- `3cddba5 fix: allow UNICOM fallback standby assist`
+- `88c1b12 chore: close brain ownership recovery arc`
+
+The CTAF/UNICOM standby assist hotfix was live-tested by the user and committed. The repo was clean after that commit.
+
+If this file itself is dirty when the next session starts, that is expected: it was written as the durable no-chat startup handoff after the hotfix.
+
+## Current Product State
+
+The brain ownership recovery arc is closed.
+
+Closed fronts:
+
+- CTAF/UNICOM completion bypass retirement.
+- Standby assist, direct CTAF gate, and COM writer result ledger.
+- BrainDisplayIntent overlay/source/reuse/stable-key ledgers.
+- Fallback polygon/geometry source-owned stable-key migration front through internal passive wiring and closeout.
+- `route_sector` authority ownership closure.
+- `transceiver_resolver` authority ownership closure.
+
+The next user intent is not more recovery-report churn. The user plans more live online testing, then final cleanup, Git repository update, and Freeware Package V1.2.0 production if testing is good.
+
+## Latest Verified Build and Regression State
+
+Before the final recovery closeout:
 
 - Build passed.
-- Focused Step 63 scenarios passed: 20.
-- Full saved regression passed: 408 scenarios.
+- Focused guardrail bundle passed.
+- Full saved regression passed: 431 scenarios.
 
-Build command that passed:
+After the CTAF/UNICOM standby assist hotfix:
+
+- Build passed.
+- Focused standby assist hotfix/guardrail bundle passed: 10 scenarios.
+- Full saved regression passed: 431 scenarios.
+- Updated `XVatsim.xpl` was copied to:
+
+  ```text
+  C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl
+  ```
+
+- Copied binary SHA256:
+
+  ```text
+  DDB40F25D3F1DA91A61F0BA1008BA8A6A816C70D338BB06A7D26839AF535F224
+  ```
+
+Build command used:
 
 ```powershell
-& 'C:\Users\DARRON\Documents\bin\cmake.exe' --build build --config RelWithDebInfo
+& 'C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' --build build --config RelWithDebInfo
 ```
 
-Full regression command that passed:
+Full regression command used:
 
 ```powershell
+$h = '.\build\tools\XVatsimRegressionHarness.exe'
 $scenarios = @(Get-ChildItem '.\tools\regression_harness\scenarios\*.scn' | Sort-Object Name)
 foreach ($scenario in $scenarios) {
-  & '.\build\tools\XVatsimRegressionHarness.exe' $scenario.FullName | Out-Null
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  & $h $scenario.FullName *> $null
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "FAILED $($scenario.Name)"
+    exit $LASTEXITCODE
+  }
 }
-```
-
-The CMake executable the user provided is:
-
-```text
-C:\Users\DARRON\Documents\bin\cmake.exe
+Write-Host "Passed $($scenarios.Count) scenarios"
 ```
 
 ## Core Architecture Rule
@@ -69,303 +104,220 @@ Modules report evidence.
 
 The brain owns decisions.
 
-Do not let workers, source modules, plugin shell code, transceiver_resolver, route_sector, or compatibility paths silently decide display, relevance, standby eligibility, write permission, or authority. If a decision is made, it belongs in the brain and must be ledgered.
+Do not let workers, source modules, plugin shell code, `transceiver_resolver`, `route_sector`, or compatibility paths silently decide display, relevance, standby eligibility, write permission, fallback identity, or authority. If a decision is made, it belongs in the brain and must be ledgered.
 
-The product failure model still matters:
+Product failure model:
 
 - False positives are bad but recoverable.
 - False negatives are worse.
 - Missing evidence should usually produce fail-soft diagnostics, not silent hiding.
 - Hard blocks should be rare and explicit.
 
-## Completed Recovery Arc Through Step 63
+## CTAF/UNICOM and Standby Assist State
 
-### Pre-Step 37 Foundation
+CTAF/UNICOM completion bypass live authority remains retired.
 
-The repo had already moved toward brain-owned evidence and bounded scoring:
+Live CTAF/UNICOM rows come from brain-owned advisory projection. Compatibility projection evidence remains diagnostic-only.
 
-- `transceiver_resolver` evidence paths were migrated toward brain-owned authority.
-- `route_sector` authority relevance was moved toward evidence ledger plus brain-owned projection.
-- Brain display intent gained bounded scoring, confidence, hard-block separation, and HNL protection.
-- The important rule remains: fallback geometry must not override high-confidence relation facts.
+The old statement "UNICOM fallback is excluded from live standby assist" is no longer true.
 
-### Steps 37-42: Standby Assist and Direct CTAF Gate
+Current standby assist behavior:
 
-Completed:
+- Controller standby targets still win.
+- Direct CTAF can become a COM1 standby target only when standby assist and the CTAF/UNICOM advisory gate are enabled and safety gates pass.
+- `NO CTAF / UNICOM` fallback can also become a COM1 standby target under the same standby assist plus CTAF/UNICOM advisory gate conditions.
+- Pending CTAF lookup, failed CTAF lookup, empty frequency, guard/invalid frequencies, active frequencies, and already-in-standby cases remain blocked.
+- CTAF/UNICOM advisory standby does not displace an existing controller standby target.
+- COM writer behavior remains brain-owned.
 
-- Step 37: standby assist decision ledger.
-- Step 38: CTAF/UNICOM advisory preview integration, diagnostics only.
-- Step 39: direct CTAF dry-run live-readiness diagnostics.
-- Step 40: direct CTAF live standby wiring behind an explicit product gate.
-- Step 41: COM1 standby writer result ledger.
-- Step 42: direct CTAF gate product polish and default-off proof.
+The user live-tested the hotfix on route `VOI560 MMTO -> MMPR`; the original bug was that `NO CTAF / UNICOM MMTO 122.800` displayed but did not tune COM1 standby. The hotfix fixed that and was committed as:
 
-Current standby behavior:
+```text
+3cddba5 fix: allow UNICOM fallback standby assist
+```
 
-- Existing controller standby behavior remains the primary/default behavior.
-- Direct CTAF can become live standby only when both standby assist and `directCtafStandbyAssistEnabled` are enabled, all safety gates pass, and no controller target is displaced.
-- The direct CTAF gate defaults OFF.
-- UNICOM fallback remains excluded from live standby assist.
-- Pending/failed/empty CTAF never becomes live-write eligible.
-- COM writer behavior was not changed.
+Primary files in the hotfix:
 
-Key docs/reports:
-
-- `outputs/standby_assist_decision_ledger_report.md`
-- `outputs/standby_assist_ctaf_unicom_preview_report.md`
-- `outputs/standby_assist_direct_ctaf_dry_run_report.md`
-- `outputs/standby_assist_direct_ctaf_live_gate_report.md`
-- `outputs/standby_assist_writer_result_ledger_report.md`
-- `outputs/standby_assist_direct_ctaf_gate_product_polish_report.md`
+- `brain/src/BrainOwnedRuntime.cpp`
 - `docs/STANDBY_ASSIST_DIRECT_CTAF_GATE.md`
+- `tools/regression_harness/scenarios/standby_assist_ctaf_unicom_preview_unicom_product_gated.scn`
+- `tools/regression_harness/scenarios/standby_assist_direct_ctaf_dry_run_unicom_excluded.scn`
+- `tools/regression_harness/scenarios/standby_assist_direct_ctaf_gate_polish_unicom_excluded.scn`
+- `tools/regression_harness/scenarios/standby_assist_direct_ctaf_live_gate_on_unicom_excluded.scn`
+- `tools/regression_harness/scenarios/standby_assist_writer_result_unicom_no_writer.scn`
 
-### Steps 43-54: CTAF/UNICOM Completion Bypass Retirement and Alias Cleanup
+Scenario filenames still contain older `unicom_excluded` naming in some places. Do not infer current behavior from those filenames; inspect expectations and code.
 
-Completed:
+## Source-Owned Fallback Stable-Key State
 
-- Step 43: bypass retirement-readiness ledger.
-- Step 44: blocker cleanup and policy classification.
-- Step 45: retired CTAF/UNICOM `StationRequiresCompletion` bypass as live authority.
-- Step 46: quarantined stale post-retirement diagnostics.
-- Step 47: missing source/advisory evidence hardening audit.
-- Step 48: legacy bypass alias audit.
-- Step 49: replacement-field migration.
-- Step 50: report-only alias removal.
-- Step 51: public/unknown alias migration proof.
-- Step 52: external-risk alias deprecation/removal window.
-- Step 53: public/header alias closure audit.
-- Step 54: formal deprecation of retained public/header aliases.
+The fallback polygon/geometry source-owned stable-key migration subfront is closed for now.
 
-Current CTAF/UNICOM behavior:
+Current defaults:
 
-- Completion bypass is no longer live authority.
-- Live CTAF/UNICOM rows come from brain-owned advisory projection.
-- Compatibility projection evidence is diagnostic-only.
-- Valid direct CTAF display remains brain-owned.
-- UNICOM fallback display remains brain-owned where existing behavior displayed it.
-- Pending/failed/empty CTAF remain non-displayable/non-writeable by policy.
-- Missing evidence emits warning-only diagnostics and does not restore live compatibility fallback.
-- Authority invariants remain centered on:
-  - `noLiveBypassAuthority`
-  - `compatibilityRowsDiagnosticOnly`
-  - `liveRowsBrainAdvisoryOwned`
-  - `standbyRowsAdvisoryOwned`
-  - `legacyBypassFieldsQuarantined`
+- Generated fallback stable key remains default behavior.
+- Source-owned fallback live consumption remains internal and default OFF.
+- Internal passive setting exists:
+  - `sourceOwnedFallbackStableKeyLiveConsumptionEnabled`
+  - `sourceOwnedFallbackStableKeyLiveConsumptionGateSource`
+- Missing setting resolves to `false` / `default`.
+- Settings-origin source can only be `settings-store`.
+- Settings-origin impersonation attempts such as `harness` or explicit `default` normalize/ledger as `unknown`.
+- Plugin/settings-store pass passive values only.
+- Brain-owned Step 63/64/66 readiness checks remain the only authority.
+- Public exposure is blocked.
+- Default-on is blocked.
+- Generated fallback remains the rollback path.
 
-Compatibility window still open:
+Important reports:
 
-- `liveRowEmitted` remains present but deprecated; prefer `legacyDiagnosticLiveRowEmitted`.
-- `completionBypassCompatibilityOnly` remains present but deprecated; prefer `diagnosticCompatibilityProjectionOnly`.
+- `outputs/source_owned_fallback_stable_key_migration_closeout_report.md`
+- `outputs/source_owned_stable_key_hidden_internal_release_risk_checklist.md`
+- `outputs/source_owned_stable_key_public_exposure_readiness_audit_report.md`
+- `outputs/source_owned_stable_key_internal_product_wiring_report.md`
+- `outputs/source_owned_stable_key_product_wiring_readiness_report.md`
+- `outputs/source_owned_stable_key_gated_live_opt_in_report.md`
+- `outputs/source_owned_stable_key_live_consumption_blocker_audit_report.md`
+- `outputs/source_owned_stable_key_live_consumption_readiness_report.md`
 
-Key docs/reports:
+## Route-Sector and Transceiver-Resolver State
 
-- `outputs/ctaf_unicom_completion_bypass_retirement_audit_report.md`
-- `outputs/ctaf_unicom_bypass_retirement_blocker_cleanup_report.md`
-- `outputs/ctaf_unicom_completion_bypass_retirement_report.md`
-- `outputs/ctaf_unicom_post_retirement_diagnostic_cleanup_report.md`
-- `outputs/ctaf_unicom_missing_evidence_hardening_audit_report.md`
-- `outputs/ctaf_unicom_legacy_bypass_alias_audit_report.md`
-- `outputs/ctaf_unicom_legacy_alias_replacement_migration_report.md`
-- `outputs/ctaf_unicom_report_only_alias_removal_report.md`
-- `outputs/ctaf_unicom_public_unknown_alias_migration_proof_report.md`
-- `outputs/ctaf_unicom_external_alias_deprecation_report.md`
-- `outputs/ctaf_unicom_public_header_alias_risk_closure_report.md`
-- `outputs/ctaf_unicom_public_header_alias_deprecation_report.md`
-- `docs/CTAF_UNICOM_PUBLIC_HEADER_ALIAS_DEPRECATION.md`
+`route_sector`:
 
-### Steps 55-63: BrainDisplayIntent Cap, Reuse, Plan, and Stable-Key Recovery
+- May compute/report geometry, key, token, and evidence facts.
+- May retain compatibility projections where intentionally retained.
+- Must not suppress, promote, hide, display, or live-project authority outside the brain.
+- Live `relevantAuthorities` remains brain-owned.
+- Closure report: `outputs/route_sector_authority_ownership_closure_audit_report.md`
 
-Completed:
+`transceiver_resolver`:
 
-- Step 55: overlay cap / `+N more ATC` decision ledger.
-- Step 56: display/cap source evidence linkage audit.
-- Step 57: phase publisher reuse ledger.
-- Step 58: live product plan-key linkage diagnostics.
-- Step 59: stable completion key audit ledger.
-- Step 60: upstream stable completion key source audit.
-- Step 61: source-owned stable keys for fallback polygon/geometry inference, parity only.
-- Step 62: dry-run consumer parity ledger for source-owned fallback polygon stable keys.
-- Step 63: default-off source-owned fallback stable-key shadow behavior gate.
+- May compute, normalize, rank, filter, score, and report evidence/candidates.
+- May retain compatibility candidate projections.
+- Must not suppress, promote, hide, display, live-project, mark standby-eligible, or write-authorize outside the brain-owned path.
+- Live relevance/display/standby/write-authority decisions remain brain-owned.
+- Closure report: `outputs/transceiver_resolver_authority_ownership_closure_audit_report.md`
 
-Current BrainDisplayIntent state:
+## Final Recovery Closeout
 
-- Final display behavior unchanged.
-- Row ordering unchanged.
-- Dedupe behavior unchanged.
-- Completion behavior unchanged.
-- Overlay cap and `+N more ATC` unchanged.
-- Phase publish/reuse behavior unchanged.
-- Capped rows, hidden rows, source linkage, reuse decisions, plan context, and stable key status are now ledgered.
+Final closeout report:
 
-Current stable-key state:
+```text
+outputs/brain_ownership_recovery_final_closeout_report.md
+```
 
-- Fallback polygon/geometry rows have source-owned stable key diagnostics.
-- The generated fallback key remains present for parity.
-- Source-owned key behavior consumption remains disabled.
-- Step 62 dry-run parity compares current behavior key to source-owned key at dedupe and phase reuse points.
-- Step 63 adds a default-off shadow gate:
-  - `sourceOwnedFallbackStableKeyShadowEnabled`
-  - `sourceOwnedFallbackStableKeyShadowGateSource`
-- Gate OFF: shadow recomputation is skipped, behavior unchanged.
-- Gate ON: shadow comparison runs only, behavior unchanged.
-- Missing plan context blocks future live opt-in readiness.
+Final recovery arc status from Step 74:
 
-Step 63 report:
+- Closed.
+- Recommendation was commit/tag/stop or open a new named Contract Gate for a new front.
 
-- `outputs/source_owned_stable_key_shadow_gate_report.md`
+The user has not yet asked to create the final package after the live tests. Do not package preemptively.
 
-Step 63 focused scenarios added/updated:
+## Live Testing and Performance Notes
 
-- `brain_display_stable_key_shadow_gate_off_default.scn`
-- `brain_display_stable_key_shadow_gate_on_context.scn`
-- `brain_display_stable_key_shadow_missing_plan_context.scn`
-- `brain_display_stable_key_consumer_dry_run_duplicate_fallback_polygon.scn`
-- `brain_display_overlay_cap_one_hidden_row.scn`
-- `brain_display_overlay_cap_multiple_hidden_rows.scn`
-- `phase_publisher_source_owned_stable_key_reuse_current_incomplete.scn`
-- `phase_publisher_source_owned_stable_key_fresh_displaces_previous.scn`
-- `phase_publisher_source_owned_stable_key_frequency_mismatch.scn`
-- `phase_publisher_source_owned_stable_key_role_mismatch.scn`
+The user is doing further online testing before final cleanup/package work.
 
-## Step 63 Technical Notes
+Last tested route:
 
-Primary files changed for Step 63:
+```text
+VOI560 MMTO -> MMPR
+```
 
-- `brain/include/XVatsim/brain/BrainDisplayIntent.h`
-- `brain/src/BrainDisplayIntent.cpp`
-- `brain/include/XVatsim/brain/PhaseSnapshotPublisher.h`
-- `brain/src/PhaseSnapshotPublisher.cpp`
-- `tools/regression_harness/src/main.cpp`
+Live issue found and fixed:
 
-New/important display shadow fields:
+- `NO CTAF / UNICOM MMTO 122.800` displayed but did not tune COM1 standby.
+- Fixed by allowing resolved UNICOM fallback advisory candidates through standby assist under the same standby assist plus CTAF/UNICOM advisory gate as direct CTAF.
 
-- `sourceOwnedFallbackShadowGateEnabled`
-- `sourceOwnedFallbackShadowGateSource`
-- `shadowRecomputeAttempted`
-- `shadowRecomputeSkippedReason`
-- `shadowBehaviorConsumerEnabled`
-- `shadowFinalBoardHashCurrent`
-- `shadowFinalBoardHashSourceOwned`
-- `shadowFinalBoardHashMatches`
-- `shadowRowOrderingMatches`
-- `shadowDedupeGroupsMatch`
-- `shadowDuplicateSuppressionMatches`
-- `shadowCompletionIdentityMatches`
-- `shadowPhaseReuseMatches`
-- `shadowOverlayCapMatches`
-- `shadowMoreAtcMatches`
-- `shadowMissingPlanContextBlocked`
-- `shadowDriftDetected`
-- `shadowDriftReason`
-- `shadowSafeForFutureLiveOptIn`
+Performance investigation notes:
 
-New/important summary counters:
+- Startup/context-establishment spikes are expected and were observed:
+  - route rebuild around 1.1s
+  - authority proof build around 450-480ms
+  - total startup/context spikes around 1.5-1.6s
+- The user considers initial VATSIM flight-plan load spikes acceptable because cockpit setup is still underway.
+- Pushback/taxi stutters occurred later, around BetterPushback/PMCO activity, not during XVatsim heavy startup work.
+- Tail-window XVatsim diagnostics around pushback showed no slow-refresh markers:
+  - refresh around 1.3-1.6ms
+  - route work 0us
+  - authority relevance around 18-22us
+  - standby assist around 39-52us
+- Conclusion: pushback stutter was unlikely to be XVatsim's runtime brain loop.
+- X-Plane crash was not attributed to XVatsim. X-Plane log ended with a ToLiss/X-Plane flight model `vx_wrl value is nan or inf` error and there were Map Enhancement / scenery DSF load issues earlier.
 
-- `shadowDecisionCount`
-- `shadowGateEnabledCount`
-- `shadowRecomputeAttemptedCount`
-- `shadowRecomputeSkippedCount`
-- `shadowHashMismatchCount`
-- `shadowRowOrderingMismatchCount`
-- `shadowDedupeMismatchCount`
-- `shadowDuplicateSuppressionMismatchCount`
-- `shadowCompletionIdentityMismatchCount`
-- `shadowPhaseReuseMismatchCount`
-- `shadowOverlayCapMismatchCount`
-- `shadowMoreAtcMismatchCount`
-- `shadowMissingPlanBlockedCount`
-- `shadowDriftDetectedCount`
-- `shadowSafeForFutureLiveOptInCount`
-- `shadowBehaviorConsumerEnabledCount`
-- `behaviorChanged`
+Deferred official bug-fix note:
 
-Harness keys:
+- Reduce unchanged `radio-board-candidate-diff` diagnostic log churn.
+- Current logs may emit repeated no-op radio-board diff trace lines every generation even when candidate counts and hashes are unchanged.
+- This is diagnostic-log hygiene, not a brain decision change.
+- Likely file: `plugin/src/XVatsimPlugin.cpp`.
+- Do not change runtime display, standby behavior, authority, or brain decision ownership for this.
 
-- `stable_key.source_owned_fallback_shadow`
-- `source_owned_fallback_stable_key_shadow_enabled`
-- `stable_key.source_owned_fallback_shadow_source`
-- `source_owned_fallback_stable_key_shadow_gate_source`
+Suggested future Contract Gate for that deferred bug fix:
 
-Harness expectations:
+1. Files intended to change:
+   - `plugin/src/XVatsimPlugin.cpp`
+   - focused diagnostics scenario only if existing harness supports this path without overbuilding.
+2. Behavior change:
+   - Runtime behavior: none.
+   - Diagnostic logging only: suppress unchanged/no-op radio-board trace lines.
+3. Brain authority:
+   - Unchanged. Brain still owns decisions.
+   - Plugin only gates diagnostic log emission.
+4. Proposed suppression:
+   - Do not emit `radio-board-candidate-diff` when previous/current hashes match, candidate counts match, added/removed are zero, and there are no meaningful candidate changes.
+   - Still emit on real candidate add/remove/change, route hash change, source/stale change, or meaningful non-empty trace.
+5. Verification:
+   - Build.
+   - Focused existing radio-board/standby/CTAF guardrails.
+   - Full regression if code changes.
 
-- `expect.brain_display_stable_key_shadow_summary`
-- `expect.brain_display_stable_key_shadow_decisions_contains`
-- `expect.phase_publisher_stable_key_shadow_summary`
+Do not do this unless the user explicitly asks. The user said to make note of it only and address it in the next official bug fix.
 
-## Known Gaps / Likely Next Target
-
-Do not start this without the user's next explicit step text, but the natural next stable-key migration target is:
-
-- keep the Step 63 shadow gate default OFF;
-- add a separate, still default-off live-consumption readiness/product gate proposal or ledger;
-- refuse live consumption unless:
-  - shadow parity is clean,
-  - plan context is present,
-  - no dedupe/duplicate/completion/reuse/order/cap/more-ATC drift exists,
-  - `shadowBehaviorConsumerEnabled` remains false in default mode,
-  - CTAF/UNICOM and standby guardrails remain unchanged.
-
-The source-owned fallback stable key is not ready to become live behavior by default. Missing plan context remains an explicit blocker.
-
-## Guardrails for Future Steps
+## Guardrails for Future Work
 
 Preserve unless the user explicitly scopes otherwise:
 
 - Do not restore CTAF/UNICOM completion bypass live authority.
 - Do not add live compatibility fallback.
-- Do not enable UNICOM live standby eligibility.
-- Do not allow pending/failed/empty CTAF to display or write.
-- Do not change COM writer behavior.
-- Do not let direct CTAF displace a controller standby target.
-- Do not change row ordering, display behavior, cap policy, `+N more ATC`, dedupe, completion, or phase reuse unless a later user step explicitly authorizes it.
-- Do not modify `transceiver_resolver`, `route_sector`, or HNL unless explicitly scoped.
-- Do not broad-clean the worktree.
+- Do not let pending/failed/empty CTAF display or write.
+- Do not let CTAF/UNICOM advisory standby displace a controller target.
+- Do not change COM writer behavior outside an approved Contract Gate.
+- Do not change display behavior, row ordering, dedupe, duplicate suppression, completion identity, phase reuse, overlay cap, or `+N more ATC` unless explicitly scoped.
+- Do not make source-owned fallback stable-key consumption default ON.
+- Do not expose internal stable-key setting publicly without a new Contract Gate and product decision.
+- Do not modify `route_sector`, `transceiver_resolver`, or HNL unless explicitly scoped.
+- Do not remove deprecated public/header aliases unless explicitly scoped.
+- Do not broad-clean or refactor.
 
-## Report Index From This Session
+## Package / Release Notes for Future Session
 
-Read newest first when orienting:
+The user intends, after more live testing:
 
-- `outputs/source_owned_stable_key_shadow_gate_report.md`
-- `outputs/source_owned_stable_key_dry_run_consumer_parity_report.md`
-- `outputs/fallback_polygon_source_owned_stable_key_report.md`
-- `outputs/upstream_stable_key_source_audit_report.md`
-- `outputs/brain_display_stable_key_audit_report.md`
-- `outputs/phase_publisher_plan_key_linkage_report.md`
-- `outputs/brain_display_phase_reuse_ledger_report.md`
-- `outputs/brain_display_source_linkage_report.md`
-- `outputs/brain_display_overlay_cap_ledger_report.md`
-- `outputs/ctaf_unicom_public_header_alias_deprecation_report.md`
-- `outputs/ctaf_unicom_public_header_alias_risk_closure_report.md`
-- `outputs/ctaf_unicom_external_alias_deprecation_report.md`
-- `outputs/ctaf_unicom_public_unknown_alias_migration_proof_report.md`
-- `outputs/ctaf_unicom_report_only_alias_removal_report.md`
-- `outputs/ctaf_unicom_legacy_alias_replacement_migration_report.md`
-- `outputs/ctaf_unicom_legacy_bypass_alias_audit_report.md`
-- `outputs/ctaf_unicom_missing_evidence_hardening_audit_report.md`
-- `outputs/ctaf_unicom_post_retirement_diagnostic_cleanup_report.md`
-- `outputs/ctaf_unicom_completion_bypass_retirement_report.md`
-- `outputs/ctaf_unicom_bypass_retirement_blocker_cleanup_report.md`
-- `outputs/ctaf_unicom_completion_bypass_retirement_audit_report.md`
-- `outputs/standby_assist_direct_ctaf_gate_product_polish_report.md`
-- `outputs/standby_assist_writer_result_ledger_report.md`
-- `outputs/standby_assist_direct_ctaf_live_gate_report.md`
-- `outputs/standby_assist_direct_ctaf_dry_run_report.md`
-- `outputs/standby_assist_ctaf_unicom_preview_report.md`
-- `outputs/standby_assist_decision_ledger_report.md`
+1. Clean up the repo.
+2. Update the Git repository.
+3. Produce the final Freeware Package V1.2.0.
+
+Before packaging:
+
+- Confirm user says live testing is complete.
+- Run build.
+- Run focused guardrails.
+- Run full saved regression.
+- Use the existing release gate/package tooling under `tools/release_gate/`.
+- Inspect `tools/release_gate/README.md` before running package scripts.
+- Do not invent a new release process unless the existing one is insufficient.
 
 ## Practical Next-Session Reminder
 
-The safest rhythm for the next step:
+The safest rhythm:
 
 1. Read this file.
-2. Read the latest report.
-3. Run `git status --short`.
-4. Inspect touched files before editing.
-5. Implement only the user-scoped step.
-6. Add focused scenarios.
-7. Build with the provided CMake exe.
-8. Run focused scenarios.
-9. Run full saved regression.
-10. Write the required report under `outputs/`.
+2. Run `git status --short`.
+3. Inspect the latest commits and outputs.
+4. Ask for or wait for the user's exact next Contract Gate if code changes are requested.
+5. Keep changes narrow.
+6. Build.
+7. Run focused scenarios.
+8. Run full regression for code changes.
+9. Commit only when the user asks.
 
-Future-me: this repo has made real progress, but it is still carrying a lot of recovery scaffolding. Move in small, ledgered steps.
+Future-me: the recovery arc is closed; do not reopen it with more report-only churn unless it closes a real decision or unblocks real code work.
