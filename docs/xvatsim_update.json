@@ -9,10 +9,10 @@
   "package_sha256": "2E1DBB40C2541361954D9614267A97EFCA8AF975101965CFD35C2C784F5F6EA5",
   "package_size_bytes": 2073317,
   "plugin_sha256": "2BA1A297750EFBC93B4DAD0F6A681C97316510F74FD852D0D8D9547E5AA9AF0F",
-  "download_page_url": "https://ezsimulations.github.io/XVatsim/releases/XVatsim_1.2.0_Freeware_Windows_XP12.zip",
+  "download_page_url": "https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/",
   "update_policy": "notify_only",
   "critical": false,
-  "message": "XVatsim 1.2.0 is available. Download the freeware Windows XP12 package from GitHub.",
+  "message": "XVatsim 1.2.0 is available. Download the freeware Windows XP12 package from X-Plane.org.",
   "release_notes": [
     "Closes the brain ownership recovery arc with protected brain-owned display, standby, phase, and authority decisions.",
     "Allows CTAF/UNICOM fallback standby assist when no higher-priority live authority is available.",

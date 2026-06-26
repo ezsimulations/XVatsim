@@ -9,8 +9,8 @@ https://ezsimulations.github.io/XVatsim/xvatsim_update.json
 ```
 
 The plugin fetches `xvatsim_update.json`, compares `latest_version` to the
-installed plugin version, and shows a notify-only update message with the public
-release/download page when a newer version is available. Current-version
+installed plugin version, and shows a notify-only update message with the
+X-Plane.org download page when a newer version is available. Current-version
 automatic checks stay silent; manual checks may show the installed version is
 current.
 
@@ -19,12 +19,10 @@ Release workflow:
 1. Build the new XVatsim ZIP.
 2. Compute and update `package_sha256`, `plugin_sha256`, and
    `package_size_bytes`.
-3. Copy or upload the new XVatsim ZIP to the approved public download location.
-   For the 1.2.0 freeware release, the ZIP is served from GitHub Pages under
-   `docs/releases/`.
+3. Upload the new XVatsim ZIP to X-Plane.org.
 4. Update `latest_version`, `published_date`, `message`, and `release_notes`.
-5. Keep `download_page_url` pointed at the approved HTTPS public release or
-   package URL.
+5. Keep `download_page_url` pointed at the X-Plane.org file page unless the
+   public download page changes.
 6. Commit and push this file before announcing the release.
 
 GitHub Pages setup:
