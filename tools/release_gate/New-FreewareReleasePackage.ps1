@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.0.4",
+    [string]$Version = "1.2.0",
     [string]$PlatformName = "Windows_XP12"
 )
 
@@ -187,17 +187,15 @@ XVatsim Freeware Changelog
 Version: $Version
 
 Patch release:
-- Adds a persistent top-right overlay version chip.
-- Shows the installed version in green when current, gray while unknown, and an amber rotating version/UPDATE chip when a newer version is available.
-- Replaces clipped update footer text with a dismissible update notice panel for automatic and manual update checks.
-- Runs one automatic update check per simulator/plugin session so a newly published manifest is not hidden by an old 24-hour timestamp.
-- Adds a weighted brain evidence ledger for terminal APP/DEP controller relevance.
-- Prevents one terminal-owner text mismatch from hiding a controller when multiple independent VATSIM/radio/route facts support displaying it.
-- Includes FAA/NASR airport frequency evidence as a low-weight positive only; FAA misses are neutral because VATSIM can use virtual frequencies.
-- Feeds scheduled source-owned authority relevance into the brain-owned controller relevance decision path.
-- Adds score, vote, neutral-fact, evidence-family, confidence, and final display/hide diagnostics to terminal controller decisions.
-- Keeps controller relevance CPU bounded by cache keys for radio board, route polygons, terminal authority, airport frequency facts, authority relevance, radio tuning, workflow stage, and current polygon.
-- Shows the installed version on the overlay and plugin menu so pilots can confirm the active build without running a manual update check.
+- Closes the current brain-owned controller authority recovery arc.
+- Keeps enroute Center display fail-closed when route authority or route metadata is unavailable.
+- Blocks radio-range-only Center rows from becoming live route/current/next polygon display rows without brain-owned route proof.
+- Fixes X-Plane airway loading so valid airway records whose first waypoint begins with I, such as IGSAM or IDEAL, are not skipped as header lines.
+- Restores data-backed VATGlasses China FIR authority metadata attachment for route-sector polygons such as ZWUQ, ZWWW, ZLHW, ZLLL, ZPKM, ZUUU, ZUGY, ZGGG, ZGNN, and ZGZU.
+- Allows CTAF and UNICOM fallback rows to participate in Standby Assist tuning when the pilot enables Assist.
+- Retains the generated fallback stable-key rollback path while keeping source-owned fallback stable-key live consumption internal and default off.
+- Preserves CTAF/UNICOM authority retirement, COM writer ownership, standby/direct CTAF guardrails, overlay cap behavior, row ordering, dedupe, completion identity, and phase reuse behavior.
+- Includes additional live-test diagnostic reports and startup handoff documentation for future maintenance.
 
 Current scope:
 - Windows only.
