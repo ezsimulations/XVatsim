@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.2.0",
+    [string]$Version = "1.2.1",
     [string]$PlatformName = "Windows_XP12"
 )
 
@@ -186,16 +186,13 @@ $changelog = @"
 XVatsim Freeware Changelog
 Version: $Version
 
-Patch release:
-- Closes the current brain-owned controller authority recovery arc.
-- Keeps enroute Center display fail-closed when route authority or route metadata is unavailable.
-- Blocks radio-range-only Center rows from becoming live route/current/next polygon display rows without brain-owned route proof.
-- Fixes X-Plane airway loading so valid airway records whose first waypoint begins with I, such as IGSAM or IDEAL, are not skipped as header lines.
-- Restores data-backed VATGlasses China FIR authority metadata attachment for route-sector polygons such as ZWUQ, ZWWW, ZLHW, ZLLL, ZPKM, ZUUU, ZUGY, ZGGG, ZGNN, and ZGZU.
-- Allows CTAF and UNICOM fallback rows to participate in Standby Assist tuning when the pilot enables Assist.
-- Retains the generated fallback stable-key rollback path while keeping source-owned fallback stable-key live consumption internal and default off.
+Maintenance release:
+- Reuses cached route-owned authority proofs across watch-only controller feed churn, preventing repeated 500-1000+ ms authority rebuild loops when the effective controller candidate set is unchanged.
+- Keeps display and relevance updates correct while avoiding unnecessary BrainAuthorityRelevanceWorker proof rebuilds.
+- Reduces unchanged radio-board candidate-diff diagnostic noise during normal operation.
+- Rotates diagnostic logs by date and keeps only the latest three diagnostic log dates.
+- Retains the 1.2.0 brain-owned authority recovery fixes, including fail-closed route-unavailable Center behavior, X-Plane airway I-prefix row parsing, data-backed China FIR authority metadata, and CTAF/UNICOM Standby Assist eligibility.
 - Preserves CTAF/UNICOM authority retirement, COM writer ownership, standby/direct CTAF guardrails, overlay cap behavior, row ordering, dedupe, completion identity, and phase reuse behavior.
-- Includes additional live-test diagnostic reports and startup handoff documentation for future maintenance.
 
 Current scope:
 - Windows only.

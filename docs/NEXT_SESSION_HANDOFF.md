@@ -50,7 +50,7 @@ Closed fronts:
 - `route_sector` authority ownership closure.
 - `transceiver_resolver` authority ownership closure.
 
-The next user intent is not more recovery-report churn. The user plans more live online testing, then final cleanup, Git repository update, and Freeware Package V1.2.0 production if testing is good.
+The next user intent is release completion, not more recovery-report churn. The user confirmed live testing looked good and requested Git update plus Freeware Package V1.2.1 production.
 
 ## Latest Verified Build and Regression State
 
@@ -290,11 +290,11 @@ Preserve unless the user explicitly scopes otherwise:
 
 ## Package / Release Notes for Future Session
 
-The user intends, after more live testing:
+The user moved from live testing into V1.2.1 release preparation:
 
 1. Clean up the repo.
 2. Update the Git repository.
-3. Produce the final Freeware Package V1.2.0.
+3. Produce the final Freeware Package V1.2.1.
 
 Before packaging:
 

@@ -5,15 +5,15 @@ cockpit overlay for VATSIM controller awareness, focused on IFR flight-plan oper
 
 ## Current Release
 
-XVatsim V1.2.0 is the current freeware Windows release for X-Plane 12 and
+XVatsim V1.2.1 is the current freeware Windows release for X-Plane 12 and
 xPilot.
 
 - Freeware package:
-  `releases/XVatsim_1.2.0_Freeware_Windows_XP12.zip`
+  `releases/XVatsim_1.2.1_Freeware_Windows_XP12.zip`
 - Package SHA-256:
-  `2E1DBB40C2541361954D9614267A97EFCA8AF975101965CFD35C2C784F5F6EA5`
+  `2D8AF0F45F768989784540DB08E353B52BC03D36F856083272DFCF307A11D347`
 - Packaged runtime SHA-256:
-  `2BA1A297750EFBC93B4DAD0F6A681C97316510F74FD852D0D8D9547E5AA9AF0F`
+  `1B161149E2443C6AFC0383502E0D04FB038A2FADAD2D7BFEE33CF8E8967704F3`
 - User guide:
   `docs/user_guide/XVatsim_User_Guide.pdf`
 
@@ -21,11 +21,11 @@ The X-Plane.org Store submission path is no longer the active release path for
 Version 1 because the store requested a Mac build. XVatsim Version 1 is being
 released as freeware instead.
 
-V1.2.0 closes the current brain-owned authority recovery arc. It keeps controller
-display authority in the brain, adds CTAF/UNICOM standby assist eligibility,
-fixes unsafe enroute Center fail-open behavior when route authority is
-unavailable, fixes X-Plane airway records beginning with I-prefix waypoints, and
-adds data-backed VATGlasses China FIR authority metadata coverage.
+V1.2.1 is a maintenance release on top of the brain-owned authority recovery
+arc. It reuses cached route-owned authority proofs across watch-only controller
+feed churn, reduces unchanged diagnostic noise, rotates diagnostic logs by date,
+and keeps the 1.2.0 authority fixes for CTAF/UNICOM standby assist, fail-closed
+Center display, I-prefix airway rows, and China FIR authority metadata coverage.
 
 ## Current V1 Scope
 

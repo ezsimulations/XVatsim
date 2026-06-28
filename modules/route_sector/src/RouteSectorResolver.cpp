@@ -38,7 +38,7 @@ namespace xvatsim::modules::route_sector {
 
 namespace {
 
-constexpr wchar_t kUserAgent[] = L"XVatsim/1.2.0";
+constexpr wchar_t kUserAgent[] = L"XVatsim/1.2.1";
 constexpr wchar_t kVatsimMapDataManifestUrl[] =
     L"https://api.vatsim.net/api/map_data";
 constexpr const char* kPackagedAuthoritySourceRegistryFile =

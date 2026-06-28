@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(XVatsim VERSION 1.2.0 LANGUAGES C CXX)
+project(XVatsim VERSION 1.2.1 LANGUAGES C CXX)
 
 add_subdirectory(brain)
 add_subdirectory(core)

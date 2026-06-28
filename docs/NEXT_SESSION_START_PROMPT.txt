@@ -26,13 +26,12 @@ Current status:
 - Public exposure/default-on for source-owned fallback stable-key consumption remain blocked.
 - route_sector and transceiver_resolver authority ownership audits are closed.
 
-Live testing:
-- User is doing more online testing before final cleanup, Git update, and Freeware Package V1.2.0 production.
-- Do not package or commit final release work until user confirms live testing is complete.
+Release status:
+- User confirmed live testing looked good and requested V1.2.1 release preparation.
+- V1.2.1 should include the authority-proof rebuild stutter fix, date-named diagnostic log retention, and the previously validated live route authority fixes.
 
-Deferred official bug-fix note:
-- Reduce unchanged radio-board-candidate-diff diagnostic log churn in plugin/src/XVatsimPlugin.cpp.
-- This is diagnostic logging hygiene only. Do not change brain authority or runtime behavior.
+Completed official bug-fix note:
+- Authority-proof rebuild stutter fix and unchanged radio-board-candidate-diff logging reduction were implemented before V1.2.1 release preparation.
 
 Do not:
 - rely on prior chat;
