@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cctype>
+#include <ctime>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -12,6 +13,7 @@
 #include <string>
 #include <system_error>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "XVatsim/brain/BrainOrchestrator.h"
@@ -111,12 +113,15 @@ constexpr std::size_t kMaxLogFieldChars = 80;
 constexpr long long kDiagnosticsSlowRefreshThresholdMs = 33;
 constexpr long long kDiagnosticsSlowRefreshLogIntervalSeconds = 10;
 constexpr long long kDiagnosticsSummaryIntervalSeconds = 30;
-constexpr std::uintmax_t kDiagnosticsMaxLogBytes = 5ull * 1024ull * 1024ull;
+constexpr int kDiagnosticsRetainedDateLogCount = 3;
+constexpr char kDiagnosticsLogFilePrefix[] = "xvatsim_diagnostics_";
+constexpr char kDiagnosticsLogFileSuffix[] = ".log";
 constexpr long long kRadioBoardSnapshotCadenceSeconds = 1;
 constexpr long long kRadioBoardPendingRouteRetrySeconds = 2;
 constexpr long long kActiveFlightPlanSampleCadenceSeconds = 15;
 constexpr long long kEngineer3RadioBoardRefreshSeconds = 5;
 constexpr std::size_t kDiagnosticsMaxTraceItems = 24;
+constexpr bool kDiagnosticsVerboseUnchangedCandidateDiff = false;
 
 using HandoffDecision = xvatsim::brain::workflow::HandoffDecision;
 using SessionBoundaryResult =
@@ -257,6 +262,7 @@ void RefreshOverlayFromBrainEngineer3();
 void ResetPresentationStateForColdDark();
 void ClearFlightRecoveryState();
 void ResetDiagnosticsTraceState();
+std::string CurrentDiagnosticsDateToken();
 void AppendDiagnosticsLogLine(const std::string& line);
 void LogRadioBoardCandidateDiffTrace(
     xvatsim::brain::WorkflowStage workflowStage,
@@ -1824,29 +1830,146 @@ std::filesystem::path ResolvePluginRootPath() {
 }
 
 std::filesystem::path ResolveDiagnosticsLogPath() {
-    return ResolvePluginRootPath() / "logs" / "xvatsim_diagnostics.log";
+    return ResolvePluginRootPath() / "logs" /
+           (std::string{kDiagnosticsLogFilePrefix} +
+            CurrentDiagnosticsDateToken() +
+            kDiagnosticsLogFileSuffix);
 }
 
-void AppendDiagnosticsLogLine(const std::string& line) {
-    const auto logPath = ResolveDiagnosticsLogPath();
+std::string CurrentDiagnosticsDateToken() {
+    const auto now = std::time(nullptr);
+    std::tm localTime{};
+    if (localtime_s(&localTime, &now) != 0) {
+        return "unknown_date";
+    }
+
+    char buffer[16] = {};
+    if (std::strftime(buffer, sizeof(buffer), "%Y_%m_%d", &localTime) == 0) {
+        return "unknown_date";
+    }
+    return buffer;
+}
+
+bool IsDiagnosticsDateToken(const std::string& token) {
+    if (token.size() != 10 || token[4] != '_' || token[7] != '_') {
+        return false;
+    }
+    for (std::size_t index = 0; index < token.size(); ++index) {
+        if (index == 4 || index == 7) {
+            continue;
+        }
+        if (std::isdigit(static_cast<unsigned char>(token[index])) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::string ExtractDiagnosticsLogDateToken(const std::filesystem::path& path) {
+    const auto filename = path.filename().string();
+    const std::string prefix = kDiagnosticsLogFilePrefix;
+    const std::string suffix = kDiagnosticsLogFileSuffix;
+    if (filename.size() != prefix.size() + 10 + suffix.size() ||
+        filename.compare(0, prefix.size(), prefix) != 0 ||
+        filename.compare(filename.size() - suffix.size(), suffix.size(), suffix) !=
+            0) {
+        return {};
+    }
+
+    auto token = filename.substr(prefix.size(), 10);
+    return IsDiagnosticsDateToken(token) ? token : std::string{};
+}
+
+void RemoveLegacyDiagnosticsRollingLogs(
+    const std::filesystem::path& logDirectory) {
+    static constexpr const char* kLegacyDiagnosticsLogs[] = {
+        "xvatsim_diagnostics.log",
+        "xvatsim_diagnostics.log.1",
+        "xvatsim_diagnostics.log.2",
+    };
     std::error_code error;
-    std::filesystem::create_directories(logPath.parent_path(), error);
-    if (error) {
+    for (const auto* filename : kLegacyDiagnosticsLogs) {
+        std::filesystem::remove(logDirectory / filename, error);
+        error.clear();
+    }
+}
+
+void EnforceDiagnosticsLogRetention(const std::filesystem::path& logDirectory) {
+    std::error_code error;
+    if (!std::filesystem::exists(logDirectory, error) || error) {
+        return;
+    }
+    RemoveLegacyDiagnosticsRollingLogs(logDirectory);
+
+    std::vector<std::pair<std::string, std::filesystem::path>> datedLogs;
+    for (std::filesystem::directory_iterator iterator(logDirectory, error), end;
+         !error && iterator != end;
+         iterator.increment(error)) {
+        if (!iterator->is_regular_file(error) || error) {
+            error.clear();
+            continue;
+        }
+        const auto token = ExtractDiagnosticsLogDateToken(iterator->path());
+        if (!token.empty()) {
+            datedLogs.push_back({token, iterator->path()});
+        }
+    }
+    if (datedLogs.empty()) {
         return;
     }
 
-    if (std::filesystem::exists(logPath, error) && !error &&
-        std::filesystem::file_size(logPath, error) > kDiagnosticsMaxLogBytes &&
-        !error) {
-        const auto archivePath = logPath.parent_path() / "xvatsim_diagnostics.log.1";
-        std::filesystem::remove(archivePath, error);
-        error.clear();
-        std::filesystem::rename(logPath, archivePath, error);
-        if (error) {
+    std::sort(
+        datedLogs.begin(),
+        datedLogs.end(),
+        [](const auto& lhs, const auto& rhs) {
+            if (lhs.first != rhs.first) {
+                return lhs.first > rhs.first;
+            }
+            return lhs.second.filename().string() > rhs.second.filename().string();
+        });
+
+    std::vector<std::string> retainedDates;
+    for (const auto& [dateToken, path] : datedLogs) {
+        if (std::find(retainedDates.begin(), retainedDates.end(), dateToken) ==
+            retainedDates.end()) {
+            if (retainedDates.size() <
+                static_cast<std::size_t>(kDiagnosticsRetainedDateLogCount)) {
+                retainedDates.push_back(dateToken);
+            }
+        }
+
+        if (std::find(retainedDates.begin(), retainedDates.end(), dateToken) ==
+            retainedDates.end()) {
+            std::filesystem::remove(path, error);
             error.clear();
-            std::filesystem::remove(logPath, error);
         }
     }
+}
+
+void EnforceDiagnosticsLogRetentionIfNeeded(
+    const std::filesystem::path& logDirectory,
+    const std::string& dateToken) {
+    static std::string lastRetentionDateToken;
+    if (lastRetentionDateToken == dateToken) {
+        return;
+    }
+    EnforceDiagnosticsLogRetention(logDirectory);
+    lastRetentionDateToken = dateToken;
+}
+
+void AppendDiagnosticsLogLine(const std::string& line) {
+    const auto dateToken = CurrentDiagnosticsDateToken();
+    const auto logDirectory = ResolvePluginRootPath() / "logs";
+    const auto logPath =
+        logDirectory /
+        (std::string{kDiagnosticsLogFilePrefix} + dateToken +
+         kDiagnosticsLogFileSuffix);
+    std::error_code error;
+    std::filesystem::create_directories(logDirectory, error);
+    if (error) {
+        return;
+    }
+    EnforceDiagnosticsLogRetentionIfNeeded(logDirectory, dateToken);
 
     std::ofstream output(logPath, std::ios::app);
     if (!output) {
@@ -2035,6 +2158,12 @@ void LogRadioBoardCandidateDiffTrace(
     const auto& state = gBrainOwnedRuntimeState;
     const auto diffMatchesSnapshot =
         diff.currentHash == snapshot.stableHash;
+    const auto candidateSetUnchanged =
+        diff.added == 0 && diff.removed == 0 &&
+        diff.previousCandidates == diff.currentCandidates;
+    if (candidateSetUnchanged && !kDiagnosticsVerboseUnchangedCandidateDiff) {
+        return;
+    }
 
     std::ostringstream stream;
     stream << "event=radio-board-candidate-diff"
@@ -4228,6 +4357,12 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
             gPluginSettings.windowTop);
     }
     ResetPluginRuntimeState(true, true);
+    AppendDiagnosticsLogLine(
+        std::string{"event=diagnostics-session-start version="} +
+        kInstalledPluginVersion +
+        " logPolicy=date-stamped-daily-retention retainedDates=" +
+        std::to_string(kDiagnosticsRetainedDateLogCount) +
+        " activeLogCap=none");
     RegisterPluginCommands();
     RegisterPluginMenu();
 

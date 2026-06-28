@@ -110,6 +110,10 @@ struct ScenarioExpectations {
     std::vector<std::string> routeAuthorityPlanSources;
     std::optional<bool> resolverAuthorityRelevanceAvailable;
     std::optional<std::string> resolverAuthorityStatus;
+    std::optional<std::string> resolverAuthorityCacheStatus;
+    std::optional<std::string> resolverAuthorityCacheReason;
+    std::optional<std::string> resolverAuthorityRepeatCacheStatus;
+    std::optional<std::string> resolverAuthorityRepeatCacheReason;
     std::vector<std::string> resolverAuthorityDiagnostics;
     std::vector<std::string> resolverAuthorityRelevantMatches;
     std::vector<std::string> resolverAuthorityProofSources;
@@ -496,6 +500,10 @@ struct ScenarioData {
     std::optional<bool> controllerFeedAvailable;
     bool controllerFeedStale = false;
     bool forceControllerFeedEntries = false;
+    std::uint64_t controllerFeedGeneration = 0;
+    std::uint64_t resolverAuthorityRepeatControllerFeedGeneration = 0;
+    long long resolverAuthorityRepeatCacheAgeSeconds = 0;
+    std::vector<xvatsim::brain::ControllerSnapshot> resolverAuthorityRepeatControllers;
     std::string sourceManifestJson;
     std::string sourcePackagePositionsJson;
     std::string sourcePackageAirspaceJson;
@@ -5054,6 +5062,22 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         scenario->expectations.resolverAuthorityStatus = value;
         return true;
     }
+    if (key == "expect.resolver_authority_cache_status") {
+        scenario->expectations.resolverAuthorityCacheStatus = value;
+        return true;
+    }
+    if (key == "expect.resolver_authority_cache_reason") {
+        scenario->expectations.resolverAuthorityCacheReason = value;
+        return true;
+    }
+    if (key == "expect.resolver_authority_repeat_cache_status") {
+        scenario->expectations.resolverAuthorityRepeatCacheStatus = value;
+        return true;
+    }
+    if (key == "expect.resolver_authority_repeat_cache_reason") {
+        scenario->expectations.resolverAuthorityRepeatCacheReason = value;
+        return true;
+    }
     if (key == "expect.resolver_authority_diagnostics") {
         scenario->expectations.resolverAuthorityDiagnostics = Split(value, ',');
         return true;
@@ -9398,6 +9422,61 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
             }
             continue;
         }
+        if (key == "controller.feed_generation") {
+            const auto parsed = ParseDouble(value);
+            if (!parsed.has_value() || *parsed < 0.0) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid controller.feed_generation at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            scenario->controllerFeedGeneration =
+                static_cast<std::uint64_t>(*parsed);
+            continue;
+        }
+        if (key == "resolver.authority_repeat_controller.entry") {
+            if (!AddController(
+                    &scenario->resolverAuthorityRepeatControllers,
+                    value)) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid resolver.authority_repeat_controller.entry at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "resolver.authority_repeat_controller.feed_generation") {
+            const auto parsed = ParseDouble(value);
+            if (!parsed.has_value() || *parsed < 0.0) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid resolver.authority_repeat_controller.feed_generation at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            scenario->resolverAuthorityRepeatControllerFeedGeneration =
+                static_cast<std::uint64_t>(*parsed);
+            continue;
+        }
+        if (key == "resolver.authority_repeat_cache_age_seconds") {
+            const auto parsed = ParseDouble(value);
+            if (!parsed.has_value() || *parsed < 0.0) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid resolver.authority_repeat_cache_age_seconds at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            scenario->resolverAuthorityRepeatCacheAgeSeconds =
+                static_cast<long long>(*parsed);
+            continue;
+        }
         if (key == "controller.feed_available") {
             bool parsed = false;
             if (!ParseBool(value, &parsed)) {
@@ -10100,6 +10179,7 @@ int main(int argc, char** argv) {
         standbySideEffectDecision;
 
     xvatsim::brain::ControllerFeedSnapshot controllerFeedSnapshot;
+    controllerFeedSnapshot.generation = scenario.controllerFeedGeneration;
     controllerFeedSnapshot.stale = scenario.controllerFeedStale;
     controllerFeedSnapshot.available =
         scenario.controllerFeedAvailable.value_or(!scenario.controllers.empty());
@@ -10271,6 +10351,7 @@ int main(int argc, char** argv) {
     xvatsim::brain::RouteSectorSnapshot resolverRouteSectorSnapshot;
     xvatsim::brain::RouteAuthorityPlan resolverRouteAuthorityPlan;
     xvatsim::brain::AuthorityRelevanceSnapshot resolverAuthorityRelevanceSnapshot;
+    xvatsim::brain::AuthorityRelevanceSnapshot resolverAuthorityRepeatSnapshot;
     xvatsim::brain::ModuleBoardSnapshot resolverEnrouteBoard;
     if (!scenario.airportCoverageBuildIcao.empty()) {
         xvatsim::modules::route_sector::RouteSectorResolver routeSectorResolver;
@@ -10448,6 +10529,41 @@ int main(int argc, char** argv) {
                  !scenario.transceiverResolutionSnapshot.candidates.empty())
                     ? &scenario.transceiverResolutionSnapshot
                     : nullptr);
+        if (scenario.resolverAuthorityRepeatControllerFeedGeneration > 0 ||
+            scenario.resolverAuthorityRepeatCacheAgeSeconds > 0 ||
+            !scenario.resolverAuthorityRepeatControllers.empty()) {
+            if (scenario.resolverAuthorityRepeatCacheAgeSeconds > 0) {
+                routeSectorResolver.AgeAuthorityRelevanceCacheForTesting(
+                    scenario.resolverAuthorityRepeatCacheAgeSeconds);
+            }
+            auto repeatControllers = scenario.controllers;
+            repeatControllers.insert(
+                repeatControllers.end(),
+                scenario.resolverAuthorityRepeatControllers.begin(),
+                scenario.resolverAuthorityRepeatControllers.end());
+            auto repeatControllerFeedSnapshot = controllerFeedSnapshot;
+            repeatControllerFeedSnapshot.generation =
+                scenario.resolverAuthorityRepeatControllerFeedGeneration > 0
+                    ? scenario.resolverAuthorityRepeatControllerFeedGeneration
+                    : controllerFeedSnapshot.generation;
+            if ((repeatControllerFeedSnapshot.available &&
+                 !repeatControllerFeedSnapshot.stale) ||
+                scenario.forceControllerFeedEntries) {
+                repeatControllerFeedSnapshot.connectedControllers =
+                    static_cast<int>(repeatControllers.size());
+                repeatControllerFeedSnapshot.controllers = &repeatControllers;
+            }
+            resolverAuthorityRepeatSnapshot =
+                routeSectorResolver.ResolveBrainScheduledAuthorityVerification(
+                    scenario.aircraftState,
+                    repeatControllerFeedSnapshot,
+                    resolverRouteSectorSnapshot,
+                    "regression-harness-authority-verifier-repeat",
+                    (scenario.transceiverResolutionSnapshot.available ||
+                     !scenario.transceiverResolutionSnapshot.candidates.empty())
+                        ? &scenario.transceiverResolutionSnapshot
+                        : nullptr);
+        }
         resolverEnrouteBoard = enrouteModule.Collect(
             scenario.xPilotSessionSnapshot,
             controllerFeedSnapshot,
@@ -11483,6 +11599,14 @@ int main(int argc, char** argv) {
               << (resolverAuthorityRelevanceSnapshot.available ? "true" : "false") << "\n";
     std::cout << "ResolverAuthorityStatus: "
               << resolverAuthorityRelevanceSnapshot.statusLine << "\n";
+    std::cout << "ResolverAuthorityCacheStatus: "
+              << resolverAuthorityRelevanceSnapshot.diagnosticCacheStatus << "\n";
+    std::cout << "ResolverAuthorityCacheReason: "
+              << resolverAuthorityRelevanceSnapshot.diagnosticReason << "\n";
+    std::cout << "ResolverAuthorityRepeatCacheStatus: "
+              << resolverAuthorityRepeatSnapshot.diagnosticCacheStatus << "\n";
+    std::cout << "ResolverAuthorityRepeatCacheReason: "
+              << resolverAuthorityRepeatSnapshot.diagnosticReason << "\n";
     std::cout << "ResolverAuthorityDiagnostics:";
     for (const auto& value : ExtractAuthorityRelevanceDiagnostics(
              resolverAuthorityRelevanceSnapshot)) {
@@ -12969,6 +13093,42 @@ int main(int argc, char** argv) {
             "resolverAuthorityStatus",
             *scenario.expectations.resolverAuthorityStatus,
             resolverAuthorityRelevanceSnapshot.statusLine);
+    }
+
+    if (scenario.expectations.resolverAuthorityCacheStatus.has_value() &&
+        resolverAuthorityRelevanceSnapshot.diagnosticCacheStatus !=
+            *scenario.expectations.resolverAuthorityCacheStatus) {
+        return PrintMismatch(
+            "resolverAuthorityCacheStatus",
+            *scenario.expectations.resolverAuthorityCacheStatus,
+            resolverAuthorityRelevanceSnapshot.diagnosticCacheStatus);
+    }
+
+    if (scenario.expectations.resolverAuthorityCacheReason.has_value() &&
+        resolverAuthorityRelevanceSnapshot.diagnosticReason !=
+            *scenario.expectations.resolverAuthorityCacheReason) {
+        return PrintMismatch(
+            "resolverAuthorityCacheReason",
+            *scenario.expectations.resolverAuthorityCacheReason,
+            resolverAuthorityRelevanceSnapshot.diagnosticReason);
+    }
+
+    if (scenario.expectations.resolverAuthorityRepeatCacheStatus.has_value() &&
+        resolverAuthorityRepeatSnapshot.diagnosticCacheStatus !=
+            *scenario.expectations.resolverAuthorityRepeatCacheStatus) {
+        return PrintMismatch(
+            "resolverAuthorityRepeatCacheStatus",
+            *scenario.expectations.resolverAuthorityRepeatCacheStatus,
+            resolverAuthorityRepeatSnapshot.diagnosticCacheStatus);
+    }
+
+    if (scenario.expectations.resolverAuthorityRepeatCacheReason.has_value() &&
+        resolverAuthorityRepeatSnapshot.diagnosticReason !=
+            *scenario.expectations.resolverAuthorityRepeatCacheReason) {
+        return PrintMismatch(
+            "resolverAuthorityRepeatCacheReason",
+            *scenario.expectations.resolverAuthorityRepeatCacheReason,
+            resolverAuthorityRepeatSnapshot.diagnosticReason);
     }
 
     if (const auto mismatch = CheckStringList(

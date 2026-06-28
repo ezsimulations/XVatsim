@@ -6,6 +6,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iterator>
 #include <limits>
 #include <mutex>
@@ -8262,6 +8263,7 @@ std::size_t BuildScopedAuthorityRelevanceSignature(
                 ? 1
                 : 0));
 
+    std::vector<std::string> proofEntries;
     for (const auto& controller : controllerFeedSnapshot.Controllers()) {
         const auto isAirportLocalCandidate =
             IsAirportLocalControllerCandidate(controller);
@@ -8305,28 +8307,44 @@ std::size_t BuildScopedAuthorityRelevanceSignature(
             continue;
         }
 
-        HashCombineString(
-            &hash,
-            xvatsim::core::authority::NormalizeControllerCallsign(controller.callsign));
-        HashCombineString(&hash, NormalizeFrequency(controller.frequency));
-        HashCombine(&hash, static_cast<std::size_t>(controller.facility));
-        HashCombine(&hash, static_cast<std::size_t>(controller.actionable ? 1 : 0));
-        HashCombine(&hash, static_cast<std::size_t>(controller.atis ? 1 : 0));
+        std::ostringstream entry;
+        entry << xvatsim::core::authority::NormalizeControllerCallsign(
+                     controller.callsign)
+              << '|'
+              << NormalizeFrequency(controller.frequency) << '|'
+              << controller.facility << '|'
+              << (controller.actionable ? 1 : 0) << '|'
+              << (controller.atis ? 1 : 0);
         if (duplicatedAtisProof) {
-            HashCombineString(&hash, controller.textAtis);
+            entry << "|ATIS:" << controller.textAtis;
         }
 
         if (routeTransceiverProof) {
+            std::vector<std::string> stationEntries;
             for (const auto& station : stationCandidates) {
-                HashCombineString(
-                    &hash,
-                    xvatsim::core::authority::NormalizeControllerCallsign(
-                        station.callsign));
-                HashCombineString(&hash, NormalizeFrequency(station.frequency));
-                HashCombineDouble(&hash, station.latitudeDeg);
-                HashCombineDouble(&hash, station.longitudeDeg);
+                std::ostringstream stationEntry;
+                stationEntry
+                    << xvatsim::core::authority::NormalizeControllerCallsign(
+                           station.callsign)
+                    << ':'
+                    << NormalizeFrequency(station.frequency)
+                    << ':'
+                    << std::setprecision(17) << station.latitudeDeg
+                    << ':'
+                    << std::setprecision(17) << station.longitudeDeg;
+                stationEntries.push_back(stationEntry.str());
+            }
+            std::sort(stationEntries.begin(), stationEntries.end());
+            for (const auto& stationEntry : stationEntries) {
+                entry << "|STN:" << stationEntry;
             }
         }
+        proofEntries.push_back(entry.str());
+    }
+
+    std::sort(proofEntries.begin(), proofEntries.end());
+    for (const auto& entry : proofEntries) {
+        HashCombineString(&hash, entry);
     }
 
     return hash;
@@ -10632,6 +10650,15 @@ void RouteSectorResolver::QueueBoundaryPayloadsForTesting(
     fetchInProgress_ = false;
 }
 
+void RouteSectorResolver::AgeAuthorityRelevanceCacheForTesting(
+    long long ageSeconds) const {
+    if (ageSeconds <= 0 || lastAuthorityRelevanceBuildTickSeconds_ <= 0) {
+        return;
+    }
+
+    lastAuthorityRelevanceBuildTickSeconds_ -= ageSeconds;
+}
+
 void RouteSectorResolver::SetPreflightRouteCache(
     const core::preflight::PreflightRouteCache& cache,
     const std::string& validationReason) {
@@ -11024,11 +11051,11 @@ brain::AuthorityRelevanceSnapshot RouteSectorResolver::ResolveBrainScheduledAuth
     const auto signatureChanged =
         !hasAuthorityRelevanceCache_ ||
         !progressSignatureMatchesLastProof ||
-        watchInputSignature != lastAuthorityWatchInputSignature_ ||
         relevanceSignature != lastAuthorityRelevanceSignature_ ||
         operationalScopeSignature != lastAuthorityOperationalScopeSignature_;
     if (!signatureChanged) {
         lastAuthorityRelevanceBuildTickSeconds_ = nowSeconds;
+        lastAuthorityWatchInputSignature_ = watchInputSignature;
         auto cachedSnapshot = cachedAuthorityRelevanceSnapshot_;
         cachedSnapshot.diagnosticCacheStatus = "authority-cache-signature-hit";
         cachedSnapshot.diagnosticReason = "scoped-signature-unchanged";

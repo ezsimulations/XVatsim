@@ -66,6 +66,7 @@ public:
     // Clears downloaded sector/source payloads; use only for true data-source replacement.
     void ResetSourceCaches();
     void Reset();
+    void AgeAuthorityRelevanceCacheForTesting(long long ageSeconds) const;
 
 private:
     brain::RouteSectorSnapshot BuildSnapshot(
