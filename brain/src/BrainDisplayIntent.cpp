@@ -2723,24 +2723,26 @@ int DepartureFrequencyRank(const FinalDisplayStationSnapshot& station) {
 int ArrivalFrequencyRank(const FinalDisplayStationSnapshot& station) {
     switch (station.role) {
         case StationRole::Center:
-            return CenterRelationRank(station.displayRelation) == 0 ? 0 : 4;
+            // Arrival handoff boards keep every displayed center ahead of terminal rows;
+            // relation rank preserves current center before next/arrival center.
+            return CenterRelationRank(station.displayRelation);
         case StationRole::Approach:
         case StationRole::Departure:
-            return 1;
-        case StationRole::Tower:
-            return 2;
-        case StationRole::Ground:
             return 3;
-        case StationRole::Delivery:
+        case StationRole::Tower:
+            return 4;
+        case StationRole::Ground:
             return 5;
+        case StationRole::Delivery:
+            return 6;
         case StationRole::Ctaf:
         case StationRole::Unicom:
-            return 6;
-        case StationRole::Atis:
             return 7;
+        case StationRole::Atis:
+            return 8;
         case StationRole::Other:
         default:
-            return 8;
+            return 9;
     }
 }
 

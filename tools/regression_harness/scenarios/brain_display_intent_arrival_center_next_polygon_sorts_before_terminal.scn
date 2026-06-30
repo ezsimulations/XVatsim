@@ -1,0 +1,23 @@
+name=Brain display intent arrival center next polygon sorts before terminal
+
+display_intent.stage=Arrival
+display_intent.progress_nm=0
+display_intent.current_polygon=KZOA
+display_intent.next_polygon=KZLA
+display_intent.arrival_polygon=KZLA
+
+arrival.station=role=Approach;callsign=SCT_APP;frequency=128.050;online=true;polygonKey=KZLA
+arrival.station=role=Ground;callsign=ONT_GND;frequency=121.900;online=true;polygonKey=KZLA
+arrival.station=role=Ctaf;callsign=KONT;frequency=122.950;online=true;polygonKey=KZLA
+enroute.station=role=Center;callsign=LAX_251_CTR;frequency=126.525;online=true;polygonKey=KZLA;routeEntryDistanceNm=1961
+
+display_intent.relation=callsign=SCT_APP;frequency=128.050;relation=ArrivalPrep
+display_intent.relation=callsign=ONT_GND;frequency=121.900;relation=ArrivalPrep
+display_intent.relation=callsign=LAX_251_CTR;frequency=126.525;relation=NextPolygon;routeEntryDistanceNm=1961
+
+expect.display_source=Arrival
+expect.display_callsigns=LAX_251_CTR,SCT_APP,ONT_GND,KONT
+expect.brain_display_intent_rows=LAX_251_CTR:NEXT_POLYGON:1961nm,SCT_APP:ARRIVAL_PREP,ONT_GND:ARRIVAL_PREP,KONT:UNKNOWN
+expect.brain_display_overlay_cap_summary=decisions=4,capLimit=40,candidates=4,visibleAfterCap=4,cappedHidden=0,moreAtc=0,contributes=0,nonCappedHidden=0,duplicates=0,stageDeferred=0,brainOwned=1,behaviorChanged=0
+expect.brain_display_overlay_cap_decisions_contains=subject=6|LAX_251_CTR|126525:role=CTR:endpoint=enroute:airport=<none>:relation=NEXT_POLYGON:stage=Arrival:before=0:after=0,subject=5|SCT_APP|128050:role=APP_DEP:endpoint=arrival:airport=<none>:relation=ARRIVAL_PREP:stage=Arrival:before=1:after=1,subject=2|ONT_GND|121900:role=GND:endpoint=arrival:airport=<none>:relation=ARRIVAL_PREP:stage=Arrival:before=2:after=2,subject=8|KONT|122950:role=CTAF:endpoint=arrival:airport=<none>:relation=UNKNOWN:stage=Arrival:before=3:after=3
+expect.overlay_body_lines=xPilot not loaded|CTR LAX_251_CTR 126.525 1961nm|APP SCT_APP 128.050|GND ONT_GND 121.900|CTAF KONT 122.950

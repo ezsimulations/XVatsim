@@ -26,5 +26,5 @@ standby_assist.plan_key=UAL3936|KSFO|CYVR
 standby_assist.loaded=true
 
 expect.display_source=Arrival
-expect.display_callsigns=VAN_CTR,YVR_APP,CYVR_TWR,CYVR_GND,SEA_16_CTR,CYVR
-expect.overlay_body_lines=xPilot not loaded|CTR VAN_CTR 132.300 *Active*|APP YVR_APP 124.600 *Standby*|TWR CYVR_TWR 119.550|GND CYVR_GND 121.700|CTR SEA_16_CTR 135.450 95nm|CTAF CYVR 122.950
+expect.display_callsigns=VAN_CTR,SEA_16_CTR,YVR_APP,CYVR_TWR,CYVR_GND,CYVR
+expect.overlay_body_lines=xPilot not loaded|CTR VAN_CTR 132.300 *Active*|CTR SEA_16_CTR 135.450 95nm *Standby*|APP YVR_APP 124.600|TWR CYVR_TWR 119.550|GND CYVR_GND 121.700|CTAF CYVR 122.950
