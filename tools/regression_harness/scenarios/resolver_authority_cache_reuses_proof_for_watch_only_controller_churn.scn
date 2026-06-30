@@ -40,8 +40,8 @@ expect.resolver_route_current_controller_patterns=VHHK:HKG_W_CTR
 expect.resolver_authority_relevance_available=true
 expect.resolver_authority_cache_status=authority-proof-build
 expect.resolver_authority_cache_reason=no-authority-cache
-expect.resolver_authority_repeat_cache_status=authority-cache-signature-hit
-expect.resolver_authority_repeat_cache_reason=scoped-signature-unchanged
+expect.resolver_authority_repeat_cache_status=authority-cache-stable-proof-reuse
+expect.resolver_authority_repeat_cache_reason=stable-proof-ownership-unchanged
 expect.resolver_authority_relevant_matches=HKG_W_CTR:VATGLASSES:HKG_W_CTR:VATSPY_BOUNDARY:VHHK:aircraft=1:route=1:entry=0
 expect.resolver_enroute_available=true
 expect.resolver_enroute_callsigns=HKG_W_CTR

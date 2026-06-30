@@ -116,6 +116,7 @@ struct ScenarioExpectations {
     std::optional<std::string> resolverAuthorityRepeatCacheReason;
     std::vector<std::string> resolverAuthorityDiagnostics;
     std::vector<std::string> resolverAuthorityRelevantMatches;
+    std::vector<std::string> resolverAuthorityRepeatRelevantMatches;
     std::vector<std::string> resolverAuthorityProofSources;
     std::vector<std::string> resolverAuthorityProofDetails;
     std::vector<std::string> resolverAuthorityProofDetailContains;
@@ -504,6 +505,9 @@ struct ScenarioData {
     std::uint64_t resolverAuthorityRepeatControllerFeedGeneration = 0;
     long long resolverAuthorityRepeatCacheAgeSeconds = 0;
     std::vector<xvatsim::brain::ControllerSnapshot> resolverAuthorityRepeatControllers;
+    bool resolverAuthorityRepeatReplaceControllers = false;
+    bool hasResolverAuthorityRepeatAircraftState = false;
+    xvatsim::brain::AircraftStateSnapshot resolverAuthorityRepeatAircraftState;
     std::string sourceManifestJson;
     std::string sourcePackagePositionsJson;
     std::string sourcePackageAirspaceJson;
@@ -5086,6 +5090,11 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         scenario->expectations.resolverAuthorityRelevantMatches = Split(value, ',');
         return true;
     }
+    if (key == "expect.resolver_authority_repeat_relevant_matches") {
+        scenario->expectations.resolverAuthorityRepeatRelevantMatches =
+            Split(value, ',');
+        return true;
+    }
     if (key == "expect.resolver_authority_proof_sources") {
         scenario->expectations.resolverAuthorityProofSources = Split(value, ',');
         return true;
@@ -9463,6 +9472,19 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
                 static_cast<std::uint64_t>(*parsed);
             continue;
         }
+        if (key == "resolver.authority_repeat_controller.replace") {
+            if (!ParseBool(
+                    value,
+                    &scenario->resolverAuthorityRepeatReplaceControllers)) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid resolver.authority_repeat_controller.replace at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            continue;
+        }
         if (key == "resolver.authority_repeat_cache_age_seconds") {
             const auto parsed = ParseDouble(value);
             if (!parsed.has_value() || *parsed < 0.0) {
@@ -9475,6 +9497,62 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
             }
             scenario->resolverAuthorityRepeatCacheAgeSeconds =
                 static_cast<long long>(*parsed);
+            continue;
+        }
+        if (key == "resolver.authority_repeat_aircraft.valid") {
+            scenario->hasResolverAuthorityRepeatAircraftState = true;
+            if (!ParseBool(
+                    value,
+                    &scenario->resolverAuthorityRepeatAircraftState.valid)) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid resolver.authority_repeat_aircraft.valid at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "resolver.authority_repeat_aircraft.on_ground") {
+            scenario->hasResolverAuthorityRepeatAircraftState = true;
+            if (!ParseBool(
+                    value,
+                    &scenario->resolverAuthorityRepeatAircraftState.onGround)) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid resolver.authority_repeat_aircraft.on_ground at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "resolver.authority_repeat_aircraft.latitude_deg") {
+            const auto parsed = ParseDouble(value);
+            if (!parsed.has_value()) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid resolver.authority_repeat_aircraft.latitude_deg at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            scenario->hasResolverAuthorityRepeatAircraftState = true;
+            scenario->resolverAuthorityRepeatAircraftState.latitudeDeg = *parsed;
+            continue;
+        }
+        if (key == "resolver.authority_repeat_aircraft.longitude_deg") {
+            const auto parsed = ParseDouble(value);
+            if (!parsed.has_value()) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid resolver.authority_repeat_aircraft.longitude_deg at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            scenario->hasResolverAuthorityRepeatAircraftState = true;
+            scenario->resolverAuthorityRepeatAircraftState.longitudeDeg = *parsed;
             continue;
         }
         if (key == "controller.feed_available") {
@@ -10531,16 +10609,22 @@ int main(int argc, char** argv) {
                     : nullptr);
         if (scenario.resolverAuthorityRepeatControllerFeedGeneration > 0 ||
             scenario.resolverAuthorityRepeatCacheAgeSeconds > 0 ||
-            !scenario.resolverAuthorityRepeatControllers.empty()) {
+            !scenario.resolverAuthorityRepeatControllers.empty() ||
+            scenario.hasResolverAuthorityRepeatAircraftState) {
             if (scenario.resolverAuthorityRepeatCacheAgeSeconds > 0) {
                 routeSectorResolver.AgeAuthorityRelevanceCacheForTesting(
                     scenario.resolverAuthorityRepeatCacheAgeSeconds);
             }
-            auto repeatControllers = scenario.controllers;
-            repeatControllers.insert(
-                repeatControllers.end(),
-                scenario.resolverAuthorityRepeatControllers.begin(),
-                scenario.resolverAuthorityRepeatControllers.end());
+            auto repeatControllers =
+                scenario.resolverAuthorityRepeatReplaceControllers
+                    ? scenario.resolverAuthorityRepeatControllers
+                    : scenario.controllers;
+            if (!scenario.resolverAuthorityRepeatReplaceControllers) {
+                repeatControllers.insert(
+                    repeatControllers.end(),
+                    scenario.resolverAuthorityRepeatControllers.begin(),
+                    scenario.resolverAuthorityRepeatControllers.end());
+            }
             auto repeatControllerFeedSnapshot = controllerFeedSnapshot;
             repeatControllerFeedSnapshot.generation =
                 scenario.resolverAuthorityRepeatControllerFeedGeneration > 0
@@ -10553,11 +10637,23 @@ int main(int argc, char** argv) {
                     static_cast<int>(repeatControllers.size());
                 repeatControllerFeedSnapshot.controllers = &repeatControllers;
             }
+            auto repeatAircraftState = scenario.aircraftState;
+            if (scenario.hasResolverAuthorityRepeatAircraftState) {
+                repeatAircraftState =
+                    scenario.resolverAuthorityRepeatAircraftState;
+            }
+            auto repeatRouteSectorSnapshot = resolverRouteSectorSnapshot;
+            if (scenario.hasResolverAuthorityRepeatAircraftState) {
+                repeatRouteSectorSnapshot =
+                    routeSectorResolver.Resolve(
+                        repeatAircraftState,
+                        routePlanSnapshot);
+            }
             resolverAuthorityRepeatSnapshot =
                 routeSectorResolver.ResolveBrainScheduledAuthorityVerification(
-                    scenario.aircraftState,
+                    repeatAircraftState,
                     repeatControllerFeedSnapshot,
-                    resolverRouteSectorSnapshot,
+                    repeatRouteSectorSnapshot,
                     "regression-harness-authority-verifier-repeat",
                     (scenario.transceiverResolutionSnapshot.available ||
                      !scenario.transceiverResolutionSnapshot.candidates.empty())
@@ -11607,6 +11703,12 @@ int main(int argc, char** argv) {
               << resolverAuthorityRepeatSnapshot.diagnosticCacheStatus << "\n";
     std::cout << "ResolverAuthorityRepeatCacheReason: "
               << resolverAuthorityRepeatSnapshot.diagnosticReason << "\n";
+    std::cout << "ResolverAuthorityRepeatRelevantMatches:";
+    for (const auto& value : ExtractAuthorityRelevanceMatches(
+             resolverAuthorityRepeatSnapshot)) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
     std::cout << "ResolverAuthorityDiagnostics:";
     for (const auto& value : ExtractAuthorityRelevanceDiagnostics(
              resolverAuthorityRelevanceSnapshot)) {
@@ -13143,6 +13245,14 @@ int main(int argc, char** argv) {
             "resolverAuthorityRelevantMatches",
             scenario.expectations.resolverAuthorityRelevantMatches,
             ExtractAuthorityRelevanceMatches(resolverAuthorityRelevanceSnapshot));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "resolverAuthorityRepeatRelevantMatches",
+            scenario.expectations.resolverAuthorityRepeatRelevantMatches,
+            ExtractAuthorityRelevanceMatches(resolverAuthorityRepeatSnapshot));
         mismatch.has_value()) {
         return *mismatch;
     }
