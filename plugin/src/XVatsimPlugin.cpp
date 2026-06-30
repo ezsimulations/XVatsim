@@ -49,6 +49,10 @@
 #define XVATSIM_ENABLE_CONTROLLER_MESSAGES 0
 #endif
 
+namespace xvatsim::modules::overlay {
+std::string DescribeLastOverlayUpdateTiming();
+}
+
 namespace {
 constexpr char kPluginName[] = "XVatsim";
 constexpr char kInstalledPluginVersion[] = "1.2.1";
@@ -630,6 +634,11 @@ void RecordDiagnosticJob(
     std::string result,
     std::string sourceGenerations,
     std::string routeKey);
+
+std::string FormatOverlayUpdateResult(bool visible) {
+    return std::string("visible=") + (visible ? "1" : "0") + "," +
+           xvatsim::modules::overlay::DescribeLastOverlayUpdateTiming();
+}
 
 std::string SummarizeBrainStandbyAssist(
     const xvatsim::brain::BrainOwnedStandbyAssistPlanOutput& plan,
@@ -4195,7 +4204,7 @@ void RefreshOverlayFromBrainEngineer3() {
                 "hide-until-xpilot-connect",
                 diagnostics.overlayUpdateMs,
                 "ui-update",
-                "hidden=1",
+                FormatOverlayUpdateResult(false),
                 {},
                 diagnostics.route);
             timingStarted = std::chrono::steady_clock::now();
@@ -4213,7 +4222,7 @@ void RefreshOverlayFromBrainEngineer3() {
             "dormant-model",
             diagnostics.overlayUpdateMs,
             "ui-update",
-            "visible=0",
+            FormatOverlayUpdateResult(false),
             {},
             diagnostics.route);
         timingStarted = std::chrono::steady_clock::now();
@@ -4273,7 +4282,7 @@ void RefreshOverlayFromBrainEngineer3() {
         "visible-model",
         diagnostics.overlayUpdateMs,
         "ui-update",
-        "visible=1",
+        FormatOverlayUpdateResult(true),
         {},
         diagnostics.route);
     timingStarted = std::chrono::steady_clock::now();
@@ -4332,6 +4341,17 @@ void UnregisterFlightLoop() {
 
     XPLMUnregisterFlightLoopCallback(FlightLoopCallback, nullptr);
     gFlightLoopRegistered = false;
+}
+
+void PreinitializeOverlayWindow() {
+    const auto started = std::chrono::steady_clock::now();
+    gOverlayWindow.Create();
+    const auto elapsedUs = ElapsedMicrosecondsSince(started);
+    AppendDiagnosticsLogLine(
+        std::string{"event=overlay-preinit totalMs="} +
+        std::to_string(elapsedUs / 1000) +
+        " totalUs=" + std::to_string(elapsedUs) +
+        " cache=window-create-hidden result=createAttempt=1");
 }
 }
 
@@ -4403,6 +4423,7 @@ PLUGIN_API int XPluginEnable() {
         ToDisplayOverrideMode(gPluginSettings.displayMode));
     gPluginRuntimeEnabled = true;
     RequestAutomaticUpdateCheckIfDue();
+    PreinitializeOverlayWindow();
     RegisterFlightLoop(kInitialFlightLoopDelaySeconds);
     XPLMDebugString("[XVatsim] Plugin enabled.\n");
     return 1;

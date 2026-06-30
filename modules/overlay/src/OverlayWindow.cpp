@@ -1,9 +1,11 @@
 #include "XVatsim/modules/overlay/OverlayWindow.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -72,12 +74,52 @@ constexpr int kResizeHotspotPx = 22;
 constexpr int kVisibleListRows = 4;
 constexpr float kShowDurationSeconds = 0.95f;
 constexpr float kHideDurationSeconds = 1.10f;
+constexpr float kBringFrontCooldownSeconds = 3.0f;
 constexpr wchar_t kTransitionSoundAlias[] = L"xvatsim_transition";
 constexpr std::size_t kMaxRenderTextChars = 128;
 constexpr std::size_t kMaxRenderHeaderChars = 32;
 constexpr std::size_t kMaxRenderFrequencyChars = 16;
 constexpr std::size_t kMaxRenderListLines = 64;
 constexpr std::size_t kMaxTextEntryChars = 32;
+
+using OverlayClock = std::chrono::steady_clock;
+
+struct OverlayUpdateTiming {
+    long long windowCreateUs = 0;
+    long long setVisibleUs = 0;
+    long long bringFrontUs = 0;
+    long long bodyUs = 0;
+    long long transitionSoundUs = 0;
+    long long otherUs = 0;
+    long long totalUs = 0;
+    bool windowCreateCalled = false;
+    bool setVisibleCalled = false;
+    bool bringFrontChecked = false;
+    bool bringFrontCalled = false;
+    bool bringFrontThrottled = false;
+    bool transitionSoundSkipped = false;
+};
+
+OverlayUpdateTiming gLastOverlayUpdateTiming;
+float gLastBringFrontAttemptTimeSeconds = -1000.0f;
+
+long long ElapsedOverlayUsSince(OverlayClock::time_point started) {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               OverlayClock::now() - started)
+        .count();
+}
+
+void ResetOverlayUpdateTiming() {
+    gLastOverlayUpdateTiming = {};
+}
+
+long long KnownOverlayUpdateUs(const OverlayUpdateTiming& timing) {
+    return timing.windowCreateUs +
+           timing.setVisibleUs +
+           timing.bringFrontUs +
+           timing.bodyUs +
+           timing.transitionSoundUs;
+}
 
 struct OverlaySections {
     std::string callsignOrStatus;
@@ -1011,6 +1053,24 @@ void DrawTexturedQuad(
 
 }  // namespace
 
+std::string DescribeLastOverlayUpdateTiming() {
+    const auto& timing = gLastOverlayUpdateTiming;
+    std::ostringstream stream;
+    stream << "createUs=" << timing.windowCreateUs
+           << ",setVisUs=" << timing.setVisibleUs
+           << ",frontUs=" << timing.bringFrontUs
+           << ",bodyUs=" << timing.bodyUs
+           << ",soundUs=" << timing.transitionSoundUs
+           << ",otherUs=" << timing.otherUs
+           << ",wc=" << (timing.windowCreateCalled ? 1 : 0)
+           << ",sv=" << (timing.setVisibleCalled ? 1 : 0)
+           << ",fc=" << (timing.bringFrontChecked ? 1 : 0)
+           << ",fb=" << (timing.bringFrontCalled ? 1 : 0)
+           << ",ft=" << (timing.bringFrontThrottled ? 1 : 0)
+           << ",ss=" << (timing.transitionSoundSkipped ? 1 : 0);
+    return stream.str();
+}
+
 void OverlayWindow::Create() {
     if (window_ != nullptr) {
         return;
@@ -1106,13 +1166,27 @@ void OverlayWindow::Destroy() {
 }
 
 void OverlayWindow::Update(const brain::OverlayViewModel& viewModel) {
+    ResetOverlayUpdateTiming();
+    const auto totalStarted = OverlayClock::now();
     if (window_ == nullptr) {
+        const auto createStarted = OverlayClock::now();
         Create();
+        gLastOverlayUpdateTiming.windowCreateCalled = true;
+        gLastOverlayUpdateTiming.windowCreateUs +=
+            ElapsedOverlayUsSince(createStarted);
     }
+    const auto bodyStarted = OverlayClock::now();
     viewModel_ = viewModel;
     overlayEnabled_ = true;
     ClampScrollOffset();
+    gLastOverlayUpdateTiming.bodyUs += ElapsedOverlayUsSince(bodyStarted);
     SyncVisibility();
+    gLastOverlayUpdateTiming.totalUs = ElapsedOverlayUsSince(totalStarted);
+    const auto knownUs = KnownOverlayUpdateUs(gLastOverlayUpdateTiming);
+    gLastOverlayUpdateTiming.otherUs =
+        gLastOverlayUpdateTiming.totalUs > knownUs
+            ? gLastOverlayUpdateTiming.totalUs - knownUs
+            : 0;
 }
 
 void OverlayWindow::SetAutomaticMode(bool automaticMode) {
@@ -1281,6 +1355,9 @@ bool OverlayWindow::ConsumeScaleChanged(float* outScale) {
 }
 
 void OverlayWindow::Hide() {
+    ResetOverlayUpdateTiming();
+    const auto totalStarted = OverlayClock::now();
+    const auto bodyStarted = OverlayClock::now();
     viewModel_ = {};
     textEntryActive_ = false;
     textEntryBuffer_.clear();
@@ -1298,10 +1375,21 @@ void OverlayWindow::Hide() {
     lastWakeState_ = false;
     scrollOffset_ = 0;
     cardTextureDirty_ = true;
+    gLastOverlayUpdateTiming.bodyUs += ElapsedOverlayUsSince(bodyStarted);
     if (window_ != nullptr) {
+        const auto visibleStarted = OverlayClock::now();
         XPLMSetWindowIsVisible(window_, 0);
+        gLastOverlayUpdateTiming.setVisibleCalled = true;
+        gLastOverlayUpdateTiming.setVisibleUs +=
+            ElapsedOverlayUsSince(visibleStarted);
         windowVisible_ = false;
     }
+    gLastOverlayUpdateTiming.totalUs = ElapsedOverlayUsSince(totalStarted);
+    const auto knownUs = KnownOverlayUpdateUs(gLastOverlayUpdateTiming);
+    gLastOverlayUpdateTiming.otherUs =
+        gLastOverlayUpdateTiming.totalUs > knownUs
+            ? gLastOverlayUpdateTiming.totalUs - knownUs
+            : 0;
 }
 
 void OverlayWindow::DrawWindowCallback(XPLMWindowID windowId, void* refcon) {
@@ -1452,21 +1540,48 @@ void OverlayWindow::SyncVisibility() {
     const auto wantsCardVisible =
         overlayEnabled_ && (viewModel_.visible || !viewModel_.bodyLines.empty() || textEntryActive_);
     if (wantsCardVisible != lastWakeState_) {
+        const auto soundStarted = OverlayClock::now();
         if (!transitionSoundPath_.empty()) {
-            PlayTransitionSound();
+            gLastOverlayUpdateTiming.transitionSoundSkipped = true;
         }
+        gLastOverlayUpdateTiming.transitionSoundUs +=
+            ElapsedOverlayUsSince(soundStarted);
         lastWakeState_ = wantsCardVisible;
     }
     animationTarget_ = wantsCardVisible ? 1.0f : 0.0f;
 
+    const auto wasWindowVisible = windowVisible_;
     const auto shouldBeVisible = overlayEnabled_ || animationProgress_ > 0.0f || animationTarget_ > 0.0f;
     if (shouldBeVisible != windowVisible_) {
+        const auto visibleStarted = OverlayClock::now();
         XPLMSetWindowIsVisible(window_, shouldBeVisible ? 1 : 0);
+        gLastOverlayUpdateTiming.setVisibleCalled = true;
+        gLastOverlayUpdateTiming.setVisibleUs +=
+            ElapsedOverlayUsSince(visibleStarted);
         windowVisible_ = shouldBeVisible;
     }
 
-    if (shouldBeVisible && !dragging_ && !XPLMIsWindowInFront(window_)) {
-        XPLMBringWindowToFront(window_);
+    const auto becameVisible = shouldBeVisible && !wasWindowVisible;
+    const auto needsFrontForInput = textEntryActive_ && shouldBeVisible;
+    if (shouldBeVisible && !dragging_ && (becameVisible || needsFrontForInput)) {
+        const auto frontStarted = OverlayClock::now();
+        gLastOverlayUpdateTiming.bringFrontChecked = true;
+        const auto nowSeconds = XPLMGetElapsedTime();
+        const auto cooldownElapsed =
+            (nowSeconds - gLastBringFrontAttemptTimeSeconds) >=
+            kBringFrontCooldownSeconds;
+        const auto canAttemptFront = needsFrontForInput || cooldownElapsed;
+        if (!canAttemptFront) {
+            gLastOverlayUpdateTiming.bringFrontThrottled = true;
+        } else {
+            gLastBringFrontAttemptTimeSeconds = nowSeconds;
+            if (!XPLMIsWindowInFront(window_)) {
+                XPLMBringWindowToFront(window_);
+                gLastOverlayUpdateTiming.bringFrontCalled = true;
+            }
+        }
+        gLastOverlayUpdateTiming.bringFrontUs +=
+            ElapsedOverlayUsSince(frontStarted);
     }
 
     if (textEntryActive_ && shouldBeVisible && XPLMHasKeyboardFocus(window_) == 0) {
