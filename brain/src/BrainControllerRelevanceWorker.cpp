@@ -9,6 +9,9 @@
 namespace xvatsim::brain {
 namespace {
 
+constexpr const char* kCenterTunedOffRouteNotRouteOwnedPolicy =
+    "center-tuned-off-route-not-route-owned";
+
 std::string NormalizeFrequency(std::string frequency) {
     frequency.erase(
         std::remove_if(
@@ -1549,19 +1552,13 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
             if (includeEnrouteGroups) {
                 const auto routeMatch =
                     MatchCenterToRoutePolygon(input, candidate);
-                if (routeMatch.matched || station.tuned) {
-                    const auto relation =
-                        routeMatch.matched
-                            ? routeMatch.displayRelation
-                            : DisplayRelation::CurrentPolygon;
-                    station.polygonKey = routeMatch.matched
-                                             ? routeMatch.polygonKey
-                                             : input.currentPolygonKey;
+                if (routeMatch.matched) {
+                    const auto relation = routeMatch.displayRelation;
+                    station.polygonKey = routeMatch.polygonKey;
                     station.sectorActive =
                         relation == DisplayRelation::CurrentPolygon ||
                         station.tuned;
                     station.hasRouteEntryDistance =
-                        routeMatch.matched &&
                         relation == DisplayRelation::NextPolygon &&
                         routeMatch.hasRouteEntryDistance;
                     station.routeEntryDistanceNm =
@@ -1571,14 +1568,16 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                     centerCandidates.push_back({station});
                     accepted = true;
                     completionRelation = relation;
-                    reason = routeMatch.matched
-                                 ? routeMatch.reason
-                                 : "center-tuned-current-radio";
+                    reason = routeMatch.reason;
                 } else {
                     completionRelation = DisplayRelation::Hidden;
-                    reason = routeMatch.hasRouteMetadata
-                                 ? routeMatch.reason
-                                 : "center-route-authority-unavailable-radio-only-blocked";
+                    if (routeMatch.hasRouteMetadata && station.tuned) {
+                        reason = kCenterTunedOffRouteNotRouteOwnedPolicy;
+                    } else {
+                        reason = routeMatch.hasRouteMetadata
+                                     ? routeMatch.reason
+                                     : "center-route-authority-unavailable-radio-only-blocked";
+                    }
                 }
             } else {
                 completionRelation = DisplayRelation::Hidden;

@@ -2653,9 +2653,7 @@ DisplayRelation InferCenterRelation(
         return DisplayRelation::Hidden;
     }
 
-    if ((input.radios.valid &&
-         IsCom1TunedToFrequency(input.radios, station.frequency)) ||
-        KeysEqual(station.polygonKey, input.currentPolygonKey)) {
+    if (KeysEqual(station.polygonKey, input.currentPolygonKey)) {
         return DisplayRelation::CurrentPolygon;
     }
     if (KeysEqual(station.polygonKey, input.nextPolygonKey)) {
