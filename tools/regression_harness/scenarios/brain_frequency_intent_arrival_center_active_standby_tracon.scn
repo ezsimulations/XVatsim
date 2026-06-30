@@ -4,6 +4,7 @@ display_intent.stage=Arrival
 display_intent.progress_nm=0
 display_intent.current_polygon=CZVR
 display_intent.next_polygon=KZSE
+display_intent.arrival_polygon=KZSE
 
 radio.valid=true
 radio.com1_active=132.300

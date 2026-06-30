@@ -4,10 +4,16 @@ display_intent.stage=Enroute
 display_intent.progress_nm=760
 display_intent.current_polygon=KZDC
 display_intent.next_polygon=KZDV
+display_intent.arrival_polygon=KDEN
 
 enroute.station=role=Center;callsign=ZDC_CTR;frequency=127.700;online=true;polygonKey=KZDC;sectorActive=true
 enroute.station=role=Center;callsign=DEN_1_CTR;frequency=127.650;online=true;polygonKey=KZDV;routeEntryDistanceNm=831
 enroute.station=role=Center;callsign=DEN_2_CTR;frequency=133.525;online=true;polygonKey=KZDV;routeEntryDistanceNm=831
 enroute.station=role=Center;callsign=MEM_CTR;frequency=128.150;online=true;polygonKey=KZME;routeEntryDistanceNm=500
 
+expect.display_source=Enroute
+expect.display_callsigns=ZDC_CTR,DEN_1_CTR,DEN_2_CTR
 expect.brain_display_intent_rows=ZDC_CTR:CURRENT_POLYGON:ACTIVE,DEN_1_CTR:NEXT_POLYGON:71nm,DEN_2_CTR:NEXT_POLYGON:71nm
+expect.brain_display_overlay_cap_summary=decisions=4,capLimit=40,candidates=3,visibleAfterCap=3,cappedHidden=0,moreAtc=0,contributes=0,nonCappedHidden=1,duplicates=0,stageDeferred=0,brainOwned=1,behaviorChanged=0
+expect.brain_display_overlay_cap_decisions_contains=subject=6|ZDC_CTR|127700:role=CTR:endpoint=enroute:airport=<none>:relation=CURRENT_POLYGON:stage=Enroute:before=0:after=0,subject=6|DEN_1_CTR|127650:role=CTR:endpoint=enroute:airport=<none>:relation=NEXT_POLYGON:stage=Enroute:before=1:after=1,subject=6|DEN_2_CTR|133525:role=CTR:endpoint=enroute:airport=<none>:relation=NEXT_POLYGON:stage=Enroute:before=2:after=2,subject=6|MEM_CTR|128150:role=CTR:endpoint=enroute:airport=<none>:relation=HIDDEN:stage=Enroute:before=-1:after=-1
+expect.overlay_body_lines=xPilot not loaded|CTR ZDC_CTR 127.700|CTR DEN_1_CTR 127.650 71nm|CTR DEN_2_CTR 133.525 71nm
