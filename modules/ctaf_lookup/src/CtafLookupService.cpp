@@ -18,7 +18,7 @@ namespace xvatsim::modules::ctaf_lookup {
 
 namespace {
 
-constexpr wchar_t kUserAgent[] = L"XVatsim/1.2.1";
+constexpr wchar_t kUserAgent[] = L"XVatsim/1.2.2";
 constexpr wchar_t kAipHost[] = L"my.vatsim.net";
 constexpr long long kLookupRetryCadenceSeconds = 15;
 constexpr long long kLookupFailureBackoffSeconds = 60;

@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.2.1",
+    [string]$Version = "1.2.2",
     [string]$PlatformName = "Windows_XP12"
 )
 
@@ -187,12 +187,11 @@ XVatsim Freeware Changelog
 Version: $Version
 
 Maintenance release:
-- Reuses cached route-owned authority proofs across watch-only controller feed churn, preventing repeated 500-1000+ ms authority rebuild loops when the effective controller candidate set is unchanged.
-- Keeps display and relevance updates correct while avoiding unnecessary BrainAuthorityRelevanceWorker proof rebuilds.
-- Reduces unchanged radio-board candidate-diff diagnostic noise during normal operation.
-- Rotates diagnostic logs by date and keeps only the latest three diagnostic log dates.
-- Retains the 1.2.0 brain-owned authority recovery fixes, including fail-closed route-unavailable Center behavior, X-Plane airway I-prefix row parsing, data-backed China FIR authority metadata, and CTAF/UNICOM Standby Assist eligibility.
-- Preserves CTAF/UNICOM authority retirement, COM writer ownership, standby/direct CTAF guardrails, overlay cap behavior, row ordering, dedupe, completion identity, and phase reuse behavior.
+- Ranks arrival Centers ahead of Approach, Tower, Ground, and CTAF/UNICOM rows, including arrival-relevant next-polygon Centers.
+- Prevents tuned stale Centers from overriding route polygon ownership after current/next polygon transitions.
+- Reuses cached route-owned authority proofs across stable route-window transitions and controller/source churn.
+- Contains expensive overlay window visibility/fronting/sound operations outside the recurring hot path.
+- Preserves brain-owned display order, standby assist consumption order, CTAF/UNICOM authority retirement, COM writer ownership, overlay cap behavior, row ordering, dedupe, completion identity, and phase reuse behavior.
 
 Current scope:
 - Windows only.

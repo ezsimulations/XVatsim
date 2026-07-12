@@ -55,7 +55,7 @@ std::string DescribeLastOverlayUpdateTiming();
 
 namespace {
 constexpr char kPluginName[] = "XVatsim";
-constexpr char kInstalledPluginVersion[] = "1.2.1";
+constexpr char kInstalledPluginVersion[] = "1.2.2";
 constexpr char kPluginSig[] = "org.xvatsim.plugin";
 constexpr char kPluginDesc[] = "XVatsim VATSIM workflow display for X-Plane 12.";
 constexpr char kUpdateManifestUrl[] =
@@ -3630,7 +3630,7 @@ void RegisterPluginMenu() {
         return;
     }
 
-    gPluginMenuItemIndex = XPLMAppendMenuItem(pluginsMenu, "XVatsim 1.2.1", nullptr, 1);
+    gPluginMenuItemIndex = XPLMAppendMenuItem(pluginsMenu, "XVatsim 1.2.2", nullptr, 1);
     if (gPluginMenuItemIndex < 0) {
         gPluginMenuItemIndex = -1;
         XPLMDebugString("[XVatsim] Plugin menu item registration failed.\n");
@@ -3638,7 +3638,7 @@ void RegisterPluginMenu() {
     }
 
     gPluginMenu = XPLMCreateMenu(
-        "XVatsim 1.2.1",
+        "XVatsim 1.2.2",
         pluginsMenu,
         gPluginMenuItemIndex,
         PluginMenuHandler,

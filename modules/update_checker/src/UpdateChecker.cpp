@@ -17,7 +17,7 @@ namespace xvatsim::modules::update_checker {
 
 namespace {
 
-constexpr wchar_t kUserAgent[] = L"XVatsim/1.2.1 UpdateChecker";
+constexpr wchar_t kUserAgent[] = L"XVatsim/1.2.2 UpdateChecker";
 constexpr int kHttpResolveTimeoutMs = 2500;
 constexpr int kHttpConnectTimeoutMs = 2500;
 constexpr int kHttpSendTimeoutMs = 2500;
