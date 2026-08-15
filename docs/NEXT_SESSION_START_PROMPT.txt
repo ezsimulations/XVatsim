@@ -6,7 +6,9 @@ C:\Users\DARRON\OneDrive\Documents\XVatsim
 First read:
 1. docs/NEXT_SESSION_HANDOFF.md
 2. docs/BRAIN_OWNED_RUNTIME_CONTRACT.md
-3. README.md
+3. docs/V2_0_0_ROADMAP.md
+4. docs/ROADMAP_BOUNDARIES.md
+5. README.md
 
 Then inspect:
 git status --short --branch
@@ -24,6 +26,15 @@ Current state:
 - The V1.2.3 ZIP was independently smoke-tested; hashes are recorded in
   docs/NEXT_SESSION_HANDOFF.md and docs/V1_2_3_PATCH_CLOSEOUT.md.
 - Only V1.2.2 and V1.2.3 package directories and ZIPs remain under releases.
+- Release commit e4a6269 is tagged v1.2.3. Main may contain a later
+  documentation-only V2 handoff commit.
+
+Next objective:
+- Begin V2 preparation, not implementation.
+- Ask Darron which workstream comes first: dedicated VFR, Mac, or Linux.
+- Audit that workstream and propose a narrow milestone with explicit non-goals.
+- Present a fresh Contract Gate and wait for approval before any code edit.
+- Do not reopen V1.2.3 release work unless a new defect is reported.
 
 Architecture rule:
 Brain decides. Modules produce facts. UI displays brain-approved facts.

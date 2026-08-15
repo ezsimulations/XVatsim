@@ -17,6 +17,14 @@ git status --short --branch
 git log -5 --oneline --decorate
 ```
 
+Then read, in order:
+
+1. `docs/BRAIN_OWNED_RUNTIME_CONTRACT.md`
+2. `docs/V2_0_0_ROADMAP.md`
+3. `docs/ROADMAP_BOUNDARIES.md`
+4. `docs/ARCHITECTURE.md`
+5. `docs/V1_2_3_PATCH_CLOSEOUT.md`
+
 ## Current Product State
 
 - V1.2.3 is the current public freeware Windows/X-Plane 12/xPilot release.
@@ -25,6 +33,8 @@ git log -5 --oneline --decorate
 - Users may download from X-Plane.org or the official GitHub Release.
 - V1.2.3 is a narrow Version 1 maintenance release, not a V2 feature release.
 - Only the V1.2.2 and V1.2.3 release directories and ZIPs are retained locally.
+- Release commit: `e4a6269 chore: release xvatsim 1.2.3`.
+- Annotated release tag: `v1.2.3`.
 
 ## V1.2.3 Fix
 
@@ -70,6 +80,33 @@ The V1.2.3 route fix stays in core geometry. The update-notice wording is a
 brain-approved display fact rendered by the UI. Every future edit requires a
 fresh approved Contract Gate as defined in
 `docs/BRAIN_OWNED_RUNTIME_CONTRACT.md`.
+
+## Next Session Objective: Begin V2 Preparation
+
+The next session begins V2 planning. Do not reopen V1.2.3 release work unless a
+new defect is reported. Do not make V2 source edits during the initial audit.
+
+Start by confirming which V2 workstream Darron wants first:
+
+- dedicated VFR workflow
+- Mac support
+- Linux support
+
+After the workstream is selected:
+
+1. Audit the relevant current architecture and source boundaries.
+2. Identify authoritative inputs, brain-owned decisions, module-produced facts,
+   UI outputs, fail-closed behavior, and platform/package constraints.
+3. Propose a narrow V2 milestone with explicit non-goals.
+4. Present a fresh Contract Gate naming exact files, ownership boundaries,
+   replaced/deleted behavior, and focused regression proof.
+5. Wait for explicit approval before any code edit.
+
+VFR must define its own flight-state and controller-authority contract rather
+than weakening IFR assumptions. Mac/Linux work must begin as a platform audit
+covering SDK binaries, dependencies, output layout, signing/notarization, audio,
+packaging, and smoke testing; it must not change live controller decisions just
+to make another platform compile.
 
 ## V1 Scope And Guardrails
 
