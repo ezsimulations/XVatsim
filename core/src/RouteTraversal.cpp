@@ -408,6 +408,31 @@ std::optional<double> FindEntryFractionByBinarySearch(
     return insideFraction;
 }
 
+std::optional<double> RefineFeatureEntryFractionBetween(
+    const GeoPoint& start,
+    const GeoPoint& end,
+    const SectorFeature& feature,
+    double outsideFraction,
+    double insideFraction) {
+    outsideFraction = std::clamp(outsideFraction, 0.0, 1.0);
+    insideFraction = std::clamp(insideFraction, 0.0, 1.0);
+    if (insideFraction <= outsideFraction) {
+        return std::nullopt;
+    }
+
+    for (int iteration = 0; iteration < 48; ++iteration) {
+        const auto middleFraction = (outsideFraction + insideFraction) / 2.0;
+        const auto middlePoint = InterpolatePoint(start, end, middleFraction);
+        if (PointInFeature(middlePoint, feature)) {
+            insideFraction = middleFraction;
+        } else {
+            outsideFraction = middleFraction;
+        }
+    }
+
+    return insideFraction;
+}
+
 std::optional<double> FindFeatureEntryFraction(
     const GeoPoint& start,
     const GeoPoint& end,
@@ -417,19 +442,65 @@ std::optional<double> FindFeatureEntryFraction(
     }
 
     const auto boundaryFractions = CollectSegmentBoundaryFractions(start, end, feature);
+    if (boundaryFractions.empty()) {
+        return FindEntryFractionByBinarySearch(start, end, feature);
+    }
+
+    constexpr double kAnchorTolerance = 1e-9;
+    std::vector<double> anchors;
+    anchors.reserve(boundaryFractions.size() + 2);
+    anchors.push_back(0.0);
     for (const auto fraction : boundaryFractions) {
-        const auto beforeFraction = std::max(0.0, fraction - 1e-6);
-        const auto afterFraction = std::min(1.0, fraction + 1e-6);
-        const auto beforePoint = InterpolatePoint(start, end, beforeFraction);
-        const auto afterPoint = InterpolatePoint(start, end, afterFraction);
-        const auto beforeInside = PointInFeature(beforePoint, feature);
-        const auto afterInside = PointInFeature(afterPoint, feature);
-        if (!beforeInside && afterInside) {
-            return fraction;
+        if (fraction > kAnchorTolerance && fraction < 1.0 - kAnchorTolerance) {
+            anchors.push_back(fraction);
+        }
+    }
+    anchors.push_back(1.0);
+    std::sort(anchors.begin(), anchors.end());
+    anchors.erase(
+        std::unique(
+            anchors.begin(),
+            anchors.end(),
+            [](double left, double right) {
+                return std::fabs(left - right) <= 1e-9;
+            }),
+        anchors.end());
+
+    double lastOutsideFraction = 0.0;
+    for (std::size_t index = 1; index < anchors.size(); ++index) {
+        const auto leftFraction = anchors[index - 1];
+        const auto rightFraction = anchors[index];
+
+        if (rightFraction - leftFraction > kAnchorTolerance) {
+            const auto middleFraction = (leftFraction + rightFraction) / 2.0;
+            const auto middlePoint = InterpolatePoint(start, end, middleFraction);
+            if (PointInFeature(middlePoint, feature)) {
+                return RefineFeatureEntryFractionBetween(
+                    start,
+                    end,
+                    feature,
+                    lastOutsideFraction,
+                    middleFraction);
+            }
+            lastOutsideFraction = middleFraction;
+        }
+
+        const auto rightPoint = InterpolatePoint(start, end, rightFraction);
+        if (PointInFeature(rightPoint, feature)) {
+            if (rightFraction >= 1.0 - kAnchorTolerance) {
+                return RefineFeatureEntryFractionBetween(
+                    start,
+                    end,
+                    feature,
+                    lastOutsideFraction,
+                    rightFraction);
+            }
+        } else {
+            lastOutsideFraction = rightFraction;
         }
     }
 
-    return FindEntryFractionByBinarySearch(start, end, feature);
+    return std::nullopt;
 }
 
 std::string NormalizeAuthorityIdentifier(std::string value) {
