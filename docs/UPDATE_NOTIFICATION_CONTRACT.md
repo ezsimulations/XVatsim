@@ -14,7 +14,8 @@ implemented together for the 1.0.2 freeware release.
 
 XVatsim should be able to notify users that a newer freeware build is available
 without becoming an installer, downloader, or auto-updater. The plugin remains
-notify-only: users download the new ZIP from the X-Plane.org file page.
+notify-only: users download the new ZIP from the X-Plane.org file page or the
+official GitHub Releases page.
 
 ## Manifest Source
 
@@ -70,8 +71,8 @@ notify-only: users download the new ZIP from the X-Plane.org file page.
 - If an update is available, the overlay shows a dismissible system notice panel
   instead of inserting long update text into the radio board or route/footer
   line.
-- The notice includes installed version, latest version, and the X-Plane.org
-  download reminder.
+- The notice includes installed version, latest version, and an X-Plane.org or
+  GitHub download reminder.
 - The notice may wake the overlay after plugin/session startup so users are not
   required to manually open the menu to discover that a release is available.
 - Dismissal suppresses the same available version for the current simulator
@@ -93,7 +94,7 @@ notify-only: users download the new ZIP from the X-Plane.org file page.
   still must not block flight controls, radio state, xPilot, or route logic.
 - Suggested text:
   - `Critical XVatsim update available`
-  - `Download from X-Plane.org`
+  - `Download: X-Plane.org or GitHub`
 
 ## Manual Menu Behavior
 

@@ -8,11 +8,10 @@ Milestones 1 through 9 are complete on the authoritative rebuild plan, and the
 five-flight live battle-test gate passed for the installed V1 runtime hash
 `81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A`.
 
-XVatsim V1.2.2 is the current public freeware Windows/X-Plane 12/xPilot
-release. The source tree is prepared for V1.2.3; packaging, final hashes, and
-public update-manifest publication remain intentionally pending.
+XVatsim V1.2.3 is the current public freeware Windows/X-Plane 12/xPilot
+release. It is distributed through X-Plane.org and GitHub Releases.
 
-## V1.2.3 Preparation
+## V1.2.3 Patch Release
 
 - Fixed exact route-polygon entry detection in `core/src/RouteTraversal.cpp`.
 - Replaced the fixed before/after boundary probe with interval-based entry
@@ -24,13 +23,20 @@ public update-manifest publication remain intentionally pending.
   metadata are set to 1.2.3.
 - Release builds of `XVatsimRegressionHarness` and `XVatsimPlugin` passed with
   Visual Studio 18/MSVC 14.51.
-- Seven focused route traversal, controller relevance, and update scenarios
+- Eight focused route traversal, controller relevance, and update scenarios
   passed.
 - Full saved regression passed: `451 / 451`.
 - The Version 1.2.3 user-guide PDF was regenerated, rendered, and visually
   verified across all seven pages.
-- The V1.2.2 public update manifest remains unchanged until the V1.2.3 package
-  and verified archive/runtime hashes exist.
+- Built `releases\XVatsim_1.2.3_Freeware_Windows_XP12.zip` and independently
+  smoke-tested its nine-file customer payload.
+- Package SHA-256:
+  `80B013ADB454D6F55AD359825E7E3229BD85C12A146289B4D17A15894049497C`.
+- Packaged runtime SHA-256:
+  `28896800BAD64A5C25933F828D0D10FD63E0ED8C1AF5471760A4F1E599CFE23C`.
+- Published the notify-only manifest with X-Plane.org and GitHub release links.
+- Retained only the V1.2.2 and V1.2.3 package directories and archives under
+  `releases`; older generated release files were moved to the Recycle Bin.
 
 ## V1.2.2 Patch Release
 

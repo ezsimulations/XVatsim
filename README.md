@@ -5,32 +5,26 @@ cockpit overlay for VATSIM controller awareness, focused on IFR flight-plan oper
 
 ## Current Release
 
-XVatsim V1.2.2 is the current freeware Windows release for X-Plane 12 and
-xPilot. The source tree is prepared for the V1.2.3 maintenance package; V1.2.3
-is not public until its release archive, hashes, and update manifest are
-completed.
+XVatsim V1.2.3 is the current freeware Windows release for X-Plane 12 and
+xPilot.
 
 - Freeware package:
-  `releases/XVatsim_1.2.2_Freeware_Windows_XP12.zip`
+  `releases/XVatsim_1.2.3_Freeware_Windows_XP12.zip`
 - Package SHA-256:
-  `A329CAF1AE589A828421A78DE7CE3B15645492B04CDD983A122A4E5CAC01834F`
+  `80B013ADB454D6F55AD359825E7E3229BD85C12A146289B4D17A15894049497C`
 - Packaged runtime SHA-256:
-  `95DDA79E9C6948A06DE2D3D9920E72D677D0C7E819386656EEA78E32A5E7D06E`
+  `28896800BAD64A5C25933F828D0D10FD63E0ED8C1AF5471760A4F1E599CFE23C`
 - User guide:
   `docs/user_guide/XVatsim_User_Guide.pdf`
+- Download pages:
+  [X-Plane.org](https://forums.x-plane.org/files/file/100224-xvatsim-100-freeware-windows-xp12zip/)
+  or [GitHub Releases](https://github.com/ezsimulations/XVatsim/releases/tag/v1.2.3)
 
 The X-Plane.org Store submission path is no longer the active release path for
 Version 1 because the store requested a Mac build. XVatsim Version 1 is being
 released as freeware instead.
 
-V1.2.2 is a maintenance release on top of the brain-owned authority recovery
-arc. It fixes live-tested arrival Center ordering, prevents tuned stale Centers
-from overriding route polygon ownership, contains overlay hot-path stalls, reuses
-authority proof cache data across safe route-window transitions, and preserves
-the brain-owned authority, display-order, and standby-assist guardrails from
-1.2.0 and 1.2.1.
-
-## V1.2.3 Release Candidate
+## V1.2.3 Patch Release
 
 V1.2.3 fixes an exact route-polygon crossing failure found on the live-tested
 SKJ914 route from MMTO to KCOS. Route traversal now refines polygon entry across
@@ -40,13 +34,13 @@ the relevant FTW Center candidate without changing controller-relevance or
 display ownership.
 
 The source/build version, plugin labels, network user agents, regression-harness
-default, release tooling, and user guide are set to 1.2.3. The public update
-manifest intentionally remains at 1.2.2 until the 1.2.3 archive and verified
-hashes exist.
+default, release tooling, user guide, and public update manifest are set to
+1.2.3. The plugin's update notice directs users to X-Plane.org or GitHub.
 
-Preparation verification completed on 2026-08-15: the Release regression
-harness and plugin targets built successfully, seven focused route/update
-guardrails passed, and all 451 saved regression scenarios passed.
+Release verification completed on 2026-08-15: the Release regression harness
+and plugin targets built successfully, eight focused route/update guardrails
+passed, all 451 saved regression scenarios passed, and an independent package
+smoke extraction passed.
 
 ## Current V1 Scope
 

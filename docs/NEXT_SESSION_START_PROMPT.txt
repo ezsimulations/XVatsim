@@ -13,22 +13,19 @@ git status --short --branch
 git log -5 --oneline --decorate
 
 Current state:
-- V1.2.2 is the current public freeware release.
-- The committed source and documentation are prepared for V1.2.3.
+- V1.2.3 is the current public freeware Windows/X-Plane 12/xPilot release.
 - Commit 664b640 fixes exact route-polygon entry detection for the live-tested
   SKJ914 MMTO-KCOS route, restoring KZFW and FTW Center relevance.
-- Active source/build/user-agent/release-tooling/user-guide metadata is 1.2.3.
-- Release harness/plugin builds, seven focused scenarios, and all 451 saved
+- The plugin UI, source/build metadata, user agents, release tooling, user
+  guide, and public update manifest report V1.2.3.
+- Users may download from X-Plane.org or the official GitHub Release.
+- Release harness/plugin builds, eight focused scenarios, and all 451 saved
   regression scenarios passed on 2026-08-15.
-- The V1.2.3 user-guide PDF was rendered and visually verified across seven
-  pages.
-- docs/xvatsim_update.json intentionally remains at 1.2.2 until a real V1.2.3
-  archive, size, package hash, and plugin hash exist.
-- The next task is V1.2.3 package preparation, only after the user gives the
-  packaging instructions.
+- The V1.2.3 ZIP was independently smoke-tested; hashes are recorded in
+  docs/NEXT_SESSION_HANDOFF.md and docs/V1_2_3_PATCH_CLOSEOUT.md.
+- Only V1.2.2 and V1.2.3 package directories and ZIPs remain under releases.
 
 Architecture rule:
 Brain decides. Modules produce facts. UI displays brain-approved facts.
 
-Do not package, publish, push, retag, or update the public manifest without the
-user's instructions. Use a fresh Contract Gate for any new source edit.
+Use a fresh Contract Gate for any new source edit.

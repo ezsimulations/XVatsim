@@ -60,9 +60,8 @@ To build a fresh freeware zip from the current Release payload:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release_gate\New-FreewareReleasePackage.ps1
 ```
 
-The builder default is prepared for V1.2.3. Do not run it or publish the update
-manifest until the V1.2.3 package-preparation step is explicitly authorized and
-the current Release build and full regression suite pass.
+The builder default is V1.2.3. The verified V1.2.3 archive was generated on
+2026-08-15 after the current Release build and full regression suite passed.
 
 The freeware builder creates:
 

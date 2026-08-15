@@ -4,9 +4,8 @@ Updated: 2026-08-15
 
 ## V1 Product Position
 
-XVatsim V1.2.2 is the current public freeware xPilot companion plugin for
-Windows and X-Plane 12. The repository is prepared for the narrow V1.2.3 route
-traversal maintenance package. XVatsim is not a replacement VATSIM client, not
+XVatsim V1.2.3 is the current public freeware xPilot companion plugin for
+Windows and X-Plane 12. XVatsim is not a replacement VATSIM client, not
 an xPilot fork, and not a full network/audio client.
 
 The V1 reliability goal is controller-awareness trustworthiness:

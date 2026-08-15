@@ -43,7 +43,8 @@ XVatsim Version 1 does not include Mac support, Linux support, X-Plane 11 suppor
 ## Installation
 
 1. Close X-Plane 12.
-2. Extract the XVatsim zip file.
+2. Download and extract the XVatsim zip from the X-Plane.org file page or the
+   official GitHub Releases page at `github.com/ezsimulations/XVatsim/releases`.
 3. Open the extracted folder.
 4. Copy the included `Resources` folder into your X-Plane 12 root folder.
 5. Confirm this file exists:
@@ -89,7 +90,8 @@ Tuning a frequency does not make a row green by itself. XVatsim colors controlle
 In Version 1.2.3, the brain owns the final radio-board order, controller relevance decisions, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
 
 When an update is available, XVatsim shows a dismissible update notice panel
-with the installed version, latest version, and X-Plane.org download reminder.
+with the installed version, latest version, and an X-Plane.org or GitHub
+download reminder.
 Manual update checks use the same notice panel for available, current, and
 failed results, so update status is not clipped into the bottom route/status
 line.
@@ -160,7 +162,11 @@ This is not the same as Reset XVatsim Session. Recover Current Flight is intende
 
 ### Check for Updates
 
-Runs a manual notify-only update check against the public XVatsim update manifest. If the installed version is current, XVatsim shows a short current-version status. If a newer version is available, XVatsim tells you to download it from the X-Plane.org file page.
+Runs a manual notify-only update check against the public XVatsim update
+manifest. If the installed version is current, XVatsim shows a short
+current-version status. If a newer version is available, XVatsim tells you to
+download it from the X-Plane.org file page or the official GitHub Releases
+page.
 
 XVatsim does not automatically download, install, replace, or launch a browser for updates.
 

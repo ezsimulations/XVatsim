@@ -4,9 +4,9 @@ Updated: 2026-08-15
 
 ## Starting Point
 
-XVatsim V1.2.2 is the current public freeware Windows/X-Plane 12/xPilot
-release. V1.2.3 is the pending route-traversal maintenance package. V2.0.0
-starts after the closed Version 1 baseline and is not part of the V1.2.3 work.
+XVatsim V1.2.3 is the current public freeware Windows/X-Plane 12/xPilot
+release. V2.0.0 starts after this closed Version 1 baseline and is not part of
+the V1.2.3 release.
 
 ## Primary V2 Objectives
 
