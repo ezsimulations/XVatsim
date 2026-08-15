@@ -516,7 +516,7 @@ struct ScenarioData {
     std::vector<std::string> sourcePackageTerminalAuthorityJsons;
     std::vector<std::string> sourceRegistryJsons;
     std::string updateManifestPayload;
-    std::string updateInstalledVersion = "1.0.4";
+    std::string updateInstalledVersion = "1.2.3";
     std::string updateManifestUrl =
         "https://ezsimulations.github.io/XVatsim/xvatsim_update.json";
     std::unordered_map<std::string, std::string> sourceRegistryPayloadsByUrl;

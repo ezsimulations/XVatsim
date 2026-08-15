@@ -1,14 +1,22 @@
 # XVatsim Freeware User Guide
 
-Version 1.0.4
+Version 1.2.3
 
-Updated: June 2026
+Updated: August 2026
 
 XVatsim is a Windows plugin for X-Plane 12 and xPilot. It gives VATSIM pilots a clean, route-aware frequency overlay that focuses on the controllers relevant to the current IFR flight.
 
 XVatsim is intended for home flight simulation only. It is not approved for real-world aviation, navigation, flight planning, dispatch, or air traffic control use.
 
 ![Clean XVatsim overlay](assets/01_clean_ui.jpg)
+
+## What's New In Version 1.2.3
+
+Version 1.2.3 improves exact route-polygon crossing detection. It fixes a
+live-tested route where the PNG-TXO leg of an MMTO-KCOS flight crossed KZFW but
+the Dallas/Fort Worth Center authority could be missed. The change improves
+route geometry without changing how the brain decides controller relevance,
+display order, or Standby Assist ownership.
 
 ## What XVatsim Does
 
@@ -78,7 +86,7 @@ Color and labels matter:
 
 Tuning a frequency does not make a row green by itself. XVatsim colors controller rows from route and authority context, not from radio tuning alone.
 
-In Version 1.0.4, the brain owns the final radio-board order, terminal controller relevance decisions, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
+In Version 1.2.3, the brain owns the final radio-board order, controller relevance decisions, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
 
 When an update is available, XVatsim shows a dismissible update notice panel
 with the installed version, latest version, and X-Plane.org download reminder.
@@ -166,7 +174,12 @@ Clears the manual diversion override and returns XVatsim to the destination in t
 
 ### Standby Assist On / Off
 
-Enables or disables Standby Assist. When enabled, XVatsim can preload COM1 standby with the selected live controller frequency. The overlay shows `ASST ON` or `ASST OFF`.
+Enables or disables Standby Assist. When enabled, XVatsim can preload COM1
+standby with the selected live controller frequency. If no controller target
+wins, a resolved CTAF or `NO CTAF / UNICOM` advisory can also be selected when
+the separate CTAF/UNICOM advisory gate and all brain-owned safety checks allow
+it. A controller standby target always takes priority. The overlay shows
+`ASST ON` or `ASST OFF`.
 
 ## Keyboard Commands In X-Plane
 
@@ -246,9 +259,12 @@ Do not use Reset Session just to recover after a reconnect. Use `Recover Current
 ### Standby Assist did not tune a frequency
 
 - Confirm Standby Assist is on.
-- Confirm a relevant live controller exists.
+- For controller targets, confirm a relevant live controller exists.
+- For CTAF/UNICOM advisory targets, confirm the CTAF/UNICOM advisory gate is
+  enabled and the lookup has completed successfully.
 - Confirm the recommended frequency is not already active.
-- CTAF/UNICOM and private-message/PDC handling are not part of Standby Assist in Version 1.
+- A controller target takes priority over a CTAF/UNICOM advisory target.
+- Private-message and PDC handling are not part of Standby Assist in Version 1.
 
 ### Update check is unavailable
 
@@ -285,6 +301,4 @@ Support contact:
 
 ## Freeware Notes
 
-XVatsim is being provided as freeware. Please keep the package intact when sharing it so pilots receive the plugin, transition audio, authority registry, README, quick start, and this user guide together.
-
-XVatsim is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.
+XVatsim is being provided as freeware. Please keep the package intact when sharing it so pilots receive the plugin, transition audio, authority registry, README, quick start, and this user guide together. XVatsim is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.

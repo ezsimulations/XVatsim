@@ -1,323 +1,165 @@
 # XVatsim Next Session Handoff
 
-Last updated after the live-tested CTAF/UNICOM standby assist hotfix on 2026-06-20.
+Updated: 2026-08-15
 
-This file is intentionally self-contained. Assume the next Codex session has no chat history. Start here, then scan the repo before making changes.
+This file is the current no-chat startup handoff. Read it before changing or
+packaging the repository.
 
-## First Actions Next Session
+## Repository
 
-1. Change to the repo:
+```text
+C:\Users\DARRON\OneDrive\Documents\XVatsim
+```
 
-   ```powershell
-   Set-Location 'C:\Users\DARRON\OneDrive\Documents\XVatsim'
-   ```
+Start with:
 
-2. Read this file completely.
-
-3. Check current state:
-
-   ```powershell
-   git status --short
-   git log -5 --oneline
-   Get-ChildItem outputs | Sort-Object LastWriteTime -Descending | Select-Object -First 30 Name,LastWriteTime,Length
-   ```
-
-4. If the user asks to package or close out, first confirm whether live online testing is complete.
-
-5. Do not rely on prior chat. The relevant state is recorded below.
-
-## Current Git State
-
-Known latest commits:
-
-- `3cddba5 fix: allow UNICOM fallback standby assist`
-- `88c1b12 chore: close brain ownership recovery arc`
-
-The CTAF/UNICOM standby assist hotfix was live-tested by the user and committed. The repo was clean after that commit.
-
-If this file itself is dirty when the next session starts, that is expected: it was written as the durable no-chat startup handoff after the hotfix.
+```powershell
+git status --short --branch
+git log -5 --oneline --decorate
+```
 
 ## Current Product State
 
-The brain ownership recovery arc is closed.
+- V1.2.2 is the current public freeware Windows/X-Plane 12/xPilot release.
+- The repository source and documentation are prepared for V1.2.3.
+- V1.2.3 is a narrow Version 1 maintenance release, not a V2 feature release.
+- The V1.2.3 archive has not been generated yet.
+- The public update manifest still advertises V1.2.2 by design. Do not publish
+  V1.2.3 in `docs/xvatsim_update.json` until the archive, size, package hash,
+  and plugin hash have been generated and verified.
 
-Closed fronts:
+## V1.2.3 Fix
 
-- CTAF/UNICOM completion bypass retirement.
-- Standby assist, direct CTAF gate, and COM writer result ledger.
-- BrainDisplayIntent overlay/source/reuse/stable-key ledgers.
-- Fallback polygon/geometry source-owned stable-key migration front through internal passive wiring and closeout.
-- `route_sector` authority ownership closure.
-- `transceiver_resolver` authority ownership closure.
+The live-tested failure was route SKJ914 from MMTO to KCOS. The PNG-TXO route
+leg crossed KZFW, but the route traversal entry probe could miss the polygon,
+which prevented the brain from receiving KZFW as the next polygon and proving
+the reachable FTW Center controller.
 
-The next user intent is release completion, not more recovery-report churn. The user confirmed live testing looked good and requested Git update plus Freeware Package V1.2.1 production.
-
-## Latest Verified Build and Regression State
-
-Before the final recovery closeout:
-
-- Build passed.
-- Focused guardrail bundle passed.
-- Full saved regression passed: 431 scenarios.
-
-After the CTAF/UNICOM standby assist hotfix:
-
-- Build passed.
-- Focused standby assist hotfix/guardrail bundle passed: 10 scenarios.
-- Full saved regression passed: 431 scenarios.
-- Updated `XVatsim.xpl` was copied to:
-
-  ```text
-  C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl
-  ```
-
-- Copied binary SHA256:
-
-  ```text
-  DDB40F25D3F1DA91A61F0BA1008BA8A6A816C70D338BB06A7D26839AF535F224
-  ```
-
-Build command used:
-
-```powershell
-& 'C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' --build build --config RelWithDebInfo
-```
-
-Full regression command used:
-
-```powershell
-$h = '.\build\tools\XVatsimRegressionHarness.exe'
-$scenarios = @(Get-ChildItem '.\tools\regression_harness\scenarios\*.scn' | Sort-Object Name)
-foreach ($scenario in $scenarios) {
-  & $h $scenario.FullName *> $null
-  if ($LASTEXITCODE -ne 0) {
-    Write-Host "FAILED $($scenario.Name)"
-    exit $LASTEXITCODE
-  }
-}
-Write-Host "Passed $($scenarios.Count) scenarios"
-```
-
-## Core Architecture Rule
-
-Modules report evidence.
-
-The brain owns decisions.
-
-Do not let workers, source modules, plugin shell code, `transceiver_resolver`, `route_sector`, or compatibility paths silently decide display, relevance, standby eligibility, write permission, fallback identity, or authority. If a decision is made, it belongs in the brain and must be ledgered.
-
-Product failure model:
-
-- False positives are bad but recoverable.
-- False negatives are worse.
-- Missing evidence should usually produce fail-soft diagnostics, not silent hiding.
-- Hard blocks should be rare and explicit.
-
-## CTAF/UNICOM and Standby Assist State
-
-CTAF/UNICOM completion bypass live authority remains retired.
-
-Live CTAF/UNICOM rows come from brain-owned advisory projection. Compatibility projection evidence remains diagnostic-only.
-
-The old statement "UNICOM fallback is excluded from live standby assist" is no longer true.
-
-Current standby assist behavior:
-
-- Controller standby targets still win.
-- Direct CTAF can become a COM1 standby target only when standby assist and the CTAF/UNICOM advisory gate are enabled and safety gates pass.
-- `NO CTAF / UNICOM` fallback can also become a COM1 standby target under the same standby assist plus CTAF/UNICOM advisory gate conditions.
-- Pending CTAF lookup, failed CTAF lookup, empty frequency, guard/invalid frequencies, active frequencies, and already-in-standby cases remain blocked.
-- CTAF/UNICOM advisory standby does not displace an existing controller standby target.
-- COM writer behavior remains brain-owned.
-
-The user live-tested the hotfix on route `VOI560 MMTO -> MMPR`; the original bug was that `NO CTAF / UNICOM MMTO 122.800` displayed but did not tune COM1 standby. The hotfix fixed that and was committed as:
+The fix is committed as:
 
 ```text
-3cddba5 fix: allow UNICOM fallback standby assist
+664b640 fix: detect route polygon entry at exact crossings
 ```
 
-Primary files in the hotfix:
+Implementation:
 
-- `brain/src/BrainOwnedRuntime.cpp`
-- `docs/STANDBY_ASSIST_DIRECT_CTAF_GATE.md`
-- `tools/regression_harness/scenarios/standby_assist_ctaf_unicom_preview_unicom_product_gated.scn`
-- `tools/regression_harness/scenarios/standby_assist_direct_ctaf_dry_run_unicom_excluded.scn`
-- `tools/regression_harness/scenarios/standby_assist_direct_ctaf_gate_polish_unicom_excluded.scn`
-- `tools/regression_harness/scenarios/standby_assist_direct_ctaf_live_gate_on_unicom_excluded.scn`
-- `tools/regression_harness/scenarios/standby_assist_writer_result_unicom_no_writer.scn`
+- `core/src/RouteTraversal.cpp` now evaluates ordered intervals between exact
+  segment/polygon boundary crossings.
+- When an interval is inside the feature, entry is refined between the last
+  outside fraction and an inside fraction.
+- The old fixed `fraction +/- 1e-6` boundary probe is gone.
 
-Scenario filenames still contain older `unicom_excluded` naming in some places. Do not infer current behavior from those filenames; inspect expectations and code.
+Regression coverage:
 
-## Source-Owned Fallback Stable-Key State
+- `route_traversal_kzfw_png_txo_exact_crossing.scn`
+- `route_traversal_skj914_mmto_kcos_includes_kzfw.scn`
+- `brain_controller_relevance_accepts_ftw_when_kzfw_next.scn`
+- Existing narrow-crossing and anti-meridian scenarios remain guardrails.
 
-The fallback polygon/geometry source-owned stable-key migration subfront is closed for now.
+## V1.2.3 Version State
 
-Current defaults:
+The following active metadata is 1.2.3:
 
-- Generated fallback stable key remains default behavior.
-- Source-owned fallback live consumption remains internal and default OFF.
-- Internal passive setting exists:
-  - `sourceOwnedFallbackStableKeyLiveConsumptionEnabled`
-  - `sourceOwnedFallbackStableKeyLiveConsumptionGateSource`
-- Missing setting resolves to `false` / `default`.
-- Settings-origin source can only be `settings-store`.
-- Settings-origin impersonation attempts such as `harness` or explicit `default` normalize/ledger as `unknown`.
-- Plugin/settings-store pass passive values only.
-- Brain-owned Step 63/64/66 readiness checks remain the only authority.
-- Public exposure is blocked.
-- Default-on is blocked.
-- Generated fallback remains the rollback path.
+- root CMake project version
+- installed plugin version and menu labels
+- network user-agent strings
+- regression harness default installed version
+- freeware package-builder default version and changelog
+- user guide source and PDF
 
-Important reports:
+The following remains 1.2.2 until package publication:
 
-- `outputs/source_owned_fallback_stable_key_migration_closeout_report.md`
-- `outputs/source_owned_stable_key_hidden_internal_release_risk_checklist.md`
-- `outputs/source_owned_stable_key_public_exposure_readiness_audit_report.md`
-- `outputs/source_owned_stable_key_internal_product_wiring_report.md`
-- `outputs/source_owned_stable_key_product_wiring_readiness_report.md`
-- `outputs/source_owned_stable_key_gated_live_opt_in_report.md`
-- `outputs/source_owned_stable_key_live_consumption_blocker_audit_report.md`
-- `outputs/source_owned_stable_key_live_consumption_readiness_report.md`
+- `docs/xvatsim_update.json`
+- the root README's current-public-release package and hashes
+- the existing `releases/XVatsim_1.2.2_Freeware_Windows_XP12.zip`
 
-## Route-Sector and Transceiver-Resolver State
+Historical closeout documents and explicitly versioned update-notification test
+fixtures retain the release numbers they document. They are not stale product
+metadata.
 
-`route_sector`:
+## Verified Preparation State
 
-- May compute/report geometry, key, token, and evidence facts.
-- May retain compatibility projections where intentionally retained.
-- Must not suppress, promote, hide, display, or live-project authority outside the brain.
-- Live `relevantAuthorities` remains brain-owned.
-- Closure report: `outputs/route_sector_authority_ownership_closure_audit_report.md`
+Verification completed on 2026-08-15:
 
-`transceiver_resolver`:
+- Release `XVatsimRegressionHarness` build passed.
+- Release `XVatsimPlugin` build passed.
+- The compiled harness reports `OverlayVersionText: V1.2.3`.
+- Seven focused route traversal, controller relevance, and update scenarios
+  passed.
+- Full saved regression passed: `451 / 451`.
+- The regenerated V1.2.3 user-guide PDF has seven pages; every page was
+  rendered and visually inspected.
 
-- May compute, normalize, rank, filter, score, and report evidence/candidates.
-- May retain compatibility candidate projections.
-- Must not suppress, promote, hide, display, live-project, mark standby-eligible, or write-authorize outside the brain-owned path.
-- Live relevance/display/standby/write-authority decisions remain brain-owned.
-- Closure report: `outputs/transceiver_resolver_authority_ownership_closure_audit_report.md`
-
-## Final Recovery Closeout
-
-Final closeout report:
+Visual Studio 18/MSVC 14.51 requires cpprestsdk's legacy coroutine suppression
+when regenerating the CMake cache. The standard `build` directory is already
+configured with:
 
 ```text
-outputs/brain_ownership_recovery_final_closeout_report.md
+/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS /EHsc
 ```
 
-Final recovery arc status from Step 74:
+The root README records the corresponding fresh-configuration command.
 
-- Closed.
-- Recommendation was commit/tag/stop or open a new named Contract Gate for a new front.
+## Architecture Contract
 
-The user has not yet asked to create the final package after the live tests. Do not package preemptively.
+The governing rule remains:
 
-## Live Testing and Performance Notes
+`Brain decides. Modules produce facts. UI displays brain-approved facts.`
 
-The user is doing further online testing before final cleanup/package work.
+The V1.2.3 fix stays inside core route geometry. It does not move controller
+relevance into the route worker or plugin shell. The plugin changes for V1.2.3
+are version-label changes only.
 
-Last tested route:
+Every future edit still requires a fresh approved Contract Gate as defined in
+`docs/BRAIN_OWNED_RUNTIME_CONTRACT.md`.
+
+## Packaging Is The Next Separate Step
+
+Wait for the user's packaging instructions before creating the V1.2.3 archive.
+The intended sequence is:
+
+1. Confirm the committed source tree is clean.
+2. Build `XVatsimRegressionHarness` and `XVatsimPlugin` in Release mode.
+3. Run all saved regression scenarios.
+4. Run the freeware builder under `tools/release_gate`.
+5. Inspect the generated file set and smoke extraction.
+6. Compute the archive and packaged-plugin SHA-256 values and archive size.
+7. Update `README.md`, `docs/MILESTONE_STATUS.md`, and
+   `docs/xvatsim_update.json` with the actual V1.2.3 artifact facts.
+8. Commit the release closeout and only then publish/push the manifest when the
+   user authorizes it.
+
+Do not reuse V1.2.2 hashes or claim V1.2.3 is public before these steps pass.
+
+## V1 Scope And Guardrails
+
+- Windows and X-Plane 12 only.
+- xPilot is required.
+- IFR flight-plan workflow only.
+- No dedicated VFR workflow, Mac/Linux port, SimBrief import, Navigraph AIRAC
+  import, or private-message/PDC/AUTO_ATC cards.
+- Fail closed when route, source, controller, or session evidence is stale or
+  unavailable.
+- Preserve brain-owned display order, controller relevance, standby assist,
+  COM writing, dedupe, completion identity, phase reuse, and overlay cap.
+- Do not broad-clean or refactor during release preparation.
+
+## Current Public Release
+
+V1.2.2 package:
 
 ```text
-VOI560 MMTO -> MMPR
+releases/XVatsim_1.2.2_Freeware_Windows_XP12.zip
 ```
 
-Live issue found and fixed:
+Package SHA-256:
 
-- `NO CTAF / UNICOM MMTO 122.800` displayed but did not tune COM1 standby.
-- Fixed by allowing resolved UNICOM fallback advisory candidates through standby assist under the same standby assist plus CTAF/UNICOM advisory gate as direct CTAF.
+```text
+A329CAF1AE589A828421A78DE7CE3B15645492B04CDD983A122A4E5CAC01834F
+```
 
-Performance investigation notes:
+Packaged runtime SHA-256:
 
-- Startup/context-establishment spikes are expected and were observed:
-  - route rebuild around 1.1s
-  - authority proof build around 450-480ms
-  - total startup/context spikes around 1.5-1.6s
-- The user considers initial VATSIM flight-plan load spikes acceptable because cockpit setup is still underway.
-- Pushback/taxi stutters occurred later, around BetterPushback/PMCO activity, not during XVatsim heavy startup work.
-- Tail-window XVatsim diagnostics around pushback showed no slow-refresh markers:
-  - refresh around 1.3-1.6ms
-  - route work 0us
-  - authority relevance around 18-22us
-  - standby assist around 39-52us
-- Conclusion: pushback stutter was unlikely to be XVatsim's runtime brain loop.
-- X-Plane crash was not attributed to XVatsim. X-Plane log ended with a ToLiss/X-Plane flight model `vx_wrl value is nan or inf` error and there were Map Enhancement / scenery DSF load issues earlier.
-
-Deferred official bug-fix note:
-
-- Reduce unchanged `radio-board-candidate-diff` diagnostic log churn.
-- Current logs may emit repeated no-op radio-board diff trace lines every generation even when candidate counts and hashes are unchanged.
-- This is diagnostic-log hygiene, not a brain decision change.
-- Likely file: `plugin/src/XVatsimPlugin.cpp`.
-- Do not change runtime display, standby behavior, authority, or brain decision ownership for this.
-
-Suggested future Contract Gate for that deferred bug fix:
-
-1. Files intended to change:
-   - `plugin/src/XVatsimPlugin.cpp`
-   - focused diagnostics scenario only if existing harness supports this path without overbuilding.
-2. Behavior change:
-   - Runtime behavior: none.
-   - Diagnostic logging only: suppress unchanged/no-op radio-board trace lines.
-3. Brain authority:
-   - Unchanged. Brain still owns decisions.
-   - Plugin only gates diagnostic log emission.
-4. Proposed suppression:
-   - Do not emit `radio-board-candidate-diff` when previous/current hashes match, candidate counts match, added/removed are zero, and there are no meaningful candidate changes.
-   - Still emit on real candidate add/remove/change, route hash change, source/stale change, or meaningful non-empty trace.
-5. Verification:
-   - Build.
-   - Focused existing radio-board/standby/CTAF guardrails.
-   - Full regression if code changes.
-
-Do not do this unless the user explicitly asks. The user said to make note of it only and address it in the next official bug fix.
-
-## Guardrails for Future Work
-
-Preserve unless the user explicitly scopes otherwise:
-
-- Do not restore CTAF/UNICOM completion bypass live authority.
-- Do not add live compatibility fallback.
-- Do not let pending/failed/empty CTAF display or write.
-- Do not let CTAF/UNICOM advisory standby displace a controller target.
-- Do not change COM writer behavior outside an approved Contract Gate.
-- Do not change display behavior, row ordering, dedupe, duplicate suppression, completion identity, phase reuse, overlay cap, or `+N more ATC` unless explicitly scoped.
-- Do not make source-owned fallback stable-key consumption default ON.
-- Do not expose internal stable-key setting publicly without a new Contract Gate and product decision.
-- Do not modify `route_sector`, `transceiver_resolver`, or HNL unless explicitly scoped.
-- Do not remove deprecated public/header aliases unless explicitly scoped.
-- Do not broad-clean or refactor.
-
-## Package / Release Notes for Future Session
-
-The user moved from live testing into V1.2.1 release preparation:
-
-1. Clean up the repo.
-2. Update the Git repository.
-3. Produce the final Freeware Package V1.2.1.
-
-Before packaging:
-
-- Confirm user says live testing is complete.
-- Run build.
-- Run focused guardrails.
-- Run full saved regression.
-- Use the existing release gate/package tooling under `tools/release_gate/`.
-- Inspect `tools/release_gate/README.md` before running package scripts.
-- Do not invent a new release process unless the existing one is insufficient.
-
-## Practical Next-Session Reminder
-
-The safest rhythm:
-
-1. Read this file.
-2. Run `git status --short`.
-3. Inspect the latest commits and outputs.
-4. Ask for or wait for the user's exact next Contract Gate if code changes are requested.
-5. Keep changes narrow.
-6. Build.
-7. Run focused scenarios.
-8. Run full regression for code changes.
-9. Commit only when the user asks.
-
-Future-me: the recovery arc is closed; do not reopen it with more report-only churn unless it closes a real decision or unblocks real code work.
+```text
+95DDA79E9C6948A06DE2D3D9920E72D677D0C7E819386656EEA78E32A5E7D06E
+```

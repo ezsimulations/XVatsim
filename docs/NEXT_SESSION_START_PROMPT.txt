@@ -5,41 +5,30 @@ C:\Users\DARRON\OneDrive\Documents\XVatsim
 
 First read:
 1. docs/NEXT_SESSION_HANDOFF.md
-2. outputs/brain_ownership_recovery_final_closeout_report.md
-3. outputs/source_owned_fallback_stable_key_migration_closeout_report.md
+2. docs/BRAIN_OWNED_RUNTIME_CONTRACT.md
+3. README.md
 
-Then scan:
-git status --short
-git log -5 --oneline
-Get-ChildItem outputs | Sort-Object LastWriteTime -Descending | Select-Object -First 30 Name,LastWriteTime,Length
+Then inspect:
+git status --short --branch
+git log -5 --oneline --decorate
 
-Current known head after live-tested hotfix:
-- 3cddba5 fix: allow UNICOM fallback standby assist
-- 88c1b12 chore: close brain ownership recovery arc
+Current state:
+- V1.2.2 is the current public freeware release.
+- The committed source and documentation are prepared for V1.2.3.
+- Commit 664b640 fixes exact route-polygon entry detection for the live-tested
+  SKJ914 MMTO-KCOS route, restoring KZFW and FTW Center relevance.
+- Active source/build/user-agent/release-tooling/user-guide metadata is 1.2.3.
+- Release harness/plugin builds, seven focused scenarios, and all 451 saved
+  regression scenarios passed on 2026-08-15.
+- The V1.2.3 user-guide PDF was rendered and visually verified across seven
+  pages.
+- docs/xvatsim_update.json intentionally remains at 1.2.2 until a real V1.2.3
+  archive, size, package hash, and plugin hash exist.
+- The next task is V1.2.3 package preparation, only after the user gives the
+  packaging instructions.
 
-Current status:
-- Brain ownership recovery arc is closed.
-- CTAF/UNICOM completion bypass remains retired as live authority.
-- Direct CTAF and resolved NO CTAF / UNICOM fallback are both eligible for COM1 standby assist only when standby assist plus the CTAF/UNICOM advisory gate are enabled and brain-owned safety checks pass.
-- Controller standby targets still win.
-- Source-owned fallback stable-key live consumption remains internal/default OFF.
-- Public exposure/default-on for source-owned fallback stable-key consumption remain blocked.
-- route_sector and transceiver_resolver authority ownership audits are closed.
+Architecture rule:
+Brain decides. Modules produce facts. UI displays brain-approved facts.
 
-Release status:
-- User confirmed live testing looked good and requested V1.2.1 release preparation.
-- V1.2.1 should include the authority-proof rebuild stutter fix, date-named diagnostic log retention, and the previously validated live route authority fixes.
-
-Completed official bug-fix note:
-- Authority-proof rebuild stutter fix and unchanged radio-board-candidate-diff logging reduction were implemented before V1.2.1 release preparation.
-
-Do not:
-- rely on prior chat;
-- restore CTAF/UNICOM live bypass authority;
-- change display/dedupe/completion/reuse/cap behavior unless explicitly scoped;
-- make source-owned fallback stable-key live consumption default ON;
-- expose internal stable-key settings publicly;
-- modify route_sector, transceiver_resolver, or HNL unless explicitly scoped;
-- broad-clean or refactor.
-
-When the user gives the next task, use a narrow Contract Gate for code changes, build, run focused guardrails, run full regression for code changes, and commit only when asked.
+Do not package, publish, push, retag, or update the public manifest without the
+user's instructions. Use a fresh Contract Gate for any new source edit.

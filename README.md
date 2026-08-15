@@ -6,7 +6,9 @@ cockpit overlay for VATSIM controller awareness, focused on IFR flight-plan oper
 ## Current Release
 
 XVatsim V1.2.2 is the current freeware Windows release for X-Plane 12 and
-xPilot.
+xPilot. The source tree is prepared for the V1.2.3 maintenance package; V1.2.3
+is not public until its release archive, hashes, and update manifest are
+completed.
 
 - Freeware package:
   `releases/XVatsim_1.2.2_Freeware_Windows_XP12.zip`
@@ -27,6 +29,24 @@ from overriding route polygon ownership, contains overlay hot-path stalls, reuse
 authority proof cache data across safe route-window transitions, and preserves
 the brain-owned authority, display-order, and standby-assist guardrails from
 1.2.0 and 1.2.1.
+
+## V1.2.3 Release Candidate
+
+V1.2.3 fixes an exact route-polygon crossing failure found on the live-tested
+SKJ914 route from MMTO to KCOS. Route traversal now refines polygon entry across
+ordered boundary intervals instead of probing a fixed distance on either side
+of a crossing. This restores KZFW route ownership and permits the brain to prove
+the relevant FTW Center candidate without changing controller-relevance or
+display ownership.
+
+The source/build version, plugin labels, network user agents, regression-harness
+default, release tooling, and user guide are set to 1.2.3. The public update
+manifest intentionally remains at 1.2.2 until the 1.2.3 archive and verified
+hashes exist.
+
+Preparation verification completed on 2026-08-15: the Release regression
+harness and plugin targets built successfully, seven focused route/update
+guardrails passed, and all 451 saved regression scenarios passed.
 
 ## Current V1 Scope
 
@@ -69,6 +89,13 @@ From PowerShell:
 
 ```powershell
 & 'C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' --build '.\build' --config Release --target XVatsimRegressionHarness XVatsimPlugin
+```
+
+If a Visual Studio 18/MSVC 14.51 update requires a fresh CMake configuration,
+configure cpprestsdk's legacy coroutine compatibility explicitly:
+
+```powershell
+& 'C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' --fresh -S '.' -B '.\build' -G 'Visual Studio 18 2026' -A x64 -DXPLANE_SDK_ROOT='.\SDK' '-DCMAKE_CXX_FLAGS=/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS /EHsc'
 ```
 
 Run all saved regression scenarios:

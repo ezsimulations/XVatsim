@@ -1,11 +1,12 @@
 # XVatsim V2.0.0 Roadmap
 
-Date: 2026-06-07
+Updated: 2026-08-15
 
 ## Starting Point
 
-XVatsim V1.0.4 is the current freeware Windows/X-Plane 12/xPilot release.
-V2.0.0 starts after the closed Version 1 baseline.
+XVatsim V1.2.2 is the current public freeware Windows/X-Plane 12/xPilot
+release. V1.2.3 is the pending route-traversal maintenance package. V2.0.0
+starts after the closed Version 1 baseline and is not part of the V1.2.3 work.
 
 ## Primary V2 Objectives
 

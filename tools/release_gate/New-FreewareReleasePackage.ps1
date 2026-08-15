@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.2.2",
+    [string]$Version = "1.2.3",
     [string]$PlatformName = "Windows_XP12"
 )
 
@@ -187,10 +187,9 @@ XVatsim Freeware Changelog
 Version: $Version
 
 Maintenance release:
-- Ranks arrival Centers ahead of Approach, Tower, Ground, and CTAF/UNICOM rows, including arrival-relevant next-polygon Centers.
-- Prevents tuned stale Centers from overriding route polygon ownership after current/next polygon transitions.
-- Reuses cached route-owned authority proofs across stable route-window transitions and controller/source churn.
-- Contains expensive overlay window visibility/fronting/sound operations outside the recurring hot path.
+- Detects exact route entry into narrow or oblique authority polygons without relying on a fixed offset around the boundary crossing.
+- Restores KZFW route ownership and FTW Center relevance for the live-tested SKJ914 MMTO-KCOS route.
+- Preserves existing narrow-crossing and anti-meridian route traversal behavior.
 - Preserves brain-owned display order, standby assist consumption order, CTAF/UNICOM authority retirement, COM writer ownership, overlay cap behavior, row ordering, dedupe, completion identity, and phase reuse behavior.
 
 Current scope:

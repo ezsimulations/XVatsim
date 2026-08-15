@@ -14,6 +14,11 @@ X-Plane.org download page when a newer version is available. Current-version
 automatic checks stay silent; manual checks may show the installed version is
 current.
 
+Current publication state as of 2026-08-15: the public manifest remains at
+V1.2.2 while the repository is prepared for V1.2.3. Do not change the manifest
+to V1.2.3 until the new archive, archive size, package SHA-256, packaged-plugin
+SHA-256, download filename, publication date, and release notes are verified.
+
 Release workflow:
 
 1. Build the new XVatsim ZIP.

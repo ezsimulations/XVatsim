@@ -1,6 +1,6 @@
 # Milestone Status
 
-Updated: 2026-06-13
+Updated: 2026-08-15
 
 ## Current Position
 
@@ -8,7 +8,60 @@ Milestones 1 through 9 are complete on the authoritative rebuild plan, and the
 five-flight live battle-test gate passed for the installed V1 runtime hash
 `81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A`.
 
-XVatsim V1.0.4 is now the current freeware Windows/X-Plane 12/xPilot release.
+XVatsim V1.2.2 is the current public freeware Windows/X-Plane 12/xPilot
+release. The source tree is prepared for V1.2.3; packaging, final hashes, and
+public update-manifest publication remain intentionally pending.
+
+## V1.2.3 Preparation
+
+- Fixed exact route-polygon entry detection in `core/src/RouteTraversal.cpp`.
+- Replaced the fixed before/after boundary probe with interval-based entry
+  refinement across ordered polygon boundary crossings.
+- Added focused SKJ914 MMTO-KCOS coverage proving the PNG-TXO leg intersects
+  KZFW and that `FTW_51_CTR` is accepted when KZFW is the next route polygon.
+- Preserved existing narrow-crossing and anti-meridian traversal behavior.
+- Runtime, build, user-agent, harness, release-tooling, and user-guide version
+  metadata are set to 1.2.3.
+- Release builds of `XVatsimRegressionHarness` and `XVatsimPlugin` passed with
+  Visual Studio 18/MSVC 14.51.
+- Seven focused route traversal, controller relevance, and update scenarios
+  passed.
+- Full saved regression passed: `451 / 451`.
+- The Version 1.2.3 user-guide PDF was regenerated, rendered, and visually
+  verified across all seven pages.
+- The V1.2.2 public update manifest remains unchanged until the V1.2.3 package
+  and verified archive/runtime hashes exist.
+
+## V1.2.2 Patch Release
+
+- Built `releases\XVatsim_1.2.2_Freeware_Windows_XP12.zip`.
+- Package SHA-256:
+  `A329CAF1AE589A828421A78DE7CE3B15645492B04CDD983A122A4E5CAC01834F`.
+- Packaged runtime SHA-256:
+  `95DDA79E9C6948A06DE2D3D9920E72D677D0C7E819386656EEA78E32A5E7D06E`.
+- Ranked arrival Centers before terminal stations, prevented tuned stale
+  Centers from overriding route ownership, contained overlay hot-path stalls,
+  and reused authority-proof cache data across safe route transitions.
+
+## V1.2.1 Patch Release
+
+- Built `releases\XVatsim_1.2.1_Freeware_Windows_XP12.zip`.
+- Package SHA-256:
+  `2D8AF0F45F768989784540DB08E353B52BC03D36F856083272DFCF307A11D347`.
+- Packaged runtime SHA-256:
+  `1B161149E2443C6AFC0383502E0D04FB038A2FADAD2D7BFEE33CF8E8967704F3`.
+- Reused route-owned authority proofs across watch-only controller churn,
+  reduced unchanged diagnostic noise, and rotated diagnostic logs by date.
+
+## V1.2.0 Patch Release
+
+- Built `releases\XVatsim_1.2.0_Freeware_Windows_XP12.zip`.
+- Package SHA-256:
+  `2E1DBB40C2541361954D9614267A97EFCA8AF975101965CFD35C2C784F5F6EA5`.
+- Packaged runtime SHA-256:
+  `2BA1A297750EFBC93B4DAD0F6A681C97316510F74FD852D0D8D9547E5AA9AF0F`.
+- Closed the brain-owned authority recovery arc, enabled gated CTAF/UNICOM
+  standby assist, and hardened route authority behavior.
 
 ## V1.0.4 Patch Release
 
