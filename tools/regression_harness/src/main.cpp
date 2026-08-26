@@ -386,7 +386,7 @@ struct OperatingModeScenarioInput {
     std::vector<std::string> resetPaths;
     std::string parityStage;
     std::string persistence;
-    int idleCycles = 0;
+    int processingCycles = 0;
 };
 
 struct OperatingModeScenarioExpectations {
@@ -408,6 +408,13 @@ struct OperatingModeScenarioExpectations {
     std::optional<bool> parity;
     std::optional<std::string> allowedParityDifference;
     std::optional<int> retryCount;
+    std::optional<int> processingCycles;
+    std::optional<bool> missingPlanProcessed;
+    std::vector<std::string> resetTrace;
+    std::optional<int> pipelineRuns;
+    std::optional<std::string> pipelineStage;
+    std::vector<std::string> pipelineControllerCallsigns;
+    std::vector<std::string> pipelineDisplayCallsigns;
 };
 
 struct ScenarioData {
@@ -4196,12 +4203,12 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         scenario->operatingMode.persistence = value;
         return true;
     }
-    if (key == "operating_mode.idle_cycles") {
+    if (key == "operating_mode.processing_cycles") {
         const auto parsed = ParseNonnegativeInt(value);
         if (!parsed.has_value()) {
             return false;
         }
-        scenario->operatingMode.idleCycles = *parsed;
+        scenario->operatingMode.processingCycles = *parsed;
         return true;
     }
     if (key == "expect.operating_mode") {
@@ -4225,7 +4232,9 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         key == "expect.operating_mode_persistence_requests" ||
         key == "expect.operating_mode_save_attempts" ||
         key == "expect.operating_mode_save_successes" ||
-        key == "expect.operating_mode_retry_count") {
+        key == "expect.operating_mode_retry_count" ||
+        key == "expect.operating_mode_processing_cycles" ||
+        key == "expect.operating_mode_pipeline_runs") {
         const auto parsed = ParseNonnegativeInt(value);
         if (!parsed.has_value()) {
             return false;
@@ -4240,8 +4249,12 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
             scenario->operatingModeExpectations.saveAttempts = *parsed;
         } else if (key == "expect.operating_mode_save_successes") {
             scenario->operatingModeExpectations.saveSuccesses = *parsed;
-        } else {
+        } else if (key == "expect.operating_mode_retry_count") {
             scenario->operatingModeExpectations.retryCount = *parsed;
+        } else if (key == "expect.operating_mode_processing_cycles") {
+            scenario->operatingModeExpectations.processingCycles = *parsed;
+        } else {
+            scenario->operatingModeExpectations.pipelineRuns = *parsed;
         }
         return true;
     }
@@ -4256,6 +4269,7 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     if (key == "expect.operating_mode_state_unchanged" ||
         key == "expect.operating_mode_reset_preserved" ||
         key == "expect.operating_mode_no_automatic_vfr" ||
+        key == "expect.operating_mode_missing_plan_processed" ||
         key == "expect.operating_mode_parity") {
         bool parsed = false;
         if (!ParseBool(value, &parsed)) {
@@ -4267,6 +4281,8 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
             scenario->operatingModeExpectations.resetPreserved = parsed;
         } else if (key == "expect.operating_mode_no_automatic_vfr") {
             scenario->operatingModeExpectations.noAutomaticVfr = parsed;
+        } else if (key == "expect.operating_mode_missing_plan_processed") {
+            scenario->operatingModeExpectations.missingPlanProcessed = parsed;
         } else {
             scenario->operatingModeExpectations.parity = parsed;
         }
@@ -4278,6 +4294,24 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "expect.operating_mode_allowed_parity_difference") {
         scenario->operatingModeExpectations.allowedParityDifference = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_reset_trace") {
+        scenario->operatingModeExpectations.resetTrace = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.operating_mode_pipeline_stage") {
+        scenario->operatingModeExpectations.pipelineStage = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_pipeline_controller_callsigns") {
+        scenario->operatingModeExpectations.pipelineControllerCallsigns =
+            Split(value, ',');
+        return true;
+    }
+    if (key == "expect.operating_mode_pipeline_display_callsigns") {
+        scenario->operatingModeExpectations.pipelineDisplayCallsigns =
+            Split(value, ',');
         return true;
     }
     if (key == "now_seconds") {
@@ -10358,6 +10392,13 @@ struct OperatingModeProbeActual {
     bool parity = false;
     std::string allowedParityDifference;
     int retryCount = 0;
+    int processingCycles = 0;
+    bool missingPlanProcessed = false;
+    std::vector<std::string> resetTrace;
+    int pipelineRuns = 0;
+    std::string pipelineStage;
+    std::vector<std::string> pipelineControllerCallsigns;
+    std::vector<std::string> pipelineDisplayCallsigns;
 };
 
 xvatsim::brain::BrainOwnedOperatingMode ParseHarnessOperatingMode(
@@ -10458,22 +10499,28 @@ bool WriteOperatingModeProbeSettings(
     return output.good();
 }
 
-std::string SerializeOperatingModeParityOutput(
-    WorkflowStage stage,
-    const xvatsim::brain::BrainOwnedRuntimeState& state) {
-    const auto& display = state.finalDisplaySnapshot;
-    const auto view = xvatsim::brain::BrainOrchestrator::BuildOverlayViewModel(
-        stage,
-        xvatsim::brain::AircraftStateSnapshot{},
-        xvatsim::brain::XPilotSessionSnapshot{},
-        xvatsim::brain::RadioStateSnapshot{},
-        xvatsim::brain::NetworkPlanSnapshot{},
-        xvatsim::brain::ControllerFeedSnapshot{},
-        xvatsim::brain::TransceiverResolutionSnapshot{},
-        display,
-        xvatsim::brain::ManualQuerySnapshot{});
+struct OperatingModePipelinePass {
+    WorkflowStage stage = WorkflowStage::None;
+    std::vector<std::string> controllerCallsigns;
+    std::vector<std::string> displayCallsigns;
+    std::string serializedOutput;
+};
+
+std::string SerializeOperatingModePipelineOutput(
+    const xvatsim::core::workflow::HandoffDecision& workflowDecision,
+    const xvatsim::brain::RadioReachableControllerSnapshot& radioSnapshot,
+    const xvatsim::brain::BrainControllerRelevanceWorkerOutput& relevance,
+    const xvatsim::brain::BrainOwnedPublisherOutput& publisher,
+    const xvatsim::brain::OverlayViewModel& view) {
+    const auto& display = publisher.finalDisplay;
     std::ostringstream stream;
-    stream << static_cast<int>(stage) << '|'
+    stream << static_cast<int>(workflowDecision.stage) << ':'
+           << workflowDecision.reason << '|'
+           << (radioSnapshot.available ? 1 : 0) << ':'
+           << (radioSnapshot.stale ? 1 : 0) << ':'
+           << radioSnapshot.stableHash << '|'
+           << (relevance.available ? 1 : 0) << ':'
+           << (relevance.stale ? 1 : 0) << ':' << relevance.reason << '|'
            << (display.available ? 1 : 0) << '|'
            << static_cast<int>(display.source) << '|'
            << display.airportIcao << '|';
@@ -10498,17 +10545,224 @@ std::string SerializeOperatingModeParityOutput(
                    << station.stableCompletionKey << ';';
         }
     };
-    appendBoard(state.departureBoardSnapshot);
-    appendBoard(state.enrouteBoardSnapshot);
-    appendBoard(state.arrivalBoardSnapshot);
-    stream << "workflow=" << static_cast<int>(state.lastWorkflowStage) << '|';
-    for (const auto& completion : state.candidateCompletions) {
+    appendBoard(publisher.departureBoard);
+    appendBoard(publisher.enrouteBoard);
+    appendBoard(publisher.arrivalBoard);
+    for (const auto& completion : relevance.completions) {
         stream << completion.callsign << ':' << completion.frequency << ':'
                << completion.stableKey << ':'
                << static_cast<int>(completion.decision) << ':'
                << (completion.displayed ? 1 : 0) << ';';
     }
     return stream.str();
+}
+
+OperatingModePipelinePass ExecuteOperatingModePipelinePass(
+    const ScenarioData& scenario,
+    xvatsim::brain::BrainOwnedRuntimeState* state) {
+    OperatingModePipelinePass pass;
+    auto workflowState = scenario.workflowState;
+    const auto workflowDecision =
+        xvatsim::core::workflow::ResolveWorkflowStage(
+            scenario.aircraftState,
+            scenario.radioStateSnapshot,
+            scenario.departureTerminalCoverageKnown,
+            scenario.insideDepartureTerminalCoverage,
+            scenario.departureBoard,
+            scenario.enrouteBoard,
+            scenario.nowSeconds,
+            &workflowState,
+            scenario.tuning);
+    pass.stage = workflowDecision.stage;
+
+    xvatsim::brain::ControllerFeedSnapshot controllerFeed;
+    controllerFeed.generation = scenario.controllerFeedGeneration;
+    controllerFeed.stale = scenario.controllerFeedStale;
+    controllerFeed.available =
+        scenario.controllerFeedAvailable.value_or(!scenario.controllers.empty());
+    if (controllerFeed.stale) {
+        controllerFeed.available = false;
+    }
+    if ((controllerFeed.available && !controllerFeed.stale) ||
+        scenario.forceControllerFeedEntries) {
+        controllerFeed.connectedControllers =
+            static_cast<int>(scenario.controllers.size());
+        controllerFeed.controllers = &scenario.controllers;
+    }
+
+    xvatsim::brain::RadioReachableBuildOptions radioOptions;
+    radioOptions.available = scenario.transceiverResolutionSnapshot.available;
+    radioOptions.stale = scenario.transceiverResolutionSnapshot.stale;
+    radioOptions.generation = controllerFeed.generation;
+    radioOptions.source = xvatsim::brain::RadioReachableSource::AFVRadioRange;
+    radioOptions.changeReason = "operating-mode-pipeline-proof";
+    radioOptions.nowSeconds = scenario.nowSeconds;
+    const auto radioSnapshot =
+        xvatsim::brain::BuildRadioReachableControllerSnapshotFromTransceivers(
+            scenario.transceiverResolutionSnapshot,
+            controllerFeed,
+            radioOptions);
+    const auto gatedRadioSnapshot =
+        xvatsim::brain::RunBrainOwnedRadioPhaseGate(
+            state,
+            radioSnapshot,
+            workflowDecision.stage,
+            "operating-mode-pipeline-proof");
+
+    xvatsim::brain::BrainControllerRelevanceWorkerInput relevanceInput;
+    relevanceInput.workflowStage = workflowDecision.stage;
+    relevanceInput.radioBoardHash = gatedRadioSnapshot.stableHash;
+    relevanceInput.routePolygonHash = 1;
+    relevanceInput.currentPolygonIndex = 1;
+    relevanceInput.currentPolygonKey =
+        scenario.routeSectorSnapshot.currentSectors.empty()
+            ? "CURRENT"
+            : scenario.routeSectorSnapshot.currentSectors.front().identifier;
+    relevanceInput.nextPolygonKey =
+        scenario.routeSectorSnapshot.nextSectors.empty()
+            ? ""
+            : scenario.routeSectorSnapshot.nextSectors.front().identifier;
+    relevanceInput.currentSectors = scenario.routeSectorSnapshot.currentSectors;
+    relevanceInput.nextSectors = scenario.routeSectorSnapshot.nextSectors;
+    relevanceInput.departureIcao =
+        scenario.workflowState.flightContext.departureIcao;
+    relevanceInput.arrivalIcao =
+        scenario.workflowState.flightContext.destinationIcao;
+    relevanceInput.radios = scenario.radioStateSnapshot;
+    relevanceInput.candidates = gatedRadioSnapshot.candidates;
+    const auto relevance =
+        xvatsim::brain::RunBrainControllerRelevanceWorker(relevanceInput);
+
+    state->routePolygonHash = relevanceInput.routePolygonHash;
+    state->currentPolygonIndex = relevanceInput.currentPolygonIndex;
+    state->currentPolygonKey = relevanceInput.currentPolygonKey;
+    state->nextPolygonKey = relevanceInput.nextPolygonKey;
+    state->candidateCompletions = relevance.completions;
+    xvatsim::brain::BrainOwnedPublisherFactInput publisherFacts;
+    publisherFacts.workflowStage = workflowDecision.stage;
+    publisherFacts.radios = scenario.radioStateSnapshot;
+    publisherFacts.departureBoard = relevance.departureBoard;
+    publisherFacts.arrivalBoard = relevance.arrivalBoard;
+    publisherFacts.enrouteBoard = relevance.enrouteBoard;
+    publisherFacts.completions = relevance.completions;
+    publisherFacts.publishReason = "operating-mode-pipeline-proof";
+    publisherFacts.productPlanKey = "OPERATING-MODE-PIPELINE-PROOF";
+    publisherFacts.productPlanKeySource = "harness-scenario";
+    const auto publisherInput =
+        xvatsim::brain::BuildBrainOwnedPublisherInputFromFacts(
+            *state,
+            publisherFacts);
+    const auto publisher =
+        xvatsim::brain::RunBrainOwnedPublisher(state, publisherInput);
+    xvatsim::brain::CommitBrainOwnedPublishedRuntimeFromPublisherOutput(
+        state,
+        workflowDecision.stage,
+        publisherFacts.productPlanKey,
+        gatedRadioSnapshot,
+        publisher,
+        publisher.finalDisplay);
+    xvatsim::brain::CommitBrainOwnedWorkflowState(state, workflowState);
+
+    const auto view = xvatsim::brain::BrainOrchestrator::BuildOverlayViewModel(
+        workflowDecision.stage,
+        scenario.aircraftState,
+        scenario.xPilotSessionSnapshot,
+        scenario.radioStateSnapshot,
+        scenario.networkPlanSnapshot,
+        controllerFeed,
+        scenario.transceiverResolutionSnapshot,
+        publisher.finalDisplay,
+        xvatsim::brain::ManualQuerySnapshot{});
+
+    const auto* stageBoard = &publisher.departureBoard;
+    if (workflowDecision.stage == WorkflowStage::Enroute) {
+        stageBoard = &publisher.enrouteBoard;
+    } else if (workflowDecision.stage == WorkflowStage::Arrival) {
+        stageBoard = &publisher.arrivalBoard;
+    }
+    pass.controllerCallsigns = ExtractCallsigns(*stageBoard);
+    pass.displayCallsigns = ExtractCallsigns(publisher.finalDisplay);
+    pass.serializedOutput = SerializeOperatingModePipelineOutput(
+        workflowDecision,
+        gatedRadioSnapshot,
+        relevance,
+        publisher,
+        view);
+    return pass;
+}
+
+void ExecuteHarnessSessionRuntimeCacheReset(
+    xvatsim::brain::BrainOwnedRuntimeState* state) {
+    xvatsim::brain::ResetBrainOwnedRuntimeState(state);
+    xvatsim::brain::ResetBrainOwnedDisplayPublisherState(state);
+}
+
+void ExecuteHarnessColdDarkPresentationReset(
+    xvatsim::brain::BrainOwnedRuntimeState* state) {
+    xvatsim::brain::ClearBrainOwnedPendingTextEntryMode(state);
+    xvatsim::brain::ClearBrainOwnedManualQuery(state);
+    xvatsim::brain::ResetBrainOwnedCruiseTarget(state);
+    xvatsim::brain::ClearBrainOwnedDiversionOverrideSource(state);
+    xvatsim::brain::ResetBrainOwnedRuntimeCachePreservingFlightContext(state);
+    xvatsim::brain::ResetBrainOwnedWorkflowProgress(state);
+    xvatsim::brain::ResetBrainOwnedEnrouteInitialHold(state);
+    xvatsim::brain::ClearBrainOwnedFlightContext(state);
+    xvatsim::brain::ClearBrainOwnedLastSampledFacts(state);
+    xvatsim::brain::ClearBrainOwnedXPilotConnectionTracking(state);
+    xvatsim::brain::ClearBrainOwnedFlightRecoveryRequests(state);
+    xvatsim::brain::ClearBrainOwnedAircraftStateInvalidBoundary(state);
+    xvatsim::brain::ResetBrainOwnedControllerMessageState(state);
+    xvatsim::brain::ClearBrainOwnedManualQuery(state);
+    xvatsim::brain::ResetBrainOwnedDisplayPublisherState(state);
+    xvatsim::brain::ResetBrainOwnedStandbyAssistLatch(state);
+}
+
+void ExecuteHarnessPluginRuntimeReset(
+    xvatsim::brain::BrainOwnedRuntimeState* state) {
+    xvatsim::brain::ClearBrainOwnedPendingTextEntryMode(state);
+    xvatsim::brain::ClearBrainOwnedManualQuery(state);
+    xvatsim::brain::ClearBrainOwnedFlightRecoveryRequests(state);
+    ExecuteHarnessSessionRuntimeCacheReset(state);
+    ExecuteHarnessColdDarkPresentationReset(state);
+    xvatsim::brain::SetBrainOwnedColdDarkResetApplied(state, false);
+}
+
+bool HarnessOperatingModeStateEquals(
+    const xvatsim::brain::BrainOwnedOperatingModeState& left,
+    const xvatsim::brain::BrainOwnedOperatingModeState& right) {
+    return left.mode == right.mode && left.source == right.source &&
+           left.reason == right.reason && left.generation == right.generation;
+}
+
+OperatingModePipelinePass ExecuteHarnessOrdinaryProcessingCycle(
+    const ScenarioData& scenario,
+    xvatsim::brain::BrainOwnedRuntimeState* state) {
+    xvatsim::brain::BrainOwnedFlightPlanSampleInput sampleInput;
+    sampleInput.flightContextActive = state->flightContext.active;
+    sampleInput.nowSeconds = static_cast<long long>(scenario.nowSeconds);
+    sampleInput.sampleCadenceSeconds = 5;
+    const auto sampleDecision =
+        xvatsim::brain::DecideBrainOwnedFlightPlanSample(*state, sampleInput);
+    if (sampleDecision.shouldSample) {
+        xvatsim::brain::BrainOwnedFlightPlanSampleCommitInput commitInput;
+        commitInput.nowSeconds = sampleInput.nowSeconds;
+        commitInput.snapshot = scenario.flightPlanSnapshot;
+        xvatsim::brain::CommitBrainOwnedFlightPlanSample(state, commitInput);
+    }
+
+    xvatsim::brain::PilotIdentitySnapshot pilotIdentity;
+    pilotIdentity.connected = scenario.xPilotSessionSnapshot.connected;
+    pilotIdentity.ready = scenario.xPilotSessionSnapshot.connected;
+    pilotIdentity.callsign = scenario.xPilotSessionSnapshot.callsign;
+    pilotIdentity.normalizedCallsign = scenario.xPilotSessionSnapshot.callsign;
+    xvatsim::brain::CommitBrainOwnedLastSampledFacts(
+        state,
+        scenario.aircraftState,
+        pilotIdentity,
+        state->hasFlightPlanSnapshot ? state->flightPlanSnapshot
+                                     : scenario.flightPlanSnapshot,
+        scenario.networkPlanSnapshot);
+    return ExecuteOperatingModePipelinePass(scenario, state);
 }
 
 OperatingModeProbeActual ExecuteOperatingModeProbe(
@@ -10647,76 +10901,189 @@ OperatingModeProbeActual ExecuteOperatingModeProbe(
                     state.operatingMode.generation;
 
             if (scenario.operatingMode.probe == "persistence-failure") {
-                for (int cycle = 0; cycle < scenario.operatingMode.idleCycles;
+                const auto attemptsBeforeProcessing = actual.saveAttempts;
+                for (int cycle = 0;
+                     cycle < scenario.operatingMode.processingCycles;
                      ++cycle) {
-                    const auto idleDecision =
-                        xvatsim::brain::RequestBrainOwnedOperatingModeSelection(
-                            &state,
-                            state.operatingMode.mode);
-                    if (idleDecision.persistenceRequested) {
-                        ++actual.retryCount;
-                    }
+                    (void)ExecuteHarnessOrdinaryProcessingCycle(
+                        scenario,
+                        &state);
+                    ++actual.processingCycles;
                 }
+                actual.retryCount = actual.saveAttempts - attemptsBeforeProcessing;
             }
         } else if (scenario.operatingMode.probe == "reset-preservation") {
             actual.resetPreserved = true;
-            const auto expected = state.operatingMode;
             for (const auto& resetPath : scenario.operatingMode.resetPaths) {
-                if (resetPath == "cache-preserving" ||
-                    resetPath == "xpilot-reconnect") {
+                xvatsim::brain::BrainOwnedRuntimeState resetState;
+                xvatsim::brain::InitializeBrainOwnedOperatingMode(
+                    &resetState,
+                    xvatsim::brain::BrainOwnedOperatingModeInitializationInput{});
+                (void)xvatsim::brain::RequestBrainOwnedOperatingModeSelection(
+                    &resetState,
+                    xvatsim::brain::BrainOwnedOperatingMode::VFR);
+                const auto expected = resetState.operatingMode;
+                if (resetPath == "runtime") {
+                    xvatsim::brain::ResetBrainOwnedRuntimeState(&resetState);
+                    actual.resetTrace.push_back("runtime:reset-runtime");
+                } else if (resetPath == "cache-preserving") {
                     xvatsim::brain::ResetBrainOwnedRuntimeCachePreservingFlightContext(
-                        &state);
+                        &resetState);
+                    actual.resetTrace.push_back(
+                        "cache-preserving:reset-cache-preserving");
+                } else if (resetPath == "session") {
+                    ExecuteHarnessPluginRuntimeReset(&resetState);
+                    actual.resetTrace.push_back("session:plugin-runtime-reset");
+                } else if (resetPath == "cold-dark") {
+                    xvatsim::brain::workflow::AircraftRuntimeBoundaryInput input;
+                    input.aircraftState.valid = true;
+                    input.aircraftState.batteryOn = false;
+                    input.coldDarkResetApplied = resetState.coldDarkResetApplied;
+                    input.aircraftStateInvalidBoundaryActive =
+                        resetState.aircraftStateInvalidBoundaryActive;
+                    const auto decision =
+                        xvatsim::brain::workflow::ResolveAircraftRuntimeBoundary(
+                            input);
+                    if (decision.shouldResetSessionRuntimeCaches) {
+                        ExecuteHarnessSessionRuntimeCacheReset(&resetState);
+                    }
+                    if (decision.shouldResetPresentationState) {
+                        ExecuteHarnessColdDarkPresentationReset(&resetState);
+                    }
+                    xvatsim::brain::ApplyBrainOwnedAircraftRuntimeBoundaryDecision(
+                        &resetState,
+                        decision);
+                    actual.resetTrace.push_back(
+                        decision.shouldResetSessionRuntimeCaches &&
+                                decision.shouldResetPresentationState
+                            ? "cold-dark:session-caches+presentation"
+                            : "cold-dark:boundary-decision-failed");
+                } else if (resetPath == "invalid-aircraft") {
+                    xvatsim::brain::workflow::AircraftRuntimeBoundaryInput input;
+                    input.aircraftState.valid = false;
+                    input.coldDarkResetApplied = resetState.coldDarkResetApplied;
+                    input.aircraftStateInvalidBoundaryActive =
+                        resetState.aircraftStateInvalidBoundaryActive;
+                    const auto decision =
+                        xvatsim::brain::workflow::ResolveAircraftRuntimeBoundary(
+                            input);
+                    if (decision.shouldResetForInvalidAircraftState) {
+                        ExecuteHarnessPluginRuntimeReset(&resetState);
+                    }
+                    xvatsim::brain::ApplyBrainOwnedAircraftRuntimeBoundaryDecision(
+                        &resetState,
+                        decision);
+                    actual.resetTrace.push_back(
+                        decision.shouldResetForInvalidAircraftState
+                            ? "invalid-aircraft:invalid-reset"
+                            : "invalid-aircraft:boundary-decision-failed");
+                } else if (resetPath == "xpilot-disconnect") {
+                    resetState.xPilotSessionBoundaryState.lastXPilotConnected = true;
+                    resetState.xPilotSessionBoundaryState.lastConnectedPilotCallsign =
+                        "N100PC";
+                    xvatsim::brain::workflow::XPilotSessionBoundaryInput input;
+                    input.state = resetState.xPilotSessionBoundaryState;
+                    input.xPilotSession.connected = false;
+                    const auto decision =
+                        xvatsim::brain::workflow::ResolveXPilotSessionBoundary(
+                            input);
+                    if (decision.shouldPreserveFlightStateForDisconnect) {
+                        xvatsim::brain::ResetBrainOwnedDisplayPublisherState(
+                            &resetState);
+                        xvatsim::brain::ResetBrainOwnedStandbyAssistLatch(
+                            &resetState);
+                    }
+                    xvatsim::brain::ApplyBrainOwnedXPilotSessionBoundaryDecision(
+                        &resetState,
+                        decision);
+                    actual.resetTrace.push_back(
+                        decision.shouldPreserveFlightStateForDisconnect
+                            ? "xpilot-disconnect:preserve-flight-state"
+                            : "xpilot-disconnect:boundary-decision-failed");
+                } else if (resetPath == "xpilot-reconnect") {
+                    resetState.xPilotSessionBoundaryState.lastXPilotConnected = false;
+                    resetState.xPilotSessionBoundaryState.disconnectedPilotCallsign =
+                        "N100PC";
+                    xvatsim::brain::workflow::XPilotSessionBoundaryInput input;
+                    input.state = resetState.xPilotSessionBoundaryState;
+                    input.xPilotSession.connected = true;
+                    input.xPilotSession.callsign = "N100PC";
+                    input.pilotIdentity.connected = true;
+                    input.pilotIdentity.ready = true;
+                    input.pilotIdentity.callsign = "N100PC";
+                    input.pilotIdentity.normalizedCallsign = "N100PC";
+                    const auto decision =
+                        xvatsim::brain::workflow::ResolveXPilotSessionBoundary(
+                            input);
+                    xvatsim::brain::ApplyBrainOwnedXPilotSessionBoundaryDecision(
+                        &resetState,
+                        decision);
+                    actual.resetTrace.push_back(
+                        decision.shouldQueueAutomaticRecovery
+                            ? "xpilot-reconnect:queue-recovery"
+                            : "xpilot-reconnect:boundary-decision-failed");
+                } else if (resetPath == "callsign-change") {
+                    resetState.xPilotSessionBoundaryState.lastXPilotConnected = true;
+                    resetState.xPilotSessionBoundaryState.lastConnectedPilotCallsign =
+                        "N100PC";
+                    xvatsim::brain::workflow::XPilotSessionBoundaryInput input;
+                    input.state = resetState.xPilotSessionBoundaryState;
+                    input.xPilotSession.connected = true;
+                    input.xPilotSession.callsign = "N200PC";
+                    input.pilotIdentity.connected = true;
+                    input.pilotIdentity.ready = true;
+                    input.pilotIdentity.callsign = "N200PC";
+                    input.pilotIdentity.normalizedCallsign = "N200PC";
+                    const auto decision =
+                        xvatsim::brain::workflow::ResolveXPilotSessionBoundary(
+                            input);
+                    if (decision.shouldResetFlightScopedState) {
+                        ExecuteHarnessPluginRuntimeReset(&resetState);
+                    }
+                    xvatsim::brain::ApplyBrainOwnedXPilotSessionBoundaryDecision(
+                        &resetState,
+                        decision);
+                    actual.resetTrace.push_back(
+                        decision.shouldResetFlightScopedState
+                            ? "callsign-change:flight-scoped-reset"
+                            : "callsign-change:boundary-decision-failed");
+                } else if (resetPath == "plugin-disable-enable") {
+                    ExecuteHarnessPluginRuntimeReset(&resetState);
+                    ExecuteHarnessPluginRuntimeReset(&resetState);
+                    actual.resetTrace.push_back(
+                        "plugin-disable-enable:disable-reset+enable-reset");
                 } else {
-                    xvatsim::brain::ResetBrainOwnedRuntimeState(&state);
+                    actual.resetTrace.push_back(resetPath + ":unknown");
                 }
                 actual.resetPreserved =
                     actual.resetPreserved &&
-                    state.operatingMode.mode == expected.mode &&
-                    state.operatingMode.source == expected.source &&
-                    state.operatingMode.reason == expected.reason &&
-                    state.operatingMode.generation == expected.generation;
+                    HarnessOperatingModeStateEquals(
+                        resetState.operatingMode,
+                        expected);
+                state = resetState;
             }
         } else if (scenario.operatingMode.probe == "missing-flight-plan") {
             const auto before = state.operatingMode;
-            const xvatsim::brain::FlightPlanSnapshot missingPlan;
-            (void)missingPlan;
+            (void)ExecuteHarnessOrdinaryProcessingCycle(scenario, &state);
+            ++actual.processingCycles;
+            actual.missingPlanProcessed =
+                state.hasFlightPlanSnapshot &&
+                !state.flightPlanSnapshot.available &&
+                !state.lastFlightPlanSnapshot.available;
             actual.noAutomaticVfr =
-                state.operatingMode.mode == before.mode &&
-                state.operatingMode.source == before.source &&
-                state.operatingMode.reason == before.reason &&
-                state.operatingMode.generation == before.generation &&
+                HarnessOperatingModeStateEquals(state.operatingMode, before) &&
                 state.operatingMode.mode ==
-                    xvatsim::brain::BrainOwnedOperatingMode::IFR;
+                    xvatsim::brain::BrainOwnedOperatingMode::IFR &&
+                actual.changeCount == 0 && actual.persistenceRequests == 0;
         } else if (scenario.operatingMode.probe == "parity") {
-            WorkflowStage stage = WorkflowStage::Departure;
-            BoardSource source = BoardSource::Departure;
-            StationRole role = StationRole::Ground;
-            std::string callsign = "TEST_GND";
-            if (ToUpperCopy(scenario.operatingMode.parityStage) == "ENROUTE") {
-                stage = WorkflowStage::Enroute;
-                source = BoardSource::Enroute;
-                role = StationRole::Center;
-                callsign = "TEST_CTR";
-            } else if (
-                ToUpperCopy(scenario.operatingMode.parityStage) == "ARRIVAL") {
-                stage = WorkflowStage::Arrival;
-                source = BoardSource::Arrival;
-                role = StationRole::Tower;
-                callsign = "TEST_TWR";
-            }
-            auto display = MakePhasePublisherBoard(
-                source,
-                role,
-                callsign,
-                "123.450");
-            display.airportIcao = "KTEST";
-            display.stations.front().stableCompletionKey =
-                callsign + "|123450";
             xvatsim::brain::BrainOwnedRuntimeState ifrState;
             xvatsim::brain::BrainOwnedRuntimeState vfrState;
-            xvatsim::brain::InitializeBrainOwnedOperatingMode(
-                &ifrState,
-                xvatsim::brain::BrainOwnedOperatingModeInitializationInput{});
+            xvatsim::brain::BrainOwnedOperatingModeInitializationInput ifrInput;
+            ifrInput.loadStatus =
+                xvatsim::brain::BrainOwnedOperatingModeLoadStatus::Valid;
+            ifrInput.storedMode =
+                xvatsim::brain::BrainOwnedOperatingMode::IFR;
+            xvatsim::brain::InitializeBrainOwnedOperatingMode(&ifrState, ifrInput);
             xvatsim::brain::BrainOwnedOperatingModeInitializationInput vfrInput;
             vfrInput.loadStatus =
                 xvatsim::brain::BrainOwnedOperatingModeLoadStatus::Valid;
@@ -10725,47 +11092,19 @@ OperatingModeProbeActual ExecuteOperatingModeProbe(
             xvatsim::brain::InitializeBrainOwnedOperatingMode(
                 &vfrState,
                 vfrInput);
-            ifrState.finalDisplaySnapshot = display;
-            vfrState.finalDisplaySnapshot = display;
-            xvatsim::brain::ModuleBoardSnapshot moduleBoard;
-            moduleBoard.available = true;
-            moduleBoard.source = source;
-            moduleBoard.airportIcao = "KTEST";
-            xvatsim::brain::BoardStationSnapshot boardStation;
-            boardStation.role = role;
-            boardStation.callsign = callsign;
-            boardStation.frequency = "123.450";
-            boardStation.online = true;
-            boardStation.stableCompletionKey = callsign + "|123450";
-            moduleBoard.stations.push_back(boardStation);
-            if (stage == WorkflowStage::Departure) {
-                ifrState.departureBoardSnapshot = moduleBoard;
-                vfrState.departureBoardSnapshot = moduleBoard;
-            } else if (stage == WorkflowStage::Enroute) {
-                ifrState.enrouteBoardSnapshot = moduleBoard;
-                vfrState.enrouteBoardSnapshot = moduleBoard;
-            } else {
-                ifrState.arrivalBoardSnapshot = moduleBoard;
-                vfrState.arrivalBoardSnapshot = moduleBoard;
-            }
-            xvatsim::brain::BrainOwnedCandidateCompletion completion;
-            completion.callsign = callsign;
-            completion.frequency = "123.450";
-            completion.stableKey = callsign + "|123450";
-            completion.decision =
-                xvatsim::brain::BrainOwnedCandidateDecision::Accepted;
-            completion.displayed = true;
-            ifrState.candidateCompletions.push_back(completion);
-            vfrState.candidateCompletions.push_back(completion);
-            ifrState.lastWorkflowStage = stage;
-            vfrState.lastWorkflowStage = stage;
+            const auto ifrPass =
+                ExecuteOperatingModePipelinePass(scenario, &ifrState);
+            const auto vfrPass =
+                ExecuteOperatingModePipelinePass(scenario, &vfrState);
+            actual.pipelineRuns = 2;
+            actual.pipelineStage = WorkflowStageToString(ifrPass.stage);
+            actual.pipelineControllerCallsigns = ifrPass.controllerCallsigns;
+            actual.pipelineDisplayCallsigns = ifrPass.displayCallsigns;
             actual.parity =
-                SerializeOperatingModeParityOutput(
-                    stage,
-                    ifrState) ==
-                SerializeOperatingModeParityOutput(
-                    stage,
-                    vfrState);
+                ifrPass.stage == vfrPass.stage &&
+                ifrPass.controllerCallsigns == vfrPass.controllerCallsigns &&
+                ifrPass.displayCallsigns == vfrPass.displayCallsigns &&
+                ifrPass.serializedOutput == vfrPass.serializedOutput;
             actual.allowedParityDifference = "state-diagnostic-only";
         }
     }
@@ -10854,6 +11193,40 @@ int RunOperatingModeProbe(const ScenarioData& scenario) {
         expected.allowedParityDifference,
         actual.allowedParityDifference);
     checkInt("operating mode retry count", expected.retryCount, actual.retryCount);
+    checkInt(
+        "operating mode processing cycles",
+        expected.processingCycles,
+        actual.processingCycles);
+    checkBool(
+        "operating mode missing plan processed",
+        expected.missingPlanProcessed,
+        actual.missingPlanProcessed);
+    checkInt(
+        "operating mode pipeline runs",
+        expected.pipelineRuns,
+        actual.pipelineRuns);
+    checkString(
+        "operating mode pipeline stage",
+        expected.pipelineStage,
+        actual.pipelineStage);
+    if (const auto mismatch = CheckStringList(
+            "operating mode reset trace",
+            expected.resetTrace,
+            actual.resetTrace)) {
+        failures += *mismatch;
+    }
+    if (const auto mismatch = CheckStringList(
+            "operating mode pipeline controller callsigns",
+            expected.pipelineControllerCallsigns,
+            actual.pipelineControllerCallsigns)) {
+        failures += *mismatch;
+    }
+    if (const auto mismatch = CheckStringList(
+            "operating mode pipeline display callsigns",
+            expected.pipelineDisplayCallsigns,
+            actual.pipelineDisplayCallsigns)) {
+        failures += *mismatch;
+    }
     if (!expected.roundTripModes.empty() &&
         expected.roundTripModes != actual.roundTripModes) {
         failures += PrintMismatch(

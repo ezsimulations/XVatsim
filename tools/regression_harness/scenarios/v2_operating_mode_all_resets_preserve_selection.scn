@@ -7,3 +7,4 @@ expect.operating_mode_source=pilot-menu
 expect.operating_mode_reason=explicit-selection
 expect.operating_mode_generation=1
 expect.operating_mode_reset_preserved=true
+expect.operating_mode_reset_trace=runtime:reset-runtime,cache-preserving:reset-cache-preserving,session:plugin-runtime-reset,cold-dark:session-caches+presentation,invalid-aircraft:invalid-reset,xpilot-disconnect:preserve-flight-state,xpilot-reconnect:queue-recovery,callsign-change:flight-scoped-reset,plugin-disable-enable:disable-reset+enable-reset

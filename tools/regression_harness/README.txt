@@ -103,7 +103,7 @@ Operating-mode inputs:
 - operating_mode.reset_paths=runtime,cache-preserving,session,cold-dark,invalid-aircraft,xpilot-disconnect,xpilot-reconnect,callsign-change,plugin-disable-enable
 - operating_mode.parity_stage=Departure|Enroute|Arrival
 - operating_mode.persistence=temporary|unavailable
-- operating_mode.idle_cycles=<nonnegative integer>
+- operating_mode.processing_cycles=<nonnegative integer>
 
 Operating-mode expectations:
 
@@ -125,9 +125,40 @@ Operating-mode expectations:
 - expect.operating_mode_parity=true|false
 - expect.operating_mode_allowed_parity_difference=state-diagnostic-only
 - expect.operating_mode_retry_count=<nonnegative integer>
+- expect.operating_mode_processing_cycles=<nonnegative integer>
+- expect.operating_mode_missing_plan_processed=true|false
+- expect.operating_mode_reset_trace=<ordered path:decision list>
+- expect.operating_mode_pipeline_runs=<nonnegative integer>
+- expect.operating_mode_pipeline_stage=Departure|Enroute|Arrival
+- expect.operating_mode_pipeline_controller_callsigns=<ordered callsign list>
+- expect.operating_mode_pipeline_display_callsigns=<ordered callsign list>
 
 An idempotent selection reports the request source/reason separately. It must
 not change the brain-owned mode, state source, state reason, or generation.
+
+The three parity scenarios supply ordinary aircraft, workflow, radio,
+controller-feed, transceiver, and route facts. The harness resolves the real
+workflow stage, builds the radio-reachable controller snapshot, runs the brain
+controller-relevance worker and brain-owned publisher, and builds the overlay
+view once from an IFR brain state and once from a VFR brain state. The expected
+stage and non-empty controller/display callsigns make the comparison
+non-vacuous; no board or display result is assigned before those calls run.
+
+The missing-flight-plan scenario commits an actual unavailable
+FlightPlanSnapshot through the brain-owned sampling path and then runs an
+ordinary processing cycle. It asserts the missing snapshot was processed and
+that no mode change or persistence request occurred.
+
+The reset trace is ordered and names the actual production boundary decision
+or brain-owned reset sequence exercised for runtime, cache-preserving, session,
+cold-and-dark, invalid-aircraft, xPilot disconnect, xPilot reconnect, callsign
+change, and plugin disable/enable paths. Each path starts from an independently
+seeded VFR selection and must preserve mode, source, reason, and generation.
+
+After the intentional unavailable-store save failure, processing_cycles runs
+ordinary flight-plan sampling plus workflow/controller/publisher/overlay work.
+The save-attempt counter is observed across those cycles; retry_count must stay
+zero because no ordinary-processing call path invokes settings persistence.
 
 Replay support
 --------------
