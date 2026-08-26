@@ -1,17 +1,19 @@
 # XVatsim V2 Step 2 IFR/VFR Mode Foundation Receipt
 
 Status: PASSED
-Finalized local: 2026-08-26 13:08:15 -07:00
-Finalized UTC: 2026-08-26 20:08:15 UTC
+Finalized local: 2026-08-26 13:36:09 -07:00
+Finalized UTC: 2026-08-26 20:36:09 UTC
 
 ## Repository And Commit Boundary
 
 - Branch: `v2-development`
 - Starting commit: `2684b2f80c112673b8b9326edee1b0840c0ea9e4`
 - Proven implementation commit: `8b10841fd19a1ee1a908b74ffd3246e36b029647`
-- Receipt closeout commit: the receipt-only commit containing this file, immediately following the proven implementation commit.
-- The receipt cannot embed the hash of its own commit without changing that hash; `git log -1` identifies the receipt closeout commit.
-- Step 2 uses the approved two-commit closeout: implementation, scenarios, tooling, and evidence in the proven implementation commit; only this finalized receipt in the receipt closeout commit.
+- Original receipt closeout commit, preserved: `eaf57da8359e14ab0b23cff3bc47f1f4e04f698e`
+- Proof-integrity correction commit: `fc6ee9bd8962f8ddd983cfeb08875c54d4fc706d`
+- Updated receipt closeout commit: the receipt-only commit containing this file, immediately following the proof-integrity correction commit.
+- The receipt cannot embed the hash of its own commit without changing that hash; `git log -1` identifies the updated receipt closeout commit and repository ending commit.
+- The approved closeout pattern is preserved: implementation/evidence changes are committed first; only this finalized receipt is committed second.
 
 ## Complete Step 2 Changed-File List
 
@@ -54,11 +56,28 @@ tools/release_gate/README.md
 tools/release_gate/Run-V2WindowsProofBaseline.ps1
 ```
 
-The receipt closeout commit adds only:
+The original receipt closeout commit added only:
 
 ```text
 outputs/v2_step_02_ifr_vfr_mode_foundation_receipt.md
 ```
+
+The proof-integrity correction commit contains exactly these nine files:
+
+```text
+outputs/v2_step_02_offline_proof_summary.md
+tools/regression_harness/README.txt
+tools/regression_harness/scenarios/v2_operating_mode_all_resets_preserve_selection.scn
+tools/regression_harness/scenarios/v2_operating_mode_arrival_output_parity.scn
+tools/regression_harness/scenarios/v2_operating_mode_departure_output_parity.scn
+tools/regression_harness/scenarios/v2_operating_mode_enroute_output_parity.scn
+tools/regression_harness/scenarios/v2_operating_mode_missing_plan_never_selects_vfr.scn
+tools/regression_harness/scenarios/v2_operating_mode_persistence_failure_fail_soft.scn
+tools/regression_harness/src/main.cpp
+```
+
+The updated receipt closeout commit contains only this receipt. No runtime
+source file was changed by the correction or updated closeout.
 
 ## Architecture And Product Result
 
@@ -81,8 +100,9 @@ outputs/v2_step_02_ifr_vfr_mode_foundation_receipt.md
 
 - Pre-implementation red: 12/12 proposed scenarios failed nonzero with the intentional `Operating-mode probe unavailable` diagnostic; elapsed `00:00:00.2535406`.
 - Initial post-implementation green: 12/12 passed; elapsed `00:00:00.2459497`.
-- Final green against the clean Release proof harness: 12 expected, 12 passed, 0 failed; elapsed `00:00:00.1798140`.
-- Final focused harness SHA-256: `E95799998FB16B3C7CB62F8077E3D60D2442772B5171F6D64DE1AD169D0AD11B`.
+- Director review found that the original green probes overstated six claims; this receipt does not treat those original constructions as sufficient proof.
+- Corrected final green against the fresh Release proof harness: 12 expected, 12 executed, 12 passed, 0 failed; elapsed `00:00:00.1710702`.
+- Corrected focused harness SHA-256: `00E312F865759E1221AC2B32B8EBBB761E752EB548C455729C5A7416415785D9`.
 
 The focused scenarios prove:
 
@@ -92,12 +112,12 @@ The focused scenarios prove:
 4. IFR and VFR survive save/load round trips.
 5. IFR-to-VFR and VFR-to-IFR change brain state exactly once.
 6. Active-mode reselection is idempotent and preserves state source/reason/generation.
-7. Every relevant runtime/session reset preserves mode.
-8. Missing flight-plan data never selects VFR automatically.
-9. Departure controller/display output is identical in IFR and VFR.
-10. Enroute controller/display output is identical in IFR and VFR.
-11. Arrival controller/display output is identical in IFR and VFR.
-12. Persistence failure is fail-soft and does not repeatedly retry.
+7. Each actual brain reset/clear and boundary-decision sequence represented by session, cold-and-dark, invalid-aircraft, xPilot disconnect/reconnect, callsign change, and plugin disable/enable preserves mode/source/reason/generation.
+8. An actual unavailable flight-plan snapshot is sampled and processed without an automatic selection or persistence request; IFR remains selected.
+9. Identical Departure inputs independently run through workflow, radio reachability, controller relevance, publisher, and overlay in IFR and VFR produce the same non-empty stage/controller/display result.
+10. The same real-pipeline parity holds for Enroute inputs.
+11. The same real-pipeline parity holds for Arrival inputs.
+12. After one intentional save failure, five ordinary flight-plan/workflow/controller/publisher/overlay processing cycles execute with zero persistence retries.
 
 Detailed focused evidence: `outputs/v2_step_02_offline_proof_summary.md`.
 
@@ -126,27 +146,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release_gate\Run-V2W
 - Failed scenarios: `0`
 - First scenario: `airport_center_token_cannot_match_terminal_airspace.scn`
 - Last scenario: `v2_operating_mode_transitions_increment_once.scn`
-- Scenario-set SHA-256: `AD2702A8086FD3EC0C1473A98177B560B868580BADC5687C52F1F3B24CF6B3DB`
+- Scenario-set SHA-256: `4EDA675432281727A6DC8E8658DEBC3D1B0C5BD302BD3399E220D45FF7082903`
 - Ordering: explicit ordinal, case-insensitive filename comparison with ordinal tie-break.
 - Fingerprint input: UTF-8 repository-relative filename using forward slashes, NUL, raw scenario bytes, NUL.
-- Detailed regression log: `build/v2-proof-baseline/logs/scenarios_20260826_130203.log`
+- Detailed regression log: `build/v2-proof-baseline/logs/scenarios_20260826_133234.log`
 
 Elapsed times:
 
-- Configure: `00:00:02.7672536`
-- Release builds: `00:00:48.0722290`
-- Full regression: `00:00:39.5017617`
-- Total validation: `00:01:30.8560898`
-- Final focused rerun: `00:00:00.1798140`
+- Configure: `00:00:02.5586067`
+- Release builds: `00:00:47.5227523`
+- Full regression: `00:00:39.7902230`
+- Total validation: `00:01:30.3711786`
+- Corrected focused rerun: `00:00:00.1710702`
 
 Final proof hashes:
 
 - Runner, 21,024 bytes: `F7DD070C0A3671029EBE0E0D19D4FB2BF6C2DAC39D557F0D2DDF108908258BFC`
-- Release harness, 3,006,976 bytes: `E95799998FB16B3C7CB62F8077E3D60D2442772B5171F6D64DE1AD169D0AD11B`
-- Release plugin, 2,179,584 bytes: `EECD79A1C468F636AB467506C217FC7656C59E039D55CBEDF25477C823AB61B6`
-- Complete scenario set: `AD2702A8086FD3EC0C1473A98177B560B868580BADC5687C52F1F3B24CF6B3DB`
+- Release harness, 3,029,504 bytes: `00E312F865759E1221AC2B32B8EBBB761E752EB548C455729C5A7416415785D9`
+- Release plugin, 2,179,584 bytes: `1DB4CA933B868B88E1B08A59536A5215BD4B67ABE92BA169B98F77193FB2BFC8`
+- Complete scenario set: `4EDA675432281727A6DC8E8658DEBC3D1B0C5BD302BD3399E220D45FF7082903`
 
-The final clean rebuild occurred after a step-neutral wording correction in the proof runner. No plugin, brain, settings-store, harness, or scenario source changed after live proof. The live-deployed plugin was therefore built from identical runtime source; its live binary SHA-256 was `307A4B873EA937F028C23787A4A583AF812EA544247E63B6168745E46FD1CB3D`.
+The correction changed only harness source, six Step 2 scenario contracts, and
+proof documentation. No plugin, brain, settings-store, or other runtime source
+changed after the witnessed live proof. Director review therefore allowed the
+live proof to remain valid without repeating X-Plane testing. The live-deployed
+plugin SHA-256 remains recorded as
+`307A4B873EA937F028C23787A4A583AF812EA544247E63B6168745E46FD1CB3D`;
+the separate fresh correction-build plugin hash is recorded above.
 
 ## Intentional Negative Path
 
@@ -160,8 +186,8 @@ Build started: false
 Scenario execution started: false
 XVatsim V2 Windows proof baseline FAILED: Scenario count mismatch: expected=464 discovered=463
 exitCode=1
-receiptBeforeSha256=B641A02B2BCCC5333C49ADCD9676F06138CE3B23DCC595A4DFA17F2F743AB813
-receiptAfterSha256=B641A02B2BCCC5333C49ADCD9676F06138CE3B23DCC595A4DFA17F2F743AB813
+receiptBeforeSha256=8DDD986E599E9193C2AEABF09EEB7A99E6C167F4856474D7DA30CDBD2FBB974B
+receiptAfterSha256=8DDD986E599E9193C2AEABF09EEB7A99E6C167F4856474D7DA30CDBD2FBB974B
 receiptUnchanged=True
 ```
 
@@ -189,6 +215,7 @@ Live evidence directory: `outputs/v2_step_02_live_evidence`
 | Evidence | SHA-256 |
 | --- | --- |
 | `01_ifr_default_no_preference.png` | `663C879DCB85D4B7A8DCEE4999B5F82B8CF271D61729CF5103E2C7F604ACB69B` |
+| `02_ifr_card_before_mode_change.png` | `663C879DCB85D4B7A8DCEE4999B5F82B8CF271D61729CF5103E2C7F604ACB69B` |
 | `03_vfr_selected_card_unchanged.png` | `D22970EC7C8DEB28B8BD2D3192379EAB6ABCEE4C645D549436C545AC0AAEC028` |
 | `04_vfr_after_reset_session.png` | `B7A2189E39E667A37BA32FB8F4758726727F06BF5AD9B4E5E887636E162E499D` |
 | `05_vfr_after_xpilot_reconnect.png` | `D0F14435B1A47849F284A1AD38F9586859E11E5A63DB0425CF4A28D23F483A39` |
@@ -238,8 +265,10 @@ After X-Plane and xPilot were stopped, the controlled active slot was restored t
 - V1.2.3 tag and `v1-maintenance` still resolve to commit `e4a626975513db93105b9c625f4fbb941e7f9c05`.
 - No V1.2.3 package, manifest, recorded release hash, release branch content, or installed V1 payload was modified.
 - The final scope audit covered tracked modifications, untracked additions, staged new files, and whitespace errors in new files.
-- `git diff --cached --check` passed before the proven implementation commit.
-- No existing saved scenario was weakened or modified; exactly 12 approved scenarios were added, changing the locked total from 451 to 463.
+- `git diff --cached --check` passed before both the proven implementation commit and the proof-integrity correction commit.
+- No pre-Step-2 saved scenario was weakened or modified. The correction strengthened six of the 12 Step 2 scenarios without adding or removing a scenario; the locked total remains 463.
+- Commits `8b10841` and `eaf57da` remain ancestors of the updated closeout.
+- The correction scope contains no plugin, brain, settings-store, or other runtime source file.
 
 ## Known Limitations And Deferred VFR Behavior
 
@@ -250,6 +279,10 @@ After X-Plane and xPilot were stopped, the controlled active slot was restored t
 - No product-version bump was performed; the existing menu version label remains unchanged by contract.
 - Persistence failure is covered deterministically by the harness and bounded diagnostic contract; the successful live procedure did not intentionally damage the user preference path.
 
-## Acceptance Conclusion
+## Proof Conclusion
 
 V2 Step 2 satisfies the approved contract: the brain exclusively owns IFR/VFR mode decisions, persistence is safe and fail-soft, all required reset and parity behavior is proven, both Release targets build, all 463 saved scenarios pass, intentional failure propagates before configuration without overwriting successful evidence, Darron witnessed the complete live menu/restart procedure, performance boundaries are preserved, external live-test mutations were rolled back exactly, and Step 1/V1.2.3 historical evidence remains untouched.
+
+This `PASSED` status records completed proof, not self-acceptance. Step 2 remains
+subject to review of the proof-integrity correction commit and this separate
+updated receipt closeout commit. Step 3 has not begun.
