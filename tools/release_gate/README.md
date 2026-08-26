@@ -5,6 +5,36 @@ commands. They do not change live plugin behavior; they verify that the current
 build, saved scenarios, release package, and installable artifacts agree with
 each other.
 
+## V2 Windows Proof Baseline
+
+V2 development begins from a deliberately locked baseline of `451` saved
+regression scenarios. Run the clean Windows proof baseline from the repository
+root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release_gate\Run-V2WindowsProofBaseline.ps1
+```
+
+The command removes only the validated, repository-contained
+`build\v2-proof-baseline` directory, performs a fresh Visual Studio 18 x64
+configuration, builds `XVatsimRegressionHarness` and `XVatsimPlugin` in Release,
+runs all saved scenarios in ordinal case-insensitive filename order, and writes
+an atomic proof receipt to:
+
+```text
+outputs\v2_step_01_windows_proof_baseline_receipt.md
+```
+
+The receipt records scenario counts and an aggregate scenario-set SHA-256,
+elapsed configure/build/regression time, the runner SHA-256, both binary hashes,
+the starting HEAD, and the uncommitted working-tree state under test.
+
+The expected count of `451` is intentionally locked. Any future approved
+scenario addition or removal must update the expected count as part of that same
+reviewed engineering step. The count must not be changed independently or merely
+to obtain a passing result. An approved filename or content change must also
+change the recorded aggregate scenario-set fingerprint.
+
 ## Final Release Gate
 
 Run this only after the live battle-test gate is complete and the repo hygiene
