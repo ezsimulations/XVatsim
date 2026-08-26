@@ -72,10 +72,15 @@ must not be papered over with guessed substitutions.
 
 ## V2.0.0 Direction
 
-Future development starts as XVatsim V2.0.0 work. The first planned V2 workstreams
-are dedicated VFR implementation and Mac/Linux support. V2 changes still require
-the brain-owned runtime contract: modules produce facts, the brain decides, and
-the UI displays brain-approved facts.
+V2.0.0 remains a Windows/X-Plane 12/xPilot plugin. The locked V2 workstreams are
+dedicated VFR operation plus METAR, VATSIM ATIS, and approved PDC/private-message
+ORBs attached to the existing UI. Mac and Linux support are deferred until the
+project has native test resources capable of proving those releases.
+
+V2 changes still require the brain-owned runtime contract: modules produce
+facts, the brain decides, and the UI displays brain-approved facts. Work proceeds
+one approved, proven, and committed slice at a time under
+`docs/V2_0_0_ROADMAP.md` and `docs/V2_EXECUTION_PROTOCOL.md`.
 
 ## Build
 

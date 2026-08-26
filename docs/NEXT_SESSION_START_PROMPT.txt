@@ -1,31 +1,31 @@
-Start the next XVatsim session from a clean mental slate. There is no chat history.
+Continue XVatsim V2 from the repository's locked roadmap and execution protocol.
 
 Repo:
-C:\Users\DARRON\OneDrive\Documents\XVatsim
+C:\Users\DARRON\OneDrive\Documents\XVatsim-V2
 
-First read:
-1. docs/NEXT_SESSION_HANDOFF.md
-2. docs/BRAIN_OWNED_RUNTIME_CONTRACT.md
-3. README.md
-
-Then inspect:
+First inspect:
 git status --short --branch
 git log -5 --oneline --decorate
 
+Then read, in order:
+1. docs/V2_0_0_ROADMAP.md
+2. docs/V2_EXECUTION_PROTOCOL.md
+3. docs/V2_STEP_01_ENGINEERING_BRIEF.md
+4. docs/BRAIN_OWNED_RUNTIME_CONTRACT.md
+5. docs/ARCHITECTURE.md
+6. docs/V1_2_3_PATCH_CLOSEOUT.md
+
 Current state:
-- V1.2.3 is the current public freeware Windows/X-Plane 12/xPilot release.
-- Commit 664b640 fixes exact route-polygon entry detection for the live-tested
-  SKJ914 MMTO-KCOS route, restoring KZFW and FTW Center relevance.
-- The plugin UI, source/build metadata, user agents, release tooling, user
-  guide, and public update manifest report V1.2.3.
-- Users may download from X-Plane.org or the official GitHub Release.
-- Release harness/plugin builds, eight focused scenarios, and all 451 saved
-  regression scenarios passed on 2026-08-15.
-- The V1.2.3 ZIP was independently smoke-tested; hashes are recorded in
-  docs/NEXT_SESSION_HANDOFF.md and docs/V1_2_3_PATCH_CLOSEOUT.md.
-- Only V1.2.2 and V1.2.3 package directories and ZIPs remain under releases.
+- V1.2.3 is the closed public Windows/X-Plane 12/xPilot baseline.
+- V2.0 remains Windows-only. Mac and Linux support are deferred.
+- V2 scope is dedicated VFR plus METAR, VATSIM ATIS, and approved
+  PDC/private-message ORBs attached to the existing main-card design.
+- Work proceeds one approved, proven, and committed slice at a time.
+- The architecture rule remains:
+  Brain decides. Modules produce facts. UI displays brain-approved facts.
 
-Architecture rule:
-Brain decides. Modules produce facts. UI displays brain-approved facts.
-
-Use a fresh Contract Gate for any new source edit.
+Current task:
+- Read docs/V2_STEP_01_ENGINEERING_BRIEF.md.
+- Inspect the existing build and release-validation tooling.
+- Present the exact Step 1 Contract Gate.
+- Do not edit source or tooling until Darron explicitly approves that gate.

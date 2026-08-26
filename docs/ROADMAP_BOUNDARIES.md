@@ -1,6 +1,6 @@
 # Roadmap Boundaries
 
-Updated: 2026-08-15
+Updated: 2026-08-26
 
 ## V1 Product Position
 
@@ -35,11 +35,17 @@ for narrow patch releases that preserve the Version 1 runtime contract.
 
 Future work begins as XVatsim V2.0.0 planning and implementation.
 
-Initial V2 objectives:
+Locked V2.0 objectives:
 
 - dedicated VFR implementation
-- Mac support
-- Linux support
+- METAR ORB and information drawer
+- VATSIM ATIS ORB and information drawer
+- approved PDC/private-message ORB and information drawer
+- Windows proof, visual validation, performance validation, and release gates
+
+XVatsim V2.0 remains Windows/X-Plane 12/xPilot only. Mac and Linux support are
+deferred until native test resources exist. Portability work must not displace
+the proven Windows product or become a V2.0 release requirement.
 
 Each V2 objective needs its own Contract Gate before source changes. The
 brain-owned runtime contract still applies: Brain decides, modules produce facts,

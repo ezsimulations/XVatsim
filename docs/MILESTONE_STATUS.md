@@ -1,6 +1,6 @@
 # Milestone Status
 
-Updated: 2026-08-15
+Updated: 2026-08-26
 
 ## Current Position
 
@@ -89,8 +89,10 @@ release. It is distributed through X-Plane.org and GitHub Releases.
 - Updated the public update manifest to advertise V1.0.4 as a notify-only
   update.
 The X-Plane.org Store submission path is superseded because the store requested
-a Mac version. Future major product work starts as XVatsim V2.0.0 with
-dedicated VFR implementation, Mac support, and Linux support.
+a Mac version. Future major product work starts as Windows-only XVatsim V2.0.0
+with dedicated VFR plus METAR, VATSIM ATIS, and approved PDC/private-message
+ORBs. Mac and Linux support are deferred until native validation resources
+exist.
 
 The live plugin uses the offline regression harness, fail-closed source
 handling, true route geometry, typed route grammar, deterministic nav-graph
