@@ -4174,8 +4174,10 @@ void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state) {
     if (state == nullptr) {
         return;
     }
+    const auto operatingMode = state->operatingMode;
     const auto displayOverrideMode = state->displayOverrideMode;
     *state = {};
+    state->operatingMode = operatingMode;
     state->displayOverrideMode = displayOverrideMode;
 }
 
@@ -4184,6 +4186,7 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     if (state == nullptr) {
         return;
     }
+    const auto operatingMode = state->operatingMode;
     const auto flightContext = state->flightContext;
     const auto displayOverrideMode = state->displayOverrideMode;
     const auto pendingTextEntryMode = state->pendingTextEntryMode;
@@ -4192,6 +4195,7 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     const auto lastFlightPlanSnapshot = state->lastFlightPlanSnapshot;
     const auto lastNetworkPlanSnapshot = state->lastNetworkPlanSnapshot;
     *state = {};
+    state->operatingMode = operatingMode;
     state->flightContext = flightContext;
     state->displayOverrideMode = displayOverrideMode;
     state->pendingTextEntryMode = pendingTextEntryMode;
@@ -4199,6 +4203,107 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     state->lastPilotIdentitySnapshot = lastPilotIdentitySnapshot;
     state->lastFlightPlanSnapshot = lastFlightPlanSnapshot;
     state->lastNetworkPlanSnapshot = lastNetworkPlanSnapshot;
+}
+
+void InitializeBrainOwnedOperatingMode(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedOperatingModeInitializationInput& input) {
+    if (state == nullptr) {
+        return;
+    }
+
+    state->operatingMode = {};
+    switch (input.loadStatus) {
+        case BrainOwnedOperatingModeLoadStatus::Valid:
+            state->operatingMode.mode = input.storedMode;
+            state->operatingMode.source =
+                BrainOwnedOperatingModeSource::SettingsStore;
+            state->operatingMode.reason = "stored-preference";
+            break;
+        case BrainOwnedOperatingModeLoadStatus::Invalid:
+            state->operatingMode.reason = "invalid-setting";
+            break;
+        case BrainOwnedOperatingModeLoadStatus::Unavailable:
+            state->operatingMode.reason = "settings-unavailable";
+            break;
+        case BrainOwnedOperatingModeLoadStatus::Missing:
+        default:
+            state->operatingMode.reason = "missing-setting";
+            break;
+    }
+}
+
+BrainOwnedOperatingModeSelectionResult RequestBrainOwnedOperatingModeSelection(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedOperatingMode requestedMode) {
+    BrainOwnedOperatingModeSelectionResult result;
+    result.requestedMode = requestedMode;
+    result.requestSource = BrainOwnedOperatingModeSource::PilotMenu;
+
+    if (state == nullptr) {
+        result.requestReason = "state-unavailable";
+        return result;
+    }
+
+    result.previousMode = state->operatingMode.mode;
+    if (requestedMode == state->operatingMode.mode) {
+        result.effectiveMode = state->operatingMode.mode;
+        result.stateSource = state->operatingMode.source;
+        result.stateReason = state->operatingMode.reason;
+        result.requestReason = "already-active";
+        result.generation = state->operatingMode.generation;
+        return result;
+    }
+
+    state->operatingMode.mode = requestedMode;
+    state->operatingMode.source = BrainOwnedOperatingModeSource::PilotMenu;
+    state->operatingMode.reason = "explicit-selection";
+    ++state->operatingMode.generation;
+
+    result.effectiveMode = state->operatingMode.mode;
+    result.stateSource = state->operatingMode.source;
+    result.stateReason = state->operatingMode.reason;
+    result.requestReason = "explicit-selection";
+    result.generation = state->operatingMode.generation;
+    result.changed = true;
+    result.persistenceRequested = true;
+    return result;
+}
+
+const char* ToString(BrainOwnedOperatingMode mode) {
+    switch (mode) {
+        case BrainOwnedOperatingMode::VFR:
+            return "vfr";
+        case BrainOwnedOperatingMode::IFR:
+        default:
+            return "ifr";
+    }
+}
+
+const char* ToString(BrainOwnedOperatingModeSource source) {
+    switch (source) {
+        case BrainOwnedOperatingModeSource::SettingsStore:
+            return "settings-store";
+        case BrainOwnedOperatingModeSource::PilotMenu:
+            return "pilot-menu";
+        case BrainOwnedOperatingModeSource::Default:
+        default:
+            return "default";
+    }
+}
+
+const char* ToString(BrainOwnedOperatingModeLoadStatus status) {
+    switch (status) {
+        case BrainOwnedOperatingModeLoadStatus::Valid:
+            return "valid";
+        case BrainOwnedOperatingModeLoadStatus::Invalid:
+            return "invalid";
+        case BrainOwnedOperatingModeLoadStatus::Unavailable:
+            return "unavailable";
+        case BrainOwnedOperatingModeLoadStatus::Missing:
+        default:
+            return "missing";
+    }
 }
 
 void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state) {

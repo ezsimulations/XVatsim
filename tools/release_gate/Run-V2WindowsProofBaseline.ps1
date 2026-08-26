@@ -1,7 +1,16 @@
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $true)]
     [ValidateRange(1, [int]::MaxValue)]
-    [int]$ExpectedScenarioCount = 451
+    [int]$ExpectedScenarioCount,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$ReceiptRelativePath,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$ReceiptTitle
 )
 
 $ErrorActionPreference = "Stop"
@@ -171,7 +180,31 @@ try {
     $scenarioDirectory = Join-Path $root 'tools\regression_harness\scenarios'
     $proofBuildDirectory = [System.IO.Path]::GetFullPath(
         (Join-Path $root 'build\v2-proof-baseline'))
-    $receiptPath = Join-Path $root 'outputs\v2_step_01_windows_proof_baseline_receipt.md'
+    if ([System.IO.Path]::IsPathRooted($ReceiptRelativePath)) {
+        throw "ReceiptRelativePath must be repository-relative."
+    }
+    $outputsDirectory = [System.IO.Path]::GetFullPath(
+        (Join-Path $root 'outputs')).TrimEnd('\')
+    $receiptPath = [System.IO.Path]::GetFullPath(
+        (Join-Path $root $ReceiptRelativePath))
+    $outputsPrefix = $outputsDirectory + '\'
+    if (-not $receiptPath.StartsWith(
+            $outputsPrefix,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Receipt path must be inside the repository outputs directory: $receiptPath"
+    }
+    if (-not [System.IO.Path]::GetExtension($receiptPath).Equals(
+            '.md',
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Receipt path must name a Markdown file."
+    }
+    $immutableStepOneReceipt = [System.IO.Path]::GetFullPath(
+        (Join-Path $root 'outputs\v2_step_01_windows_proof_baseline_receipt.md'))
+    if ($receiptPath.Equals(
+            $immutableStepOneReceipt,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "The accepted Step 1 receipt is immutable and cannot be overwritten."
+    }
     $scriptPath = $MyInvocation.MyCommand.Path
 
     Write-Host "XVatsim V2 Windows proof baseline"
@@ -340,9 +373,9 @@ try {
 
     $totalTimer.Stop()
     $receiptLines = [System.Collections.Generic.List[string]]::new()
-    $receiptLines.Add('# XVatsim V2 Step 1 Windows Proof Baseline Receipt')
+    $receiptLines.Add(('# {0}' -f $ReceiptTitle))
     $receiptLines.Add('')
-    $receiptLines.Add('Status: PASSED')
+    $receiptLines.Add('Status: WINDOWS PROOF PASSED — LIVE PROOF PENDING')
     $receiptLines.Add("Validated local: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')")
     $receiptLines.Add("Validated UTC: $([DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')) UTC")
     $receiptLines.Add('')
@@ -350,7 +383,7 @@ try {
     $receiptLines.Add('')
     $receiptLines.Add(('- Branch: `{0}`' -f $branch))
     $receiptLines.Add(('- Starting HEAD: `{0}`' -f $startingHead))
-    $receiptLines.Add('- Starting HEAD is the committed base; the following uncommitted Step 1 files were the working tree under test.')
+    $receiptLines.Add('- Starting HEAD is the committed base; the following uncommitted files were the working tree under test.')
     $receiptLines.Add('- The receipt is atomically published after this pre-publication working-tree snapshot.')
     $receiptLines.Add('')
     $receiptLines.Add('```text')
@@ -417,9 +450,9 @@ try {
     $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllLines($stagedReceipt, $receiptLines, $utf8WithoutBom)
 
-    $outputsDirectory = Split-Path -Parent $receiptPath
-    if (-not (Test-Path -LiteralPath $outputsDirectory -PathType Container)) {
-        throw "Receipt output directory is missing: $outputsDirectory"
+    $receiptParentDirectory = Split-Path -Parent $receiptPath
+    if (-not (Test-Path -LiteralPath $receiptParentDirectory -PathType Container)) {
+        throw "Receipt output directory is missing: $receiptParentDirectory"
     }
     Publish-ReceiptAtomically -StagedPath $stagedReceipt -DestinationPath $receiptPath -BackupPath $receiptBackup
 

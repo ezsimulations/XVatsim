@@ -106,6 +106,8 @@ constexpr intptr_t kSetDiversionAirportMenuItemRef = 17;
 constexpr intptr_t kRevertToFlightPlanMenuItemRef = 18;
 constexpr intptr_t kRecoverCurrentFlightMenuItemRef = 19;
 constexpr intptr_t kCheckForUpdatesMenuItemRef = 20;
+constexpr intptr_t kIfrModeMenuItemRef = 21;
+constexpr intptr_t kVfrModeMenuItemRef = 22;
 constexpr double kArrivalWakeDistanceNm = 200.0;
 constexpr float kDepartureReleaseHoldSeconds = 180.0f;
 constexpr float kEnrouteInitialDisplaySeconds = 180.0f;
@@ -250,6 +252,8 @@ XPLMCommandRef gResetSessionCommand = nullptr;
 XPLMCommandRef gRecoverCurrentFlightCommand = nullptr;
 XPLMMenuID gPluginMenu = nullptr;
 int gPluginMenuItemIndex = -1;
+int gIfrModeMenuItemIndex = -1;
+int gVfrModeMenuItemIndex = -1;
 bool gFlightLoopRegistered = false;
 bool gPluginRuntimeEnabled = false;
 xvatsim::brain::BrainOwnedRuntimeState gBrainOwnedRuntimeState;
@@ -2652,6 +2656,42 @@ xvatsim::brain::BrainOwnedDisplayOverrideMode ToDisplayOverrideMode(
     }
 }
 
+xvatsim::modules::settings_store::StoredOperatingMode ToStoredOperatingMode(
+    xvatsim::brain::BrainOwnedOperatingMode mode) {
+    using xvatsim::brain::BrainOwnedOperatingMode;
+    using xvatsim::modules::settings_store::StoredOperatingMode;
+    return mode == BrainOwnedOperatingMode::VFR
+               ? StoredOperatingMode::VFR
+               : StoredOperatingMode::IFR;
+}
+
+xvatsim::brain::BrainOwnedOperatingMode ToBrainOperatingMode(
+    xvatsim::modules::settings_store::StoredOperatingMode mode) {
+    using xvatsim::brain::BrainOwnedOperatingMode;
+    using xvatsim::modules::settings_store::StoredOperatingMode;
+    return mode == StoredOperatingMode::VFR
+               ? BrainOwnedOperatingMode::VFR
+               : BrainOwnedOperatingMode::IFR;
+}
+
+xvatsim::brain::BrainOwnedOperatingModeLoadStatus
+ToBrainOperatingModeLoadStatus(
+    xvatsim::modules::settings_store::StoredOperatingModeLoadStatus status) {
+    using xvatsim::brain::BrainOwnedOperatingModeLoadStatus;
+    using xvatsim::modules::settings_store::StoredOperatingModeLoadStatus;
+    switch (status) {
+        case StoredOperatingModeLoadStatus::Valid:
+            return BrainOwnedOperatingModeLoadStatus::Valid;
+        case StoredOperatingModeLoadStatus::Invalid:
+            return BrainOwnedOperatingModeLoadStatus::Invalid;
+        case StoredOperatingModeLoadStatus::Unavailable:
+            return BrainOwnedOperatingModeLoadStatus::Unavailable;
+        case StoredOperatingModeLoadStatus::Missing:
+        default:
+            return BrainOwnedOperatingModeLoadStatus::Missing;
+    }
+}
+
 std::string ResolveSettingsPath() {
     char systemPath[1024] = {};
     XPLMGetSystemPath(systemPath);
@@ -2761,6 +2801,63 @@ void SavePluginSettings() {
     if (!gSettingsStore.Save(gPluginSettings)) {
         XPLMDebugString("[XVatsim] Settings save failed.\n");
     }
+}
+
+void SyncOperatingModeMenuChecks() {
+    if (gPluginMenu == nullptr || gIfrModeMenuItemIndex < 0 ||
+        gVfrModeMenuItemIndex < 0) {
+        return;
+    }
+    const auto vfrActive =
+        gBrainOwnedRuntimeState.operatingMode.mode ==
+        xvatsim::brain::BrainOwnedOperatingMode::VFR;
+    XPLMCheckMenuItem(
+        gPluginMenu,
+        gIfrModeMenuItemIndex,
+        vfrActive ? xplm_Menu_Unchecked : xplm_Menu_Checked);
+    XPLMCheckMenuItem(
+        gPluginMenu,
+        gVfrModeMenuItemIndex,
+        vfrActive ? xplm_Menu_Checked : xplm_Menu_Unchecked);
+}
+
+void RequestOperatingModeSelection(
+    xvatsim::brain::BrainOwnedOperatingMode requestedMode) {
+    const auto result =
+        xvatsim::brain::RequestBrainOwnedOperatingModeSelection(
+            &gBrainOwnedRuntimeState,
+            requestedMode);
+
+    const char* persistence = "not-requested";
+    if (result.persistenceRequested) {
+        auto candidateSettings = gPluginSettings;
+        candidateSettings.operatingMode =
+            ToStoredOperatingMode(result.effectiveMode);
+        candidateSettings.operatingModeLoadStatus =
+            xvatsim::modules::settings_store::
+                StoredOperatingModeLoadStatus::Valid;
+        if (gSettingsStore.Save(candidateSettings)) {
+            gPluginSettings = candidateSettings;
+            persistence = "success";
+        } else {
+            persistence = "failed";
+        }
+        SyncOperatingModeMenuChecks();
+    }
+
+    std::ostringstream stream;
+    stream << "event=operating-mode-selection"
+           << " requested=" << xvatsim::brain::ToString(result.requestedMode)
+           << " previous=" << xvatsim::brain::ToString(result.previousMode)
+           << " effective=" << xvatsim::brain::ToString(result.effectiveMode)
+           << " changed=" << (result.changed ? "true" : "false")
+           << " stateSource=" << xvatsim::brain::ToString(result.stateSource)
+           << " stateReason=" << result.stateReason
+           << " requestSource=" << xvatsim::brain::ToString(result.requestSource)
+           << " requestReason=" << result.requestReason
+           << " generation=" << result.generation
+           << " persistence=" << persistence;
+    AppendDiagnosticsLogLine(stream.str());
 }
 
 std::string FormatUpdateDiagnosticLine(
@@ -3554,6 +3651,14 @@ void PluginMenuHandler(void* inMenuRef, void* inItemRef) {
     }
 
     switch (reinterpret_cast<intptr_t>(inItemRef)) {
+        case kIfrModeMenuItemRef:
+            RequestOperatingModeSelection(
+                xvatsim::brain::BrainOwnedOperatingMode::IFR);
+            break;
+        case kVfrModeMenuItemRef:
+            RequestOperatingModeSelection(
+                xvatsim::brain::BrainOwnedOperatingMode::VFR);
+            break;
         case kManualCtafMenuItemRef:
             BeginManualCtafEntry();
             break;
@@ -3651,6 +3756,17 @@ void RegisterPluginMenu() {
         return;
     }
 
+    gIfrModeMenuItemIndex = XPLMAppendMenuItem(
+        gPluginMenu,
+        "IFR Mode",
+        reinterpret_cast<void*>(kIfrModeMenuItemRef),
+        1);
+    gVfrModeMenuItemIndex = XPLMAppendMenuItem(
+        gPluginMenu,
+        "VFR Mode",
+        reinterpret_cast<void*>(kVfrModeMenuItemRef),
+        1);
+    XPLMAppendMenuSeparator(gPluginMenu);
     XPLMAppendMenuItem(
         gPluginMenu,
         "Manual CTAF Lookup",
@@ -3756,6 +3872,7 @@ void RegisterPluginMenu() {
         reinterpret_cast<void*>(kStandbyAssistOffMenuItemRef),
         1);
     XPLMAppendMenuSeparator(gPluginMenu);
+    SyncOperatingModeMenuChecks();
 }
 
 void UnregisterPluginMenu() {
@@ -3763,6 +3880,8 @@ void UnregisterPluginMenu() {
         XPLMDestroyMenu(gPluginMenu);
         gPluginMenu = nullptr;
     }
+    gIfrModeMenuItemIndex = -1;
+    gVfrModeMenuItemIndex = -1;
 
     if (gPluginMenuItemIndex >= 0) {
         XPLMRemoveMenuItem(XPLMFindPluginsMenu(), gPluginMenuItemIndex);
@@ -4365,6 +4484,15 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
 
     gSettingsStore.SetPath(ResolveSettingsPath());
     gPluginSettings = gSettingsStore.Load();
+    xvatsim::brain::BrainOwnedOperatingModeInitializationInput
+        operatingModeInput;
+    operatingModeInput.loadStatus = ToBrainOperatingModeLoadStatus(
+        gPluginSettings.operatingModeLoadStatus);
+    operatingModeInput.storedMode =
+        ToBrainOperatingMode(gPluginSettings.operatingMode);
+    xvatsim::brain::InitializeBrainOwnedOperatingMode(
+        &gBrainOwnedRuntimeState,
+        operatingModeInput);
     xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
         &gBrainOwnedRuntimeState,
         ToDisplayOverrideMode(gPluginSettings.displayMode));
@@ -4383,6 +4511,18 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
         " logPolicy=date-stamped-daily-retention retainedDates=" +
         std::to_string(kDiagnosticsRetainedDateLogCount) +
         " activeLogCap=none");
+    AppendDiagnosticsLogLine(
+        std::string{"event=operating-mode-initialized effective="} +
+        xvatsim::brain::ToString(
+            gBrainOwnedRuntimeState.operatingMode.mode) +
+        " stateSource=" +
+        xvatsim::brain::ToString(
+            gBrainOwnedRuntimeState.operatingMode.source) +
+        " stateReason=" +
+        gBrainOwnedRuntimeState.operatingMode.reason +
+        " generation=" +
+        std::to_string(
+            gBrainOwnedRuntimeState.operatingMode.generation));
     RegisterPluginCommands();
     RegisterPluginMenu();
 

@@ -1,0 +1,9 @@
+name=V2 operating mode valid IFR and VFR values load
+operating_mode.probe=settings-load
+operating_mode.settings_entry=ifr
+operating_mode.round_trip_modes=IFR,VFR
+expect.operating_mode=IFR
+expect.operating_mode_load_status=valid
+expect.operating_mode_source=settings-store
+expect.operating_mode_reason=stored-preference
+expect.operating_mode_round_trip=IFR,VFR

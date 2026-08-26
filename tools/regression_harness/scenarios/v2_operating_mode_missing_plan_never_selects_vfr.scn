@@ -1,0 +1,6 @@
+name=V2 operating mode missing flight plan never selects VFR
+operating_mode.probe=missing-flight-plan
+operating_mode.initial_mode=IFR
+expect.operating_mode=IFR
+expect.operating_mode_generation=0
+expect.operating_mode_no_automatic_vfr=true

@@ -1,0 +1,7 @@
+name=V2 operating mode settings round trip
+operating_mode.probe=round-trip
+operating_mode.round_trip_modes=IFR,VFR
+operating_mode.persistence=temporary
+expect.operating_mode_round_trip=IFR,VFR
+expect.operating_mode_save_attempts=2
+expect.operating_mode_save_successes=2

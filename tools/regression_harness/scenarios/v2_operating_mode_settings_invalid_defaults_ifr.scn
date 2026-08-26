@@ -1,0 +1,8 @@
+name=V2 operating mode invalid settings default IFR
+operating_mode.probe=settings-load
+operating_mode.settings_entry=<unknown>
+expect.operating_mode=IFR
+expect.operating_mode_load_status=invalid
+expect.operating_mode_source=default
+expect.operating_mode_reason=invalid-setting
+expect.operating_mode_generation=0

@@ -1,0 +1,19 @@
+# XVatsim-Relevant X-Plane Live Log Excerpt
+
+Captured before controlled-install rollback on 2026-08-26.
+
+Full captured `C:\X-Plane 12\Log.txt` SHA-256:
+`4D853350B4AC204CF651E48BCEACB7D4BDA0B24A4EF3F800EBAAA7B595061E11`
+
+```text
+line=161 [XVatsim] Preflight route cache not active: Preflight route cache not found.
+line=162 [XVatsim] Display ready: XVatsim ready
+line=163 [XVatsim] Plugin loaded.
+line=164 Loaded: C:\X-Plane 12/Resources/plugins/XVatsim/win_x64/XVatsim.xpl (org.xvatsim.plugin).
+line=249 [XVatsim] Preflight route cache not active: Preflight route cache not found.
+line=250 [XVatsim] Plugin enabled.
+line=2334 [XVatsim] xPilot disconnected; no active flight context to preserve.
+line=2351 [XVatsim] Plugin disabled.
+line=2377 Unloading plugin XVatsim (org.xvatsim.plugin)
+line=2378 [XVatsim] Plugin stopped.
+```

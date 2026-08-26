@@ -36,6 +36,7 @@
 #include "XVatsim/modules/departure/DepartureModule.h"
 #include "XVatsim/modules/enroute/EnrouteModule.h"
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
+#include "XVatsim/modules/settings_store/SettingsStore.h"
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
 #include "XVatsim/modules/transceiver_resolver/TransceiverResolver.h"
 #include "XVatsim/modules/update_checker/UpdateChecker.h"
@@ -376,8 +377,43 @@ struct CenterCoverageFeatureSpec {
     std::vector<xvatsim::core::route::SectorPolygon> polygons;
 };
 
+struct OperatingModeScenarioInput {
+    std::string probe;
+    std::string settingsEntry;
+    std::string initialMode;
+    std::vector<std::string> selectionRequests;
+    std::vector<std::string> roundTripModes;
+    std::vector<std::string> resetPaths;
+    std::string parityStage;
+    std::string persistence;
+    int idleCycles = 0;
+};
+
+struct OperatingModeScenarioExpectations {
+    std::optional<std::string> mode;
+    std::optional<std::string> loadStatus;
+    std::optional<std::string> source;
+    std::optional<std::string> reason;
+    std::optional<int> generation;
+    std::optional<int> changeCount;
+    std::optional<int> persistenceRequests;
+    std::optional<int> saveAttempts;
+    std::optional<int> saveSuccesses;
+    std::optional<std::string> requestSource;
+    std::optional<std::string> requestReason;
+    std::optional<bool> stateUnchanged;
+    std::optional<bool> resetPreserved;
+    std::optional<bool> noAutomaticVfr;
+    std::vector<std::string> roundTripModes;
+    std::optional<bool> parity;
+    std::optional<std::string> allowedParityDifference;
+    std::optional<int> retryCount;
+};
+
 struct ScenarioData {
     std::string name;
+    OperatingModeScenarioInput operatingMode;
+    OperatingModeScenarioExpectations operatingModeExpectations;
     double nowSeconds = 0.0;
     bool departureTerminalCoverageKnown = false;
     bool insideDepartureTerminalCoverage = false;
@@ -599,6 +635,20 @@ bool ParseBool(const std::string& value, bool* outValue) {
         return true;
     }
     return false;
+}
+
+std::optional<int> ParseNonnegativeInt(const std::string& value) {
+    try {
+        std::size_t consumed = 0;
+        const auto trimmed = Trim(value);
+        const auto parsed = std::stoi(trimmed, &consumed);
+        if (consumed != trimmed.size() || parsed < 0) {
+            return std::nullopt;
+        }
+        return parsed;
+    } catch (...) {
+        return std::nullopt;
+    }
 }
 
 std::string NormalizeSourceOwnedLiveConsumptionSettingsSourceForHarness(
@@ -4112,6 +4162,122 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
 
     if (key == "name") {
         scenario->name = value;
+        return true;
+    }
+    if (key == "operating_mode.probe") {
+        scenario->operatingMode.probe = value;
+        return true;
+    }
+    if (key == "operating_mode.settings_entry") {
+        scenario->operatingMode.settingsEntry = value;
+        return true;
+    }
+    if (key == "operating_mode.initial_mode") {
+        scenario->operatingMode.initialMode = value;
+        return true;
+    }
+    if (key == "operating_mode.selection_requests") {
+        scenario->operatingMode.selectionRequests = Split(value, ',');
+        return true;
+    }
+    if (key == "operating_mode.round_trip_modes") {
+        scenario->operatingMode.roundTripModes = Split(value, ',');
+        return true;
+    }
+    if (key == "operating_mode.reset_paths") {
+        scenario->operatingMode.resetPaths = Split(value, ',');
+        return true;
+    }
+    if (key == "operating_mode.parity_stage") {
+        scenario->operatingMode.parityStage = value;
+        return true;
+    }
+    if (key == "operating_mode.persistence") {
+        scenario->operatingMode.persistence = value;
+        return true;
+    }
+    if (key == "operating_mode.idle_cycles") {
+        const auto parsed = ParseNonnegativeInt(value);
+        if (!parsed.has_value()) {
+            return false;
+        }
+        scenario->operatingMode.idleCycles = *parsed;
+        return true;
+    }
+    if (key == "expect.operating_mode") {
+        scenario->operatingModeExpectations.mode = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_load_status") {
+        scenario->operatingModeExpectations.loadStatus = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_source") {
+        scenario->operatingModeExpectations.source = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_reason") {
+        scenario->operatingModeExpectations.reason = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_generation" ||
+        key == "expect.operating_mode_change_count" ||
+        key == "expect.operating_mode_persistence_requests" ||
+        key == "expect.operating_mode_save_attempts" ||
+        key == "expect.operating_mode_save_successes" ||
+        key == "expect.operating_mode_retry_count") {
+        const auto parsed = ParseNonnegativeInt(value);
+        if (!parsed.has_value()) {
+            return false;
+        }
+        if (key == "expect.operating_mode_generation") {
+            scenario->operatingModeExpectations.generation = *parsed;
+        } else if (key == "expect.operating_mode_change_count") {
+            scenario->operatingModeExpectations.changeCount = *parsed;
+        } else if (key == "expect.operating_mode_persistence_requests") {
+            scenario->operatingModeExpectations.persistenceRequests = *parsed;
+        } else if (key == "expect.operating_mode_save_attempts") {
+            scenario->operatingModeExpectations.saveAttempts = *parsed;
+        } else if (key == "expect.operating_mode_save_successes") {
+            scenario->operatingModeExpectations.saveSuccesses = *parsed;
+        } else {
+            scenario->operatingModeExpectations.retryCount = *parsed;
+        }
+        return true;
+    }
+    if (key == "expect.operating_mode_request_source") {
+        scenario->operatingModeExpectations.requestSource = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_request_reason") {
+        scenario->operatingModeExpectations.requestReason = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_state_unchanged" ||
+        key == "expect.operating_mode_reset_preserved" ||
+        key == "expect.operating_mode_no_automatic_vfr" ||
+        key == "expect.operating_mode_parity") {
+        bool parsed = false;
+        if (!ParseBool(value, &parsed)) {
+            return false;
+        }
+        if (key == "expect.operating_mode_state_unchanged") {
+            scenario->operatingModeExpectations.stateUnchanged = parsed;
+        } else if (key == "expect.operating_mode_reset_preserved") {
+            scenario->operatingModeExpectations.resetPreserved = parsed;
+        } else if (key == "expect.operating_mode_no_automatic_vfr") {
+            scenario->operatingModeExpectations.noAutomaticVfr = parsed;
+        } else {
+            scenario->operatingModeExpectations.parity = parsed;
+        }
+        return true;
+    }
+    if (key == "expect.operating_mode_round_trip") {
+        scenario->operatingModeExpectations.roundTripModes = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.operating_mode_allowed_parity_difference") {
+        scenario->operatingModeExpectations.allowedParityDifference = value;
         return true;
     }
     if (key == "now_seconds") {
@@ -10173,6 +10339,536 @@ std::optional<int> CheckStringListContains(
     return PrintMismatch(label, JoinCsv(missing), actual);
 }
 
+struct OperatingModeProbeActual {
+    std::string mode = "IFR";
+    std::string loadStatus = "missing";
+    std::string source = "default";
+    std::string reason = "missing-setting";
+    int generation = 0;
+    int changeCount = 0;
+    int persistenceRequests = 0;
+    int saveAttempts = 0;
+    int saveSuccesses = 0;
+    std::string requestSource = "none";
+    std::string requestReason = "none";
+    bool stateUnchanged = false;
+    bool resetPreserved = false;
+    bool noAutomaticVfr = false;
+    std::vector<std::string> roundTripModes;
+    bool parity = false;
+    std::string allowedParityDifference;
+    int retryCount = 0;
+};
+
+xvatsim::brain::BrainOwnedOperatingMode ParseHarnessOperatingMode(
+    const std::string& value) {
+    return ToUpperCopy(value) == "VFR"
+               ? xvatsim::brain::BrainOwnedOperatingMode::VFR
+               : xvatsim::brain::BrainOwnedOperatingMode::IFR;
+}
+
+xvatsim::modules::settings_store::StoredOperatingMode
+ToHarnessStoredOperatingMode(xvatsim::brain::BrainOwnedOperatingMode mode) {
+    return mode == xvatsim::brain::BrainOwnedOperatingMode::VFR
+               ? xvatsim::modules::settings_store::StoredOperatingMode::VFR
+               : xvatsim::modules::settings_store::StoredOperatingMode::IFR;
+}
+
+xvatsim::brain::BrainOwnedOperatingModeLoadStatus
+ToHarnessBrainLoadStatus(
+    xvatsim::modules::settings_store::StoredOperatingModeLoadStatus status) {
+    using BrainStatus = xvatsim::brain::BrainOwnedOperatingModeLoadStatus;
+    using StoredStatus =
+        xvatsim::modules::settings_store::StoredOperatingModeLoadStatus;
+    switch (status) {
+        case StoredStatus::Valid:
+            return BrainStatus::Valid;
+        case StoredStatus::Invalid:
+            return BrainStatus::Invalid;
+        case StoredStatus::Unavailable:
+            return BrainStatus::Unavailable;
+        case StoredStatus::Missing:
+        default:
+            return BrainStatus::Missing;
+    }
+}
+
+xvatsim::brain::BrainOwnedOperatingMode ToHarnessBrainOperatingMode(
+    xvatsim::modules::settings_store::StoredOperatingMode mode) {
+    return mode == xvatsim::modules::settings_store::StoredOperatingMode::VFR
+               ? xvatsim::brain::BrainOwnedOperatingMode::VFR
+               : xvatsim::brain::BrainOwnedOperatingMode::IFR;
+}
+
+void InitializeHarnessOperatingModeFromSettings(
+    xvatsim::brain::BrainOwnedRuntimeState* state,
+    const xvatsim::modules::settings_store::PluginSettings& settings) {
+    xvatsim::brain::BrainOwnedOperatingModeInitializationInput input;
+    input.loadStatus =
+        ToHarnessBrainLoadStatus(settings.operatingModeLoadStatus);
+    input.storedMode = ToHarnessBrainOperatingMode(settings.operatingMode);
+    xvatsim::brain::InitializeBrainOwnedOperatingMode(state, input);
+}
+
+std::string HarnessOperatingModeName(
+    xvatsim::brain::BrainOwnedOperatingMode mode) {
+    return mode == xvatsim::brain::BrainOwnedOperatingMode::VFR ? "VFR" : "IFR";
+}
+
+std::string HarnessLoadStatusName(
+    xvatsim::modules::settings_store::StoredOperatingModeLoadStatus status) {
+    using Status =
+        xvatsim::modules::settings_store::StoredOperatingModeLoadStatus;
+    switch (status) {
+        case Status::Valid:
+            return "valid";
+        case Status::Invalid:
+            return "invalid";
+        case Status::Unavailable:
+            return "unavailable";
+        case Status::Missing:
+        default:
+            return "missing";
+    }
+}
+
+std::filesystem::path OperatingModeProbePath(const ScenarioData& scenario) {
+    std::string token = scenario.name;
+    std::transform(
+        token.begin(),
+        token.end(),
+        token.begin(),
+        [](unsigned char ch) {
+            return std::isalnum(ch) != 0 ? static_cast<char>(std::tolower(ch)) : '_';
+        });
+    return std::filesystem::temp_directory_path() /
+           "xvatsim_v2_step_02_harness" / (token + ".prf");
+}
+
+bool WriteOperatingModeProbeSettings(
+    const std::filesystem::path& path,
+    const std::string& contents) {
+    std::error_code error;
+    std::filesystem::create_directories(path.parent_path(), error);
+    if (error) {
+        return false;
+    }
+    std::ofstream output(path, std::ios::trunc);
+    output << contents;
+    return output.good();
+}
+
+std::string SerializeOperatingModeParityOutput(
+    WorkflowStage stage,
+    const xvatsim::brain::BrainOwnedRuntimeState& state) {
+    const auto& display = state.finalDisplaySnapshot;
+    const auto view = xvatsim::brain::BrainOrchestrator::BuildOverlayViewModel(
+        stage,
+        xvatsim::brain::AircraftStateSnapshot{},
+        xvatsim::brain::XPilotSessionSnapshot{},
+        xvatsim::brain::RadioStateSnapshot{},
+        xvatsim::brain::NetworkPlanSnapshot{},
+        xvatsim::brain::ControllerFeedSnapshot{},
+        xvatsim::brain::TransceiverResolutionSnapshot{},
+        display,
+        xvatsim::brain::ManualQuerySnapshot{});
+    std::ostringstream stream;
+    stream << static_cast<int>(stage) << '|'
+           << (display.available ? 1 : 0) << '|'
+           << static_cast<int>(display.source) << '|'
+           << display.airportIcao << '|';
+    for (const auto& station : display.stations) {
+        stream << static_cast<int>(station.role) << ':'
+               << station.callsign << ':' << station.frequency << ':'
+               << station.stableCompletionKey << ';';
+    }
+    stream << "view=" << static_cast<int>(view.mode) << ':'
+           << (view.visible ? 1 : 0) << ':' << view.title << ':'
+           << view.headerRightText << '|';
+    for (const auto& line : view.bodyLines) {
+        stream << line.text << ':' << static_cast<int>(line.tone) << ';';
+    }
+    const auto appendBoard = [&](const xvatsim::brain::ModuleBoardSnapshot& board) {
+        stream << "board=" << (board.available ? 1 : 0) << ':'
+               << static_cast<int>(board.source) << ':' << board.airportIcao
+               << ':';
+        for (const auto& station : board.stations) {
+            stream << static_cast<int>(station.role) << ':' << station.callsign
+                   << ':' << station.frequency << ':'
+                   << station.stableCompletionKey << ';';
+        }
+    };
+    appendBoard(state.departureBoardSnapshot);
+    appendBoard(state.enrouteBoardSnapshot);
+    appendBoard(state.arrivalBoardSnapshot);
+    stream << "workflow=" << static_cast<int>(state.lastWorkflowStage) << '|';
+    for (const auto& completion : state.candidateCompletions) {
+        stream << completion.callsign << ':' << completion.frequency << ':'
+               << completion.stableKey << ':'
+               << static_cast<int>(completion.decision) << ':'
+               << (completion.displayed ? 1 : 0) << ';';
+    }
+    return stream.str();
+}
+
+OperatingModeProbeActual ExecuteOperatingModeProbe(
+    const ScenarioData& scenario) {
+    OperatingModeProbeActual actual;
+    const auto path = OperatingModeProbePath(scenario);
+    std::error_code cleanupError;
+    std::filesystem::remove(path, cleanupError);
+
+    auto loadSettingsEntry = [&](const std::string& entry) {
+        xvatsim::modules::settings_store::SettingsStore store;
+        store.SetPath(path.string());
+        std::filesystem::remove(path, cleanupError);
+        if (entry == "<empty>") {
+            WriteOperatingModeProbeSettings(path, "operating_mode=\n");
+        } else if (entry == "<malformed>") {
+            WriteOperatingModeProbeSettings(path, "operating_mode vfr\n");
+        } else if (entry == "<unknown>") {
+            WriteOperatingModeProbeSettings(path, "operating_mode=visual\n");
+        } else if (entry != "<missing>" && !entry.empty()) {
+            WriteOperatingModeProbeSettings(
+                path,
+                "operating_mode=" + entry + "\n");
+        }
+        return store.Load();
+    };
+
+    xvatsim::brain::BrainOwnedRuntimeState state;
+    xvatsim::brain::BrainOwnedOperatingModeSelectionResult lastSelection;
+
+    if (scenario.operatingMode.probe == "settings-load") {
+        const auto settings = loadSettingsEntry(scenario.operatingMode.settingsEntry);
+        InitializeHarnessOperatingModeFromSettings(&state, settings);
+        actual.loadStatus = HarnessLoadStatusName(settings.operatingModeLoadStatus);
+
+        if (scenario.operatingMode.settingsEntry == "<unknown>") {
+            for (const auto& invalid : {"<empty>", "<malformed>", "<unknown>"}) {
+                const auto invalidSettings = loadSettingsEntry(invalid);
+                if (invalidSettings.operatingModeLoadStatus !=
+                        xvatsim::modules::settings_store::
+                            StoredOperatingModeLoadStatus::Invalid ||
+                    invalidSettings.operatingMode !=
+                        xvatsim::modules::settings_store::StoredOperatingMode::IFR) {
+                    actual.loadStatus = "invalid-set-failed";
+                }
+            }
+        }
+
+        for (const auto& mode : scenario.operatingMode.roundTripModes) {
+            const auto loaded = loadSettingsEntry(ToUpperCopy(mode) == "VFR" ? "VFR" : " IFR ");
+            if (loaded.operatingModeLoadStatus ==
+                xvatsim::modules::settings_store::StoredOperatingModeLoadStatus::Valid) {
+                actual.roundTripModes.push_back(
+                    loaded.operatingMode ==
+                            xvatsim::modules::settings_store::StoredOperatingMode::VFR
+                        ? "VFR"
+                        : "IFR");
+            }
+        }
+    } else if (scenario.operatingMode.probe == "round-trip") {
+        xvatsim::modules::settings_store::SettingsStore store;
+        store.SetPath(path.string());
+        for (const auto& mode : scenario.operatingMode.roundTripModes) {
+            xvatsim::modules::settings_store::PluginSettings settings;
+            settings.operatingMode = ToHarnessStoredOperatingMode(
+                ParseHarnessOperatingMode(mode));
+            settings.operatingModeLoadStatus =
+                xvatsim::modules::settings_store::
+                    StoredOperatingModeLoadStatus::Valid;
+            ++actual.saveAttempts;
+            if (store.Save(settings)) {
+                ++actual.saveSuccesses;
+                const auto loaded = store.Load();
+                if (loaded.operatingModeLoadStatus ==
+                    xvatsim::modules::settings_store::
+                        StoredOperatingModeLoadStatus::Valid) {
+                    actual.roundTripModes.push_back(
+                        loaded.operatingMode ==
+                                xvatsim::modules::settings_store::
+                                    StoredOperatingMode::VFR
+                            ? "VFR"
+                            : "IFR");
+                }
+            }
+        }
+    } else {
+        if (!scenario.operatingMode.settingsEntry.empty()) {
+            const auto settings =
+                loadSettingsEntry(scenario.operatingMode.settingsEntry);
+            InitializeHarnessOperatingModeFromSettings(&state, settings);
+            actual.loadStatus =
+                HarnessLoadStatusName(settings.operatingModeLoadStatus);
+        } else {
+            xvatsim::brain::InitializeBrainOwnedOperatingMode(
+                &state,
+                xvatsim::brain::BrainOwnedOperatingModeInitializationInput{});
+            if (ToUpperCopy(scenario.operatingMode.initialMode) == "VFR") {
+                lastSelection =
+                    xvatsim::brain::RequestBrainOwnedOperatingModeSelection(
+                        &state,
+                        xvatsim::brain::BrainOwnedOperatingMode::VFR);
+            }
+        }
+
+        if (scenario.operatingMode.probe == "selection" ||
+            scenario.operatingMode.probe == "persistence-failure") {
+            const auto beforeSelectionState = state.operatingMode;
+            for (const auto& request : scenario.operatingMode.selectionRequests) {
+                lastSelection =
+                    xvatsim::brain::RequestBrainOwnedOperatingModeSelection(
+                        &state,
+                        ParseHarnessOperatingMode(request));
+                if (lastSelection.changed) {
+                    ++actual.changeCount;
+                }
+                if (lastSelection.persistenceRequested) {
+                    ++actual.persistenceRequests;
+                }
+                if (scenario.operatingMode.probe == "persistence-failure" &&
+                    lastSelection.persistenceRequested) {
+                    xvatsim::modules::settings_store::SettingsStore unavailableStore;
+                    xvatsim::modules::settings_store::PluginSettings settings;
+                    settings.operatingMode =
+                        ToHarnessStoredOperatingMode(lastSelection.effectiveMode);
+                    ++actual.saveAttempts;
+                    if (unavailableStore.Save(settings)) {
+                        ++actual.saveSuccesses;
+                    }
+                }
+            }
+            actual.stateUnchanged =
+                beforeSelectionState.mode == state.operatingMode.mode &&
+                beforeSelectionState.source == state.operatingMode.source &&
+                beforeSelectionState.reason == state.operatingMode.reason &&
+                beforeSelectionState.generation ==
+                    state.operatingMode.generation;
+
+            if (scenario.operatingMode.probe == "persistence-failure") {
+                for (int cycle = 0; cycle < scenario.operatingMode.idleCycles;
+                     ++cycle) {
+                    const auto idleDecision =
+                        xvatsim::brain::RequestBrainOwnedOperatingModeSelection(
+                            &state,
+                            state.operatingMode.mode);
+                    if (idleDecision.persistenceRequested) {
+                        ++actual.retryCount;
+                    }
+                }
+            }
+        } else if (scenario.operatingMode.probe == "reset-preservation") {
+            actual.resetPreserved = true;
+            const auto expected = state.operatingMode;
+            for (const auto& resetPath : scenario.operatingMode.resetPaths) {
+                if (resetPath == "cache-preserving" ||
+                    resetPath == "xpilot-reconnect") {
+                    xvatsim::brain::ResetBrainOwnedRuntimeCachePreservingFlightContext(
+                        &state);
+                } else {
+                    xvatsim::brain::ResetBrainOwnedRuntimeState(&state);
+                }
+                actual.resetPreserved =
+                    actual.resetPreserved &&
+                    state.operatingMode.mode == expected.mode &&
+                    state.operatingMode.source == expected.source &&
+                    state.operatingMode.reason == expected.reason &&
+                    state.operatingMode.generation == expected.generation;
+            }
+        } else if (scenario.operatingMode.probe == "missing-flight-plan") {
+            const auto before = state.operatingMode;
+            const xvatsim::brain::FlightPlanSnapshot missingPlan;
+            (void)missingPlan;
+            actual.noAutomaticVfr =
+                state.operatingMode.mode == before.mode &&
+                state.operatingMode.source == before.source &&
+                state.operatingMode.reason == before.reason &&
+                state.operatingMode.generation == before.generation &&
+                state.operatingMode.mode ==
+                    xvatsim::brain::BrainOwnedOperatingMode::IFR;
+        } else if (scenario.operatingMode.probe == "parity") {
+            WorkflowStage stage = WorkflowStage::Departure;
+            BoardSource source = BoardSource::Departure;
+            StationRole role = StationRole::Ground;
+            std::string callsign = "TEST_GND";
+            if (ToUpperCopy(scenario.operatingMode.parityStage) == "ENROUTE") {
+                stage = WorkflowStage::Enroute;
+                source = BoardSource::Enroute;
+                role = StationRole::Center;
+                callsign = "TEST_CTR";
+            } else if (
+                ToUpperCopy(scenario.operatingMode.parityStage) == "ARRIVAL") {
+                stage = WorkflowStage::Arrival;
+                source = BoardSource::Arrival;
+                role = StationRole::Tower;
+                callsign = "TEST_TWR";
+            }
+            auto display = MakePhasePublisherBoard(
+                source,
+                role,
+                callsign,
+                "123.450");
+            display.airportIcao = "KTEST";
+            display.stations.front().stableCompletionKey =
+                callsign + "|123450";
+            xvatsim::brain::BrainOwnedRuntimeState ifrState;
+            xvatsim::brain::BrainOwnedRuntimeState vfrState;
+            xvatsim::brain::InitializeBrainOwnedOperatingMode(
+                &ifrState,
+                xvatsim::brain::BrainOwnedOperatingModeInitializationInput{});
+            xvatsim::brain::BrainOwnedOperatingModeInitializationInput vfrInput;
+            vfrInput.loadStatus =
+                xvatsim::brain::BrainOwnedOperatingModeLoadStatus::Valid;
+            vfrInput.storedMode =
+                xvatsim::brain::BrainOwnedOperatingMode::VFR;
+            xvatsim::brain::InitializeBrainOwnedOperatingMode(
+                &vfrState,
+                vfrInput);
+            ifrState.finalDisplaySnapshot = display;
+            vfrState.finalDisplaySnapshot = display;
+            xvatsim::brain::ModuleBoardSnapshot moduleBoard;
+            moduleBoard.available = true;
+            moduleBoard.source = source;
+            moduleBoard.airportIcao = "KTEST";
+            xvatsim::brain::BoardStationSnapshot boardStation;
+            boardStation.role = role;
+            boardStation.callsign = callsign;
+            boardStation.frequency = "123.450";
+            boardStation.online = true;
+            boardStation.stableCompletionKey = callsign + "|123450";
+            moduleBoard.stations.push_back(boardStation);
+            if (stage == WorkflowStage::Departure) {
+                ifrState.departureBoardSnapshot = moduleBoard;
+                vfrState.departureBoardSnapshot = moduleBoard;
+            } else if (stage == WorkflowStage::Enroute) {
+                ifrState.enrouteBoardSnapshot = moduleBoard;
+                vfrState.enrouteBoardSnapshot = moduleBoard;
+            } else {
+                ifrState.arrivalBoardSnapshot = moduleBoard;
+                vfrState.arrivalBoardSnapshot = moduleBoard;
+            }
+            xvatsim::brain::BrainOwnedCandidateCompletion completion;
+            completion.callsign = callsign;
+            completion.frequency = "123.450";
+            completion.stableKey = callsign + "|123450";
+            completion.decision =
+                xvatsim::brain::BrainOwnedCandidateDecision::Accepted;
+            completion.displayed = true;
+            ifrState.candidateCompletions.push_back(completion);
+            vfrState.candidateCompletions.push_back(completion);
+            ifrState.lastWorkflowStage = stage;
+            vfrState.lastWorkflowStage = stage;
+            actual.parity =
+                SerializeOperatingModeParityOutput(
+                    stage,
+                    ifrState) ==
+                SerializeOperatingModeParityOutput(
+                    stage,
+                    vfrState);
+            actual.allowedParityDifference = "state-diagnostic-only";
+        }
+    }
+
+    actual.mode = HarnessOperatingModeName(state.operatingMode.mode);
+    actual.source = xvatsim::brain::ToString(state.operatingMode.source);
+    actual.reason = state.operatingMode.reason;
+    actual.generation = static_cast<int>(state.operatingMode.generation);
+    if (!lastSelection.requestReason.empty()) {
+        actual.requestSource =
+            xvatsim::brain::ToString(lastSelection.requestSource);
+        actual.requestReason = lastSelection.requestReason;
+    }
+
+    std::filesystem::remove(path, cleanupError);
+    return actual;
+}
+
+int RunOperatingModeProbe(const ScenarioData& scenario) {
+    const auto actual = ExecuteOperatingModeProbe(scenario);
+    const auto& expected = scenario.operatingModeExpectations;
+    int failures = 0;
+    const auto checkString = [&](const char* label,
+                                 const std::optional<std::string>& wanted,
+                                 const std::string& observed) {
+        if (wanted.has_value() && *wanted != observed) {
+            failures += PrintMismatch(label, *wanted, observed);
+        }
+    };
+    const auto checkInt = [&](const char* label,
+                              const std::optional<int>& wanted,
+                              int observed) {
+        if (wanted.has_value() && *wanted != observed) {
+            failures += PrintMismatch(
+                label,
+                std::to_string(*wanted),
+                std::to_string(observed));
+        }
+    };
+    const auto checkBool = [&](const char* label,
+                               const std::optional<bool>& wanted,
+                               bool observed) {
+        if (wanted.has_value() && *wanted != observed) {
+            failures += PrintMismatch(
+                label,
+                *wanted ? "true" : "false",
+                observed ? "true" : "false");
+        }
+    };
+
+    checkString("operating mode", expected.mode, actual.mode);
+    checkString("operating mode load status", expected.loadStatus, actual.loadStatus);
+    checkString("operating mode source", expected.source, actual.source);
+    checkString("operating mode reason", expected.reason, actual.reason);
+    checkInt("operating mode generation", expected.generation, actual.generation);
+    checkInt("operating mode change count", expected.changeCount, actual.changeCount);
+    checkInt(
+        "operating mode persistence requests",
+        expected.persistenceRequests,
+        actual.persistenceRequests);
+    checkInt("operating mode save attempts", expected.saveAttempts, actual.saveAttempts);
+    checkInt("operating mode save successes", expected.saveSuccesses, actual.saveSuccesses);
+    checkString(
+        "operating mode request source",
+        expected.requestSource,
+        actual.requestSource);
+    checkString(
+        "operating mode request reason",
+        expected.requestReason,
+        actual.requestReason);
+    checkBool(
+        "operating mode state unchanged",
+        expected.stateUnchanged,
+        actual.stateUnchanged);
+    checkBool(
+        "operating mode reset preserved",
+        expected.resetPreserved,
+        actual.resetPreserved);
+    checkBool(
+        "operating mode no automatic VFR",
+        expected.noAutomaticVfr,
+        actual.noAutomaticVfr);
+    checkBool("operating mode parity", expected.parity, actual.parity);
+    checkString(
+        "operating mode allowed parity difference",
+        expected.allowedParityDifference,
+        actual.allowedParityDifference);
+    checkInt("operating mode retry count", expected.retryCount, actual.retryCount);
+    if (!expected.roundTripModes.empty() &&
+        expected.roundTripModes != actual.roundTripModes) {
+        failures += PrintMismatch(
+            "operating mode round trip",
+            JoinCsv(expected.roundTripModes),
+            JoinCsv(actual.roundTripModes));
+    }
+
+    if (failures != 0) {
+        return 1;
+    }
+    std::cout << "Scenario passed: " << scenario.name << "\n";
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -10186,6 +10882,10 @@ int main(int argc, char** argv) {
     if (!LoadScenario(argv[1], &scenario, &error)) {
         std::cerr << "Failed to load scenario: " << error << "\n";
         return 2;
+    }
+
+    if (!scenario.operatingMode.probe.empty()) {
+        return RunOperatingModeProbe(scenario);
     }
 
     auto workflowState = scenario.workflowState;

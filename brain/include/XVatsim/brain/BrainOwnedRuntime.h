@@ -26,6 +26,53 @@ enum class BrainOwnedDisplayOverrideMode {
     ForcedSleep,
 };
 
+enum class BrainOwnedOperatingMode {
+    IFR,
+    VFR,
+};
+
+enum class BrainOwnedOperatingModeSource {
+    Default,
+    SettingsStore,
+    PilotMenu,
+};
+
+enum class BrainOwnedOperatingModeLoadStatus {
+    Missing,
+    Valid,
+    Invalid,
+    Unavailable,
+};
+
+struct BrainOwnedOperatingModeState {
+    BrainOwnedOperatingMode mode = BrainOwnedOperatingMode::IFR;
+    BrainOwnedOperatingModeSource source =
+        BrainOwnedOperatingModeSource::Default;
+    std::string reason = "missing-setting";
+    std::uint64_t generation = 0;
+};
+
+struct BrainOwnedOperatingModeInitializationInput {
+    BrainOwnedOperatingModeLoadStatus loadStatus =
+        BrainOwnedOperatingModeLoadStatus::Missing;
+    BrainOwnedOperatingMode storedMode = BrainOwnedOperatingMode::IFR;
+};
+
+struct BrainOwnedOperatingModeSelectionResult {
+    BrainOwnedOperatingMode previousMode = BrainOwnedOperatingMode::IFR;
+    BrainOwnedOperatingMode requestedMode = BrainOwnedOperatingMode::IFR;
+    BrainOwnedOperatingMode effectiveMode = BrainOwnedOperatingMode::IFR;
+    BrainOwnedOperatingModeSource stateSource =
+        BrainOwnedOperatingModeSource::Default;
+    std::string stateReason;
+    BrainOwnedOperatingModeSource requestSource =
+        BrainOwnedOperatingModeSource::PilotMenu;
+    std::string requestReason;
+    std::uint64_t generation = 0;
+    bool changed = false;
+    bool persistenceRequested = false;
+};
+
 enum class BrainOwnedTextEntryMode {
     None,
     ManualCtaf,
@@ -141,6 +188,7 @@ public:
 };
 
 struct BrainOwnedRuntimeState {
+    BrainOwnedOperatingModeState operatingMode;
     bool hasRoutePolygonSnapshot = false;
     RouteSectorSnapshot routePolygonSnapshot;
     std::uint64_t routePolygonHash = 0;
@@ -1249,6 +1297,15 @@ struct BrainOwnedPublisherOutput {
 void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state);
 void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     BrainOwnedRuntimeState* state);
+void InitializeBrainOwnedOperatingMode(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedOperatingModeInitializationInput& input);
+BrainOwnedOperatingModeSelectionResult RequestBrainOwnedOperatingModeSelection(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedOperatingMode requestedMode);
+const char* ToString(BrainOwnedOperatingMode mode);
+const char* ToString(BrainOwnedOperatingModeSource source);
+const char* ToString(BrainOwnedOperatingModeLoadStatus status);
 void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state);
 
 void CommitBrainOwnedLastSampledFacts(

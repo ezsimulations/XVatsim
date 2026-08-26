@@ -1,0 +1,9 @@
+name=V2 operating mode all resets preserve selection
+operating_mode.probe=reset-preservation
+operating_mode.initial_mode=VFR
+operating_mode.reset_paths=runtime,cache-preserving,session,cold-dark,invalid-aircraft,xpilot-disconnect,xpilot-reconnect,callsign-change,plugin-disable-enable
+expect.operating_mode=VFR
+expect.operating_mode_source=pilot-menu
+expect.operating_mode_reason=explicit-selection
+expect.operating_mode_generation=1
+expect.operating_mode_reset_preserved=true

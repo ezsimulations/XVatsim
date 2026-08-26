@@ -10,7 +10,22 @@ enum class StoredDisplayMode {
     Sleep,
 };
 
+enum class StoredOperatingMode {
+    IFR,
+    VFR,
+};
+
+enum class StoredOperatingModeLoadStatus {
+    Missing,
+    Valid,
+    Invalid,
+    Unavailable,
+};
+
 struct PluginSettings {
+    StoredOperatingMode operatingMode = StoredOperatingMode::IFR;
+    StoredOperatingModeLoadStatus operatingModeLoadStatus =
+        StoredOperatingModeLoadStatus::Missing;
     StoredDisplayMode displayMode = StoredDisplayMode::Auto;
     bool standbyAssistEnabled = false;
     bool directCtafStandbyAssistEnabled = false;

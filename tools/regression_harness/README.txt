@@ -87,6 +87,48 @@ Expectations:
 - expect.display_source=Enroute
 - expect.display_callsigns=LAX_CTR,PHL_CTR
 
+V2 operating-mode foundation replay
+-----------------------------------
+The Step 2 operating-mode probes exercise the brain-owned IFR/VFR preference,
+the settings-store source fact, reset preservation, fail-soft persistence, and
+IFR/VFR output parity. They do not enable VFR controller behavior.
+
+Operating-mode inputs:
+
+- operating_mode.probe=settings-load|round-trip|selection|reset-preservation|missing-flight-plan|parity|persistence-failure
+- operating_mode.settings_entry=<missing>|<empty>|<malformed>|<unknown>|ifr|vfr
+- operating_mode.initial_mode=IFR|VFR
+- operating_mode.selection_requests=IFR,VFR,...
+- operating_mode.round_trip_modes=IFR,VFR
+- operating_mode.reset_paths=runtime,cache-preserving,session,cold-dark,invalid-aircraft,xpilot-disconnect,xpilot-reconnect,callsign-change,plugin-disable-enable
+- operating_mode.parity_stage=Departure|Enroute|Arrival
+- operating_mode.persistence=temporary|unavailable
+- operating_mode.idle_cycles=<nonnegative integer>
+
+Operating-mode expectations:
+
+- expect.operating_mode=IFR|VFR
+- expect.operating_mode_load_status=missing|valid|invalid|unavailable
+- expect.operating_mode_source=default|settings-store|pilot-menu
+- expect.operating_mode_reason=<stable reason>
+- expect.operating_mode_generation=<nonnegative integer>
+- expect.operating_mode_change_count=<nonnegative integer>
+- expect.operating_mode_persistence_requests=<nonnegative integer>
+- expect.operating_mode_save_attempts=<nonnegative integer>
+- expect.operating_mode_save_successes=<nonnegative integer>
+- expect.operating_mode_request_source=pilot-menu|none
+- expect.operating_mode_request_reason=explicit-selection|already-active|none
+- expect.operating_mode_state_unchanged=true|false
+- expect.operating_mode_reset_preserved=true|false
+- expect.operating_mode_no_automatic_vfr=true|false
+- expect.operating_mode_round_trip=IFR,VFR
+- expect.operating_mode_parity=true|false
+- expect.operating_mode_allowed_parity_difference=state-diagnostic-only
+- expect.operating_mode_retry_count=<nonnegative integer>
+
+An idempotent selection reports the request source/reason separately. It must
+not change the brain-owned mode, state source, state reason, or generation.
+
 Replay support
 --------------
 The harness can now also replay the real ENROUTE controller matcher by providing route sectors

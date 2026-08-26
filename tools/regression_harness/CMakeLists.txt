@@ -11,6 +11,7 @@ target_link_libraries(XVatsimRegressionHarness PRIVATE
     XVatsimHarnessLegacyDeparture
     XVatsimHarnessLegacyEnroute
     XVatsimRouteSector
+    XVatsimSettingsStore
     XVatsimTerminalAuthority
     XVatsimTransceiverResolver
     XVatsimUpdateChecker

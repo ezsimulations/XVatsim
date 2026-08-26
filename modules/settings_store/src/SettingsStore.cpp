@@ -76,6 +76,28 @@ std::string SerializeDisplayMode(StoredDisplayMode mode) {
     }
 }
 
+bool TryParseOperatingMode(
+    const std::string& value,
+    StoredOperatingMode* outMode) {
+    if (outMode == nullptr) {
+        return false;
+    }
+    const auto normalizedValue = NormalizeToken(value);
+    if (normalizedValue == "ifr") {
+        *outMode = StoredOperatingMode::IFR;
+        return true;
+    }
+    if (normalizedValue == "vfr") {
+        *outMode = StoredOperatingMode::VFR;
+        return true;
+    }
+    return false;
+}
+
+const char* SerializeOperatingMode(StoredOperatingMode mode) {
+    return mode == StoredOperatingMode::VFR ? "vfr" : "ifr";
+}
+
 bool TryParseInt(const std::string& value, int* outValue) {
     if (outValue == nullptr) {
         return false;
@@ -279,20 +301,35 @@ void SettingsStore::SetPath(const std::string& path) {
 PluginSettings SettingsStore::Load() const {
     PluginSettings settings;
     if (path_.empty()) {
+        settings.operatingModeLoadStatus =
+            StoredOperatingModeLoadStatus::Unavailable;
         return settings;
     }
 
     const auto settingsPath = std::filesystem::path(path_);
     std::error_code fileStatusError;
-    if (std::filesystem::exists(settingsPath, fileStatusError)) {
+    const auto settingsExists =
+        std::filesystem::exists(settingsPath, fileStatusError);
+    if (fileStatusError) {
+        settings.operatingModeLoadStatus =
+            StoredOperatingModeLoadStatus::Unavailable;
+        return settings;
+    }
+    if (settingsExists) {
         const auto fileSize = std::filesystem::file_size(settingsPath, fileStatusError);
-        if (!fileStatusError && fileSize > kMaxSettingsFileBytes) {
+        if (fileStatusError || fileSize > kMaxSettingsFileBytes) {
+            settings.operatingModeLoadStatus =
+                StoredOperatingModeLoadStatus::Unavailable;
             return settings;
         }
     }
 
     std::ifstream input(settingsPath);
     if (!input.is_open()) {
+        settings.operatingModeLoadStatus =
+            settingsExists
+                ? StoredOperatingModeLoadStatus::Unavailable
+                : StoredOperatingModeLoadStatus::Missing;
         return settings;
     }
 
@@ -312,11 +349,31 @@ PluginSettings SettingsStore::Load() const {
 
         const auto separator = line.find('=');
         if (separator == std::string::npos) {
+            const auto normalizedLine = NormalizeToken(line);
+            if (normalizedLine.rfind("operating_mode", 0) == 0) {
+                settings.operatingMode = StoredOperatingMode::IFR;
+                settings.operatingModeLoadStatus =
+                    StoredOperatingModeLoadStatus::Invalid;
+            }
             continue;
         }
 
         const auto key = NormalizeToken(line.substr(0, separator));
         const auto value = TrimCopy(line.substr(separator + 1));
+
+        if (key == "operating_mode") {
+            StoredOperatingMode parsedMode = StoredOperatingMode::IFR;
+            if (TryParseOperatingMode(value, &parsedMode)) {
+                settings.operatingMode = parsedMode;
+                settings.operatingModeLoadStatus =
+                    StoredOperatingModeLoadStatus::Valid;
+            } else {
+                settings.operatingMode = StoredOperatingMode::IFR;
+                settings.operatingModeLoadStatus =
+                    StoredOperatingModeLoadStatus::Invalid;
+            }
+            continue;
+        }
 
         if (key == "display_mode") {
             settings.displayMode = ParseDisplayMode(value);
@@ -429,6 +486,9 @@ bool SettingsStore::Save(const PluginSettings& settings) const {
             return false;
         }
 
+        output << "operating_mode="
+               << SerializeOperatingMode(normalizedSettings.operatingMode)
+               << "\n";
         output << "display_mode=" << SerializeDisplayMode(normalizedSettings.displayMode) << "\n";
         output << "standby_assist="
                << (normalizedSettings.standbyAssistEnabled ? "true" : "false") << "\n";

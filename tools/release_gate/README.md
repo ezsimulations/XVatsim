@@ -7,23 +7,32 @@ each other.
 
 ## V2 Windows Proof Baseline
 
-V2 development begins from a deliberately locked baseline of `451` saved
-regression scenarios. Run the clean Windows proof baseline from the repository
-root:
+V2 development began from a deliberately locked baseline of `451` saved
+regression scenarios. Its accepted Step 1 receipt is historical and immutable:
+
+```text
+outputs\v2_step_01_windows_proof_baseline_receipt.md
+```
+
+The proof runner requires an explicit expected count, receipt destination, and
+receipt title. It refuses the historical Step 1 receipt path, so invoking it
+without step-specific arguments cannot overwrite accepted evidence.
+
+For V2 Step 2, run from the repository root:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release_gate\Run-V2WindowsProofBaseline.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release_gate\Run-V2WindowsProofBaseline.ps1 `
+  -ExpectedScenarioCount 463 `
+  -ReceiptRelativePath "outputs\v2_step_02_ifr_vfr_mode_foundation_receipt.md" `
+  -ReceiptTitle "XVatsim V2 Step 2 IFR/VFR Mode Foundation Receipt"
 ```
 
 The command removes only the validated, repository-contained
 `build\v2-proof-baseline` directory, performs a fresh Visual Studio 18 x64
 configuration, builds `XVatsimRegressionHarness` and `XVatsimPlugin` in Release,
 runs all saved scenarios in ordinal case-insensitive filename order, and writes
-an atomic proof receipt to:
-
-```text
-outputs\v2_step_01_windows_proof_baseline_receipt.md
-```
+an atomic, pending-live receipt to the explicitly supplied repository `outputs`
+path. A failed proof leaves an existing successful receipt unchanged.
 
 The receipt records scenario counts and an aggregate scenario-set SHA-256,
 elapsed configure/build/regression time, the runner SHA-256, both binary hashes,

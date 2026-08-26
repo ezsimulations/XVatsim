@@ -1,0 +1,5 @@
+name=V2 operating mode departure output parity
+operating_mode.probe=parity
+operating_mode.parity_stage=Departure
+expect.operating_mode_parity=true
+expect.operating_mode_allowed_parity_difference=state-diagnostic-only
