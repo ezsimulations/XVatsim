@@ -1,0 +1,15 @@
+gitDiffCheckExit=0
+gitCachedDiffCheckExit=0
+trackedCount=816
+untrackedCount=237
+statusEntries=56
+stagedCount=0
+textFilesChecked=969
+binaryFilesSkipped=84
+repoFinalNewlineViolations=15
+repoTrailingWhitespaceViolations=63
+step3ChangedNewNonOutputCount=52
+step3FinalNewlineViolations=0
+step3TrailingWhitespaceViolations=0
+priorSourceFilesChecked=51
+priorUnexpectedSourceChanges=0

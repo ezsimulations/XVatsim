@@ -1,0 +1,15 @@
+Scenario count: 494
+
+Step 3 lineage fingerprint
+SHA-256: 6E7A2EB5ED86FE23CFB2AAF161F4D329F6F6AE1086D1CCE5D4E2DE07B55200B5
+Ordering: PowerShell `Get-ChildItem -Filter *.scn | Sort-Object Name` using the active Windows PowerShell culture comparison.
+Serialization per scenario: UTF-8 without BOM repository-relative path `tools/regression_harness/scenarios/<filename>`, one NUL byte, raw scenario file bytes, one NUL byte.
+Status: retained as the accepted Step 3 lineage value.
+
+Canonical release-gate fingerprint
+SHA-256: 16AA355061096CC9EBB87A1E437422FEABB8B45CDF41D7057FF9853802BF8BCB
+Ordering: ordinal case-insensitive filename comparison with ordinal filename tie-break.
+Serialization per scenario: UTF-8 without BOM repository-relative path `tools/regression_harness/scenarios/<filename>`, one NUL byte, raw scenario file bytes, one NUL byte.
+Status: canonical release-gate fingerprint going forward.
+
+Both values cover the same 494 filenames and contents. Their different ordering algorithms intentionally produce different aggregate hashes; neither value replaces or contradicts the other.

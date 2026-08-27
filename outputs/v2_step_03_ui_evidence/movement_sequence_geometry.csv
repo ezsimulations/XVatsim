@@ -1,0 +1,12 @@
+state,component,start_left,start_top,end_left,end_top,delta_x,delta_y
+closed,main-card,141,652,441,572,300,-80
+closed,rail,238,360,538,280,300,-80
+closed,orb-1,238,360,538,280,300,-80
+closed,orb-2,306,360,606,280,300,-80
+closed,orb-3,374,360,674,280,300,-80
+open,main-card,141,672,441,622,300,-50
+open,rail,238,380,538,330,300,-50
+open,drawer,120,322,420,272,300,-50
+open,orb-1,238,380,538,330,300,-50
+open,orb-2,306,380,606,330,300,-50
+open,orb-3,374,380,674,330,300,-50

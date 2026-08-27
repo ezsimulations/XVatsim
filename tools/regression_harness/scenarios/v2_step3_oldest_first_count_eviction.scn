@@ -1,0 +1,9 @@
+name=v2_step3_oldest_first_count_eviction
+step3.action=new:s
+step3.action=series:s:METAR:33:10:set
+expect.step3=set.accepted=33
+expect.step3=set.count=32
+expect.step3=set.newest_key=K33
+expect.step3=set.oldest_key=K2
+expect.step3=set.within_count_limit=true
+expect.step3=set.bytes=@set.recounted_bytes

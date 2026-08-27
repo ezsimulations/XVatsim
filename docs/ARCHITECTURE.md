@@ -46,6 +46,12 @@ Responsibilities:
 - accept or reject every reachable controller candidate with a logged reason
 - keep broad authority proof out of ordinary UI refresh unless explicitly
   scheduled as a fallback
+- own the accessory drawer selection and the three independent METAR, ATIS,
+  and PDC/private-message histories, including accepted ordering, stable-key
+  deduplication, count and byte limits, oldest-first eviction, lifecycle
+  preservation, and lifecycle clearing
+- publish immutable, generation-tagged accessory preparation snapshots and
+  the complete brain-approved accessory presentation state
 
 ### Overlay
 
@@ -54,6 +60,58 @@ Responsibilities:
 - render only the brain-issued view model
 - clamp text, position, scale, and animation inputs
 - expose text-entry and acknowledge/recall requests without owning controller logic
+- report bounded ORB-click facts without deciding which drawer opens
+- own presentation-only drawer scrolling, shared window geometry, hit testing,
+  raster resources, texture-local signatures, and rendering
+
+## V2 Step 3 Accessory Shell
+
+The existing XPLM overlay window contains one visible accessory drawer surface
+backed by three independent brain-owned histories: METAR, ATIS, and
+PDC/private-message. At most one surface is visible, but selecting, closing, or
+switching it does not combine the histories or transfer their contents. Step 3
+histories exist only in process memory. Step 3 has no live METAR, ATIS, PDC, or
+private-message source; its normal production drawers show explicit empty-state
+text until later roadmap steps connect those sources.
+
+The overlay reports a bounded click fact. The plugin consumes that fact exactly
+once and asks the brain for the selection decision. The brain owns opening,
+closing, switching, ordering, deduplication, limiting, eviction, generations,
+and the boundary-specific decision to preserve or clear history. The overlay
+owns only presentation concerns: scrolling while a drawer is open, layout,
+clamping, hit testing, texture-local render signatures, rasterization, uploads,
+and drawing.
+
+Populated drawer text is prepared by one event-driven Windows worker running at
+below-normal priority. Startup is asynchronous and fail-closed. The worker
+receives only immutable brain-approved snapshots and returns immutable prepared
+plans tagged with the exact drawer, history, typography, layout, and scale
+generations. Job enqueue and ready-plan publication are nonblocking handoffs;
+the X-Plane thread retries only while accessory activity is genuinely pending.
+Stale plans are rejected before publication.
+
+The preparation worker must not access XPLM, OpenGL, texture identifiers,
+settings, files, network sources, plugin lifecycle callbacks, or mutable brain
+state. Its private GDI+ measurement resources are created, used, and destroyed
+on the worker. Disable and stop cancel work, wake the worker, join it, and leave
+zero worker threads.
+
+Accessory rendering is render-on-change. Once the exact prepared plan is
+published and textures are warm, an unchanged frame performs no history copy or
+traversal, text wrapping, GDI+ measurement, rasterization, texture upload,
+enqueue attempt, file/network operation, or diagnostic logging.
+
+Performance evidence keeps four concepts separate:
+
+- worker preparation wait, which is asynchronous and never represented as
+  simulator-thread computation;
+- synchronous simulator-thread dispatch and presentation work;
+- X-Plane frame-cadence wait until the matching draw callback; and
+- measured rasterization, OpenGL upload, and completed accessory draw work.
+
+An accessory action is complete only when the draw matching its exact selection
+and render generations finishes. Frame-cadence delay cannot be relabelled as CPU
+work, and worker preparation time cannot be folded into main-thread timing.
 
 ## Live Module Set
 

@@ -1,0 +1,20 @@
+name=v2_step3_pdc_orb_toggle
+step3.action=new:s
+step3.action=click:s:PDC:1:first
+step3.action=project:s:1:open_snapshot
+step3.action=click:s:PDC:2:second
+expect.step3=first.status=available
+expect.step3=first.action=Opened
+expect.step3=first.active=PDC
+expect.step3=first.previous=NONE
+expect.step3=first.generation=1
+expect.step3=open_snapshot.labels=METAR,ATIS,PDC
+expect.step3=open_snapshot.selected_count=1
+expect.step3=open_snapshot.selected_drawer=PDC
+expect.step3=open_snapshot.open_indicator_count=1
+expect.step3=open_snapshot.placeholder_cached=false
+expect.step3=open_snapshot.empty_state_text=PDC/private-message data is not enabled in Step 3.
+expect.step3=second.action=Closed
+expect.step3=second.active=NONE
+expect.step3=second.previous=PDC
+expect.step3=second.generation=2

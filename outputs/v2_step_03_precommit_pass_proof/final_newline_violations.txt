@@ -1,0 +1,15 @@
+outputs/ctaf_unicom_missing_evidence_hardening_audit_report.md
+outputs/ctaf_unicom_post_retirement_diagnostic_cleanup_report.md
+SDK/CHeaders/Wrappers/XPCBroadcaster.h
+SDK/CHeaders/Wrappers/XPCDisplay.h
+SDK/CHeaders/Wrappers/XPCListener.h
+SDK/CHeaders/Wrappers/XPCProcessing.cpp
+SDK/CHeaders/Wrappers/XPCWidget.h
+SDK/CHeaders/Wrappers/XPCWidgetAttachments.h
+SDK/Libraries/Mac/XPLM.framework/Resources
+SDK/Libraries/Mac/XPLM.framework/Versions/Current
+SDK/Libraries/Mac/XPLM.framework/XPLM
+SDK/Libraries/Mac/XPWidgets.framework/Resources
+SDK/Libraries/Mac/XPWidgets.framework/Versions/Current
+SDK/Libraries/Mac/XPWidgets.framework/XPWidgets
+tools/regression_harness/scenarios/live_eddb_lbsf_dal100_battle_test.scn

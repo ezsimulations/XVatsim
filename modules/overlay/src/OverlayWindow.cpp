@@ -1,5 +1,9 @@
 #include "XVatsim/modules/overlay/OverlayWindow.h"
 
+#if defined(XVATSIM_STEP3_OFFLINE_VISUAL_PROOF)
+#include "XVatsim/modules/overlay/OverlayVisualProof.h"
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -18,6 +22,7 @@
 #include "XPLMDisplay.h"
 #include "XPLMGraphics.h"
 #include "XPLMProcessing.h"
+#include "XPLMUtilities.h"
 
 #ifdef min
 #undef min
@@ -49,6 +54,7 @@ using Gdiplus::Rect;
 using Gdiplus::RectF;
 using Gdiplus::SolidBrush;
 using Gdiplus::StringAlignmentNear;
+using Gdiplus::StringAlignmentCenter;
 using Gdiplus::StringFormat;
 using Gdiplus::StringFormatFlagsNoWrap;
 using Gdiplus::StringTrimmingEllipsisCharacter;
@@ -57,7 +63,8 @@ using Gdiplus::UnitPixel;
 constexpr int kOverlayMarginLeft = 18;
 constexpr int kOverlayMarginTop = 44;
 constexpr int kOverlayWidth = 430;
-constexpr int kOverlayHeight = 388;
+constexpr int kOverlayHeight = 374;
+constexpr int kOverlayOpenHeight = 506;
 
 constexpr int kCaseWidth = 170;
 constexpr int kCaseHeight = 18;
@@ -197,7 +204,12 @@ void ClampTopLeftToScreen(int width, int height, int* left, int* top) {
     int screenTop = 0;
     int screenRight = 0;
     int screenBottom = 0;
+#if defined(XVATSIM_STEP3_OFFLINE_VISUAL_PROOF)
+    screenRight = 1920;
+    screenTop = 1080;
+#else
     XPLMGetScreenBoundsGlobal(&screenLeft, &screenTop, &screenRight, &screenBottom);
+#endif
     if (screenRight <= screenLeft || screenTop <= screenBottom) {
         return;
     }
@@ -420,7 +432,11 @@ OverlaySections ResolveSections(
     sections.versionTone = viewModel.version.tone;
     if (sections.versionRotateAlternate &&
         !sections.versionAlternateText.empty() &&
+#if defined(XVATSIM_STEP3_OFFLINE_VISUAL_PROOF)
+        false) {
+#else
         static_cast<int>(std::floor(XPLMGetElapsedTime() / 2.0f)) % 2 != 0) {
+#endif
         sections.versionText = sections.versionAlternateText;
     }
     sections.systemNotice = viewModel.systemNotice;
@@ -982,6 +998,204 @@ RasterImage RenderCardImage(
     return CaptureBitmap(&bitmap);
 }
 
+std::wstring AccessoryUtf8ToWide(const std::string& value) {
+    if (value.empty()) {
+        return {};
+    }
+    const auto required = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+        static_cast<int>(value.size()), nullptr, 0);
+    if (required <= 0) {
+        return {};
+    }
+    std::wstring wide(static_cast<std::size_t>(required), L'\0');
+    if (MultiByteToWideChar(
+            CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+            static_cast<int>(value.size()), wide.data(), required) != required) {
+        return {};
+    }
+    return wide;
+}
+
+void DrawAccessoryText(
+    Graphics* graphics,
+    const RectF& rect,
+    const std::string& text,
+    Font* font,
+    const Color& color,
+    Gdiplus::StringAlignment alignment = StringAlignmentNear) {
+    if (graphics == nullptr || font == nullptr || text.empty()) {
+        return;
+    }
+    const auto wide = AccessoryUtf8ToWide(text);
+    if (wide.empty()) {
+        return;
+    }
+    SolidBrush brush(color);
+    StringFormat format;
+    format.SetAlignment(alignment);
+    format.SetLineAlignment(StringAlignmentCenter);
+    format.SetFormatFlags(StringFormatFlagsNoWrap);
+    graphics->DrawString(
+        wide.c_str(), static_cast<INT>(wide.size()), font, rect, &format, &brush);
+}
+
+RasterImage RenderAccessoryRailImage(
+    const AccessoryLayoutResult& layout,
+    const brain::BrainOwnedAccessoryPresentationSnapshot& snapshot) {
+    const auto width = std::max(1, layout.railBounds.right - layout.railBounds.left);
+    const auto height = std::max(1, layout.railBounds.top - layout.railBounds.bottom);
+    Bitmap bitmap(width, height, PixelFormat32bppARGB);
+    Graphics graphics(&bitmap);
+    ConfigureGraphics(&graphics);
+    graphics.Clear(Color(0, 0, 0, 0));
+
+    Font labelFont(
+        L"Segoe UI", std::max(1.0f, 8.0f * layout.scale),
+        FontStyleBold, UnitPixel);
+    Font indicatorFont(
+        L"Segoe UI", std::max(1.0f, 6.5f * layout.scale),
+        FontStyleBold, UnitPixel);
+    const Color neutralFill(226, 39, 50, 62);
+    const Color neutralBorder(224, 122, 146, 164);
+    const Color selectedFill(238, 48, 67, 82);
+    const Color selectedBorder(255, 234, 244, 250);
+    const Color labelColor(246, 236, 242, 246);
+    const Color indicatorColor(255, 250, 222, 138);
+
+    for (std::size_t index = 0;
+         index < layout.orbs.size() && index < snapshot.orbs.size();
+         ++index) {
+        const auto& orb = layout.orbs[index];
+        const auto& presentation = snapshot.orbs[index];
+        const auto left = static_cast<float>(orb.bounds.left - layout.railBounds.left);
+        const auto top = static_cast<float>(layout.railBounds.top - orb.bounds.top);
+        const auto diameter = static_cast<float>(orb.diameterPhysicalPixels);
+        const RectF circle(left + 1.0f, top + 1.0f,
+                           std::max(1.0f, diameter - 2.0f),
+                           std::max(1.0f, diameter - 2.0f));
+        SolidBrush fill(presentation.selected ? selectedFill : neutralFill);
+        Pen border(
+            presentation.selected ? selectedBorder : neutralBorder,
+            presentation.selected ? std::max(2.0f, 2.0f * layout.scale) : 1.0f);
+        graphics.FillEllipse(&fill, circle);
+        graphics.DrawEllipse(&border, circle);
+
+        const auto labelHeight = std::max(10.0f, 15.0f * layout.scale);
+        const auto labelTop = top + (presentation.selected ? diameter * 0.25f : diameter * 0.35f);
+        DrawAccessoryText(
+            &graphics,
+            RectF(left, labelTop, diameter, labelHeight),
+            presentation.label,
+            &labelFont,
+            labelColor,
+            StringAlignmentCenter);
+        if (presentation.selected && !presentation.selectedIndicator.empty()) {
+            DrawAccessoryText(
+                &graphics,
+                RectF(left, top + diameter * 0.56f, diameter,
+                      std::max(8.0f, 11.0f * layout.scale)),
+                presentation.selectedIndicator,
+                &indicatorFont,
+                indicatorColor,
+                StringAlignmentCenter);
+        }
+    }
+    return CaptureBitmap(&bitmap);
+}
+
+RasterImage RenderAccessoryDrawerImage(
+    const AccessoryLayoutResult& layout,
+    const AccessoryPresentationState& state) {
+    const auto width = std::max(1, layout.drawerBounds.right - layout.drawerBounds.left);
+    const auto height = std::max(1, layout.drawerBounds.top - layout.drawerBounds.bottom);
+    Bitmap bitmap(width, height, PixelFormat32bppARGB);
+    Graphics graphics(&bitmap);
+    ConfigureGraphics(&graphics);
+    graphics.Clear(Color(0, 0, 0, 0));
+
+    const RectF panel(1.0f, 1.0f, static_cast<float>(width - 2),
+                      static_cast<float>(height - 2));
+    FillRoundedRect(
+        &graphics, panel, std::max(7.0f, 10.0f * layout.scale),
+        Color(242, 31, 43, 54), Color(226, 104, 132, 151));
+
+    if (state.activeSnapshot == nullptr) {
+        return CaptureBitmap(&bitmap);
+    }
+    const auto& snapshot = *state.activeSnapshot;
+    const auto renderPlan = BuildAccessoryDrawerRenderPlan(state, layout);
+    Font titleFont(
+        L"Segoe UI", std::max(1.0f, 11.5f * layout.scale),
+        FontStyleBold, UnitPixel);
+    Font bodyFont(
+        L"Segoe UI", std::max(1.0f, 11.5f * layout.scale),
+        FontStyleRegular, UnitPixel);
+    Font markerFont(
+        L"Segoe UI", std::max(1.0f, 9.0f * layout.scale),
+        FontStyleBold, UnitPixel);
+    const auto inset = static_cast<float>(layout.drawerContentInset);
+    const auto titleHeight = static_cast<float>(layout.drawerHeaderHeight);
+    DrawAccessoryText(
+        &graphics,
+        RectF(inset, static_cast<float>(layout.drawerHeaderTop),
+              static_cast<float>(width) - (inset * 2.0f), titleHeight),
+        snapshot.drawerTitle,
+        &titleFont,
+        Color(255, 230, 240, 247));
+
+    const auto lineHeight = static_cast<float>(layout.drawerLineHeight);
+    auto y = static_cast<float>(layout.drawerContentTop);
+    for (const auto& line : renderPlan.visibleLines) {
+        DrawAccessoryText(
+            &graphics,
+            RectF(inset, y, static_cast<float>(width) - (inset * 2.0f), lineHeight),
+            line.text,
+            line.finalMarker ? &markerFont : (line.title ? &titleFont : &bodyFont),
+            line.finalMarker ? Color(238, 245, 207, 118) :
+                (line.title
+                    ? Color(245, 210, 228, 238)
+                    : Color(232, 178, 197, 209)));
+        y += lineHeight;
+    }
+    return CaptureBitmap(&bitmap);
+}
+
+#if defined(XVATSIM_STEP3_OFFLINE_VISUAL_PROOF)
+
+}  // namespace
+
+OfflineRasterImage RenderProductionMainCardForOfflineProof(
+    const brain::OverlayViewModel& viewModel,
+    int scrollOffset) {
+    auto image = RenderCardImage(
+        ResolveSections(viewModel, false, {}), scrollOffset);
+    return {image.width, image.height, std::move(image.pixels)};
+}
+
+std::size_t BuildProductionMainCardSignatureForOfflineProof(
+    const brain::OverlayViewModel& viewModel,
+    int scrollOffset) {
+    const auto sections = ResolveSections(viewModel, false, {});
+    return BuildRenderSignature(sections, scrollOffset, false, 1.0f);
+}
+
+OfflineRasterImage RenderProductionAccessoryRailForOfflineProof(
+    const AccessoryLayoutResult& layout,
+    const brain::BrainOwnedAccessoryPresentationSnapshot& snapshot) {
+    auto image = RenderAccessoryRailImage(layout, snapshot);
+    return {image.width, image.height, std::move(image.pixels)};
+}
+
+OfflineRasterImage RenderProductionAccessoryDrawerForOfflineProof(
+    const AccessoryLayoutResult& layout,
+    const AccessoryPresentationState& state) {
+    auto image = RenderAccessoryDrawerImage(layout, state);
+    return {image.width, image.height, std::move(image.pixels)};
+}
+
+#else
+
 void EnsureTexture(unsigned int* textureId) {
     if (*textureId != 0U) {
         return;
@@ -1125,6 +1339,9 @@ void OverlayWindow::Create() {
     }
     windowVisible_ = false;
     overlayEnabled_ = false;
+    accessoryIntegrationCounters_ = {};
+    accessoryPerformance_ = std::make_unique<AccessoryPerformanceCollector>();
+    accessoryPerformance_->ResetForNewProcess(accessoryPerformanceEpoch_++);
     animationProgress_ = 0.0f;
     animationTarget_ = 0.0f;
     lastWakeState_ = false;
@@ -1136,12 +1353,25 @@ void OverlayWindow::Create() {
         gdiplusToken_ = static_cast<std::uintptr_t>(token);
     }
 
+    accessoryMeasurementContext_ = InitializeAccessoryTextMeasurement();
+    accessoryTypography_ = PrepareAccessoryTypography(
+        accessoryMeasurementContext_, scale_);
+    StartAccessoryPreparation();
+
     caseTextureDirty_ = true;
     cardTextureDirty_ = true;
+    accessoryRailTextureDirty_ = true;
+    accessoryDrawerTextureDirty_ = true;
+    accessoryRailRasterReason_ = AccessoryRasterReason::Initial;
+    accessoryDrawerRasterReason_ = AccessoryRasterReason::Initial;
+    accessoryDrawCallbackOrdinal_ = 0;
+    accessoryLastDrawCallbackEnteredMicroseconds_ = 0;
     lastCardSignature_ = 0;
+    RefreshAccessoryLayout(AccessoryAnchorOperation::Initialize);
 }
 
 void OverlayWindow::Destroy() {
+    StopAccessoryPreparation();
     if (window_ != nullptr) {
         XPLMDestroyWindow(window_);
         window_ = nullptr;
@@ -1149,11 +1379,21 @@ void OverlayWindow::Destroy() {
 
     CloseTransitionSoundAlias();
 
-    if (caseTextureId_ != 0U || cardTextureId_ != 0U) {
-        GLuint textureIds[2] = {caseTextureId_, cardTextureId_};
-        glDeleteTextures(2, textureIds);
+    if (caseTextureId_ != 0U || cardTextureId_ != 0U ||
+        accessoryRailTextureId_ != 0U || accessoryDrawerTextureId_ != 0U) {
+        GLuint textureIds[4] = {
+            caseTextureId_, cardTextureId_, accessoryRailTextureId_,
+            accessoryDrawerTextureId_};
+        glDeleteTextures(4, textureIds);
         caseTextureId_ = 0;
         cardTextureId_ = 0;
+        accessoryRailTextureId_ = 0;
+        accessoryDrawerTextureId_ = 0;
+    }
+
+    if (accessoryMeasurementContext_ != nullptr) {
+        ShutdownAccessoryTextMeasurement(accessoryMeasurementContext_);
+        accessoryMeasurementContext_ = nullptr;
     }
 
     if (gdiplusToken_ != 0U) {
@@ -1163,6 +1403,183 @@ void OverlayWindow::Destroy() {
 
     windowVisible_ = false;
     overlayEnabled_ = false;
+    accessoryPresentation_ = {};
+    accessoryUpdateInput_ = {};
+    accessoryPresentationHandle_ = {};
+    accessoryLayout_ = {};
+    accessoryDrawerOpen_ = false;
+    accessoryAnchorState_ = {};
+    dragMoved_ = false;
+    accessoryClickQueue_ = {};
+    accessoryInputDispatcher_ = {};
+    accessoryPerformance_.reset();
+    accessoryDrawCallbackOrdinal_ = 0;
+    accessoryLastDrawCallbackEnteredMicroseconds_ = 0;
+}
+
+AccessoryPreparationKey OverlayWindow::BuildAccessoryPreparationKey(
+    brain::BrainOwnedAccessoryDrawerId drawer,
+    std::uint64_t historyGeneration) const {
+    AccessoryPreparationKey key;
+    key.drawer = drawer;
+    key.historyGeneration = historyGeneration;
+    key.layoutGeneration = accessoryLayoutGeneration_;
+    key.typographyGeneration = accessoryTypography_.generation;
+    key.scaleThousandths = static_cast<int>(std::lround(scale_ * 1000.0f));
+    key.contentWidth = std::max(1,
+        accessoryLayout_.drawerBounds.right - accessoryLayout_.drawerBounds.left -
+            (2 * accessoryLayout_.drawerContentInset));
+    key.visibleLineCapacity = accessoryLayout_.drawerVisibleLineCapacity;
+    return key;
+}
+
+void OverlayWindow::StartAccessoryPreparation() {
+    auto state = accessoryPreparationWorker_.State();
+    if (state == AccessoryPreparationWorkerState::Stopped) {
+        accessoryPreparationWorker_.Start(GetCurrentThreadId());
+        accessoryPreparationRequested_.fill(false);
+        state = accessoryPreparationWorker_.State();
+    }
+    if (state == AccessoryPreparationWorkerState::Failed &&
+        !accessoryPreparationFailureDiagnosticEmitted_ &&
+        accessoryPreparationFailureCallback_ != nullptr) {
+        accessoryPreparationFailureDiagnosticEmitted_ = true;
+        accessoryPreparationFailureCallback_(
+            accessoryPreparationWorker_.Failure(),
+            accessoryPreparationFailureRefcon_);
+    }
+}
+
+void OverlayWindow::StopAccessoryPreparation() {
+    accessoryPreparationWorker_.Stop();
+    accessoryPreparationFailureDiagnosticEmitted_ = false;
+    accessoryPreparationRequested_.fill(false);
+    accessoryPendingPreparationRequests_ = {};
+    accessoryUpdateInput_.preparedPlan.reset();
+    accessoryPreparationWaitStartedMicroseconds_ = 0;
+}
+
+void OverlayWindow::SetAccessoryPreparationFailureCallback(
+    OverlayAccessoryPreparationFailureCallback callback,
+    void* refcon) {
+    accessoryPreparationFailureCallback_ = callback;
+    accessoryPreparationFailureRefcon_ = refcon;
+}
+
+AccessoryPreparationWorkerCounters
+OverlayWindow::GetAccessoryPreparationCounters() const {
+    return accessoryPreparationWorker_.SnapshotCounters();
+}
+
+void OverlayWindow::QueueAccessoryPreparation(
+    const brain::BrainOwnedAccessoryPreparationHandle& preparation) {
+    if (preparation.snapshot == nullptr ||
+        preparation.snapshot->status !=
+            brain::BrainOwnedAccessoryOperationStatus::Available ||
+        preparation.snapshot->drawer ==
+            brain::BrainOwnedAccessoryDrawerId::None) return;
+    StartAccessoryPreparation();
+    const auto workerState = accessoryPreparationWorker_.State();
+    if (workerState != AccessoryPreparationWorkerState::Starting &&
+        workerState != AccessoryPreparationWorkerState::Ready) return;
+    const auto key = BuildAccessoryPreparationKey(
+        preparation.snapshot->drawer, preparation.historyGeneration);
+    const auto drawerIndex = preparation.snapshot->drawer ==
+            brain::BrainOwnedAccessoryDrawerId::Metar ? 0U :
+        preparation.snapshot->drawer == brain::BrainOwnedAccessoryDrawerId::Atis
+            ? 1U : 2U;
+    if (accessoryPreparationRequested_[drawerIndex] &&
+        accessoryRequestedPreparationKeys_[drawerIndex] == key) return;
+    AccessoryPreparationRequest request;
+    request.key = key;
+    request.snapshot = preparation.snapshot;
+    request.layout = accessoryLayout_;
+    if (accessoryPreparationWorker_.Request(request)) {
+        accessoryPreparationRequested_[drawerIndex] = true;
+        accessoryRequestedPreparationKeys_[drawerIndex] = key;
+        accessoryPendingPreparationRequests_[drawerIndex].reset();
+    } else if (accessoryPreparationWorker_.State() ==
+                   AccessoryPreparationWorkerState::Starting ||
+               accessoryPreparationWorker_.State() ==
+                   AccessoryPreparationWorkerState::Ready) {
+        accessoryPendingPreparationRequests_[drawerIndex] = std::move(request);
+    }
+}
+
+void OverlayWindow::RetryPendingAccessoryPreparations() {
+    for (std::size_t index = 0;
+         index < accessoryPendingPreparationRequests_.size(); ++index) {
+        auto& pending = accessoryPendingPreparationRequests_[index];
+        if (!pending.has_value()) continue;
+        if (!accessoryPreparationWorker_.Request(*pending)) continue;
+        accessoryPreparationRequested_[index] = true;
+        accessoryRequestedPreparationKeys_[index] = pending->key;
+        pending.reset();
+    }
+}
+
+bool OverlayWindow::PublishReadyAccessoryPreparation() {
+    StartAccessoryPreparation();
+    const auto preparationAvailability =
+        ResolveAccessoryPreparationAvailability(
+            accessoryPreparationWorker_.State(),
+            accessoryDeferredBindingPending_);
+    if (preparationAvailability.cancelPendingAction) {
+        CancelAccessoryInputDispatch(
+            accessoryDeferredBindingFact_.requestSequence);
+        accessoryDeferredBindingPending_ = false;
+        accessoryDeferredBindingFact_ = {};
+        accessoryDeferredBindingAction_ =
+            brain::BrainOwnedAccessoryDrawerAction::None;
+        accessoryPreparationWaitStartedMicroseconds_ = 0;
+        accessoryUpdateInput_.preparedPlan.reset();
+        return false;
+    }
+    RetryPendingAccessoryPreparations();
+    const auto& pending = accessoryUpdateInput_.presentation;
+    if (pending.snapshot == nullptr || pending.snapshot->activeDrawer ==
+        brain::BrainOwnedAccessoryDrawerId::None) return false;
+    if (accessoryPresentation_.selectionGeneration ==
+            pending.selectionGeneration &&
+        accessoryPresentation_.historyGeneration == pending.historyGeneration &&
+        accessoryPresentation_.layoutGeneration == pending.layoutGeneration) {
+        return false;
+    }
+    const auto key = BuildAccessoryPreparationKey(
+        pending.snapshot->activeDrawer, pending.historyGeneration);
+    std::uint64_t publicationUs = 0;
+    const auto ready = accessoryPreparationWorker_.TryTakeReady(
+        key, &publicationUs);
+    if (ready == nullptr) return false;
+    if (!accessoryDrawerOpen_) {
+        ApplyAccessoryWindowGeometry(true);
+        accessoryUpdateInput_.layout = accessoryLayout_;
+    }
+    accessoryUpdateInput_.preparedPlan = ready;
+    const auto update = UpdateAccessoryPresentation(
+        &accessoryPresentation_, accessoryUpdateInput_);
+    if (update.preparationPending || update.status !=
+        brain::BrainOwnedAccessoryOperationStatus::Available) return false;
+    if (update.delta.railRasterRequests > 0)
+        MarkAccessoryRailTextureDirty(AccessoryRasterReason::Selection);
+    if (update.delta.drawerRasterRequests > 0)
+        MarkAccessoryDrawerTextureDirty(AccessoryRasterReason::Selection);
+    if (update.delta.railRasterRequests > 0 ||
+        update.delta.drawerRasterRequests > 0) {
+        ++accessoryRenderGeneration_;
+        if (accessoryRenderGeneration_ == 0) accessoryRenderGeneration_ = 1;
+    }
+    accessoryPresentationHandle_ = pending;
+    if (accessoryDeferredBindingPending_) {
+        const auto fact = accessoryDeferredBindingFact_;
+        const auto action = accessoryDeferredBindingAction_;
+        accessoryDeferredBindingPending_ = false;
+        accessoryDeferredBindingFact_ = {};
+        accessoryDeferredBindingAction_ =
+            brain::BrainOwnedAccessoryDrawerAction::None;
+        BindAccessoryInputDispatch(fact, action);
+    }
+    return true;
 }
 
 void OverlayWindow::Update(const brain::OverlayViewModel& viewModel) {
@@ -1187,6 +1604,359 @@ void OverlayWindow::Update(const brain::OverlayViewModel& viewModel) {
         gLastOverlayUpdateTiming.totalUs > knownUs
             ? gLastOverlayUpdateTiming.totalUs - knownUs
             : 0;
+}
+
+void OverlayWindow::UpdateAccessory(
+    const brain::BrainOwnedAccessoryPresentationHandle& presentation,
+    AccessoryDispatchStageWallTimings* acceptedActionStages) {
+    const auto acceptedActionUpdateStarted = acceptedActionStages != nullptr
+        ? AccessoryWallClockMicroseconds()
+        : 0;
+    if (presentation.snapshot == nullptr ||
+        presentation.snapshot->status !=
+            brain::BrainOwnedAccessoryOperationStatus::Available) {
+        return;
+    }
+    if (window_ == nullptr) {
+        Create();
+    }
+    if (window_ == nullptr || accessoryMeasurementContext_ == nullptr) {
+        return;
+    }
+    StartAccessoryPreparation();
+    const auto preparationAvailability =
+        ResolveAccessoryPreparationAvailability(
+            accessoryPreparationWorker_.State(),
+            accessoryDeferredBindingPending_);
+    if (preparationAvailability.cancelPendingAction ||
+        accessoryPreparationWorker_.State() ==
+            AccessoryPreparationWorkerState::Failed) {
+        accessoryPreparationWaitStartedMicroseconds_ = 0;
+        accessoryUpdateInput_.preparedPlan.reset();
+        if (accessoryDeferredBindingPending_) {
+            CancelAccessoryInputDispatch(
+                accessoryDeferredBindingFact_.requestSequence);
+            accessoryDeferredBindingPending_ = false;
+            accessoryDeferredBindingFact_ = {};
+            accessoryDeferredBindingAction_ =
+                brain::BrainOwnedAccessoryDrawerAction::None;
+        }
+        return;
+    }
+
+    const auto drawerOpen = presentation.snapshot->activeDrawer !=
+        brain::BrainOwnedAccessoryDrawerId::None;
+    const bool needsPreparedTransition = drawerOpen &&
+        (accessoryPresentation_.selectionGeneration !=
+             presentation.selectionGeneration ||
+         accessoryPresentation_.historyGeneration !=
+             presentation.historyGeneration ||
+         accessoryPresentation_.layoutGeneration !=
+             presentation.layoutGeneration);
+    if (needsPreparedTransition) {
+        const auto key = BuildAccessoryPreparationKey(
+            presentation.snapshot->activeDrawer, presentation.historyGeneration);
+        std::uint64_t publicationUs = 0;
+        const auto ready = accessoryPreparationWorker_.TryTakeReady(
+            key, &publicationUs);
+        if (ready == nullptr) {
+            accessoryUpdateInput_.presentation = presentation;
+            accessoryUpdateInput_.layout = accessoryLayout_;
+            accessoryUpdateInput_.mainCardProductionSignature =
+                mainCardProductionSignature_;
+            accessoryUpdateInput_.measurementContext =
+                accessoryMeasurementContext_;
+            if (accessoryPreparationWaitStartedMicroseconds_ == 0)
+                accessoryPreparationWaitStartedMicroseconds_ =
+                    AccessoryWallClockMicroseconds();
+            return;
+        }
+        accessoryUpdateInput_.preparedPlan = ready;
+    }
+    bool layoutInputsChanged = false;
+    if (drawerOpen == accessoryDrawerOpen_ &&
+        accessoryLayout_.status ==
+            brain::BrainOwnedAccessoryOperationStatus::Available) {
+        int screenLeft = 0;
+        int screenTop = 0;
+        int screenRight = 0;
+        int screenBottom = 0;
+        XPLMGetScreenBoundsGlobal(
+            &screenLeft, &screenTop, &screenRight, &screenBottom);
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        XPLMGetWindowGeometry(window_, &left, &top, &right, &bottom);
+        layoutInputsChanged =
+            screenLeft != accessoryLastScreenLeft_ ||
+            screenTop != accessoryLastScreenTop_ ||
+            screenRight != accessoryLastScreenRight_ ||
+            screenBottom != accessoryLastScreenBottom_ ||
+            left != accessoryLayout_.resolvedBounds.left ||
+            top != accessoryLayout_.resolvedBounds.top ||
+            right != accessoryLayout_.resolvedBounds.right ||
+            bottom != accessoryLayout_.resolvedBounds.bottom;
+    }
+    if (drawerOpen != accessoryDrawerOpen_) {
+        ApplyAccessoryWindowGeometry(drawerOpen);
+        layoutInputsChanged = true;
+    } else if (layoutInputsChanged ||
+               accessoryLayout_.status !=
+                   brain::BrainOwnedAccessoryOperationStatus::Available) {
+        RefreshAccessoryLayout();
+        if (layoutInputsChanged &&
+            accessoryLayout_.status ==
+                brain::BrainOwnedAccessoryOperationStatus::Available) {
+            int currentLeft = 0;
+            int currentTop = 0;
+            int currentRight = 0;
+            int currentBottom = 0;
+            XPLMGetWindowGeometry(
+                window_, &currentLeft, &currentTop,
+                &currentRight, &currentBottom);
+            const auto& bounds = accessoryLayout_.resolvedBounds;
+            if (currentLeft != bounds.left || currentTop != bounds.top ||
+                currentRight != bounds.right || currentBottom != bounds.bottom) {
+                XPLMSetWindowGeometry(
+                    window_, bounds.left, bounds.top,
+                    bounds.right, bounds.bottom);
+            }
+        }
+    }
+
+    const bool selectionChanged =
+        accessoryUpdateInput_.presentation.snapshot == nullptr ||
+        accessoryUpdateInput_.presentation.selectionGeneration !=
+            presentation.selectionGeneration;
+    const bool historyChanged =
+        accessoryUpdateInput_.presentation.snapshot == nullptr ||
+        accessoryUpdateInput_.presentation.historyGeneration !=
+            presentation.historyGeneration;
+    const bool presentationInputsChanged =
+        accessoryUpdateInput_.presentation.snapshot == nullptr ||
+        accessoryUpdateInput_.presentation.snapshot.get() !=
+            presentation.snapshot.get() ||
+        accessoryUpdateInput_.presentation.selectionGeneration !=
+            presentation.selectionGeneration ||
+        accessoryUpdateInput_.presentation.historyGeneration !=
+            presentation.historyGeneration ||
+        accessoryUpdateInput_.presentation.layoutGeneration !=
+            presentation.layoutGeneration;
+    if (presentationInputsChanged) {
+        accessoryUpdateInput_.presentation = presentation;
+    }
+    const auto& cachedLayout = accessoryUpdateInput_.layout;
+    const bool resolvedLayoutChanged =
+        cachedLayout.status !=
+            brain::BrainOwnedAccessoryOperationStatus::Available ||
+        std::fabs(cachedLayout.scale - accessoryLayout_.scale) >= 0.001f ||
+        cachedLayout.closedWidth != accessoryLayout_.closedWidth ||
+        cachedLayout.closedHeight != accessoryLayout_.closedHeight ||
+        cachedLayout.openWidth != accessoryLayout_.openWidth ||
+        cachedLayout.openHeight != accessoryLayout_.openHeight ||
+        cachedLayout.accessoriesVisible != accessoryLayout_.accessoriesVisible ||
+        cachedLayout.accessoriesInteractive != accessoryLayout_.accessoriesInteractive ||
+        cachedLayout.railBounds.right - cachedLayout.railBounds.left !=
+            accessoryLayout_.railBounds.right - accessoryLayout_.railBounds.left ||
+        cachedLayout.railBounds.top - cachedLayout.railBounds.bottom !=
+            accessoryLayout_.railBounds.top - accessoryLayout_.railBounds.bottom ||
+        cachedLayout.drawerBounds.right - cachedLayout.drawerBounds.left !=
+            accessoryLayout_.drawerBounds.right - accessoryLayout_.drawerBounds.left ||
+        cachedLayout.drawerBounds.top - cachedLayout.drawerBounds.bottom !=
+            accessoryLayout_.drawerBounds.top - accessoryLayout_.drawerBounds.bottom ||
+        cachedLayout.drawerContentInset != accessoryLayout_.drawerContentInset ||
+        cachedLayout.drawerHeaderTop != accessoryLayout_.drawerHeaderTop ||
+        cachedLayout.drawerHeaderHeight != accessoryLayout_.drawerHeaderHeight ||
+        cachedLayout.drawerContentTop != accessoryLayout_.drawerContentTop ||
+        cachedLayout.drawerContentBottom != accessoryLayout_.drawerContentBottom ||
+        cachedLayout.drawerLineHeight != accessoryLayout_.drawerLineHeight ||
+        cachedLayout.drawerVisibleLineCapacity !=
+            accessoryLayout_.drawerVisibleLineCapacity;
+    if (resolvedLayoutChanged) {
+        accessoryUpdateInput_.layout = accessoryLayout_;
+    }
+    if (accessoryUpdateInput_.mainCardProductionSignature !=
+        mainCardProductionSignature_) {
+        accessoryUpdateInput_.mainCardProductionSignature =
+            mainCardProductionSignature_;
+    }
+    accessoryUpdateInput_.measurementContext = accessoryMeasurementContext_;
+    accessoryUpdateInput_.collectAcceptedActionStageTiming =
+        acceptedActionStages != nullptr;
+    if (drawerOpen) {
+        const auto key = BuildAccessoryPreparationKey(
+            presentation.snapshot->activeDrawer, presentation.historyGeneration);
+        if (accessoryPresentation_.selectionGeneration ==
+                presentation.selectionGeneration &&
+            accessoryPresentation_.historyGeneration ==
+                presentation.historyGeneration &&
+            accessoryPresentation_.layoutGeneration ==
+                presentation.layoutGeneration) {
+            accessoryUpdateInput_.preparedPlan =
+                accessoryPresentation_.preparedPlan;
+        } else {
+            std::uint64_t publicationUs = 0;
+            accessoryUpdateInput_.preparedPlan =
+                accessoryPreparationWorker_.TryTakeReady(key, &publicationUs);
+        }
+        if (accessoryUpdateInput_.preparedPlan == nullptr) {
+            if (accessoryPreparationWaitStartedMicroseconds_ == 0)
+                accessoryPreparationWaitStartedMicroseconds_ =
+                    AccessoryWallClockMicroseconds();
+            return;
+        }
+    } else {
+        accessoryUpdateInput_.preparedPlan.reset();
+        accessoryPreparationWaitStartedMicroseconds_ = 0;
+    }
+    const auto update = UpdateAccessoryPresentation(
+        &accessoryPresentation_, accessoryUpdateInput_);
+    if (update.status != brain::BrainOwnedAccessoryOperationStatus::Available) {
+        return;
+    }
+    if (update.preparationPending) return;
+    accessoryPresentationHandle_ = presentation;
+    if (update.delta.railRasterRequests > 0) {
+        MarkAccessoryRailTextureDirty(
+            selectionChanged
+                ? AccessoryRasterReason::Selection
+                : (historyChanged
+                    ? AccessoryRasterReason::ContentGeneration
+                    : AccessoryRasterReason::TypographyOrLayout));
+    }
+    if (update.delta.drawerRasterRequests > 0) {
+        MarkAccessoryDrawerTextureDirty(
+            selectionChanged
+                ? AccessoryRasterReason::Selection
+                : (historyChanged
+                    ? AccessoryRasterReason::ContentGeneration
+                    : AccessoryRasterReason::TypographyOrLayout));
+    }
+    if (update.delta.railRasterRequests > 0 ||
+        update.delta.drawerRasterRequests > 0) {
+        ++accessoryRenderGeneration_;
+        if (accessoryRenderGeneration_ == 0) {
+            accessoryRenderGeneration_ = 1;
+        }
+    }
+    if (update.delta.historyVisits == 0 && update.delta.entryCopies == 0 &&
+        update.delta.wrapVisits == 0 && update.delta.railRasterRequests == 0 &&
+        update.delta.drawerRasterRequests == 0 && update.delta.uploadRequests == 0) {
+        ++accessoryIntegrationCounters_.unchangedUpdates;
+    }
+    SyncVisibility();
+    if (acceptedActionStages != nullptr) {
+        const auto updateWall =
+            AccessoryWallClockMicroseconds() - acceptedActionUpdateStarted;
+        const auto gdiWall =
+            update.gdiMeasurementWrappingWallMicroseconds;
+        acceptedActionStages->elapsedMicroseconds[static_cast<std::size_t>(
+            AccessoryDispatchStage::GdiMeasurementWrapping)] = gdiWall;
+        acceptedActionStages->elapsedMicroseconds[static_cast<std::size_t>(
+            AccessoryDispatchStage::OverlayLayoutPresentation)] =
+                updateWall >= gdiWall ? updateWall - gdiWall : 0;
+    }
+}
+
+void OverlayWindow::SetAccessoryInputDispatchCallback(
+    OverlayAccessoryInputDispatchCallback callback,
+    void* refcon) {
+    accessoryInputDispatchCallback_ = callback;
+    accessoryInputDispatchRefcon_ = refcon;
+}
+
+bool OverlayWindow::BeginAccessoryInputDispatch(
+    OverlayAccessoryClickFact* outFact) {
+    const auto began =
+        accessoryInputDispatcher_.TryBegin(&accessoryClickQueue_, outFact);
+    if (began && outFact != nullptr) {
+        outFact->dispatchStartedMicroseconds = AccessoryWallClockMicroseconds();
+    }
+    return began;
+}
+
+bool OverlayWindow::BindAccessoryInputDispatch(
+    const OverlayAccessoryClickFact& fact,
+    brain::BrainOwnedAccessoryDrawerAction action) {
+    const bool presentationPending =
+        accessoryUpdateInput_.presentation.snapshot != nullptr &&
+        (accessoryPresentation_.selectionGeneration !=
+             accessoryUpdateInput_.presentation.selectionGeneration ||
+         accessoryPresentation_.historyGeneration !=
+             accessoryUpdateInput_.presentation.historyGeneration);
+    if (presentationPending) {
+        accessoryDeferredBindingPending_ = true;
+        accessoryDeferredBindingFact_ = fact;
+        accessoryDeferredBindingAction_ = action;
+        return true;
+    }
+    const auto bindingStarted = AccessoryWallClockMicroseconds();
+    if (!accessoryInputDispatcher_.BindPresentation(
+            fact.requestSequence,
+            action,
+            accessoryPresentation_.selectionGeneration,
+            accessoryRenderGeneration_)) {
+        return false;
+    }
+    const auto dispatchCompletedMicroseconds = AccessoryWallClockMicroseconds();
+    AccessoryActionDispatchTimingInput timing;
+    timing.dispatchCompletedMicroseconds = dispatchCompletedMicroseconds;
+    timing.dispatchStartedMicroseconds = fact.dispatchStartedMicroseconds;
+    if (accessoryPreparationWaitStartedMicroseconds_ != 0 &&
+        dispatchCompletedMicroseconds >= accessoryPreparationWaitStartedMicroseconds_) {
+        timing.preparationWaitMicroseconds =
+            dispatchCompletedMicroseconds - accessoryPreparationWaitStartedMicroseconds_;
+        accessoryPreparationWaitStartedMicroseconds_ = 0;
+    }
+    timing.stages.elapsedMicroseconds = fact.dispatchStageWallMicroseconds;
+    timing.stages.elapsedMicroseconds[static_cast<std::size_t>(
+        AccessoryDispatchStage::GenerationBinding)] =
+            dispatchCompletedMicroseconds - bindingStarted;
+    return accessoryPerformance_ != nullptr &&
+        accessoryPerformance_->BeginDrawerAction(
+            action,
+            fact.requestSequence,
+            fact.startedMicroseconds,
+            accessoryPresentation_.selectionGeneration,
+            accessoryRenderGeneration_,
+            dispatchCompletedMicroseconds,
+            accessoryDrawCallbackOrdinal_ + 1,
+            timing);
+}
+
+bool OverlayWindow::CancelAccessoryInputDispatch(
+    std::uint64_t requestSequence) {
+    return accessoryInputDispatcher_.CancelInFlight(requestSequence);
+}
+
+std::size_t OverlayWindow::DiscardPendingAccessoryClickFacts() {
+    accessoryInputDispatcher_.InvalidateInFlight();
+    if (accessoryPerformance_ != nullptr) {
+        accessoryPerformance_->DiscardPendingActions();
+    }
+    return accessoryClickQueue_.DiscardPending();
+}
+
+bool OverlayWindow::ConsumeAccessoryPerformancePublication(
+    AccessoryPerformanceSnapshot* outSnapshot) {
+    return accessoryPerformance_ != nullptr &&
+        accessoryPerformance_->BeginAggregatePublication(outSnapshot);
+}
+
+std::uint64_t OverlayWindow::GetAccessoryLayoutGeneration() const {
+    return accessoryLayoutGeneration_;
+}
+
+OverlayAccessoryIntegrationCounters
+OverlayWindow::GetAccessoryIntegrationCounters() const {
+    auto counters = accessoryIntegrationCounters_;
+    counters.accessoryRenderGeneration = accessoryRenderGeneration_;
+    counters.dispatch = accessoryInputDispatcher_.Snapshot();
+    if (accessoryPerformance_ != nullptr) {
+        counters.performance = accessoryPerformance_->Snapshot();
+    }
+    return counters;
 }
 
 void OverlayWindow::SetAutomaticMode(bool automaticMode) {
@@ -1295,7 +2065,8 @@ bool OverlayWindow::ConsumeSystemNoticeDismissRequest() {
 
 void OverlayWindow::SetWindowTopLeft(int left, int top) {
     const auto pendingWidth = ScaleValue(kOverlayWidth, scale_);
-    const auto pendingHeight = ScaleValue(kOverlayHeight, scale_);
+    const auto pendingHeight = ScaleValue(
+        accessoryDrawerOpen_ ? kOverlayOpenHeight : kOverlayHeight, scale_);
     ClampTopLeftToScreen(pendingWidth, pendingHeight, &left, &top);
 
     if (window_ == nullptr) {
@@ -1315,12 +2086,24 @@ void OverlayWindow::SetWindowTopLeft(int left, int top) {
     const auto height = currentTop - currentBottom;
     ClampTopLeftToScreen(width, height, &left, &top);
     XPLMSetWindowGeometry(window_, left, top, left + width, top - height);
+    RefreshAccessoryLayout(
+        AccessoryAnchorOperation::Initialize,
+        true,
+        left,
+        top);
     positionChanged_ = false;
 }
 
 bool OverlayWindow::GetWindowTopLeft(int* outLeft, int* outTop) const {
     if (window_ == nullptr || outLeft == nullptr || outTop == nullptr) {
         return false;
+    }
+
+    if (accessoryAnchorState_.initialized &&
+        accessoryAnchorState_.currentAnchorValid) {
+        *outLeft = accessoryAnchorState_.currentAnchorLeft;
+        *outTop = accessoryAnchorState_.currentAnchorTop;
+        return true;
     }
 
     int left = 0;
@@ -1355,6 +2138,7 @@ bool OverlayWindow::ConsumeScaleChanged(float* outScale) {
 }
 
 void OverlayWindow::Hide() {
+    StopAccessoryPreparation();
     ResetOverlayUpdateTiming();
     const auto totalStarted = OverlayClock::now();
     const auto bodyStarted = OverlayClock::now();
@@ -1412,6 +2196,17 @@ int OverlayWindow::HandleMouseClickCallback(
     }
 
     if (mouse == xplm_MouseDown) {
+        const auto accessoryHit = HitTestAccessoryOrb(
+            self->accessoryLayout_, x, y);
+        if (accessoryHit.handled) {
+            XPLMBringWindowToFront(windowId);
+            self->QueueAccessoryClick(accessoryHit.drawer);
+            return 1;
+        }
+        if (!self->IsInOverlayRegion(x, y) &&
+            !self->IsInAccessoryVisibleRegion(x, y)) {
+            return 0;
+        }
         XPLMBringWindowToFront(windowId);
         if (self->textEntryActive_) {
             XPLMTakeKeyboardFocus(windowId);
@@ -1443,7 +2238,7 @@ int OverlayWindow::HandleMouseClickCallback(
         } else {
             self->ContinueDragging(x, y);
         }
-        return 1;
+        return (self->resizing_ || self->dragging_) ? 1 : 0;
     }
 
     if (mouse == xplm_MouseUp) {
@@ -1462,14 +2257,15 @@ int OverlayWindow::HandleRightClickCallback(
     XPLMMouseStatus mouse,
     void* refcon) {
     (void)windowId;
-    (void)x;
-    (void)y;
     (void)mouse;
     auto* self = static_cast<OverlayWindow*>(refcon);
-    if (self != nullptr) {
-        self->StopDragging();
-        self->StopResizing();
+    if (self == nullptr ||
+        (!self->IsInOverlayRegion(x, y) &&
+         !self->IsInAccessoryVisibleRegion(x, y))) {
+        return 0;
     }
+    self->StopDragging();
+    self->StopResizing();
     return 1;
 }
 
@@ -1480,6 +2276,49 @@ int OverlayWindow::HandleMouseWheelCallback(XPLMWindowID windowId, int x, int y,
     auto* self = static_cast<OverlayWindow*>(refcon);
     if (self == nullptr) {
         return 0;
+    }
+
+    if (self->accessoryDrawerOpen_) {
+        AccessoryPresentationScrollInput input;
+        input.layout = self->accessoryLayout_;
+        input.pointerX = x;
+        input.pointerY = y;
+        input.wheelClicks = -clicks;
+        AccessoryWheelInput previewInput;
+        previewInput.layout = input.layout;
+        previewInput.pointerX = input.pointerX;
+        previewInput.pointerY = input.pointerY;
+        previewInput.wheelClicks = input.wheelClicks;
+        previewInput.drawerOffset = self->accessoryPresentation_.drawerOffset;
+        previewInput.drawerMaximumOffset =
+            self->accessoryPresentation_.drawerMaximumOffset;
+        const auto preview = ApplyAccessoryWheel(previewInput);
+        const auto actionStarted = preview.drawerChanged
+            ? AccessoryWallClockMicroseconds()
+            : 0;
+        const auto scrolled = ScrollAccessoryPresentation(
+            &self->accessoryPresentation_, input);
+        if (scrolled.handled) {
+            if (scrolled.changed) {
+                self->MarkAccessoryDrawerTextureDirty(
+                    AccessoryRasterReason::PresentationScroll);
+                if (self->accessoryPerformance_ != nullptr) {
+                    const auto dispatchCompleted =
+                        AccessoryWallClockMicroseconds();
+                    AccessoryActionDispatchTimingInput timing;
+                    timing.dispatchStartedMicroseconds = actionStarted;
+                    timing.dispatchCompletedMicroseconds = dispatchCompleted;
+                    self->accessoryPerformance_->BeginEffectiveScroll(
+                        actionStarted,
+                        self->accessoryPresentation_.selectionGeneration,
+                        self->accessoryRenderGeneration_,
+                        dispatchCompleted,
+                        self->accessoryDrawCallbackOrdinal_ + 1,
+                        timing);
+                }
+            }
+            return 1;
+        }
     }
 
     if (!self->IsInOverlayRegion(x, y)) {
@@ -1503,8 +2342,12 @@ XPLMCursorStatus OverlayWindow::HandleCursorCallback(XPLMWindowID windowId, int 
     (void)windowId;
 
     auto* self = static_cast<OverlayWindow*>(refcon);
+    const auto accessoryHit = self == nullptr
+        ? AccessoryHitTestResult{}
+        : HitTestAccessoryOrb(self->accessoryLayout_, x, y);
     if (self != nullptr &&
-        (self->ResolveResizeCorner(x, y) != ResizeCorner::None ||
+        (accessoryHit.handled ||
+         self->ResolveResizeCorner(x, y) != ResizeCorner::None ||
          self->IsInDragRegion(x, y) ||
          self->IsInAcknowledgeAction(x, y) ||
          self->IsInRecallAction(x, y) ||
@@ -1538,7 +2381,9 @@ void OverlayWindow::SyncVisibility() {
     }
 
     const auto wantsCardVisible =
-        overlayEnabled_ && (viewModel_.visible || !viewModel_.bodyLines.empty() || textEntryActive_);
+        overlayEnabled_ &&
+        (accessoryDrawerOpen_ || viewModel_.visible ||
+         !viewModel_.bodyLines.empty() || textEntryActive_);
     if (wantsCardVisible != lastWakeState_) {
         const auto soundStarted = OverlayClock::now();
         if (!transitionSoundPath_.empty()) {
@@ -1593,8 +2438,25 @@ void OverlayWindow::Draw() {
     if (window_ == nullptr || !windowVisible_) {
         return;
     }
+    PublishReadyAccessoryPreparation();
 
+    const auto accessoryDrawCallbackEntered = AccessoryWallClockMicroseconds();
+    const auto accessoryPrecedingDrawCallbackEntered =
+        accessoryLastDrawCallbackEnteredMicroseconds_;
+    accessoryLastDrawCallbackEnteredMicroseconds_ =
+        accessoryDrawCallbackEntered;
+    ++accessoryDrawCallbackOrdinal_;
+    if (accessoryDrawCallbackOrdinal_ == 0) {
+        accessoryDrawCallbackOrdinal_ = 1;
+    }
+
+    const auto previousAnimationProgress = animationProgress_;
     UpdateAnimationState();
+    if (std::fabs(previousAnimationProgress - animationProgress_) >= 0.0001f ||
+        std::fabs(accessoryLastAnimationProgress_ - animationProgress_) >= 0.0001f) {
+        accessoryLastAnimationProgress_ = animationProgress_;
+        RefreshAccessoryLayout();
+    }
     if (!overlayEnabled_ && animationProgress_ <= 0.0f && animationTarget_ <= 0.0f) {
         XPLMSetWindowIsVisible(window_, 0);
         windowVisible_ = false;
@@ -1615,6 +2477,7 @@ void OverlayWindow::Draw() {
         UploadTexture(&cardTextureId_, RenderCardImage(sections, scrollOffset_));
         cardTextureDirty_ = false;
         lastCardSignature_ = signature;
+        mainCardProductionSignature_ = std::to_string(signature);
     }
 
     if (caseTextureDirty_) {
@@ -1660,6 +2523,85 @@ void OverlayWindow::Draw() {
         0.0f,
         textureBottom,
         opacity_);
+
+    if (animationProgress_ < 1.0f || !accessoryLayout_.accessoriesVisible) {
+        return;
+    }
+    const bool measuringAccessoryAction =
+        accessoryPerformance_ != nullptr &&
+        accessoryPerformance_->HasMatchingPendingAction(
+            accessoryPresentation_.selectionGeneration,
+            accessoryRenderGeneration_,
+            accessoryDrawCallbackOrdinal_);
+    AccessoryActionDrawTimingInput actionDrawTiming;
+    const auto accessoryActionDrawStarted = measuringAccessoryAction
+        ? AccessoryWallClockMicroseconds()
+        : 0;
+    RenderAccessoryTexturesIfNeeded(
+        measuringAccessoryAction ? &actionDrawTiming : nullptr);
+    const auto accessoryDrawStarted = AccessoryWallClockMicroseconds();
+    DrawTexturedQuad(
+        accessoryRailTextureId_,
+        accessoryLayout_.railBounds.left,
+        accessoryLayout_.railBounds.top,
+        accessoryLayout_.railBounds.right,
+        accessoryLayout_.railBounds.bottom,
+        0.0f,
+        1.0f,
+        opacity_);
+    ++accessoryIntegrationCounters_.railDraws;
+    if (accessoryDrawerOpen_) {
+        DrawTexturedQuad(
+            accessoryDrawerTextureId_,
+            accessoryLayout_.drawerBounds.left,
+            accessoryLayout_.drawerBounds.top,
+            accessoryLayout_.drawerBounds.right,
+            accessoryLayout_.drawerBounds.bottom,
+            0.0f,
+            1.0f,
+            opacity_);
+        ++accessoryIntegrationCounters_.drawerDraws;
+    }
+    const auto accessoryDrawCompleted = AccessoryWallClockMicroseconds();
+    const auto completedDrawWall =
+        accessoryDrawCompleted - accessoryDrawStarted;
+    RecordAccessoryPerformance(
+        AccessoryPerformanceCategory::CompletedAccessoryDraw,
+        completedDrawWall);
+    if (measuringAccessoryAction &&
+        completedDrawWall > AccessoryPerformanceCollector::kThresholdMicroseconds &&
+        (!actionDrawTiming.renderWallFailure ||
+         completedDrawWall > actionDrawTiming.renderWallFailureMicroseconds)) {
+        actionDrawTiming.renderWallFailure = true;
+        actionDrawTiming.renderWallFailureCategory =
+            AccessoryPerformanceCategory::CompletedAccessoryDraw;
+        actionDrawTiming.renderWallFailureMicroseconds = completedDrawWall;
+    }
+    if (accessoryPerformance_ != nullptr) {
+        if (measuringAccessoryAction) {
+            actionDrawTiming.actionDrawWallMicroseconds =
+                accessoryDrawCompleted - accessoryActionDrawStarted;
+        }
+        accessoryPerformance_->CompletePendingActions(
+            accessoryDrawCompleted,
+            accessoryPresentation_.selectionGeneration,
+            accessoryRenderGeneration_,
+            accessoryDrawCallbackEntered,
+            accessoryPrecedingDrawCallbackEntered,
+            accessoryDrawCallbackOrdinal_,
+            actionDrawTiming);
+    }
+    const auto completedDispatch =
+        accessoryInputDispatcher_.CompleteMatchingDraw(
+            accessoryPresentation_.selectionGeneration,
+            accessoryRenderGeneration_);
+    PublishFirstAccessoryPerformanceWarningIfNeeded();
+    if (completedDispatch.completed &&
+        accessoryClickQueue_.PendingCount() > 0 &&
+        accessoryInputDispatchCallback_ != nullptr) {
+        accessoryInputDispatcher_.RecordDispatchNotification();
+        accessoryInputDispatchCallback_(accessoryInputDispatchRefcon_);
+    }
 }
 
 void OverlayWindow::HandleTextEntryKey(char key, char virtualKey, int losingFocus) {
@@ -1813,12 +2755,23 @@ OverlayWindow::ResizeCorner OverlayWindow::ResolveResizeCorner(int x, int y) con
         return ResizeCorner::None;
     }
 
-    const auto rightDistance = std::max(std::abs(x - layout.cardRight), std::abs(y - layout.cardBottom));
+    const auto resizeBottom = accessoryDrawerOpen_
+        ? accessoryLayout_.resolvedBounds.bottom
+        : layout.cardBottom;
+    const auto resizeLeft = accessoryDrawerOpen_
+        ? accessoryLayout_.resolvedBounds.left
+        : layout.cardLeft;
+    const auto resizeRight = accessoryDrawerOpen_
+        ? accessoryLayout_.resolvedBounds.right
+        : layout.cardRight;
+    const auto rightDistance = std::max(
+        std::abs(x - resizeRight), std::abs(y - resizeBottom));
     if (rightDistance <= ScaleValue(kResizeHotspotPx, scale_)) {
         return ResizeCorner::LowerRight;
     }
 
-    const auto leftDistance = std::max(std::abs(x - layout.cardLeft), std::abs(y - layout.cardBottom));
+    const auto leftDistance = std::max(
+        std::abs(x - resizeLeft), std::abs(y - resizeBottom));
     if (leftDistance <= ScaleValue(kResizeHotspotPx, scale_)) {
         return ResizeCorner::LowerLeft;
     }
@@ -1832,6 +2785,317 @@ void OverlayWindow::ClampScrollOffset() {
     scrollOffset_ = std::clamp(scrollOffset_, 0, maxOffset);
 }
 
+void OverlayWindow::RefreshAccessoryLayout(
+    AccessoryAnchorOperation operation,
+    bool hasExactAnchor,
+    int exactLeft,
+    int exactTop) {
+    if (window_ == nullptr || accessoryMeasurementContext_ == nullptr) {
+        return;
+    }
+
+    int screenLeft = 0;
+    int screenTop = 0;
+    int screenRight = 0;
+    int screenBottom = 0;
+    XPLMGetScreenBoundsGlobal(
+        &screenLeft, &screenTop, &screenRight, &screenBottom);
+    const bool screenBoundsChanged =
+        screenLeft != accessoryLastScreenLeft_ ||
+        screenTop != accessoryLastScreenTop_ ||
+        screenRight != accessoryLastScreenRight_ ||
+        screenBottom != accessoryLastScreenBottom_;
+    if (screenBoundsChanged) {
+        accessoryLastScreenLeft_ = screenLeft;
+        accessoryLastScreenTop_ = screenTop;
+        accessoryLastScreenRight_ = screenRight;
+        accessoryLastScreenBottom_ = screenBottom;
+        if (operation == AccessoryAnchorOperation::OrdinaryRefresh &&
+            accessoryAnchorState_.initialized) {
+            operation = AccessoryAnchorOperation::ScreenBoundsChanged;
+        }
+    }
+
+    if (accessoryTypography_.status !=
+            brain::BrainOwnedAccessoryOperationStatus::Available ||
+        std::fabs(accessoryTypography_.scale - scale_) >= 0.001f) {
+        accessoryTypography_ = PrepareAccessoryTypography(
+            accessoryMeasurementContext_, scale_);
+    }
+
+    int left = exactLeft;
+    int top = exactTop;
+    int right = 0;
+    int bottom = 0;
+    if (!hasExactAnchor) {
+        XPLMGetWindowGeometry(window_, &left, &top, &right, &bottom);
+    }
+    if (!accessoryAnchorState_.initialized &&
+        operation == AccessoryAnchorOperation::OrdinaryRefresh) {
+        operation = AccessoryAnchorOperation::Initialize;
+    }
+
+    AccessoryAnchorState localState = accessoryAnchorState_;
+    if (localState.currentAnchorValid) {
+        localState.currentAnchorLeft -= screenLeft;
+        localState.currentAnchorTop -= screenBottom;
+    }
+    if (localState.savedClosedAnchorValid) {
+        localState.savedClosedAnchorLeft -= screenLeft;
+        localState.savedClosedAnchorTop -= screenBottom;
+    }
+
+    AccessoryAnchorUpdateInput input;
+    input.operation = operation;
+    input.layout.screenWidth = std::max(1, screenRight - screenLeft);
+    input.layout.screenHeight = std::max(1, screenTop - screenBottom);
+    input.layout.windowLeft = left - screenLeft;
+    input.layout.windowTop = top - screenBottom;
+    input.layout.scale = scale_;
+    input.layout.cardAnimationProgress = animationProgress_;
+    input.layout.drawerOpen = accessoryDrawerOpen_;
+    input.layout.typography = &accessoryTypography_;
+    auto update = UpdateAccessoryAnchorState(&localState, input);
+    if (update.status != brain::BrainOwnedAccessoryOperationStatus::Available) {
+        return;
+    }
+    auto resolved = std::move(update.layout);
+
+    const auto translateRect = [screenLeft, screenBottom](AccessoryRect* rect) {
+        rect->left += screenLeft;
+        rect->right += screenLeft;
+        rect->top += screenBottom;
+        rect->bottom += screenBottom;
+    };
+    resolved.resolvedLeft += screenLeft;
+    resolved.resolvedTop += screenBottom;
+    resolved.restorableClosedAnchorLeft += screenLeft;
+    resolved.restorableClosedAnchorTop += screenBottom;
+    translateRect(&resolved.closedBounds);
+    translateRect(&resolved.openBounds);
+    translateRect(&resolved.resolvedBounds);
+    translateRect(&resolved.mainCardBounds);
+    translateRect(&resolved.railBounds);
+    if (resolved.drawerBounds.right > resolved.drawerBounds.left) {
+        translateRect(&resolved.drawerBounds);
+    }
+    for (auto& orb : resolved.orbs) {
+        translateRect(&orb.bounds);
+    }
+    if (localState.currentAnchorValid) {
+        localState.currentAnchorLeft += screenLeft;
+        localState.currentAnchorTop += screenBottom;
+    }
+    if (localState.savedClosedAnchorValid) {
+        localState.savedClosedAnchorLeft += screenLeft;
+        localState.savedClosedAnchorTop += screenBottom;
+    }
+    accessoryAnchorState_ = localState;
+    accessoryLayout_ = std::move(resolved);
+}
+
+void OverlayWindow::ApplyAccessoryWindowGeometry(bool drawerOpen) {
+    if (window_ == nullptr) {
+        accessoryDrawerOpen_ = drawerOpen;
+        return;
+    }
+    int left = 0;
+    int top = 0;
+    int right = 0;
+    int bottom = 0;
+    XPLMGetWindowGeometry(window_, &left, &top, &right, &bottom);
+    const auto operation = drawerOpen
+        ? AccessoryAnchorOperation::OpenDrawer
+        : AccessoryAnchorOperation::CloseDrawer;
+    accessoryDrawerOpen_ = drawerOpen;
+    RefreshAccessoryLayout(operation, true, left, top);
+    if (accessoryLayout_.status !=
+        brain::BrainOwnedAccessoryOperationStatus::Available) {
+        return;
+    }
+    const auto& bounds = accessoryLayout_.resolvedBounds;
+    XPLMSetWindowGeometry(
+        window_, bounds.left, bounds.top, bounds.right, bounds.bottom);
+}
+
+bool OverlayWindow::IsInAccessoryVisibleRegion(int x, int y) const {
+    if (!accessoryLayout_.accessoriesVisible) {
+        return false;
+    }
+    const auto inside = [x, y](const AccessoryRect& rect) {
+        return rect.right > rect.left && rect.top > rect.bottom &&
+            x >= rect.left && x <= rect.right &&
+            y >= rect.bottom && y <= rect.top;
+    };
+    return inside(accessoryLayout_.railBounds) ||
+        (accessoryDrawerOpen_ && inside(accessoryLayout_.drawerBounds));
+}
+
+void OverlayWindow::QueueAccessoryClick(
+    brain::BrainOwnedAccessoryDrawerId drawer) {
+    if (drawer == brain::BrainOwnedAccessoryDrawerId::None) {
+        return;
+    }
+    const auto produced = accessoryClickQueue_.Produce(
+        drawer, AccessoryWallClockMicroseconds(), nullptr);
+    accessoryIntegrationCounters_.clickFactsProduced =
+        accessoryClickQueue_.ProducedCount();
+    accessoryIntegrationCounters_.clickFactsDropped =
+        accessoryClickQueue_.DroppedCount();
+    if (produced && accessoryInputDispatchCallback_ != nullptr) {
+        accessoryInputDispatcher_.RecordDispatchNotification();
+        accessoryInputDispatchCallback_(accessoryInputDispatchRefcon_);
+    }
+}
+
+std::uint64_t OverlayWindow::AccessoryWallClockMicroseconds() {
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            OverlayClock::now().time_since_epoch()).count());
+}
+
+void OverlayWindow::RecordAccessoryPerformance(
+    AccessoryPerformanceCategory category,
+    std::uint64_t elapsedMicroseconds) {
+    if (accessoryPerformance_ != nullptr) {
+        accessoryPerformance_->Record(category, elapsedMicroseconds);
+    }
+}
+
+void OverlayWindow::MarkAccessoryRailTextureDirty(
+    AccessoryRasterReason reason) {
+    const auto priority = [](AccessoryRasterReason value) {
+        switch (value) {
+            case AccessoryRasterReason::Initial: return 5;
+            case AccessoryRasterReason::Selection: return 4;
+            case AccessoryRasterReason::EffectiveScaleOrResize: return 3;
+            case AccessoryRasterReason::ContentGeneration: return 2;
+            case AccessoryRasterReason::TypographyOrLayout: return 1;
+            case AccessoryRasterReason::Count: default: return 0;
+        }
+    };
+    if (accessoryRailTextureDirty_ &&
+        priority(accessoryRailRasterReason_) >= priority(reason)) {
+        return;
+    }
+    accessoryRailTextureDirty_ = true;
+    accessoryRailRasterReason_ = reason;
+}
+
+void OverlayWindow::MarkAccessoryDrawerTextureDirty(
+    AccessoryRasterReason reason) {
+    const auto priority = [](AccessoryRasterReason value) {
+        switch (value) {
+            case AccessoryRasterReason::Initial: return 5;
+            case AccessoryRasterReason::Selection: return 4;
+            case AccessoryRasterReason::EffectiveScaleOrResize: return 3;
+            case AccessoryRasterReason::ContentGeneration: return 2;
+            case AccessoryRasterReason::TypographyOrLayout: return 1;
+            case AccessoryRasterReason::Count: default: return 0;
+        }
+    };
+    if (accessoryDrawerTextureDirty_ &&
+        priority(accessoryDrawerRasterReason_) >= priority(reason)) {
+        return;
+    }
+    accessoryDrawerTextureDirty_ = true;
+    accessoryDrawerRasterReason_ = reason;
+}
+
+void OverlayWindow::PublishFirstAccessoryPerformanceWarningIfNeeded() {
+    if (accessoryPerformance_ == nullptr) {
+        return;
+    }
+    AccessoryPerformanceCategory category;
+    std::uint64_t elapsedMicroseconds = 0;
+    if (!accessoryPerformance_->ConsumeFirstViolationWarning(
+            &category, &elapsedMicroseconds)) {
+        return;
+    }
+    std::ostringstream line;
+    line << "[XVatsim] Step 3 performance threshold exceeded category="
+         << AccessoryPerformanceCategoryToken(category)
+         << " elapsedUs=" << elapsedMicroseconds
+         << " thresholdUs="
+         << AccessoryPerformanceCollector::kThresholdMicroseconds << "\n";
+    XPLMDebugString(line.str().c_str());
+}
+
+void OverlayWindow::RenderAccessoryTexturesIfNeeded(
+    AccessoryActionDrawTimingInput* actionDrawTiming) {
+    if (!accessoryLayout_.accessoriesVisible ||
+        accessoryPresentation_.activeSnapshot == nullptr) {
+        return;
+    }
+    const auto recordActionRenderWallViolation = [actionDrawTiming](
+        AccessoryPerformanceCategory category,
+        std::uint64_t elapsedMicroseconds) {
+        if (actionDrawTiming == nullptr ||
+            elapsedMicroseconds <=
+                AccessoryPerformanceCollector::kThresholdMicroseconds ||
+            (actionDrawTiming->renderWallFailure &&
+             elapsedMicroseconds <=
+                actionDrawTiming->renderWallFailureMicroseconds)) {
+            return;
+        }
+        actionDrawTiming->renderWallFailure = true;
+        actionDrawTiming->renderWallFailureCategory = category;
+        actionDrawTiming->renderWallFailureMicroseconds = elapsedMicroseconds;
+    };
+    if (accessoryRailTextureDirty_) {
+        const auto rasterStarted = OverlayClock::now();
+        const auto image = RenderAccessoryRailImage(
+            accessoryLayout_, *accessoryPresentation_.activeSnapshot);
+        const auto rasterUs = static_cast<std::uint64_t>(
+            ElapsedOverlayUsSince(rasterStarted));
+        ++accessoryIntegrationCounters_.railRasterizations;
+        RecordAccessoryPerformance(
+            AccessoryPerformanceCategory::RailRasterization, rasterUs);
+        recordActionRenderWallViolation(
+            AccessoryPerformanceCategory::RailRasterization, rasterUs);
+        if (accessoryPerformance_ != nullptr) {
+            accessoryPerformance_->RecordRasterReason(
+                false, accessoryRailRasterReason_);
+        }
+        const auto uploadStarted = OverlayClock::now();
+        UploadTexture(&accessoryRailTextureId_, image);
+        const auto uploadUs = static_cast<std::uint64_t>(
+            ElapsedOverlayUsSince(uploadStarted));
+        ++accessoryIntegrationCounters_.railTextureUploads;
+        RecordAccessoryPerformance(
+            AccessoryPerformanceCategory::RailTextureUpload, uploadUs);
+        recordActionRenderWallViolation(
+            AccessoryPerformanceCategory::RailTextureUpload, uploadUs);
+        accessoryRailTextureDirty_ = false;
+    }
+    if (accessoryDrawerOpen_ && accessoryDrawerTextureDirty_) {
+        const auto rasterStarted = OverlayClock::now();
+        const auto image = RenderAccessoryDrawerImage(
+            accessoryLayout_, accessoryPresentation_);
+        const auto rasterUs = static_cast<std::uint64_t>(
+            ElapsedOverlayUsSince(rasterStarted));
+        ++accessoryIntegrationCounters_.drawerRasterizations;
+        RecordAccessoryPerformance(
+            AccessoryPerformanceCategory::DrawerRasterization, rasterUs);
+        recordActionRenderWallViolation(
+            AccessoryPerformanceCategory::DrawerRasterization, rasterUs);
+        if (accessoryPerformance_ != nullptr) {
+            accessoryPerformance_->RecordRasterReason(
+                true, accessoryDrawerRasterReason_);
+        }
+        const auto uploadStarted = OverlayClock::now();
+        UploadTexture(&accessoryDrawerTextureId_, image);
+        const auto uploadUs = static_cast<std::uint64_t>(
+            ElapsedOverlayUsSince(uploadStarted));
+        ++accessoryIntegrationCounters_.drawerTextureUploads;
+        RecordAccessoryPerformance(
+            AccessoryPerformanceCategory::DrawerTextureUpload, uploadUs);
+        recordActionRenderWallViolation(
+            AccessoryPerformanceCategory::DrawerTextureUpload, uploadUs);
+        accessoryDrawerTextureDirty_ = false;
+    }
+}
+
 void OverlayWindow::ApplyScale(float scale, bool anchorRight) {
     const auto clampedScale = std::clamp(scale, 0.85f, 1.35f);
     if (std::fabs(clampedScale - scale_) < 0.001f) {
@@ -1840,6 +3104,11 @@ void OverlayWindow::ApplyScale(float scale, bool anchorRight) {
 
     scale_ = clampedScale;
     scaleChanged_ = true;
+    ++accessoryLayoutGeneration_;
+    if (accessoryMeasurementContext_ != nullptr) {
+        accessoryTypography_ = PrepareAccessoryTypography(
+            accessoryMeasurementContext_, scale_);
+    }
 
     if (window_ == nullptr) {
         return;
@@ -1852,11 +3121,21 @@ void OverlayWindow::ApplyScale(float scale, bool anchorRight) {
     XPLMGetWindowGeometry(window_, &left, &top, &right, &bottom);
 
     const auto newWidth = ScaleValue(kOverlayWidth, scale_);
-    const auto newHeight = ScaleValue(kOverlayHeight, scale_);
+    const auto newHeight = ScaleValue(
+        accessoryDrawerOpen_ ? kOverlayOpenHeight : kOverlayHeight, scale_);
     auto newLeft = anchorRight ? (right - newWidth) : left;
     auto newTop = top;
     ClampTopLeftToScreen(newWidth, newHeight, &newLeft, &newTop);
     XPLMSetWindowGeometry(window_, newLeft, newTop, newLeft + newWidth, newTop - newHeight);
+    RefreshAccessoryLayout(
+        AccessoryAnchorOperation::IntentionalMove,
+        true,
+        newLeft,
+        newTop);
+    MarkAccessoryRailTextureDirty(
+        AccessoryRasterReason::EffectiveScaleOrResize);
+    MarkAccessoryDrawerTextureDirty(
+        AccessoryRasterReason::EffectiveScaleOrResize);
     positionChanged_ = true;
 }
 
@@ -1926,6 +3205,7 @@ void OverlayWindow::StartDragging(int x, int y) {
     int bottom = 0;
     XPLMGetWindowGeometry(window_, &left, &top, &right, &bottom);
     dragging_ = true;
+    dragMoved_ = false;
     dragOffsetX_ = x - left;
     dragOffsetTop_ = top - y;
 }
@@ -1948,13 +3228,20 @@ void OverlayWindow::ContinueDragging(int x, int y) {
     ClampTopLeftToScreen(width, height, &newLeft, &newTop);
 
     XPLMSetWindowGeometry(window_, newLeft, newTop, newLeft + width, newTop - height);
+    RefreshAccessoryLayout(
+        AccessoryAnchorOperation::IntentionalMove,
+        true,
+        newLeft,
+        newTop);
+    dragMoved_ = dragMoved_ || newLeft != left || newTop != top;
 }
 
 void OverlayWindow::StopDragging() {
-    if (dragging_) {
+    if (dragging_ && dragMoved_) {
         positionChanged_ = true;
     }
     dragging_ = false;
+    dragMoved_ = false;
 }
 
 void OverlayWindow::StartResizing(int x, int y, ResizeCorner corner) {
@@ -1985,13 +3272,18 @@ void OverlayWindow::ContinueResizing(int x, int y) {
 
     const auto widthFromLeft = std::max(ScaleValue(kOverlayWidth, 0.85f), x - resizeAnchorLeft_);
     const auto widthFromRight = std::max(ScaleValue(kOverlayWidth, 0.85f), resizeAnchorRight_ - x);
-    const auto heightFromTop = std::max(ScaleValue(kOverlayHeight, 0.85f), resizeAnchorTop_ - y);
+    const auto activeDesignHeight = accessoryDrawerOpen_
+        ? kOverlayOpenHeight
+        : kOverlayHeight;
+    const auto heightFromTop = std::max(
+        ScaleValue(activeDesignHeight, 0.85f), resizeAnchorTop_ - y);
 
     const auto widthScale =
         static_cast<float>(activeResizeCorner_ == ResizeCorner::LowerLeft ? widthFromRight : widthFromLeft) /
         static_cast<float>(kOverlayWidth);
     const auto heightScale =
-        static_cast<float>(heightFromTop) / static_cast<float>(kOverlayHeight);
+        static_cast<float>(heightFromTop) /
+        static_cast<float>(activeDesignHeight);
     ApplyScale(std::max(widthScale, heightScale), activeResizeCorner_ == ResizeCorner::LowerLeft);
 }
 
@@ -1999,5 +3291,7 @@ void OverlayWindow::StopResizing() {
     resizing_ = false;
     activeResizeCorner_ = ResizeCorner::None;
 }
+
+#endif
 
 }  // namespace xvatsim::modules::overlay

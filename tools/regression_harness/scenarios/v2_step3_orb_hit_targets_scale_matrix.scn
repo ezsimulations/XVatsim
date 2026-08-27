@@ -1,0 +1,17 @@
+name=v2_step3_orb_hit_targets_scale_matrix
+step3.action=hit-matrix:m
+expect.step3=m.layouts=3
+expect.step3=m.visible_orbs=9
+expect.step3=m.center_hits=9
+expect.step3=m.edge_hits=9
+expect.step3=m.outside_misses=9
+expect.step3=m.gap_misses=6
+expect.step3=m.identity_matches=9
+expect.step3=m.design_diameter_pass=3
+expect.step3=m.physical_diameter_pass=3
+expect.step3=m.physical_diameters=44,52,70
+expect.step3=m.coordinate_pass=3
+expect.step3=m.label_fits=9
+expect.step3=m.open_fits=9
+expect.step3=m.label_measurement_pass=9
+expect.step3=m.indicator_measurement_pass=9

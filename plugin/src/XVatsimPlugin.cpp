@@ -40,6 +40,9 @@
 #include "XVatsim/modules/update_checker/UpdateChecker.h"
 #include "XVatsim/modules/vatsim_data_feed/VatsimDataFeedClient.h"
 #include "XVatsim/modules/xpilot_bridge/XPilotBridge.h"
+#if defined(XVATSIM_STEP3_LIVE_PROOF_FIXTURES)
+#include "Step3LiveProofFixtures.h"
+#endif
 #include "XPLMMenus.h"
 #include "XPLMPlugin.h"
 #include "XPLMProcessing.h"
@@ -257,7 +260,13 @@ int gVfrModeMenuItemIndex = -1;
 bool gFlightLoopRegistered = false;
 bool gPluginRuntimeEnabled = false;
 xvatsim::brain::BrainOwnedRuntimeState gBrainOwnedRuntimeState;
+#if defined(XVATSIM_STEP3_LIVE_PROOF_FIXTURES)
+xvatsim::plugin::step3_live_proof::Step3LiveProofFixtureSession
+    gStep3LiveProofFixtureSession;
+#endif
 PluginDiagnosticsState gDiagnosticsState;
+xvatsim::brain::BrainOwnedAccessoryProjectionCounters
+    gAccessoryProjectionCounters;
 std::optional<xvatsim::core::preflight::PreflightRouteCache> gPreflightRouteCacheCandidate;
 std::string gPreflightRouteCachePath;
 std::optional<xvatsim::modules::update_checker::UpdateCheckResult>
@@ -272,6 +281,11 @@ void ClearFlightRecoveryState();
 void ResetDiagnosticsTraceState();
 std::string CurrentDiagnosticsDateToken();
 void AppendDiagnosticsLogLine(const std::string& line);
+void SynchronizeAccessoryPresentation(
+    xvatsim::modules::overlay::AccessoryDispatchStageWallTimings*
+        acceptedActionStages = nullptr);
+void DispatchPendingAccessoryInput(void* refcon);
+void DiscardPendingAccessoryClickFacts();
 void LogRadioBoardCandidateDiffTrace(
     xvatsim::brain::WorkflowStage workflowStage,
     const std::string& planKey,
@@ -463,7 +477,12 @@ void ResetBrainDisplayPublisherCache() {
         &gBrainOwnedRuntimeState);
 }
 
-void ResetBrainOwnedRuntimeCache() {
+void ResetBrainOwnedRuntimeCache(bool preserveAccessory = false) {
+    if (preserveAccessory) {
+        xvatsim::brain::ResetBrainOwnedRuntimeCachePreservingFlightContext(
+            &gBrainOwnedRuntimeState);
+        return;
+    }
     xvatsim::brain::ResetBrainOwnedRuntimeState(&gBrainOwnedRuntimeState);
 }
 
@@ -475,7 +494,9 @@ void DiscardPendingTextEntryState() {
         &gBrainOwnedRuntimeState);
 }
 
-void ResetSessionRuntimeCaches(bool resetVatsimFeed) {
+void ResetSessionRuntimeCaches(
+    bool resetVatsimFeed,
+    bool preserveAccessory = false) {
     gAircraftStateSampler.Reset();
     gCtafLookupService.Reset();
     gXPilotBridge.Reset();
@@ -488,17 +509,20 @@ void ResetSessionRuntimeCaches(bool resetVatsimFeed) {
     gRouteSectorResolver.ResetRuntimeState();
     gRouteSectorResolver.ClearPreflightRouteCache();
     gTerminalAuthorityResolver.Reset();
-    ResetBrainOwnedRuntimeCache();
+    ResetBrainOwnedRuntimeCache(preserveAccessory);
     ResetDiagnosticsTraceState();
     gTransceiverResolver.Reset();
     ResetBrainDisplayPublisherCache();
 }
 
-void ResetPluginRuntimeState(bool resetVatsimFeed, bool resetColdDarkLatch) {
+void ResetPluginRuntimeState(
+    bool resetVatsimFeed,
+    bool resetColdDarkLatch,
+    bool preserveAccessory = false) {
     DiscardPendingTextEntryState();
     xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
     ClearFlightRecoveryState();
-    ResetSessionRuntimeCaches(resetVatsimFeed);
+    ResetSessionRuntimeCaches(resetVatsimFeed, preserveAccessory);
     ResetPresentationStateForColdDark();
     if (resetColdDarkLatch) {
         xvatsim::brain::SetBrainOwnedColdDarkResetApplied(
@@ -947,6 +971,9 @@ void UpdateFlightContextIfNeeded(
         &gBrainOwnedRuntimeState,
         output.flightContext);
     if (output.shouldResetFlightScopedState) {
+        DiscardPendingAccessoryClickFacts();
+        xvatsim::brain::ResetBrainOwnedAccessoryForConfirmedNewFlight(
+            &gBrainOwnedRuntimeState);
         ResetFlightScopedManualPlanState();
         ResetFlightProgressStateForNewContext();
         ResetBrainDisplayPublisherCache();
@@ -2510,8 +2537,15 @@ void ResetPresentationStateForColdDark() {
     ResetStandbyAssistLatch();
 }
 
+void DiscardPendingAccessoryClickFacts() {
+    gOverlayWindow.DiscardPendingAccessoryClickFacts();
+}
+
 void ResetSessionState() {
-    ResetPluginRuntimeState(true, true);
+    DiscardPendingAccessoryClickFacts();
+    xvatsim::brain::ResetBrainOwnedAccessoryForSessionReset(
+        &gBrainOwnedRuntimeState);
+    ResetPluginRuntimeState(true, true, true);
     XPLMDebugString("[XVatsim] Session reset for next flight.\n");
     RefreshOverlayFromBrain();
 }
@@ -2519,10 +2553,16 @@ void ResetSessionState() {
 void ApplyAircraftRuntimeBoundaryDecision(
     const xvatsim::brain::workflow::AircraftRuntimeBoundaryDecision& decision) {
     if (decision.shouldResetForInvalidAircraftState) {
-        ResetPluginRuntimeState(false, false);
+        DiscardPendingAccessoryClickFacts();
+        xvatsim::brain::CloseBrainOwnedAccessoryForInvalidAircraft(
+            &gBrainOwnedRuntimeState);
+        ResetPluginRuntimeState(false, false, true);
     }
     if (decision.shouldResetSessionRuntimeCaches) {
-        ResetSessionRuntimeCaches(true);
+        DiscardPendingAccessoryClickFacts();
+        xvatsim::brain::ResetBrainOwnedAccessoryForConfirmedColdDark(
+            &gBrainOwnedRuntimeState);
+        ResetSessionRuntimeCaches(true, true);
     }
     if (decision.shouldResetPresentationState) {
         ResetPresentationStateForColdDark();
@@ -2539,7 +2579,7 @@ void ApplyAircraftRuntimeBoundaryDecision(
 void ResetFlightScopedStateForSessionBoundary(
     const char* reason,
     bool preserveDisconnectedAlert) {
-    ResetPluginRuntimeState(true, true);
+    ResetPluginRuntimeState(true, true, true);
     if (preserveDisconnectedAlert) {
         xvatsim::brain::SetBrainOwnedXPilotConnectedSeen(
             &gBrainOwnedRuntimeState,
@@ -2557,6 +2597,9 @@ void ResetFlightScopedStateForSessionBoundary(
 }
 
 void PreserveFlightStateForNetworkDisconnect() {
+    DiscardPendingAccessoryClickFacts();
+    xvatsim::brain::CloseBrainOwnedAccessoryForTemporaryXPilotDisconnect(
+        &gBrainOwnedRuntimeState);
     gVatsimDataFeedClient.Reset();
     gNetworkPlanLink.Reset();
     gTransceiverResolver.Reset();
@@ -2601,6 +2644,19 @@ SessionBoundaryResult HandleXPilotSessionBoundary(
         PreserveFlightStateForNetworkDisconnect();
     }
     if (decision.shouldResetFlightScopedState) {
+        const auto previousCallsign =
+            input.state.lastConnectedPilotCallsign.empty()
+                ? input.state.disconnectedPilotCallsign
+                : input.state.lastConnectedPilotCallsign;
+        const auto nextCallsign = NormalizeCallsign(
+            pilotIdentitySnapshot.normalizedCallsign.empty()
+                ? xPilotSessionSnapshot.callsign
+                : pilotIdentitySnapshot.normalizedCallsign);
+        DiscardPendingAccessoryClickFacts();
+        xvatsim::brain::ResetBrainOwnedAccessoryForCallsignChange(
+            &gBrainOwnedRuntimeState,
+            previousCallsign,
+            nextCallsign);
         ResetFlightScopedStateForSessionBoundary(
             decision.resetReason.c_str(),
             false);
@@ -2690,6 +2746,304 @@ ToBrainOperatingModeLoadStatus(
         default:
             return BrainOwnedOperatingModeLoadStatus::Missing;
     }
+}
+
+void DispatchPendingAccessoryInput(void* refcon) {
+    (void)refcon;
+    if (!gPluginRuntimeEnabled) {
+        return;
+    }
+    xvatsim::modules::overlay::OverlayAccessoryClickFact fact;
+    while (gOverlayWindow.BeginAccessoryInputDispatch(&fact)) {
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+        request.drawer = fact.drawer;
+        request.requestSequence = fact.requestSequence;
+        const auto brainDecisionStarted =
+            xvatsim::modules::overlay::OverlayWindow::
+                AccessoryWallClockMicroseconds();
+        const auto decision =
+            xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+                &gBrainOwnedRuntimeState, request);
+        fact.dispatchStageWallMicroseconds[static_cast<std::size_t>(
+            xvatsim::modules::overlay::AccessoryDispatchStage::BrainDecision)] =
+                xvatsim::modules::overlay::OverlayWindow::
+                    AccessoryWallClockMicroseconds() - brainDecisionStarted;
+        xvatsim::modules::overlay::AccessoryDispatchStageWallTimings stages;
+        stages.elapsedMicroseconds = fact.dispatchStageWallMicroseconds;
+        SynchronizeAccessoryPresentation(&stages);
+        fact.dispatchStageWallMicroseconds = stages.elapsedMicroseconds;
+        const auto dispatchBound =
+            gOverlayWindow.BindAccessoryInputDispatch(fact, decision.action);
+        if (dispatchBound) {
+            return;
+        }
+        gOverlayWindow.CancelAccessoryInputDispatch(fact.requestSequence);
+    }
+}
+
+void SynchronizeAccessoryPresentation(
+    xvatsim::modules::overlay::AccessoryDispatchStageWallTimings*
+        acceptedActionStages) {
+    const auto projectionStarted = acceptedActionStages != nullptr
+        ? xvatsim::modules::overlay::OverlayWindow::
+            AccessoryWallClockMicroseconds()
+        : 0;
+    const auto presentation =
+        xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+            &gBrainOwnedRuntimeState,
+            gOverlayWindow.GetAccessoryLayoutGeneration(),
+            &gAccessoryProjectionCounters);
+    for (const auto drawer : {
+             xvatsim::brain::BrainOwnedAccessoryDrawerId::Metar,
+             xvatsim::brain::BrainOwnedAccessoryDrawerId::Atis,
+             xvatsim::brain::BrainOwnedAccessoryDrawerId::Pdc}) {
+        const auto preparation =
+            xvatsim::brain::ProjectBrainOwnedAccessoryPreparation(
+                &gBrainOwnedRuntimeState, drawer, nullptr);
+        gOverlayWindow.QueueAccessoryPreparation(preparation);
+    }
+    if (acceptedActionStages != nullptr) {
+        acceptedActionStages->elapsedMicroseconds[static_cast<std::size_t>(
+            xvatsim::modules::overlay::AccessoryDispatchStage::
+                BrainProjectionHistoryCopy)] =
+                    xvatsim::modules::overlay::OverlayWindow::
+                        AccessoryWallClockMicroseconds() - projectionStarted;
+    }
+    gOverlayWindow.UpdateAccessory(presentation, acceptedActionStages);
+}
+
+void UpdateOverlayWindow(
+    const xvatsim::brain::OverlayViewModel& overlayModel) {
+    gOverlayWindow.Update(overlayModel);
+    SynchronizeAccessoryPresentation();
+}
+
+void LogAccessoryPerformanceSnapshot(const char* boundary) {
+    xvatsim::modules::overlay::AccessoryPerformanceSnapshot snapshot;
+    if (!gOverlayWindow.ConsumeAccessoryPerformancePublication(&snapshot)) {
+        return;
+    }
+    const auto appendTiming = [](
+        std::ostringstream* stream,
+        const char* label,
+        const xvatsim::modules::overlay::AccessoryPerformanceSummary& timing) {
+        *stream << " " << label << "Count=" << timing.count
+                << " " << label << "P50Us=" << timing.p50Microseconds
+                << " " << label << "P95Us=" << timing.p95Microseconds
+                << " " << label << "MaxUs=" << timing.maximumMicroseconds;
+    };
+    std::ostringstream line;
+    const auto preparation = gOverlayWindow.GetAccessoryPreparationCounters();
+    line << "event=step3-accessory-performance"
+         << " boundary=" << (boundary == nullptr ? "unknown" : boundary)
+         << " epoch=" << snapshot.epoch
+         << " measurementRevision=" << snapshot.measurementRevision
+         << " thresholdFailure=" << (snapshot.thresholdFailure ? "true" : "false")
+         << " firstViolationCategory="
+         << xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(
+                snapshot.firstViolationCategory)
+         << " firstViolationUs=" << snapshot.firstViolationMicroseconds
+         << " warningCount=" << snapshot.warningCount
+         << " publicationCount=" << snapshot.publicationCount
+         << " actionsCompleted=" << snapshot.actionsCompleted
+         << " synchronousWallWithinBudgetCount="
+         << snapshot.synchronousWallWithinBudgetCount
+         << " frameCadenceLimitedCount="
+         << snapshot.frameCadenceLimitedCount
+         << " preparationLimitedCount="
+         << snapshot.preparationLimitedCount
+         << " synchronousWallFailureCount="
+         << snapshot.synchronousWallFailureCount
+         << " renderWallFailureCount="
+         << snapshot.renderWallFailureCount
+         << " timingUnavailableCount="
+         << snapshot.timingUnavailableCount
+         << " cadenceContractFailureCount="
+         << snapshot.cadenceContractFailureCount
+         << " missedEligibleDraws=" << snapshot.missedEligibleDraws
+         << " uniqueDrawSamples=" << snapshot.uniqueDrawSamples
+         << " drawSampleReferences=" << snapshot.drawSampleReferences
+         << " coalescedActionCount=" << snapshot.coalescedActionCount
+         << " maximumActionsPerDraw=" << snapshot.maximumActionsPerDraw
+         << " retainedViolationRecordCount="
+         << snapshot.firstViolationRecordCount
+         << " droppedViolationRecordCount="
+         << snapshot.droppedViolationRecordCount
+         << " preparationJobsRequested=" << preparation.jobsRequested
+         << " preparationJobsReplaced=" << preparation.jobsReplaced
+         << " preparationJobsStarted=" << preparation.jobsStarted
+         << " preparationJobsCompleted=" << preparation.jobsCompleted
+         << " preparationJobsCancelled=" << preparation.jobsCancelled
+         << " preparationStaleRejected=" << preparation.staleResultsRejected
+         << " preparationMaxQueueDepth=" << preparation.maximumQueueDepth
+         << " preparationMaxReadyCount=" << preparation.maximumReadyCacheCount
+         << " preparationWakeCount=" << preparation.workerWakeCount
+         << " preparationSleepCount=" << preparation.workerSleepCount
+         << " preparationMaxSliceUs="
+         << preparation.maximumContiguousExecutionMicroseconds
+         << " preparationMetarTotalUs="
+         << preparation.totalPreparationMicroseconds[0]
+         << " preparationAtisTotalUs="
+         << preparation.totalPreparationMicroseconds[1]
+         << " preparationPdcTotalUs="
+         << preparation.totalPreparationMicroseconds[2]
+         << " preparationPublicationCount=" << preparation.publicationCount
+         << " preparationReadinessChecks=" << preparation.readinessCheckCount
+         << " preparationReadinessContentions="
+         << preparation.readinessContentionCount
+         << " preparationPublicationMaxUs="
+         << preparation.maximumPublicationMicroseconds
+         << " preparationEnqueueAttempts="
+         << preparation.enqueueAttemptCount
+         << " preparationEnqueueContentions="
+         << preparation.enqueueContentionCount
+         << " preparationEnqueueSuccesses="
+         << preparation.enqueueSuccessCount
+         << " preparationEnqueueReplacements="
+         << preparation.enqueueReplacementCount
+         << " preparationEnqueueMaxUs="
+         << preparation.maximumEnqueueMicroseconds
+         << " preparationStartupAttempts=" << preparation.startupAttemptCount
+         << " preparationStartupSuccesses=" << preparation.startupSuccessCount
+         << " preparationStartupFailures=" << preparation.startupFailureCount
+         << " preparationFailureDiagnostics="
+         << preparation.startupFailureDiagnosticCount
+         << " preparationRequestsRejectedUnavailable="
+         << preparation.requestsRejectedUnavailable
+         << " preparationLifecycle="
+         << xvatsim::modules::overlay::AccessoryPreparationWorkerStateToken(
+                preparation.lifecycleState)
+         << " preparationFailure="
+         << xvatsim::modules::overlay::AccessoryPreparationWorkerFailureToken(
+                preparation.failure)
+         << " preparationPriorityRequested="
+         << (preparation.priorityRequested ? "true" : "false")
+         << " preparationPrioritySucceeded="
+         << (preparation.prioritySucceeded ? "true" : "false")
+         << " preparationWorkerThread=" << preparation.workerThreadIdentity
+         << " preparationMainThread=" << preparation.mainThreadIdentity
+         << " preparationProhibitedAccesses="
+         << preparation.prohibitedAccessCount
+         << " preparationRunningThreads=" << preparation.runningWorkerThreads;
+    for (std::size_t index = 0;
+         index < static_cast<std::size_t>(
+             xvatsim::modules::overlay::AccessoryPerformanceCategory::Count);
+         ++index) {
+        const auto category = static_cast<
+            xvatsim::modules::overlay::AccessoryPerformanceCategory>(index);
+        appendTiming(
+            &line,
+            xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(category),
+            snapshot.categories[index]);
+    }
+    const char* actionStagePrefixes[]{"open", "switch", "close"};
+    for (std::size_t actionIndex = 0;
+         actionIndex < snapshot.actionStageWall.size(); ++actionIndex) {
+        for (std::size_t stageIndex = 0;
+             stageIndex < snapshot.actionStageWall[actionIndex].size();
+             ++stageIndex) {
+            const auto stage = static_cast<
+                xvatsim::modules::overlay::AccessoryDispatchStage>(stageIndex);
+            std::string label = std::string{actionStagePrefixes[actionIndex]} +
+                "-" +
+                xvatsim::modules::overlay::AccessoryDispatchStageToken(stage);
+            appendTiming(
+                &line,
+                label.c_str(),
+                snapshot.actionStageWall[actionIndex][stageIndex]);
+        }
+    }
+    for (std::size_t index = 0;
+         index < static_cast<std::size_t>(
+             xvatsim::modules::overlay::AccessoryRasterReason::Count);
+         ++index) {
+        const auto reason = static_cast<
+            xvatsim::modules::overlay::AccessoryRasterReason>(index);
+        const auto* token =
+            xvatsim::modules::overlay::AccessoryRasterReasonToken(reason);
+        line << " railRasterReason-" << token << "="
+             << snapshot.railRasterReasons[index]
+             << " drawerRasterReason-" << token << "="
+             << snapshot.drawerRasterReasons[index];
+    }
+    const auto& action = snapshot.lastAction;
+    line << " lastActionAvailable=" << (action.available ? "true" : "false")
+         << " lastActionCategory="
+         << xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(
+                action.actionCategory)
+         << " lastActionClassification="
+         << xvatsim::modules::overlay::AccessoryActionTimingClassificationToken(
+                action.classification)
+         << " lastActionRequestSequence=" << action.requestSequence
+         << " mouseFactAcceptedUs="
+         << action.mouseFactAcceptedMicroseconds
+         << " dispatchStartedUs=" << action.dispatchStartedMicroseconds
+         << " dispatchCompletedUs=" << action.dispatchCompletedMicroseconds
+         << " precedingDrawEnteredUs="
+         << action.precedingDrawEnteredMicroseconds
+         << " matchingDrawEnteredUs="
+         << action.matchingDrawEnteredMicroseconds
+         << " matchingDrawCompletedUs="
+         << action.matchingDrawCompletedMicroseconds
+         << " dispatchWallUs=" << action.dispatchWallMicroseconds
+         << " queuedBeforeDispatchUs="
+         << action.queuedBeforeDispatchMicroseconds
+         << " callbackWaitUs=" << action.callbackWaitMicroseconds
+         << " actionDrawWallUs=" << action.actionDrawWallMicroseconds
+         << " matchingDrawCallbackElapsedUs="
+         << action.matchingDrawCallbackElapsedMicroseconds
+         << " combinedActionWallUs="
+         << action.combinedActionWallMicroseconds
+         << " preparationWaitUs=" << action.preparationWaitMicroseconds
+         << " drawSampleId=" << action.drawSampleId
+         << " sharedDrawSample="
+         << (action.sharedDrawSample ? "true" : "false")
+         << " drawSampleFanOut=" << action.drawSampleFanOut
+         << " renderWallFailure="
+         << (action.renderWallFailure ? "true" : "false")
+         << " renderWallFailureCategory="
+         << xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(
+                action.renderWallFailureCategory)
+         << " renderWallFailureUs="
+         << action.renderWallFailureMicroseconds
+         << " endToEndUs=" << action.endToEndMicroseconds
+         << " containingFrameIntervalUs="
+         << action.containingFrameIntervalMicroseconds
+         << " expectedDrawOrdinal=" << action.expectedDrawOrdinal
+         << " matchingDrawOrdinal=" << action.matchingDrawOrdinal
+         << " lastActionMissedEligibleDraws=" << action.missedEligibleDraws
+         << " accountingExact="
+         << (action.accountingExact ? "true" : "false");
+    for (std::size_t stageIndex = 0;
+         stageIndex < action.stages.elapsedMicroseconds.size(); ++stageIndex) {
+        const auto stage = static_cast<
+            xvatsim::modules::overlay::AccessoryDispatchStage>(stageIndex);
+        line << " lastAction-"
+             << xvatsim::modules::overlay::AccessoryDispatchStageToken(stage)
+             << "Us=" << action.stages.elapsedMicroseconds[stageIndex];
+    }
+    line << " retainedViolationRecords=" << snapshot.firstViolationRecordCount
+         << " serializedViolationRecords=" << snapshot.firstViolationRecordCount
+         << " droppedViolationRecords=" << snapshot.droppedViolationRecordCount;
+    for (std::size_t index = 0;
+         index < snapshot.firstViolationRecordCount &&
+         index < snapshot.firstViolationRecords.size(); ++index) {
+        const auto& violation = snapshot.firstViolationRecords[index];
+        line << " violation" << index << "={classification:"
+             << xvatsim::modules::overlay::AccessoryActionTimingClassificationToken(
+                    violation.classification)
+             << ",category:"
+             << xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(
+                    violation.actionCategory)
+             << ",request:" << violation.requestSequence
+             << ",dispatchWallUs:" << violation.dispatchWallMicroseconds
+             << ",drawWallUs:" << violation.actionDrawWallMicroseconds
+             << ",combinedWallUs:" << violation.combinedActionWallMicroseconds
+             << ",preparationWaitUs:" << violation.preparationWaitMicroseconds
+             << ",drawSampleId:" << violation.drawSampleId
+             << ",fanOut:" << violation.drawSampleFanOut << "}";
+    }
+    AppendDiagnosticsLogLine(line.str());
 }
 
 std::string ResolveSettingsPath() {
@@ -3178,9 +3532,12 @@ void RenderDormantBoundaryFrame(bool hideWindow) {
     overlayModel.visible = false;
 
     if (hideWindow) {
+        DiscardPendingAccessoryClickFacts();
+        xvatsim::brain::CloseBrainOwnedAccessoryForTemporaryOverlaySleep(
+            &gBrainOwnedRuntimeState);
         gOverlayWindow.Hide();
     } else {
-        gOverlayWindow.Update(overlayModel);
+        UpdateOverlayWindow(overlayModel);
     }
     PersistOverlayGeometryIfChanged();
 }
@@ -3227,7 +3584,7 @@ void RenderSessionBoundaryFrame(
         xvatsim::brain::ManualQuerySnapshot{},
         updateSnapshot);
     overlayModel.headerRightText.clear();
-    gOverlayWindow.Update(overlayModel);
+    UpdateOverlayWindow(overlayModel);
     PersistOverlayGeometryIfChanged();
 }
 
@@ -3238,6 +3595,9 @@ void ForceDisplayOpen() {
 
 void ForceDisplaySleep() {
     DiscardPendingTextEntryState();
+    DiscardPendingAccessoryClickFacts();
+    xvatsim::brain::CloseBrainOwnedAccessoryForDisplayClose(
+        &gBrainOwnedRuntimeState);
     ApplyDisplayOverrideMode(
         xvatsim::brain::BrainOwnedDisplayOverrideMode::ForcedSleep);
 }
@@ -4295,7 +4655,9 @@ void RefreshOverlayFromBrainEngineer3() {
     const auto updateNoticeWake =
         xvatsim::brain::OverlayUpdateRequestsWake(updateSnapshot);
     const auto shouldWakeOverlay =
-        wakeDecision.shouldWake || updateNoticeWake;
+        wakeDecision.shouldWake || updateNoticeWake ||
+        gBrainOwnedRuntimeState.accessory.activeDrawer !=
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::None;
     diagnostics.shouldWake = shouldWakeOverlay;
 
     gOverlayWindow.SetAutomaticMode(
@@ -4315,6 +4677,9 @@ void RefreshOverlayFromBrainEngineer3() {
 
         if (wakeDecision.hideUntilXpilotConnect) {
             timingStarted = std::chrono::steady_clock::now();
+            DiscardPendingAccessoryClickFacts();
+            xvatsim::brain::CloseBrainOwnedAccessoryForTemporaryOverlaySleep(
+                &gBrainOwnedRuntimeState);
             gOverlayWindow.Hide();
             diagnostics.overlayUpdateUs = ElapsedMicrosecondsSince(timingStarted);
             diagnostics.overlayUpdateMs = diagnostics.overlayUpdateUs / 1000;
@@ -4333,7 +4698,7 @@ void RefreshOverlayFromBrainEngineer3() {
         }
 
         timingStarted = std::chrono::steady_clock::now();
-        gOverlayWindow.Update(overlayModel);
+        UpdateOverlayWindow(overlayModel);
         diagnostics.overlayUpdateUs = ElapsedMicrosecondsSince(timingStarted);
         diagnostics.overlayUpdateMs = diagnostics.overlayUpdateUs / 1000;
         RecordDiagnosticJob(
@@ -4393,7 +4758,7 @@ void RefreshOverlayFromBrainEngineer3() {
     }
 
     timingStarted = std::chrono::steady_clock::now();
-    gOverlayWindow.Update(overlayModel);
+    UpdateOverlayWindow(overlayModel);
     diagnostics.overlayUpdateUs = ElapsedMicrosecondsSince(timingStarted);
     diagnostics.overlayUpdateMs = diagnostics.overlayUpdateUs / 1000;
     RecordDiagnosticJob(
@@ -4472,10 +4837,23 @@ void PreinitializeOverlayWindow() {
         " totalUs=" + std::to_string(elapsedUs) +
         " cache=window-create-hidden result=createAttempt=1");
 }
+
+void LogAccessoryPreparationStartupFailure(
+    xvatsim::modules::overlay::AccessoryPreparationWorkerFailure failure,
+    void*) {
+    AppendDiagnosticsLogLine(
+        std::string{"event=step3-accessory-preparation-startup-failed reason="} +
+        xvatsim::modules::overlay::AccessoryPreparationWorkerFailureToken(
+            failure));
+}
 }
 
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     gPluginRuntimeEnabled = false;
+    gOverlayWindow.SetAccessoryInputDispatchCallback(
+        DispatchPendingAccessoryInput, nullptr);
+    gOverlayWindow.SetAccessoryPreparationFailureCallback(
+        LogAccessoryPreparationStartupFailure, nullptr);
     XPLMEnableFeature("XPLM_USE_NATIVE_PATHS", 1);
 
     std::strcpy(outName, kPluginName);
@@ -4505,6 +4883,16 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
             gPluginSettings.windowTop);
     }
     ResetPluginRuntimeState(true, true);
+#if defined(XVATSIM_STEP3_LIVE_PROOF_FIXTURES)
+    const auto fixtureSeed =
+        xvatsim::plugin::step3_live_proof::SeedStep3LiveProofFixturesOnce(
+            &gBrainOwnedRuntimeState,
+            &gStep3LiveProofFixtureSession);
+    if (!fixtureSeed.seeded) {
+        XPLMDebugString(
+            "[XVatsim] Step 3 live-proof fixture seeding failed.\n");
+    }
+#endif
     AppendDiagnosticsLogLine(
         std::string{"event=diagnostics-session-start version="} +
         kInstalledPluginVersion +
@@ -4548,15 +4936,23 @@ PLUGIN_API void XPluginStop() {
     gPluginRuntimeEnabled = false;
     UnregisterFlightLoop();
     PersistOverlayGeometryIfChanged();
+    DiscardPendingAccessoryClickFacts();
+    gOverlayWindow.StopAccessoryPreparation();
+    LogAccessoryPerformanceSnapshot("plugin-stop");
+    xvatsim::brain::StopBrainOwnedAccessoryRuntime(
+        &gBrainOwnedRuntimeState);
     ResetPluginRuntimeState(true, true);
     gOverlayWindow.Destroy();
+    gOverlayWindow.SetAccessoryInputDispatchCallback(nullptr, nullptr);
     UnregisterPluginMenu();
     UnregisterPluginCommands();
     XPLMDebugString("[XVatsim] Plugin stopped.\n");
 }
 
 PLUGIN_API int XPluginEnable() {
-    ResetPluginRuntimeState(true, true);
+    ResetPluginRuntimeState(true, true, true);
+    xvatsim::brain::EnableBrainOwnedAccessoryRuntime(
+        &gBrainOwnedRuntimeState);
     LoadPreflightRouteCacheCandidate();
     xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
         &gBrainOwnedRuntimeState,
@@ -4564,6 +4960,7 @@ PLUGIN_API int XPluginEnable() {
     gPluginRuntimeEnabled = true;
     RequestAutomaticUpdateCheckIfDue();
     PreinitializeOverlayWindow();
+    SynchronizeAccessoryPresentation();
     RegisterFlightLoop(kInitialFlightLoopDelaySeconds);
     XPLMDebugString("[XVatsim] Plugin enabled.\n");
     return 1;
@@ -4573,7 +4970,12 @@ PLUGIN_API void XPluginDisable() {
     gPluginRuntimeEnabled = false;
     UnregisterFlightLoop();
     PersistOverlayGeometryIfChanged();
-    ResetPluginRuntimeState(true, true);
+    DiscardPendingAccessoryClickFacts();
+    gOverlayWindow.StopAccessoryPreparation();
+    LogAccessoryPerformanceSnapshot("plugin-disable");
+    xvatsim::brain::DisableBrainOwnedAccessoryRuntime(
+        &gBrainOwnedRuntimeState);
+    ResetPluginRuntimeState(true, true, true);
     xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
         &gBrainOwnedRuntimeState,
         ToDisplayOverrideMode(gPluginSettings.displayMode));

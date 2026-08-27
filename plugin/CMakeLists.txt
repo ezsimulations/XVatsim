@@ -4,6 +4,27 @@ add_library(XVatsimPlugin SHARED
     src/XVatsimPlugin.cpp
 )
 
+if (XVATSIM_STEP3_LIVE_PROOF_FIXTURES)
+    add_library(XVatsimStep3LiveProofFixtures STATIC
+        src/Step3LiveProofFixtures.cpp
+    )
+    target_compile_features(XVatsimStep3LiveProofFixtures PUBLIC cxx_std_17)
+    target_include_directories(XVatsimStep3LiveProofFixtures PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/brain/include
+    )
+    target_link_libraries(XVatsimStep3LiveProofFixtures PUBLIC
+        XVatsimBrain
+    )
+    target_link_libraries(XVatsimPlugin PRIVATE
+        XVatsimStep3LiveProofFixtures
+    )
+    target_compile_definitions(XVatsimPlugin PRIVATE
+        XVATSIM_STEP3_LIVE_PROOF_FIXTURES=1
+        XVATSIM_STEP3_LIVE_PROOF_PLUGIN_HOST=1
+    )
+endif()
+
 set(XVATSIM_UI_TRANSITION_SOUND
     "${CMAKE_SOURCE_DIR}/assets/audio/ui_transition.mp3")
 set(XVATSIM_AUTHORITY_SOURCE_REGISTRY

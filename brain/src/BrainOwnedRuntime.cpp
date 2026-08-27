@@ -4187,6 +4187,7 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
         return;
     }
     const auto operatingMode = state->operatingMode;
+    const auto accessory = state->accessory;
     const auto flightContext = state->flightContext;
     const auto displayOverrideMode = state->displayOverrideMode;
     const auto pendingTextEntryMode = state->pendingTextEntryMode;
@@ -4196,6 +4197,7 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     const auto lastNetworkPlanSnapshot = state->lastNetworkPlanSnapshot;
     *state = {};
     state->operatingMode = operatingMode;
+    state->accessory = accessory;
     state->flightContext = flightContext;
     state->displayOverrideMode = displayOverrideMode;
     state->pendingTextEntryMode = pendingTextEntryMode;
@@ -6462,6 +6464,599 @@ std::string BrainOwnedRuntimeStateSummary(const BrainOwnedRuntimeState& state) {
            << " heavyRequested=" << (state.heavyFallbackRequested ? 1 : 0)
            << " heavyRunning=" << (state.heavyFallbackRunning ? 1 : 0);
     return stream.str();
+}
+
+namespace {
+
+constexpr std::size_t kAccessoryStableKeyByteLimit = 128;
+constexpr std::size_t kAccessoryTitleByteLimit = 128;
+constexpr std::size_t kAccessoryBodyByteLimit = 8192;
+constexpr std::size_t kAccessoryHistoryEntryLimit = 32;
+constexpr std::size_t kAccessoryHistoryByteLimit = 65536;
+constexpr char kAccessoryContentLimitedMarker[] = "CONTENT LIMITED";
+
+bool AccessoryDrawerIndex(
+    BrainOwnedAccessoryDrawerId drawer,
+    std::size_t* index) {
+    if (index == nullptr) {
+        return false;
+    }
+    switch (drawer) {
+        case BrainOwnedAccessoryDrawerId::Metar:
+            *index = 0;
+            return true;
+        case BrainOwnedAccessoryDrawerId::Atis:
+            *index = 1;
+            return true;
+        case BrainOwnedAccessoryDrawerId::Pdc:
+            *index = 2;
+            return true;
+        case BrainOwnedAccessoryDrawerId::None:
+        default:
+            return false;
+    }
+}
+
+bool IsValidAccessoryUtf8(const std::string& text) {
+    std::size_t index = 0;
+    while (index < text.size()) {
+        const auto first = static_cast<unsigned char>(text[index]);
+        if (first <= 0x7f) {
+            ++index;
+            continue;
+        }
+
+        std::size_t count = 0;
+        if (first >= 0xc2 && first <= 0xdf) {
+            count = 1;
+        } else if (first >= 0xe0 && first <= 0xef) {
+            count = 2;
+        } else if (first >= 0xf0 && first <= 0xf4) {
+            count = 3;
+        } else {
+            return false;
+        }
+        if (index + count >= text.size()) {
+            return false;
+        }
+        for (std::size_t offset = 1; offset <= count; ++offset) {
+            const auto value = static_cast<unsigned char>(text[index + offset]);
+            if ((value & 0xc0) != 0x80) {
+                return false;
+            }
+        }
+        if ((first == 0xe0 &&
+             static_cast<unsigned char>(text[index + 1]) < 0xa0) ||
+            (first == 0xed &&
+             static_cast<unsigned char>(text[index + 1]) >= 0xa0) ||
+            (first == 0xf0 &&
+             static_cast<unsigned char>(text[index + 1]) < 0x90) ||
+            (first == 0xf4 &&
+             static_cast<unsigned char>(text[index + 1]) >= 0x90)) {
+            return false;
+        }
+        index += count + 1;
+    }
+    return true;
+}
+
+std::string NormalizeAccessoryLineEndings(const std::string& text) {
+    std::string normalized;
+    normalized.reserve(text.size());
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        if (text[index] == '\r' && index + 1 < text.size() &&
+            text[index + 1] == '\n') {
+            normalized.push_back('\n');
+            ++index;
+        } else {
+            normalized.push_back(text[index]);
+        }
+    }
+    return normalized;
+}
+
+std::string LimitAccessoryUtf8(
+    const std::string& text,
+    std::size_t limit,
+    bool* limited) {
+    if (limited != nullptr) {
+        *limited = text.size() > limit;
+    }
+    if (text.size() <= limit) {
+        return text;
+    }
+
+    const std::string marker = kAccessoryContentLimitedMarker;
+    if (limit <= marker.size()) {
+        return marker.substr(0, limit);
+    }
+    std::size_t retained = limit - marker.size();
+    while (retained > 0 && !IsValidAccessoryUtf8(text.substr(0, retained))) {
+        --retained;
+    }
+    return text.substr(0, retained) + marker;
+}
+
+std::uint32_t AccessoryRotateRight(std::uint32_t value, unsigned int count) {
+    return (value >> count) | (value << (32U - count));
+}
+
+std::array<std::uint8_t, 32> AccessorySha256(
+    const std::vector<std::uint8_t>& source) {
+    constexpr std::uint32_t roundConstants[64]{
+        0x428a2f98U,0x71374491U,0xb5c0fbcfU,0xe9b5dba5U,0x3956c25bU,0x59f111f1U,0x923f82a4U,0xab1c5ed5U,
+        0xd807aa98U,0x12835b01U,0x243185beU,0x550c7dc3U,0x72be5d74U,0x80deb1feU,0x9bdc06a7U,0xc19bf174U,
+        0xe49b69c1U,0xefbe4786U,0x0fc19dc6U,0x240ca1ccU,0x2de92c6fU,0x4a7484aaU,0x5cb0a9dcU,0x76f988daU,
+        0x983e5152U,0xa831c66dU,0xb00327c8U,0xbf597fc7U,0xc6e00bf3U,0xd5a79147U,0x06ca6351U,0x14292967U,
+        0x27b70a85U,0x2e1b2138U,0x4d2c6dfcU,0x53380d13U,0x650a7354U,0x766a0abbU,0x81c2c92eU,0x92722c85U,
+        0xa2bfe8a1U,0xa81a664bU,0xc24b8b70U,0xc76c51a3U,0xd192e819U,0xd6990624U,0xf40e3585U,0x106aa070U,
+        0x19a4c116U,0x1e376c08U,0x2748774cU,0x34b0bcb5U,0x391c0cb3U,0x4ed8aa4aU,0x5b9cca4fU,0x682e6ff3U,
+        0x748f82eeU,0x78a5636fU,0x84c87814U,0x8cc70208U,0x90befffaU,0xa4506cebU,0xbef9a3f7U,0xc67178f2U};
+    std::uint32_t state[8]{
+        0x6a09e667U,0xbb67ae85U,0x3c6ef372U,0xa54ff53aU,
+        0x510e527fU,0x9b05688cU,0x1f83d9abU,0x5be0cd19U};
+    auto message = source;
+    const auto bitLength = static_cast<std::uint64_t>(message.size()) * 8ULL;
+    message.push_back(0x80U);
+    while ((message.size() % 64U) != 56U) message.push_back(0U);
+    for (int shift = 56; shift >= 0; shift -= 8) {
+        message.push_back(static_cast<std::uint8_t>(bitLength >> shift));
+    }
+    for (std::size_t block = 0; block < message.size(); block += 64U) {
+        std::uint32_t words[64]{};
+        for (std::size_t index = 0; index < 16U; ++index) {
+            const auto offset = block + index * 4U;
+            words[index] =
+                (static_cast<std::uint32_t>(message[offset]) << 24U) |
+                (static_cast<std::uint32_t>(message[offset + 1]) << 16U) |
+                (static_cast<std::uint32_t>(message[offset + 2]) << 8U) |
+                static_cast<std::uint32_t>(message[offset + 3]);
+        }
+        for (std::size_t index = 16U; index < 64U; ++index) {
+            const auto s0 = AccessoryRotateRight(words[index - 15U], 7U) ^
+                AccessoryRotateRight(words[index - 15U], 18U) ^
+                (words[index - 15U] >> 3U);
+            const auto s1 = AccessoryRotateRight(words[index - 2U], 17U) ^
+                AccessoryRotateRight(words[index - 2U], 19U) ^
+                (words[index - 2U] >> 10U);
+            words[index] = words[index - 16U] + s0 + words[index - 7U] + s1;
+        }
+        auto a=state[0],b=state[1],c=state[2],d=state[3];
+        auto e=state[4],f=state[5],g=state[6],h=state[7];
+        for (std::size_t index = 0; index < 64U; ++index) {
+            const auto sum1 = AccessoryRotateRight(e,6U) ^
+                AccessoryRotateRight(e,11U) ^ AccessoryRotateRight(e,25U);
+            const auto choose = (e & f) ^ ((~e) & g);
+            const auto temporary1 = h + sum1 + choose + roundConstants[index] + words[index];
+            const auto sum0 = AccessoryRotateRight(a,2U) ^
+                AccessoryRotateRight(a,13U) ^ AccessoryRotateRight(a,22U);
+            const auto majority = (a & b) ^ (a & c) ^ (b & c);
+            const auto temporary2 = sum0 + majority;
+            h=g;g=f;f=e;e=d+temporary1;d=c;c=b;b=a;a=temporary1+temporary2;
+        }
+        state[0]+=a;state[1]+=b;state[2]+=c;state[3]+=d;
+        state[4]+=e;state[5]+=f;state[6]+=g;state[7]+=h;
+    }
+    std::array<std::uint8_t,32> digest{};
+    for (std::size_t index = 0; index < 8U; ++index) {
+        digest[index*4U]=static_cast<std::uint8_t>(state[index]>>24U);
+        digest[index*4U+1U]=static_cast<std::uint8_t>(state[index]>>16U);
+        digest[index*4U+2U]=static_cast<std::uint8_t>(state[index]>>8U);
+        digest[index*4U+3U]=static_cast<std::uint8_t>(state[index]);
+    }
+    return digest;
+}
+
+std::array<std::uint8_t, 32> AccessorySourceContentDigest(
+    const std::string& title,
+    const std::string& body) {
+    std::vector<std::uint8_t> exactContent;
+    exactContent.reserve(16U + title.size() + body.size());
+    const auto appendLength = [&](std::uint64_t length) {
+        for (int shift = 56; shift >= 0; shift -= 8) {
+            exactContent.push_back(static_cast<std::uint8_t>(length >> shift));
+        }
+    };
+    appendLength(title.size());
+    exactContent.insert(exactContent.end(), title.begin(), title.end());
+    appendLength(body.size());
+    exactContent.insert(exactContent.end(), body.begin(), body.end());
+    return AccessorySha256(exactContent);
+}
+
+const char* AccessoryDrawerLabel(BrainOwnedAccessoryDrawerId drawer) {
+    switch (drawer) {
+        case BrainOwnedAccessoryDrawerId::Metar:
+            return "METAR";
+        case BrainOwnedAccessoryDrawerId::Atis:
+            return "ATIS";
+        case BrainOwnedAccessoryDrawerId::Pdc:
+            return "PDC";
+        case BrainOwnedAccessoryDrawerId::None:
+        default:
+            return "";
+    }
+}
+
+const char* AccessoryEmptyStateText(BrainOwnedAccessoryDrawerId drawer) {
+    switch (drawer) {
+        case BrainOwnedAccessoryDrawerId::Metar:
+            return "METAR data is not enabled in Step 3.";
+        case BrainOwnedAccessoryDrawerId::Atis:
+            return "VATSIM ATIS data is not enabled in Step 3.";
+        case BrainOwnedAccessoryDrawerId::Pdc:
+            return "PDC/private-message data is not enabled in Step 3.";
+        case BrainOwnedAccessoryDrawerId::None:
+        default:
+            return "";
+    }
+}
+
+BrainOwnedAccessoryBoundaryDecision CloseAccessoryPreservingHistory(
+    BrainOwnedRuntimeState* state) {
+    BrainOwnedAccessoryBoundaryDecision decision;
+    if (state == nullptr) {
+        return decision;
+    }
+    decision.status = BrainOwnedAccessoryOperationStatus::Available;
+    decision.drawerClosed =
+        state->accessory.activeDrawer != BrainOwnedAccessoryDrawerId::None;
+    if (decision.drawerClosed) {
+        state->accessory.activeDrawer = BrainOwnedAccessoryDrawerId::None;
+        ++state->accessory.selectionGeneration;
+        ++state->accessory.scrollResetGeneration;
+    }
+    decision.historyClearGeneration = state->accessory.historyClearGeneration;
+    decision.previousCallsign = state->accessory.callsignIdentity;
+    decision.activeCallsign = state->accessory.callsignIdentity;
+    decision.callsignIdentityGeneration =
+        state->accessory.callsignIdentityGeneration;
+    return decision;
+}
+
+BrainOwnedAccessoryBoundaryDecision ClearAccessorySessionHistory(
+    BrainOwnedRuntimeState* state) {
+    auto decision = CloseAccessoryPreservingHistory(state);
+    if (state == nullptr) {
+        return decision;
+    }
+    for (auto& history : state->accessory.histories) {
+        history.entries.clear();
+        history.retainedBytes = 0;
+        ++history.generation;
+        history.nextAcceptedSequence = 1;
+    }
+    state->accessory.lastConsumedClickSequence = 0;
+    ++state->accessory.historyClearGeneration;
+    state->accessory.cachedPresentationSnapshot.reset();
+    decision.historiesCleared = true;
+    decision.historyClearGeneration = state->accessory.historyClearGeneration;
+    return decision;
+}
+
+}  // namespace
+
+BrainOwnedAccessoryHistoryDecision AcceptBrainOwnedAccessoryHistoryEntry(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAccessoryHistoryEntryInput& input) {
+    BrainOwnedAccessoryHistoryDecision decision;
+    if (state == nullptr) {
+        return decision;
+    }
+    decision.status = BrainOwnedAccessoryOperationStatus::Available;
+
+    std::size_t historyIndex = 0;
+    const auto stableKey = NormalizeAccessoryLineEndings(input.stableKey);
+    if (!AccessoryDrawerIndex(input.drawer, &historyIndex) ||
+        stableKey.empty() ||
+        stableKey.size() > kAccessoryStableKeyByteLimit ||
+        !IsValidAccessoryUtf8(input.stableKey) ||
+        !IsValidAccessoryUtf8(input.title) ||
+        !IsValidAccessoryUtf8(input.body)) {
+        return decision;
+    }
+
+    bool titleLimited = false;
+    bool bodyLimited = false;
+    const auto normalizedTitle = NormalizeAccessoryLineEndings(input.title);
+    const auto normalizedBody = NormalizeAccessoryLineEndings(input.body);
+    const auto sourceContentDigest = AccessorySourceContentDigest(
+        normalizedTitle,
+        normalizedBody);
+    const auto title = LimitAccessoryUtf8(
+        normalizedTitle,
+        kAccessoryTitleByteLimit,
+        &titleLimited);
+    const auto body = LimitAccessoryUtf8(
+        normalizedBody,
+        kAccessoryBodyByteLimit,
+        &bodyLimited);
+    const bool contentLimited = titleLimited || bodyLimited;
+
+    auto& history = state->accessory.histories[historyIndex];
+    const auto existing = std::find_if(
+        history.entries.begin(),
+        history.entries.end(),
+        [&](const BrainOwnedAccessoryHistoryEntry& entry) {
+            return entry.stableKey == stableKey;
+        });
+    if (existing != history.entries.end() &&
+        existing->sourceContentDigest == sourceContentDigest &&
+        existing->title == title && existing->body == body &&
+        existing->contentLimited == contentLimited) {
+        decision.duplicate = true;
+        decision.historyGeneration = history.generation;
+        decision.acceptedSequence = existing->acceptedSequence;
+        decision.contentLimited = existing->contentLimited;
+        return decision;
+    }
+    if (existing != history.entries.end()) {
+        history.retainedBytes -= existing->retainedBytes;
+        history.entries.erase(existing);
+    }
+
+    BrainOwnedAccessoryHistoryEntry entry;
+    entry.stableKey = stableKey;
+    entry.title = title;
+    entry.body = body;
+    entry.acceptedSequence = history.nextAcceptedSequence++;
+    entry.sourceContentDigest = sourceContentDigest;
+    entry.contentLimited = contentLimited;
+    entry.retainedBytes =
+        entry.stableKey.size() + entry.title.size() + entry.body.size();
+    history.retainedBytes += entry.retainedBytes;
+    history.entries.insert(history.entries.begin(), entry);
+
+    while (history.entries.size() > kAccessoryHistoryEntryLimit ||
+           history.retainedBytes > kAccessoryHistoryByteLimit) {
+        history.retainedBytes -= history.entries.back().retainedBytes;
+        history.entries.pop_back();
+    }
+    ++history.generation;
+
+    decision.accepted = true;
+    decision.contentLimited = contentLimited;
+    decision.acceptedSequence = entry.acceptedSequence;
+    decision.historyGeneration = history.generation;
+    return decision;
+}
+
+BrainOwnedAccessorySelectionDecision RequestBrainOwnedAccessoryDrawerSelection(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAccessorySelectionRequest& request) {
+    BrainOwnedAccessorySelectionDecision decision;
+    if (state == nullptr) {
+        return decision;
+    }
+    decision.status = BrainOwnedAccessoryOperationStatus::Available;
+    decision.previousDrawer = state->accessory.activeDrawer;
+    decision.activeDrawer = state->accessory.activeDrawer;
+    decision.selectionGeneration = state->accessory.selectionGeneration;
+    decision.scrollResetGeneration = state->accessory.scrollResetGeneration;
+
+    std::size_t ignoredIndex = 0;
+    if (!AccessoryDrawerIndex(request.drawer, &ignoredIndex) ||
+        request.requestSequence == 0) {
+        return decision;
+    }
+    if (request.requestSequence <= state->accessory.lastConsumedClickSequence) {
+        decision.action = BrainOwnedAccessoryDrawerAction::DuplicateRequestIgnored;
+        return decision;
+    }
+
+    state->accessory.lastConsumedClickSequence = request.requestSequence;
+    if (state->accessory.activeDrawer == request.drawer) {
+        state->accessory.activeDrawer = BrainOwnedAccessoryDrawerId::None;
+        decision.action = BrainOwnedAccessoryDrawerAction::Closed;
+    } else if (state->accessory.activeDrawer == BrainOwnedAccessoryDrawerId::None) {
+        state->accessory.activeDrawer = request.drawer;
+        decision.action = BrainOwnedAccessoryDrawerAction::Opened;
+    } else {
+        state->accessory.activeDrawer = request.drawer;
+        decision.action = BrainOwnedAccessoryDrawerAction::Switched;
+    }
+    ++state->accessory.selectionGeneration;
+    ++state->accessory.scrollResetGeneration;
+    decision.activeDrawer = state->accessory.activeDrawer;
+    decision.selectionGeneration = state->accessory.selectionGeneration;
+    decision.scrollResetGeneration = state->accessory.scrollResetGeneration;
+    return decision;
+}
+
+BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
+    BrainOwnedRuntimeState* state,
+    std::uint64_t layoutGeneration,
+    BrainOwnedAccessoryProjectionCounters* counters) {
+    if (counters != nullptr) {
+        *counters = {};
+    }
+    BrainOwnedAccessoryPresentationHandle handle;
+    if (state == nullptr) {
+        return handle;
+    }
+
+    auto& accessory = state->accessory;
+    std::size_t activeIndex = 0;
+    const bool drawerOpen = AccessoryDrawerIndex(
+        accessory.activeDrawer,
+        &activeIndex);
+    const std::uint64_t historyGeneration =
+        drawerOpen ? accessory.histories[activeIndex].generation : 0;
+    const bool cacheMatches =
+        accessory.cachedPresentationSnapshot != nullptr &&
+        accessory.cachedPresentationSelectionGeneration ==
+            accessory.selectionGeneration &&
+        accessory.cachedPresentationLayoutGeneration == layoutGeneration &&
+        (!drawerOpen ||
+         accessory.cachedPresentationHistoryGeneration == historyGeneration);
+    if (cacheMatches) {
+        handle.snapshot = accessory.cachedPresentationSnapshot;
+        handle.selectionGeneration = accessory.selectionGeneration;
+        handle.historyGeneration =
+            accessory.cachedPresentationHistoryGeneration;
+        handle.layoutGeneration = layoutGeneration;
+        return handle;
+    }
+
+    auto snapshot = std::make_shared<BrainOwnedAccessoryPresentationSnapshot>();
+    snapshot->status = BrainOwnedAccessoryOperationStatus::Available;
+    snapshot->activeDrawer = accessory.activeDrawer;
+    snapshot->selectionGeneration = accessory.selectionGeneration;
+    snapshot->historyGeneration = historyGeneration;
+    snapshot->layoutGeneration = layoutGeneration;
+    snapshot->snapshotIdentity = accessory.nextPresentationSnapshotIdentity++;
+    snapshot->callsignIdentity = accessory.callsignIdentity;
+
+    const BrainOwnedAccessoryDrawerId drawers[]{
+        BrainOwnedAccessoryDrawerId::Metar,
+        BrainOwnedAccessoryDrawerId::Atis,
+        BrainOwnedAccessoryDrawerId::Pdc};
+    for (const auto drawer : drawers) {
+        BrainOwnedAccessoryOrbPresentation orb;
+        orb.drawer = drawer;
+        orb.label = AccessoryDrawerLabel(drawer);
+        orb.selected = drawer == accessory.activeDrawer;
+        orb.neutral = !orb.selected;
+        if (orb.selected) {
+            orb.selectedIndicator = "OPEN";
+        }
+        snapshot->orbs.push_back(std::move(orb));
+    }
+
+    if (drawerOpen) {
+        const auto& history = accessory.histories[activeIndex];
+        snapshot->drawerTitle = AccessoryDrawerLabel(accessory.activeDrawer);
+        snapshot->emptyStateText = AccessoryEmptyStateText(accessory.activeDrawer);
+        snapshot->entries = history.entries;
+        if (counters != nullptr) {
+            counters->historyVisits = history.entries.size();
+            counters->entriesCopied = history.entries.size();
+        }
+    }
+    if (counters != nullptr) {
+        counters->snapshotBuilds = 1;
+    }
+
+    accessory.cachedPresentationSnapshot = snapshot;
+    accessory.cachedPresentationSelectionGeneration = accessory.selectionGeneration;
+    accessory.cachedPresentationHistoryGeneration = historyGeneration;
+    accessory.cachedPresentationLayoutGeneration = layoutGeneration;
+
+    handle.snapshot = std::move(snapshot);
+    handle.selectionGeneration = accessory.selectionGeneration;
+    handle.historyGeneration = historyGeneration;
+    handle.layoutGeneration = layoutGeneration;
+    return handle;
+}
+
+BrainOwnedAccessoryPreparationHandle ProjectBrainOwnedAccessoryPreparation(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedAccessoryDrawerId drawer,
+    BrainOwnedAccessoryProjectionCounters* counters) {
+    if (counters != nullptr) {
+        *counters = {};
+    }
+    BrainOwnedAccessoryPreparationHandle handle;
+    std::size_t historyIndex = 0;
+    if (state == nullptr || !AccessoryDrawerIndex(drawer, &historyIndex)) {
+        return handle;
+    }
+
+    const auto& history = state->accessory.histories[historyIndex];
+    if (state->accessory.cachedPreparationSnapshots[historyIndex] != nullptr &&
+        state->accessory.cachedPreparationHistoryGenerations[historyIndex] ==
+            history.generation) {
+        handle.snapshot =
+            state->accessory.cachedPreparationSnapshots[historyIndex];
+        handle.historyGeneration = history.generation;
+        return handle;
+    }
+    auto snapshot = std::make_shared<BrainOwnedAccessoryPreparationSnapshot>();
+    snapshot->status = BrainOwnedAccessoryOperationStatus::Available;
+    snapshot->drawer = drawer;
+    snapshot->historyGeneration = history.generation;
+    snapshot->snapshotIdentity =
+        state->accessory.nextPresentationSnapshotIdentity++;
+    snapshot->entries = history.entries;
+    if (counters != nullptr) {
+        counters->historyVisits = history.entries.size();
+        counters->entriesCopied = history.entries.size();
+        counters->snapshotBuilds = 1;
+    }
+    state->accessory.cachedPreparationSnapshots[historyIndex] = snapshot;
+    state->accessory.cachedPreparationHistoryGenerations[historyIndex] =
+        history.generation;
+    handle.snapshot = std::move(snapshot);
+    handle.historyGeneration = history.generation;
+    return handle;
+}
+
+BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForDisplayClose(
+    BrainOwnedRuntimeState* state) {
+    return CloseAccessoryPreservingHistory(state);
+}
+BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForTemporaryXPilotDisconnect(
+    BrainOwnedRuntimeState* state) {
+    return CloseAccessoryPreservingHistory(state);
+}
+BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForInvalidAircraft(
+    BrainOwnedRuntimeState* state) {
+    return CloseAccessoryPreservingHistory(state);
+}
+BrainOwnedAccessoryBoundaryDecision DisableBrainOwnedAccessoryRuntime(
+    BrainOwnedRuntimeState* state) {
+    return CloseAccessoryPreservingHistory(state);
+}
+BrainOwnedAccessoryBoundaryDecision EnableBrainOwnedAccessoryRuntime(
+    BrainOwnedRuntimeState* state) {
+    BrainOwnedAccessoryBoundaryDecision decision;
+    if (state == nullptr) {
+        return decision;
+    }
+    decision.status = BrainOwnedAccessoryOperationStatus::Available;
+    decision.historyClearGeneration = state->accessory.historyClearGeneration;
+    decision.previousCallsign = state->accessory.callsignIdentity;
+    decision.activeCallsign = state->accessory.callsignIdentity;
+    decision.callsignIdentityGeneration =
+        state->accessory.callsignIdentityGeneration;
+    return decision;
+}
+BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForTemporaryOverlaySleep(
+    BrainOwnedRuntimeState* state) {
+    return CloseAccessoryPreservingHistory(state);
+}
+BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForSessionReset(
+    BrainOwnedRuntimeState* state) {
+    return ClearAccessorySessionHistory(state);
+}
+BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForConfirmedNewFlight(
+    BrainOwnedRuntimeState* state) {
+    return ClearAccessorySessionHistory(state);
+}
+BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForConfirmedColdDark(
+    BrainOwnedRuntimeState* state) {
+    return ClearAccessorySessionHistory(state);
+}
+BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForCallsignChange(
+    BrainOwnedRuntimeState* state,
+    const std::string& previousCallsign,
+    const std::string& nextCallsign) {
+    auto decision = ClearAccessorySessionHistory(state);
+    if (state == nullptr) {
+        return decision;
+    }
+    decision.clearedBeforeIdentityProjection = true;
+    decision.previousCallsign = previousCallsign;
+    state->accessory.callsignIdentity = nextCallsign;
+    ++state->accessory.callsignIdentityGeneration;
+    decision.activeCallsign = nextCallsign;
+    decision.callsignIdentityGeneration =
+        state->accessory.callsignIdentityGeneration;
+    return decision;
+}
+BrainOwnedAccessoryBoundaryDecision StopBrainOwnedAccessoryRuntime(
+    BrainOwnedRuntimeState* state) {
+    return ClearAccessorySessionHistory(state);
 }
 
 }  // namespace xvatsim::brain

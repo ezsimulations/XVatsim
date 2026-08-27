@@ -1,0 +1,14 @@
+V2 Step 3 controlled rollback: PASSED
+completedUtc=2026-08-27T21:48:18.3335615Z
+processesStopped=true
+verifiedLiveEvidenceManifests=9
+backupManifestEntries=19
+backupManifestSha256=A0B19A2ED9A37240CF11B78FF51F2FC964D652D64C94E4148868FCD8FCF4287D
+removedStep3Files=4
+restoredFiles=6
+activePluginPretestFiles=4
+activeXplCount=0
+stagedXplCount=0
+stagingPreserved=true
+step3BackupPreserved=true
+v1Touched=false

@@ -1,7 +1,9 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -77,6 +79,165 @@ enum class BrainOwnedTextEntryMode {
     None,
     ManualCtaf,
     DiversionAirport,
+};
+
+enum class BrainOwnedAccessoryOperationStatus {
+    Unavailable,
+    Available,
+};
+
+enum class BrainOwnedAccessoryDrawerId {
+    None,
+    Metar,
+    Atis,
+    Pdc,
+};
+
+enum class BrainOwnedAccessoryDrawerAction {
+    None,
+    Opened,
+    Closed,
+    Switched,
+    DuplicateRequestIgnored,
+};
+
+struct BrainOwnedAccessoryPresentationSnapshot;
+
+struct BrainOwnedAccessoryHistoryEntryInput {
+    BrainOwnedAccessoryDrawerId drawer = BrainOwnedAccessoryDrawerId::None;
+    std::string stableKey;
+    std::string title;
+    std::string body;
+};
+
+struct BrainOwnedAccessoryHistoryEntry {
+    std::string stableKey;
+    std::string title;
+    std::string body;
+    std::uint64_t acceptedSequence = 0;
+    std::array<std::uint8_t, 32> sourceContentDigest{};
+    std::size_t retainedBytes = 0;
+    bool contentLimited = false;
+};
+
+struct BrainOwnedAccessoryHistory {
+    std::vector<BrainOwnedAccessoryHistoryEntry> entries;
+    std::size_t retainedBytes = 0;
+    std::uint64_t generation = 0;
+    std::uint64_t nextAcceptedSequence = 1;
+};
+
+struct BrainOwnedAccessoryPreparationSnapshot;
+
+struct BrainOwnedAccessoryRuntimeState {
+    BrainOwnedAccessoryDrawerId activeDrawer = BrainOwnedAccessoryDrawerId::None;
+    std::uint64_t selectionGeneration = 0;
+    std::uint64_t scrollResetGeneration = 0;
+    std::uint64_t lastConsumedClickSequence = 0;
+    std::string callsignIdentity;
+    std::uint64_t callsignIdentityGeneration = 0;
+    std::uint64_t historyClearGeneration = 0;
+    std::array<BrainOwnedAccessoryHistory, 3> histories;
+    std::shared_ptr<const BrainOwnedAccessoryPresentationSnapshot>
+        cachedPresentationSnapshot;
+    std::uint64_t cachedPresentationSelectionGeneration = 0;
+    std::uint64_t cachedPresentationHistoryGeneration = 0;
+    std::uint64_t cachedPresentationLayoutGeneration = 0;
+    std::array<std::shared_ptr<const BrainOwnedAccessoryPreparationSnapshot>, 3>
+        cachedPreparationSnapshots;
+    std::array<std::uint64_t, 3> cachedPreparationHistoryGenerations{};
+    std::uint64_t nextPresentationSnapshotIdentity = 1;
+};
+
+struct BrainOwnedAccessoryHistoryDecision {
+    BrainOwnedAccessoryOperationStatus status =
+        BrainOwnedAccessoryOperationStatus::Unavailable;
+    bool accepted = false;
+    bool duplicate = false;
+    bool contentLimited = false;
+    std::uint64_t acceptedSequence = 0;
+    std::uint64_t historyGeneration = 0;
+};
+
+struct BrainOwnedAccessorySelectionRequest {
+    BrainOwnedAccessoryDrawerId drawer = BrainOwnedAccessoryDrawerId::None;
+    std::uint64_t requestSequence = 0;
+};
+
+struct BrainOwnedAccessorySelectionDecision {
+    BrainOwnedAccessoryOperationStatus status =
+        BrainOwnedAccessoryOperationStatus::Unavailable;
+    BrainOwnedAccessoryDrawerAction action =
+        BrainOwnedAccessoryDrawerAction::None;
+    BrainOwnedAccessoryDrawerId previousDrawer =
+        BrainOwnedAccessoryDrawerId::None;
+    BrainOwnedAccessoryDrawerId activeDrawer =
+        BrainOwnedAccessoryDrawerId::None;
+    std::uint64_t selectionGeneration = 0;
+    std::uint64_t scrollResetGeneration = 0;
+};
+
+struct BrainOwnedAccessoryBoundaryDecision {
+    BrainOwnedAccessoryOperationStatus status =
+        BrainOwnedAccessoryOperationStatus::Unavailable;
+    bool drawerClosed = false;
+    bool historiesCleared = false;
+    bool clearedBeforeIdentityProjection = false;
+    std::string previousCallsign;
+    std::string activeCallsign;
+    std::uint64_t historyClearGeneration = 0;
+    std::uint64_t callsignIdentityGeneration = 0;
+};
+
+struct BrainOwnedAccessoryOrbPresentation {
+    BrainOwnedAccessoryDrawerId drawer = BrainOwnedAccessoryDrawerId::None;
+    std::string label;
+    bool neutral = true;
+    bool selected = false;
+    std::string selectedIndicator;
+};
+
+struct BrainOwnedAccessoryPresentationSnapshot {
+    BrainOwnedAccessoryOperationStatus status =
+        BrainOwnedAccessoryOperationStatus::Unavailable;
+    BrainOwnedAccessoryDrawerId activeDrawer =
+        BrainOwnedAccessoryDrawerId::None;
+    std::vector<BrainOwnedAccessoryOrbPresentation> orbs;
+    std::vector<BrainOwnedAccessoryHistoryEntry> entries;
+    std::string drawerTitle;
+    std::string emptyStateText;
+    std::uint64_t selectionGeneration = 0;
+    std::uint64_t historyGeneration = 0;
+    std::uint64_t layoutGeneration = 0;
+    std::uint64_t snapshotIdentity = 0;
+    std::string callsignIdentity;
+};
+
+struct BrainOwnedAccessoryProjectionCounters {
+    std::uint64_t historyVisits = 0;
+    std::uint64_t entriesCopied = 0;
+    std::uint64_t snapshotBuilds = 0;
+};
+
+struct BrainOwnedAccessoryPresentationHandle {
+    std::shared_ptr<const BrainOwnedAccessoryPresentationSnapshot> snapshot;
+    std::uint64_t selectionGeneration = 0;
+    std::uint64_t historyGeneration = 0;
+    std::uint64_t layoutGeneration = 0;
+};
+
+struct BrainOwnedAccessoryPreparationSnapshot {
+    BrainOwnedAccessoryOperationStatus status =
+        BrainOwnedAccessoryOperationStatus::Unavailable;
+    BrainOwnedAccessoryDrawerId drawer = BrainOwnedAccessoryDrawerId::None;
+    std::vector<BrainOwnedAccessoryHistoryEntry> entries;
+    std::uint64_t historyGeneration = 0;
+    std::uint64_t snapshotIdentity = 0;
+};
+
+struct BrainOwnedAccessoryPreparationHandle {
+    std::shared_ptr<const BrainOwnedAccessoryPreparationSnapshot> snapshot;
+    std::uint64_t historyGeneration = 0;
 };
 
 struct BrainOwnedCandidateCompletion {
@@ -189,6 +350,7 @@ public:
 
 struct BrainOwnedRuntimeState {
     BrainOwnedOperatingModeState operatingMode;
+    BrainOwnedAccessoryRuntimeState accessory;
     bool hasRoutePolygonSnapshot = false;
     RouteSectorSnapshot routePolygonSnapshot;
     std::uint64_t routePolygonHash = 0;
@@ -1306,6 +1468,49 @@ BrainOwnedOperatingModeSelectionResult RequestBrainOwnedOperatingModeSelection(
 const char* ToString(BrainOwnedOperatingMode mode);
 const char* ToString(BrainOwnedOperatingModeSource source);
 const char* ToString(BrainOwnedOperatingModeLoadStatus status);
+
+BrainOwnedAccessoryHistoryDecision AcceptBrainOwnedAccessoryHistoryEntry(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAccessoryHistoryEntryInput& input);
+
+BrainOwnedAccessorySelectionDecision RequestBrainOwnedAccessoryDrawerSelection(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAccessorySelectionRequest& request);
+
+BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
+    BrainOwnedRuntimeState* state,
+    std::uint64_t layoutGeneration,
+    BrainOwnedAccessoryProjectionCounters* counters);
+
+BrainOwnedAccessoryPreparationHandle ProjectBrainOwnedAccessoryPreparation(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedAccessoryDrawerId drawer,
+    BrainOwnedAccessoryProjectionCounters* counters);
+
+BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForDisplayClose(
+    BrainOwnedRuntimeState* state);
+BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForTemporaryXPilotDisconnect(
+    BrainOwnedRuntimeState* state);
+BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForInvalidAircraft(
+    BrainOwnedRuntimeState* state);
+BrainOwnedAccessoryBoundaryDecision DisableBrainOwnedAccessoryRuntime(
+    BrainOwnedRuntimeState* state);
+BrainOwnedAccessoryBoundaryDecision EnableBrainOwnedAccessoryRuntime(
+    BrainOwnedRuntimeState* state);
+BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForTemporaryOverlaySleep(
+    BrainOwnedRuntimeState* state);
+BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForSessionReset(
+    BrainOwnedRuntimeState* state);
+BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForConfirmedNewFlight(
+    BrainOwnedRuntimeState* state);
+BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForConfirmedColdDark(
+    BrainOwnedRuntimeState* state);
+BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForCallsignChange(
+    BrainOwnedRuntimeState* state,
+    const std::string& previousCallsign,
+    const std::string& nextCallsign);
+BrainOwnedAccessoryBoundaryDecision StopBrainOwnedAccessoryRuntime(
+    BrainOwnedRuntimeState* state);
 void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state);
 
 void CommitBrainOwnedLastSampledFacts(

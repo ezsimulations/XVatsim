@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
@@ -6,9 +8,14 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <thread>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -35,6 +42,7 @@
 #include "XVatsim/modules/airport_frequency_catalog/AirportFrequencyCatalogResolver.h"
 #include "XVatsim/modules/departure/DepartureModule.h"
 #include "XVatsim/modules/enroute/EnrouteModule.h"
+#include "XVatsim/modules/overlay/OverlayAccessoryCore.h"
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
 #include "XVatsim/modules/settings_store/SettingsStore.h"
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
@@ -417,8 +425,14 @@ struct OperatingModeScenarioExpectations {
     std::vector<std::string> pipelineDisplayCallsigns;
 };
 
+struct Step3ScenarioInput {
+    std::vector<std::string> actions;
+    std::vector<std::string> expectations;
+};
+
 struct ScenarioData {
     std::string name;
+    Step3ScenarioInput step3;
     OperatingModeScenarioInput operatingMode;
     OperatingModeScenarioExpectations operatingModeExpectations;
     double nowSeconds = 0.0;
@@ -4169,6 +4183,14 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
 
     if (key == "name") {
         scenario->name = value;
+        return true;
+    }
+    if (key == "step3.action") {
+        scenario->step3.actions.push_back(value);
+        return true;
+    }
+    if (key == "expect.step3") {
+        scenario->step3.expectations.push_back(value);
         return true;
     }
     if (key == "operating_mode.probe") {
@@ -11242,6 +11264,3966 @@ int RunOperatingModeProbe(const ScenarioData& scenario) {
     return 0;
 }
 
+std::string Step3Bool(bool value) { return value ? "true" : "false"; }
+
+std::string Step3DigestHex(const std::array<std::uint8_t, 32>& digest) {
+    constexpr char digits[] = "0123456789ABCDEF";
+    std::string result;
+    result.reserve(digest.size() * 2);
+    for (const auto value : digest) {
+        result.push_back(digits[(value >> 4U) & 0x0fU]);
+        result.push_back(digits[value & 0x0fU]);
+    }
+    return result;
+}
+
+std::string Step3Status(xvatsim::brain::BrainOwnedAccessoryOperationStatus status) {
+    return status == xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available
+        ? "available"
+        : "unavailable";
+}
+
+std::string Step3Drawer(xvatsim::brain::BrainOwnedAccessoryDrawerId drawer) {
+    using Drawer = xvatsim::brain::BrainOwnedAccessoryDrawerId;
+    switch (drawer) {
+        case Drawer::Metar: return "METAR";
+        case Drawer::Atis: return "ATIS";
+        case Drawer::Pdc: return "PDC";
+        case Drawer::None: default: return "NONE";
+    }
+}
+
+xvatsim::brain::BrainOwnedAccessoryDrawerId Step3DrawerFromToken(
+    const std::string& token) {
+    using Drawer = xvatsim::brain::BrainOwnedAccessoryDrawerId;
+    if (token == "METAR") return Drawer::Metar;
+    if (token == "ATIS") return Drawer::Atis;
+    if (token == "PDC") return Drawer::Pdc;
+    return Drawer::None;
+}
+
+std::string Step3Action(xvatsim::brain::BrainOwnedAccessoryDrawerAction action) {
+    using Action = xvatsim::brain::BrainOwnedAccessoryDrawerAction;
+    switch (action) {
+        case Action::Opened: return "Opened";
+        case Action::Closed: return "Closed";
+        case Action::Switched: return "Switched";
+        case Action::DuplicateRequestIgnored: return "DuplicateRequestIgnored";
+        case Action::None: default: return "None";
+    }
+}
+
+std::string Step3WheelScope(xvatsim::modules::overlay::AccessoryWheelScope scope) {
+    using Scope=xvatsim::modules::overlay::AccessoryWheelScope;
+    if(scope==Scope::Drawer) return "drawer";
+    if(scope==Scope::MainCard) return "main";
+    return "unhandled";
+}
+
+xvatsim::modules::overlay::AccessoryPerformanceCategory
+Step3PerformanceCategoryFromToken(const std::string& token) {
+    using Category =
+        xvatsim::modules::overlay::AccessoryPerformanceCategory;
+    if (token == "rail-raster") return Category::RailRasterization;
+    if (token == "drawer-raster") return Category::DrawerRasterization;
+    if (token == "rail-upload") return Category::RailTextureUpload;
+    if (token == "drawer-upload") return Category::DrawerTextureUpload;
+    if (token == "completed-draw") return Category::CompletedAccessoryDraw;
+    if (token == "open-action") return Category::OpenAction;
+    if (token == "switch-action") return Category::AtomicSwitchAction;
+    if (token == "close-action") return Category::CloseAction;
+    if (token == "effective-scroll-action") {
+        return Category::EffectiveScrollAction;
+    }
+    if (token == "dispatch-wall") {
+        return Category::BrainPresentationDispatchWall;
+    }
+    if (token == "action-draw-wall") {
+        return Category::MatchingActionDrawWall;
+    }
+    if (token == "combined-action-wall") {
+        return Category::CombinedActionWall;
+    }
+    if (token == "callback-wait") return Category::CallbackWait;
+    if (token == "preparation-wait") return Category::PreparationWait;
+    if (token == "frame-interval") return Category::ContainingFrameInterval;
+    return Category::Count;
+}
+
+xvatsim::modules::overlay::AccessoryRasterReason
+Step3RasterReasonFromToken(const std::string& token) {
+    using Reason = xvatsim::modules::overlay::AccessoryRasterReason;
+    if (token == "initial") return Reason::Initial;
+    if (token == "selection-open-close-switch" || token == "selection") {
+        return Reason::Selection;
+    }
+    if (token == "scale-or-resize") return Reason::EffectiveScaleOrResize;
+    if (token == "typography-or-layout") return Reason::TypographyOrLayout;
+    if (token == "content-generation") return Reason::ContentGeneration;
+    if (token == "presentation-scroll") return Reason::PresentationScroll;
+    return Reason::Count;
+}
+
+std::size_t Step3DrawerIndex(xvatsim::brain::BrainOwnedAccessoryDrawerId drawer) {
+    using Drawer = xvatsim::brain::BrainOwnedAccessoryDrawerId;
+    if (drawer == Drawer::Atis) return 1;
+    if (drawer == Drawer::Pdc) return 2;
+    return 0;
+}
+
+bool Step3IsValidUtf8(const std::string& text) {
+    std::size_t index = 0;
+    while (index < text.size()) {
+        const auto first = static_cast<unsigned char>(text[index]);
+        std::size_t continuationCount = 0;
+        if (first <= 0x7F) continuationCount = 0;
+        else if (first >= 0xC2 && first <= 0xDF) continuationCount = 1;
+        else if (first >= 0xE0 && first <= 0xEF) continuationCount = 2;
+        else if (first >= 0xF0 && first <= 0xF4) continuationCount = 3;
+        else return false;
+        if (index + continuationCount >= text.size()) return false;
+        for (std::size_t offset = 1; offset <= continuationCount; ++offset) {
+            const auto value = static_cast<unsigned char>(text[index + offset]);
+            if ((value & 0xC0) != 0x80) return false;
+        }
+        index += continuationCount + 1;
+    }
+    return true;
+}
+
+std::string Step3JoinLines(const std::vector<std::string>& lines) {
+    std::ostringstream stream;
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        if (index != 0) stream << '\n';
+        stream << lines[index];
+    }
+    return stream.str();
+}
+
+std::string Step3ConcatenateLines(const std::vector<std::string>& lines) {
+    std::ostringstream stream;
+    for (const auto& line : lines) stream << line;
+    return stream.str();
+}
+
+std::string Step3NormalizeCrlf(const std::string& text) {
+    std::string normalized;
+    normalized.reserve(text.size());
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        if (text[index] == '\r' && index + 1 < text.size() &&
+            text[index + 1] == '\n') {
+            normalized.push_back('\n');
+            ++index;
+        } else {
+            normalized.push_back(text[index]);
+        }
+    }
+    return normalized;
+}
+
+std::string Step3RemoveLineFeeds(std::string text) {
+    text.erase(std::remove(text.begin(), text.end(), '\n'), text.end());
+    return text;
+}
+
+struct Step3ExecutionContext {
+    xvatsim::modules::overlay::AccessoryTextMeasurementContext*
+        measurementContext = nullptr;
+    std::map<int, xvatsim::modules::overlay::AccessoryTypographyMetrics>
+        typography;
+    std::unordered_map<std::string, std::unique_ptr<xvatsim::brain::BrainOwnedRuntimeState>> states;
+    std::unordered_map<std::string, xvatsim::brain::BrainOwnedAccessoryPresentationHandle> snapshots;
+    std::unordered_map<std::string, xvatsim::modules::overlay::AccessoryLayoutResult> layouts;
+    std::unordered_map<std::string, xvatsim::modules::overlay::AccessoryHitTestResult> hits;
+    std::unordered_map<std::string, xvatsim::modules::overlay::AccessoryPresentationState> presenters;
+    std::unordered_map<std::string,
+        xvatsim::modules::overlay::AccessoryClickFactQueue> clickQueues;
+    std::unordered_map<std::string,
+        xvatsim::modules::overlay::AccessoryInputDispatchCoordinator>
+        inputDispatchers;
+    std::unordered_map<std::string,
+        std::unique_ptr<xvatsim::modules::overlay::AccessoryPerformanceCollector>>
+        dispatchPerformanceCollectors;
+    std::unordered_map<std::string, std::uint64_t>
+        presenterRenderGenerations;
+    std::unordered_map<std::string,
+        std::unique_ptr<xvatsim::modules::overlay::AccessoryPerformanceCollector>>
+        performanceCollectors;
+    std::unordered_map<std::string, std::string> mainCardSignatures;
+    std::unordered_map<std::string, std::string> observed;
+
+    Step3ExecutionContext() {
+        measurementContext =
+            xvatsim::modules::overlay::InitializeAccessoryTextMeasurement();
+        for (const float scale : {0.85f, 1.0f, 1.35f}) {
+            const int key = static_cast<int>(std::lround(scale * 1000.0f));
+            typography.emplace(
+                key,
+                xvatsim::modules::overlay::PrepareAccessoryTypography(
+                    measurementContext,
+                    scale));
+        }
+    }
+
+    ~Step3ExecutionContext() {
+        xvatsim::modules::overlay::ShutdownAccessoryTextMeasurement(
+            measurementContext);
+        measurementContext = nullptr;
+    }
+
+    const xvatsim::modules::overlay::AccessoryTypographyMetrics* Typography(
+        float scale) {
+        const int key = static_cast<int>(std::lround(scale * 1000.0f));
+        auto found = typography.find(key);
+        if (found == typography.end()) {
+            found = typography.emplace(
+                key,
+                xvatsim::modules::overlay::PrepareAccessoryTypography(
+                    measurementContext,
+                    scale)).first;
+        }
+        return &found->second;
+    }
+
+    xvatsim::brain::BrainOwnedRuntimeState* State(const std::string& name) {
+        auto& state = states[name];
+        if (!state) state = std::make_unique<xvatsim::brain::BrainOwnedRuntimeState>();
+        return state.get();
+    }
+};
+
+xvatsim::modules::overlay::AccessoryGdiMeasurementCounters Step3GdiCounterDelta(
+    const xvatsim::modules::overlay::AccessoryGdiMeasurementCounters& before,
+    const xvatsim::modules::overlay::AccessoryGdiMeasurementCounters& after) {
+    xvatsim::modules::overlay::AccessoryGdiMeasurementCounters result;
+    result.measurementCalls = after.measurementCalls - before.measurementCalls;
+    result.bitmapConstructions =
+        after.bitmapConstructions - before.bitmapConstructions;
+    result.graphicsConstructions =
+        after.graphicsConstructions - before.graphicsConstructions;
+    result.fontConstructions = after.fontConstructions - before.fontConstructions;
+    return result;
+}
+
+void ObserveStep3GdiCounters(
+    const xvatsim::modules::overlay::AccessoryGdiMeasurementCounters& counters,
+    const std::string& prefix,
+    std::unordered_map<std::string, std::string>* observed) {
+    (*observed)[prefix + ".gdi_measurements"] =
+        std::to_string(counters.measurementCalls);
+    (*observed)[prefix + ".gdi_bitmaps"] =
+        std::to_string(counters.bitmapConstructions);
+    (*observed)[prefix + ".gdi_graphics"] =
+        std::to_string(counters.graphicsConstructions);
+    (*observed)[prefix + ".gdi_fonts"] =
+        std::to_string(counters.fontConstructions);
+}
+
+xvatsim::modules::overlay::AccessoryLayoutResult ResolveStep3Layout(
+    Step3ExecutionContext* context,
+    xvatsim::modules::overlay::AccessoryLayoutInput input) {
+    input.typography = context == nullptr ? nullptr : context->Typography(input.scale);
+    return xvatsim::modules::overlay::ResolveAccessoryLayout(input);
+}
+
+std::vector<std::string> Step3HistoryKeys(
+    const xvatsim::brain::BrainOwnedAccessoryHistory& history) {
+    std::vector<std::string> values;
+    for (const auto& entry : history.entries) values.push_back(entry.stableKey);
+    return values;
+}
+
+std::vector<std::string> Step3HistoryBodies(
+    const xvatsim::brain::BrainOwnedAccessoryHistory& history) {
+    std::vector<std::string> values;
+    for (const auto& entry : history.entries) values.push_back(entry.body);
+    return values;
+}
+
+std::vector<std::string> Step3HistoryTitles(
+    const xvatsim::brain::BrainOwnedAccessoryHistory& history) {
+    std::vector<std::string> values;
+    for (const auto& entry : history.entries) values.push_back(entry.title);
+    return values;
+}
+
+std::vector<std::string> Step3HistorySequences(
+    const xvatsim::brain::BrainOwnedAccessoryHistory& history) {
+    std::vector<std::string> values;
+    for (const auto& entry : history.entries) {
+        values.push_back(std::to_string(entry.acceptedSequence));
+    }
+    return values;
+}
+
+void ObserveStep3History(
+    const xvatsim::brain::BrainOwnedAccessoryHistory& history,
+    const std::string& prefix,
+    std::unordered_map<std::string, std::string>* observed) {
+    (*observed)[prefix + ".count"] = std::to_string(history.entries.size());
+    (*observed)[prefix + ".bytes"] = std::to_string(history.retainedBytes);
+    (*observed)[prefix + ".generation"] = std::to_string(history.generation);
+    (*observed)[prefix + ".next_sequence"] =
+        std::to_string(history.nextAcceptedSequence);
+    (*observed)[prefix + ".keys"] = JoinCsv(Step3HistoryKeys(history));
+    (*observed)[prefix + ".titles"] = JoinCsv(Step3HistoryTitles(history));
+    (*observed)[prefix + ".bodies"] = JoinCsv(Step3HistoryBodies(history));
+    (*observed)[prefix + ".sequences"] = JoinCsv(Step3HistorySequences(history));
+    (*observed)[prefix + ".newest_key"] = "";
+    (*observed)[prefix + ".oldest_key"] = "";
+    (*observed)[prefix + ".newest_sequence"] = "0";
+    (*observed)[prefix + ".oldest_sequence"] = "0";
+    int caseVariantCount=0;
+    bool upperBody=false,lowerBody=false;
+    for(const auto& entry:history.entries) {
+        if(entry.stableKey=="CaseKey") {caseVariantCount++; upperBody=entry.body=="UPPER";}
+        if(entry.stableKey=="casekey") {caseVariantCount++; lowerBody=entry.body=="LOWER";}
+    }
+    (*observed)[prefix + ".case_variant_count"]=std::to_string(caseVariantCount);
+    (*observed)[prefix + ".case_sensitive_pair"]=
+        Step3Bool(caseVariantCount==2 && upperBody && lowerBody);
+    std::size_t recountedBytes=0;
+    for(const auto& entry:history.entries) recountedBytes+=entry.retainedBytes;
+    (*observed)[prefix + ".within_count_limit"]=
+        Step3Bool(history.entries.size()<=32);
+    (*observed)[prefix + ".within_byte_limit"]=
+        Step3Bool(history.retainedBytes<=65536);
+    (*observed)[prefix + ".recounted_bytes"]=std::to_string(recountedBytes);
+    if (!history.entries.empty()) {
+        const auto& newest = history.entries.front();
+        const auto& oldest = history.entries.back();
+        (*observed)[prefix + ".newest_key"] = newest.stableKey;
+        (*observed)[prefix + ".oldest_key"] = oldest.stableKey;
+        (*observed)[prefix + ".newest_sequence"] =
+            std::to_string(newest.acceptedSequence);
+        (*observed)[prefix + ".oldest_sequence"] =
+            std::to_string(oldest.acceptedSequence);
+    }
+}
+
+void ObserveStep3RenderCounters(
+    const xvatsim::modules::overlay::AccessoryRenderCounters& counters,
+    const std::string& prefix,
+    std::unordered_map<std::string, std::string>* observed) {
+    (*observed)[prefix + ".history_visits"] = std::to_string(counters.historyVisits);
+    (*observed)[prefix + ".copies"] = std::to_string(counters.entryCopies);
+    (*observed)[prefix + ".wraps"] = std::to_string(counters.wrapVisits);
+    (*observed)[prefix + ".main"] = std::to_string(counters.mainCardRasterRequests);
+    (*observed)[prefix + ".rail"] = std::to_string(counters.railRasterRequests);
+    (*observed)[prefix + ".drawer"] = std::to_string(counters.drawerRasterRequests);
+    (*observed)[prefix + ".uploads"] = std::to_string(counters.uploadRequests);
+    (*observed)[prefix + ".publications"] =
+        std::to_string(counters.snapshotPublications);
+}
+
+void ObserveStep3PerformanceSnapshot(
+    const xvatsim::modules::overlay::AccessoryPerformanceSnapshot& snapshot,
+    const std::string& prefix,
+    std::unordered_map<std::string, std::string>* observed) {
+    (*observed)[prefix+".epoch"]=std::to_string(snapshot.epoch);
+    (*observed)[prefix+".revision"]=
+        std::to_string(snapshot.measurementRevision);
+    (*observed)[prefix+".threshold_failure"]=
+        Step3Bool(snapshot.thresholdFailure);
+    (*observed)[prefix+".first_violation_us"]=
+        std::to_string(snapshot.firstViolationMicroseconds);
+    (*observed)[prefix+".first_violation_category"]=
+        xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(
+            snapshot.firstViolationCategory);
+    (*observed)[prefix+".warning_count"]=
+        std::to_string(snapshot.warningCount);
+    (*observed)[prefix+".publication_count"]=
+        std::to_string(snapshot.publicationCount);
+    (*observed)[prefix+".actions_completed"]=
+        std::to_string(snapshot.actionsCompleted);
+    (*observed)[prefix+".synchronous_wall_within_budget_count"]=
+        std::to_string(snapshot.synchronousWallWithinBudgetCount);
+    (*observed)[prefix+".frame_cadence_limited_count"]=
+        std::to_string(snapshot.frameCadenceLimitedCount);
+    (*observed)[prefix+".preparation_limited_count"]=
+        std::to_string(snapshot.preparationLimitedCount);
+    (*observed)[prefix+".synchronous_wall_failure_count"]=
+        std::to_string(snapshot.synchronousWallFailureCount);
+    (*observed)[prefix+".render_wall_failure_count"]=
+        std::to_string(snapshot.renderWallFailureCount);
+    (*observed)[prefix+".timing_unavailable_count"]=
+        std::to_string(snapshot.timingUnavailableCount);
+    (*observed)[prefix+".cadence_contract_failure_count"]=
+        std::to_string(snapshot.cadenceContractFailureCount);
+    (*observed)[prefix+".missed_eligible_draws"]=
+        std::to_string(snapshot.missedEligibleDraws);
+    (*observed)[prefix+".unique_draw_samples"]=
+        std::to_string(snapshot.uniqueDrawSamples);
+    (*observed)[prefix+".draw_sample_references"]=
+        std::to_string(snapshot.drawSampleReferences);
+    (*observed)[prefix+".coalesced_action_count"]=
+        std::to_string(snapshot.coalescedActionCount);
+    (*observed)[prefix+".maximum_actions_per_draw"]=
+        std::to_string(snapshot.maximumActionsPerDraw);
+    (*observed)[prefix+".violation_record_count"]=
+        std::to_string(snapshot.firstViolationRecordCount);
+    (*observed)[prefix+".serialized_violation_record_count"]=
+        std::to_string(snapshot.firstViolationRecordCount);
+    (*observed)[prefix+".dropped_violation_record_count"]=
+        std::to_string(snapshot.droppedViolationRecordCount);
+    for(std::size_t index=0;index<snapshot.categories.size();++index) {
+        const auto category=static_cast<
+            xvatsim::modules::overlay::AccessoryPerformanceCategory>(index);
+        const auto token=
+            xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(category);
+        const auto& summary=snapshot.categories[index];
+        (*observed)[prefix+"."+token+".count"]=
+            std::to_string(summary.count);
+        (*observed)[prefix+"."+token+".p50_us"]=
+            std::to_string(summary.p50Microseconds);
+        (*observed)[prefix+"."+token+".p95_us"]=
+            std::to_string(summary.p95Microseconds);
+        (*observed)[prefix+"."+token+".max_us"]=
+            std::to_string(summary.maximumMicroseconds);
+    }
+    const char* actionTokens[]{"open", "switch", "close"};
+    for(std::size_t actionIndex=0;
+        actionIndex<snapshot.actionStageWall.size();++actionIndex) {
+        for(std::size_t stageIndex=0;
+            stageIndex<snapshot.actionStageWall[actionIndex].size();
+            ++stageIndex) {
+            const auto stage=static_cast<
+                xvatsim::modules::overlay::AccessoryDispatchStage>(stageIndex);
+            const auto& summary=
+                snapshot.actionStageWall[actionIndex][stageIndex];
+            const std::string key=prefix+"."+actionTokens[actionIndex]+"-"+
+                xvatsim::modules::overlay::AccessoryDispatchStageToken(stage);
+            (*observed)[key+".count"]=std::to_string(summary.count);
+            (*observed)[key+".p50_us"]=
+                std::to_string(summary.p50Microseconds);
+            (*observed)[key+".p95_us"]=
+                std::to_string(summary.p95Microseconds);
+            (*observed)[key+".max_us"]=
+                std::to_string(summary.maximumMicroseconds);
+        }
+    }
+    for(std::size_t index=0;index<snapshot.railRasterReasons.size();++index) {
+        const auto reason=static_cast<
+            xvatsim::modules::overlay::AccessoryRasterReason>(index);
+        const auto token=
+            xvatsim::modules::overlay::AccessoryRasterReasonToken(reason);
+        (*observed)[prefix+".rail_reason."+token]=
+            std::to_string(snapshot.railRasterReasons[index]);
+        (*observed)[prefix+".drawer_reason."+token]=
+            std::to_string(snapshot.drawerRasterReasons[index]);
+    }
+    const auto& action=snapshot.lastAction;
+    (*observed)[prefix+".last.available"]=Step3Bool(action.available);
+    (*observed)[prefix+".last.category"]=
+        xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(
+            action.actionCategory);
+    (*observed)[prefix+".last.classification"]=
+        xvatsim::modules::overlay::AccessoryActionTimingClassificationToken(
+            action.classification);
+    (*observed)[prefix+".last.request_sequence"]=
+        std::to_string(action.requestSequence);
+    (*observed)[prefix+".last.mouse_fact_accepted_us"]=
+        std::to_string(action.mouseFactAcceptedMicroseconds);
+    (*observed)[prefix+".last.dispatch_started_us"]=
+        std::to_string(action.dispatchStartedMicroseconds);
+    (*observed)[prefix+".last.dispatch_completed_us"]=
+        std::to_string(action.dispatchCompletedMicroseconds);
+    (*observed)[prefix+".last.preceding_draw_entered_us"]=
+        std::to_string(action.precedingDrawEnteredMicroseconds);
+    (*observed)[prefix+".last.matching_draw_entered_us"]=
+        std::to_string(action.matchingDrawEnteredMicroseconds);
+    (*observed)[prefix+".last.matching_draw_completed_us"]=
+        std::to_string(action.matchingDrawCompletedMicroseconds);
+    (*observed)[prefix+".last.dispatch_wall_us"]=
+        std::to_string(action.dispatchWallMicroseconds);
+    (*observed)[prefix+".last.queued_before_dispatch_us"]=
+        std::to_string(action.queuedBeforeDispatchMicroseconds);
+    (*observed)[prefix+".last.callback_wait_us"]=
+        std::to_string(action.callbackWaitMicroseconds);
+    (*observed)[prefix+".last.action_draw_wall_us"]=
+        std::to_string(action.actionDrawWallMicroseconds);
+    (*observed)[prefix+".last.draw_callback_elapsed_us"]=
+        std::to_string(action.matchingDrawCallbackElapsedMicroseconds);
+    (*observed)[prefix+".last.combined_action_wall_us"]=
+        std::to_string(action.combinedActionWallMicroseconds);
+    (*observed)[prefix+".last.preparation_wait_us"]=
+        std::to_string(action.preparationWaitMicroseconds);
+    (*observed)[prefix+".last.draw_sample_id"]=
+        std::to_string(action.drawSampleId);
+    (*observed)[prefix+".last.shared_draw_sample"]=
+        Step3Bool(action.sharedDrawSample);
+    (*observed)[prefix+".last.draw_sample_fan_out"]=
+        std::to_string(action.drawSampleFanOut);
+    (*observed)[prefix+".last.render_wall_failure"]=
+        Step3Bool(action.renderWallFailure);
+    (*observed)[prefix+".last.render_wall_failure_category"]=
+        xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(
+            action.renderWallFailureCategory);
+    (*observed)[prefix+".last.render_wall_failure_us"]=
+        std::to_string(action.renderWallFailureMicroseconds);
+    (*observed)[prefix+".last.end_to_end_us"]=
+        std::to_string(action.endToEndMicroseconds);
+    (*observed)[prefix+".last.frame_interval_us"]=
+        std::to_string(action.containingFrameIntervalMicroseconds);
+    (*observed)[prefix+".last.expected_draw_ordinal"]=
+        std::to_string(action.expectedDrawOrdinal);
+    (*observed)[prefix+".last.matching_draw_ordinal"]=
+        std::to_string(action.matchingDrawOrdinal);
+    (*observed)[prefix+".last.missed_eligible_draws"]=
+        std::to_string(action.missedEligibleDraws);
+    (*observed)[prefix+".last.accounting_exact"]=
+        Step3Bool(action.accountingExact);
+    for(std::size_t stageIndex=0;
+        stageIndex<action.stages.elapsedMicroseconds.size();++stageIndex) {
+        const auto stage=static_cast<
+            xvatsim::modules::overlay::AccessoryDispatchStage>(stageIndex);
+        (*observed)[prefix+".last."+
+            xvatsim::modules::overlay::AccessoryDispatchStageToken(stage)+
+            "_us"]=
+                std::to_string(action.stages.elapsedMicroseconds[stageIndex]);
+    }
+    for(std::size_t index=0;
+        index<snapshot.firstViolationRecordCount &&
+        index<snapshot.firstViolationRecords.size();++index) {
+        (*observed)[prefix+".violation."+std::to_string(index)+
+            ".classification"]=
+                xvatsim::modules::overlay::
+                    AccessoryActionTimingClassificationToken(
+                        snapshot.firstViolationRecords[index].classification);
+        (*observed)[prefix+".violation."+std::to_string(index)+
+            ".request_sequence"]=std::to_string(
+                snapshot.firstViolationRecords[index].requestSequence);
+        (*observed)[prefix+".violation."+std::to_string(index)+
+            ".draw_sample_id"]=std::to_string(
+                snapshot.firstViolationRecords[index].drawSampleId);
+        (*observed)[prefix+".violation."+std::to_string(index)+
+            ".fan_out"]=std::to_string(
+                snapshot.firstViolationRecords[index].drawSampleFanOut);
+    }
+}
+
+void ObserveStep3DispatchSnapshot(
+    const xvatsim::modules::overlay::AccessoryInputDispatchSnapshot& snapshot,
+    const std::string& prefix,
+    std::unordered_map<std::string, std::string>* observed) {
+    (*observed)[prefix+".in_flight"]=Step3Bool(snapshot.inFlight);
+    (*observed)[prefix+".presentation_bound"]=
+        Step3Bool(snapshot.presentationBound);
+    (*observed)[prefix+".in_flight_sequence"]=
+        std::to_string(snapshot.inFlightRequestSequence);
+    (*observed)[prefix+".expected_selection_generation"]=
+        std::to_string(snapshot.expectedSelectionGeneration);
+    (*observed)[prefix+".expected_render_generation"]=
+        std::to_string(snapshot.expectedRenderGeneration);
+    (*observed)[prefix+".notifications"]=
+        std::to_string(snapshot.dispatchNotifications);
+    (*observed)[prefix+".begin_attempts"]=
+        std::to_string(snapshot.beginAttempts);
+    (*observed)[prefix+".begun_count"]=
+        std::to_string(snapshot.requestsBegun);
+    (*observed)[prefix+".blocked_count"]=
+        std::to_string(snapshot.blockedWhileInFlight);
+    (*observed)[prefix+".bound_count"]=
+        std::to_string(snapshot.presentationsBound);
+    (*observed)[prefix+".completed_count"]=
+        std::to_string(snapshot.matchingDrawCompletions);
+    (*observed)[prefix+".mismatched_draws"]=
+        std::to_string(snapshot.mismatchedDrawAttempts);
+    (*observed)[prefix+".invalidated_in_flight"]=
+        std::to_string(snapshot.invalidatedInFlight);
+}
+
+bool Step3PresenterTitleMarkerVisible(
+    const xvatsim::modules::overlay::AccessoryPresentationState& presenter) {
+    if (presenter.preparedPlan == nullptr) return false;
+    for(const auto& lines:presenter.preparedPlan->layout.renderedTitleLines) {
+        if(Step3ConcatenateLines(lines).find("CONTENT LIMITED")!=
+            std::string::npos) return true;
+    }
+    return false;
+}
+
+bool Step3PresenterPairingIntact(
+    const xvatsim::modules::overlay::AccessoryPresentationState& presenter) {
+    if (presenter.preparedPlan == nullptr) return false;
+    const auto& plan = presenter.preparedPlan->layout;
+    return plan.renderedEntryKeys.size()==plan.renderedEntryTitles.size() &&
+        plan.renderedEntryKeys.size()==plan.renderedEntryBodies.size() &&
+        plan.renderedEntryKeys.size()==plan.renderedTitleLines.size() &&
+        plan.renderedEntryKeys.size()==plan.renderedBodyLines.size();
+}
+
+std::shared_ptr<const xvatsim::modules::overlay::AccessoryPreparedDrawerPlan>
+Step3PreparePresentationPlan(
+    Step3ExecutionContext* context,
+    const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& presentation,
+    const xvatsim::modules::overlay::AccessoryLayoutResult& layout) {
+    if (context == nullptr || presentation.snapshot == nullptr ||
+        presentation.snapshot->activeDrawer ==
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::None) return nullptr;
+    auto result = std::make_shared<
+        xvatsim::modules::overlay::AccessoryPreparedDrawerPlan>();
+    result->key.drawer = presentation.snapshot->activeDrawer;
+    result->key.historyGeneration = presentation.historyGeneration;
+    result->key.layoutGeneration = presentation.layoutGeneration;
+    result->key.scaleThousandths = static_cast<int>(
+        std::lround(layout.scale * 1000.0f));
+    result->key.contentWidth = std::max(1,
+        layout.drawerBounds.right - layout.drawerBounds.left -
+            (2 * layout.drawerContentInset));
+    result->key.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+    result->layout = xvatsim::modules::overlay::BuildAccessoryHistoryLayout(
+        context->measurementContext, *presentation.snapshot, layout);
+    return result;
+}
+
+bool ExecuteStep3Action(
+    const std::string& actionText,
+    Step3ExecutionContext* context,
+    std::string* error) {
+    if (context == nullptr) return false;
+    const auto parts = Split(actionText, ':');
+    if (parts.empty()) return false;
+    const auto fail = [&](const std::string& message) {
+        if (error != nullptr) *error = message + ": " + actionText;
+        return false;
+    };
+    const auto parseInt = [&](const std::string& text, int* value) {
+        const auto parsed = ParseNonnegativeInt(text);
+        if (!parsed.has_value()) return false;
+        *value = *parsed;
+        return true;
+    };
+
+    if (parts[0] == "new" && parts.size() == 2) {
+        context->states[parts[1]] =
+            std::make_unique<xvatsim::brain::BrainOwnedRuntimeState>();
+        return true;
+    }
+    if (parts[0] == "worker-contract" && parts.size() == 2) {
+        using namespace xvatsim::modules::overlay;
+        using Drawer = xvatsim::brain::BrainOwnedAccessoryDrawerId;
+        xvatsim::brain::BrainOwnedRuntimeState state;
+        const std::array<Drawer,3> drawers{Drawer::Metar,Drawer::Atis,Drawer::Pdc};
+        for (const auto drawer : drawers) {
+            for (int index = 0; index < 14; ++index) {
+                xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput entry;
+                entry.drawer = drawer;
+                entry.stableKey = "worker-" + std::to_string(static_cast<int>(drawer)) +
+                    "-" + std::to_string(index);
+                entry.title = index == 13 ? "Unicode éª â Î©" :
+                    "Prepared title " + std::to_string(index);
+                const char fill = index % 3 == 0 ? 'W' : index % 3 == 1 ? 'i' : 'M';
+                entry.body.assign(4800, fill);
+                if (index == 13) entry.body += " éªâÎ©";
+                xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(&state, entry);
+            }
+        }
+        AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth=1920; layoutInput.screenHeight=1080;
+        layoutInput.windowLeft=300; layoutInput.windowTop=900;
+        layoutInput.scale=1.0f; layoutInput.cardAnimationProgress=1.0f;
+        layoutInput.drawerOpen=true; layoutInput.typography=context->Typography(1.0f);
+        const auto layout=ResolveAccessoryLayout(layoutInput);
+        const auto submitEventually=[](
+            AccessoryPreparationWorker* target,
+            const AccessoryPreparationRequest& request) {
+            const auto deadline=std::chrono::steady_clock::now()+
+                std::chrono::seconds(5);
+            while(std::chrono::steady_clock::now()<deadline) {
+                if(target->Request(request)) return true;
+                const auto state=target->State();
+                if(state==AccessoryPreparationWorkerState::Failed ||
+                   state==AccessoryPreparationWorkerState::Stopped) return false;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return false;
+        };
+        AccessoryPreparationWorker worker;
+        const std::uint64_t mainThread=1;
+        const bool started=worker.Start(mainThread);
+        std::array<AccessoryPreparationKey,3> keys{};
+        std::array<std::shared_ptr<const xvatsim::brain::BrainOwnedAccessoryPreparationSnapshot>,3> source{};
+        for(std::size_t index=0;index<drawers.size();++index) {
+            const auto handle=xvatsim::brain::ProjectBrainOwnedAccessoryPreparation(
+                &state,drawers[index],nullptr);
+            source[index]=handle.snapshot;
+            keys[index].drawer=drawers[index];
+            keys[index].historyGeneration=handle.historyGeneration;
+            keys[index].layoutGeneration=1;
+            keys[index].typographyGeneration=context->Typography(1.0f)->generation;
+            keys[index].scaleThousandths=1000;
+            keys[index].contentWidth=layout.drawerBounds.right-layout.drawerBounds.left-
+                2*layout.drawerContentInset;
+            keys[index].visibleLineCapacity=layout.drawerVisibleLineCapacity;
+            AccessoryPreparationRequest request;
+            request.key=keys[index]; request.snapshot=handle.snapshot; request.layout=layout;
+            submitEventually(&worker,request);
+        }
+        std::array<std::shared_ptr<const AccessoryPreparedDrawerPlan>,3> ready{};
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
+        while(std::chrono::steady_clock::now()<deadline) {
+            bool all=true;
+            for(std::size_t index=0;index<ready.size();++index) {
+                if(!ready[index]) ready[index]=worker.TryTakeReady(keys[index],nullptr);
+                all=all && ready[index]!=nullptr;
+            }
+            if(all) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::mutex publicationGateMutex;
+        std::condition_variable publicationGateChanged;
+        bool publicationGateEntered=false;
+        bool publicationGateReleased=false;
+        AccessoryPreparationWorkerHooks contentionHooks;
+        contentionHooks.beforeReadyPublication=[&] {
+            std::unique_lock<std::mutex> lock(publicationGateMutex);
+            publicationGateEntered=true;
+            publicationGateChanged.notify_all();
+            publicationGateChanged.wait(lock,[&]{return publicationGateReleased;});
+        };
+        AccessoryPreparationWorker contentionWorker(std::move(contentionHooks));
+        const bool contentionStarted=contentionWorker.Start(mainThread);
+        AccessoryPreparationRequest contentionRequest;
+        contentionRequest.key=keys[0];
+        contentionRequest.snapshot=source[0];
+        contentionRequest.layout=layout;
+        const bool contentionRequested=submitEventually(
+            &contentionWorker,contentionRequest);
+        {
+            std::unique_lock<std::mutex> lock(publicationGateMutex);
+            publicationGateChanged.wait_for(
+                lock,std::chrono::seconds(5),[&]{return publicationGateEntered;});
+        }
+        auto wrongContentionKey=keys[0];
+        ++wrongContentionKey.layoutGeneration;
+        const auto contentionCheckStarted=std::chrono::steady_clock::now();
+        const auto contentionWrong=contentionWorker.TryTakeReady(
+            wrongContentionKey,nullptr);
+        const auto contentionExact=contentionWorker.TryTakeReady(keys[0],nullptr);
+        const auto contentionCheckUs=static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now()-contentionCheckStarted).count());
+
+        std::array<AccessoryPreparationRequest,3> contendedRequests{};
+        std::array<bool,3> contendedSubmissionResults{};
+        std::uint64_t maximumContendedSubmissionUs=0;
+        for(std::size_t index=0;index<contendedRequests.size();++index) {
+            contendedRequests[index].key=keys[index];
+            contendedRequests[index].key.layoutGeneration=101;
+            contendedRequests[index].snapshot=source[index];
+            contendedRequests[index].layout=layout;
+            const auto enqueueStarted=std::chrono::steady_clock::now();
+            contendedSubmissionResults[index]=contentionWorker.Request(
+                contendedRequests[index]);
+            maximumContendedSubmissionUs=std::max<std::uint64_t>(
+                maximumContendedSubmissionUs,
+                static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now()-enqueueStarted).count()));
+        }
+        const bool callerMarkedSubmitted=std::any_of(
+            contendedSubmissionResults.begin(),contendedSubmissionResults.end(),
+            [](bool submitted){return submitted;});
+        {
+            std::lock_guard<std::mutex> lock(publicationGateMutex);
+            publicationGateReleased=true;
+        }
+        publicationGateChanged.notify_all();
+        std::array<bool,3> retriedSubmissions{};
+        for(std::size_t index=0;index<contendedRequests.size();++index) {
+            retriedSubmissions[index]=submitEventually(
+                &contentionWorker,contendedRequests[index]);
+        }
+        const auto staleAfterRetry=contentionWorker.TryTakeReady(
+            keys[0],nullptr);
+        std::array<std::shared_ptr<const AccessoryPreparedDrawerPlan>,3>
+            contentionPublished{};
+        const auto contentionDeadline=
+            std::chrono::steady_clock::now()+std::chrono::seconds(5);
+        while(std::any_of(contentionPublished.begin(),contentionPublished.end(),
+                          [](const auto& value){return value==nullptr;}) &&
+              std::chrono::steady_clock::now()<contentionDeadline) {
+            for(std::size_t index=0;index<contentionPublished.size();++index) {
+                if(!contentionPublished[index]) {
+                    contentionPublished[index]=contentionWorker.TryTakeReady(
+                        contendedRequests[index].key,nullptr);
+                }
+            }
+            if(std::any_of(contentionPublished.begin(),contentionPublished.end(),
+                           [](const auto& value){return value==nullptr;}))
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        auto rapidState=state;
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest rapidClick;
+        std::array<xvatsim::brain::BrainOwnedAccessorySelectionDecision,3>
+            rapidDecisions{};
+        for(std::size_t index=0;index<drawers.size();++index) {
+            rapidClick.drawer=drawers[index];
+            rapidClick.requestSequence=index+1;
+            rapidDecisions[index]=
+                xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+                    &rapidState,rapidClick);
+        }
+        const auto rapidPresentation=
+            xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+                &rapidState,101,nullptr);
+        AccessoryPresentationState rapidPresenter;
+        AccessoryPresentationUpdateInput rapidInput;
+        rapidInput.presentation=rapidPresentation;
+        rapidInput.layout=layout;
+        rapidInput.measurementContext=context->measurementContext;
+        rapidInput.preparedPlan=contentionPublished[2];
+        const auto rapidUpdate=UpdateAccessoryPresentation(
+            &rapidPresenter,rapidInput);
+        const auto contentionCounters=contentionWorker.SnapshotCounters();
+        const auto contentionIdleBefore=contentionWorker.SnapshotCounters();
+        const auto contentionGdiBefore=GetAccessoryGdiMeasurementCounters(
+            context->measurementContext);
+        const auto contentionIdle=RunUnchangedAccessoryPresentationUpdates(
+            &rapidPresenter,rapidInput,10000);
+        const auto contentionGdiAfter=GetAccessoryGdiMeasurementCounters(
+            context->measurementContext);
+        const auto contentionGdiDelta=Step3GdiCounterDelta(
+            contentionGdiBefore,contentionGdiAfter);
+        const auto contentionIdleAfter=contentionWorker.SnapshotCounters();
+        bool contentionExactPublished=true;
+        for(std::size_t index=0;index<contentionPublished.size();++index) {
+            contentionExactPublished=contentionExactPublished &&
+                contentionPublished[index]!=nullptr &&
+                contentionPublished[index]->key==contendedRequests[index].key;
+        }
+        contentionWorker.Stop();
+
+        enum class DelayedStartupStage { Priority, Measurement };
+        const auto runDelayedStartupProof=[&](
+            DelayedStartupStage delayedStage,
+            AccessoryPreparationWorkerFailure expectedFailure) {
+            struct Result {
+                bool startReturned=false;
+                bool repeatedStartReturned=false;
+                std::uint64_t startUs=0;
+                std::uint64_t repeatedStartUs=0;
+                bool remainedStarting=false;
+                bool requestRetained=false;
+                bool becameReady=false;
+                bool exactPublished=false;
+                bool failedState=false;
+                bool requestRejected=false;
+                bool noReady=false;
+                bool noRetry=false;
+                bool oneDiagnostic=false;
+                bool bounded=false;
+                bool pendingResolved=false;
+                bool stopped=false;
+            } result;
+            std::mutex gateMutex;
+            std::condition_variable gateChanged;
+            bool gateEntered=false;
+            bool gateReleased=false;
+            const auto waitAtGate=[&] {
+                std::unique_lock<std::mutex> lock(gateMutex);
+                gateEntered=true;
+                gateChanged.notify_all();
+                gateChanged.wait(lock,[&]{return gateReleased;});
+            };
+            AccessoryPreparationWorkerHooks hooks;
+            hooks.assignBelowNormalPriority=[&] {
+                if(delayedStage==DelayedStartupStage::Priority) waitAtGate();
+                return expectedFailure!=
+                    AccessoryPreparationWorkerFailure::PriorityAssignment;
+            };
+            if(delayedStage==DelayedStartupStage::Measurement) {
+                hooks.initializeTextMeasurement=[&] {
+                    waitAtGate();
+                    if(expectedFailure==AccessoryPreparationWorkerFailure::
+                            TextMeasurementInitialization) {
+                        return static_cast<AccessoryTextMeasurementContext*>(nullptr);
+                    }
+                    return InitializeAccessoryTextMeasurement();
+                };
+            }
+            AccessoryPreparationWorker delayedWorker(std::move(hooks));
+            const auto startBegan=std::chrono::steady_clock::now();
+            result.startReturned=delayedWorker.Start(mainThread);
+            result.startUs=static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now()-startBegan).count());
+            {
+                std::unique_lock<std::mutex> lock(gateMutex);
+                gateChanged.wait_for(
+                    lock,std::chrono::seconds(5),[&]{return gateEntered;});
+            }
+            result.requestRetained=delayedWorker.Request(contentionRequest);
+            const auto secondStartBegan=std::chrono::steady_clock::now();
+            result.repeatedStartReturned=delayedWorker.Start(mainThread);
+            result.repeatedStartUs=static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now()-secondStartBegan).count());
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            const auto gatedCounters=delayedWorker.SnapshotCounters();
+            result.remainedStarting=
+                delayedWorker.State()==AccessoryPreparationWorkerState::Starting &&
+                gatedCounters.maximumQueueDepth<=1 &&
+                gatedCounters.jobsRequested==1 && gatedCounters.jobsStarted==0;
+            {
+                std::lock_guard<std::mutex> lock(gateMutex);
+                gateReleased=true;
+            }
+            gateChanged.notify_all();
+            const auto terminalDeadline=
+                std::chrono::steady_clock::now()+std::chrono::seconds(10);
+            while(delayedWorker.State()==AccessoryPreparationWorkerState::Starting &&
+                  std::chrono::steady_clock::now()<terminalDeadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            if(expectedFailure==AccessoryPreparationWorkerFailure::None) {
+                result.becameReady=
+                    delayedWorker.State()==AccessoryPreparationWorkerState::Ready;
+                std::shared_ptr<const AccessoryPreparedDrawerPlan> published;
+                while(!published && std::chrono::steady_clock::now()<terminalDeadline) {
+                    published=delayedWorker.TryTakeReady(keys[0],nullptr);
+                    if(!published)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                result.exactPublished=published!=nullptr &&
+                    published->key==keys[0];
+            } else {
+                result.failedState=
+                    delayedWorker.State()==AccessoryPreparationWorkerState::Failed &&
+                    delayedWorker.Failure()==expectedFailure;
+                result.requestRejected=!delayedWorker.Request(contentionRequest);
+                result.noReady=
+                    delayedWorker.TryTakeReady(keys[0],nullptr)==nullptr;
+            }
+            const auto beforeIdle=delayedWorker.SnapshotCounters();
+            for(int iteration=0;iteration<10000;++iteration) {
+                if(delayedWorker.State()==AccessoryPreparationWorkerState::Ready &&
+                   expectedFailure!=AccessoryPreparationWorkerFailure::None) {
+                    delayedWorker.Request(contentionRequest);
+                }
+            }
+            const bool failedRestartRejected=
+                expectedFailure==AccessoryPreparationWorkerFailure::None ||
+                !delayedWorker.Start(mainThread);
+            const auto afterIdle=delayedWorker.SnapshotCounters();
+            result.noRetry=failedRestartRejected &&
+                afterIdle.startupAttemptCount==beforeIdle.startupAttemptCount &&
+                afterIdle.jobsRequested==beforeIdle.jobsRequested &&
+                afterIdle.jobsStarted==beforeIdle.jobsStarted;
+            result.oneDiagnostic=expectedFailure==
+                    AccessoryPreparationWorkerFailure::None
+                ? afterIdle.startupFailureDiagnosticCount==0
+                : afterIdle.startupFailureDiagnosticCount==1;
+            result.bounded=afterIdle.maximumQueueDepth<=1 &&
+                afterIdle.maximumReadyCacheCount==0 &&
+                (expectedFailure==AccessoryPreparationWorkerFailure::None ||
+                 (afterIdle.jobsCompleted==0 && afterIdle.jobsCancelled>=1));
+            const auto availability=ResolveAccessoryPreparationAvailability(
+                AccessoryPreparationWorkerState::Failed,true);
+            result.pendingResolved=!availability.ready &&
+                !availability.retryStartup && availability.cancelPendingAction;
+            delayedWorker.Stop();
+            result.stopped=delayedWorker.State()==
+                    AccessoryPreparationWorkerState::Stopped &&
+                delayedWorker.SnapshotCounters().runningWorkerThreads==0;
+            return result;
+        };
+        const auto delayedSuccess=runDelayedStartupProof(
+            DelayedStartupStage::Priority,
+            AccessoryPreparationWorkerFailure::None);
+        const auto priorityFailure=runDelayedStartupProof(
+            DelayedStartupStage::Priority,
+            AccessoryPreparationWorkerFailure::PriorityAssignment);
+        const auto measurementFailure=runDelayedStartupProof(
+            DelayedStartupStage::Measurement,
+            AccessoryPreparationWorkerFailure::TextMeasurementInitialization);
+
+        AccessoryPreparationKey newestReplacementKey=keys[2];
+        for(std::uint64_t generation=2;generation<=200;++generation) {
+            AccessoryPreparationRequest replacement;
+            replacement.key=keys[2];
+            replacement.key.layoutGeneration=generation;
+            replacement.snapshot=source[2]; replacement.layout=layout;
+            if(submitEventually(&worker,replacement)) {
+                newestReplacementKey=replacement.key;
+            }
+        }
+        std::shared_ptr<const AccessoryPreparedDrawerPlan> replacementReady;
+        const auto replacementDeadline=
+            std::chrono::steady_clock::now()+std::chrono::seconds(10);
+        while(!replacementReady && std::chrono::steady_clock::now()<replacementDeadline) {
+            replacementReady=worker.TryTakeReady(newestReplacementKey,nullptr);
+            if(!replacementReady) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        bool reconstruction=true,markers=true,fit=true;
+        const bool maximumRetainedPrepared =
+            state.accessory.histories[0].retainedBytes > 60000 &&
+            state.accessory.histories[1].retainedBytes > 60000 &&
+            state.accessory.histories[2].retainedBytes > 60000;
+        for(std::size_t drawer=0;drawer<ready.size();++drawer) {
+            reconstruction=reconstruction && ready[drawer]!=nullptr && source[drawer]!=nullptr;
+            if(!ready[drawer]||!source[drawer]) continue;
+            reconstruction=reconstruction &&
+                ready[drawer]->layout.renderedEntryKeys.size()==source[drawer]->entries.size();
+            for(std::size_t entry=0;entry<source[drawer]->entries.size();++entry) {
+                reconstruction=reconstruction &&
+                    ready[drawer]->layout.renderedEntryKeys[entry]==source[drawer]->entries[entry].stableKey &&
+                    ready[drawer]->layout.renderedEntryTitles[entry]==source[drawer]->entries[entry].title &&
+                    ready[drawer]->layout.renderedEntryBodies[entry]==source[drawer]->entries[entry].body;
+            }
+            markers=markers && ready[drawer]->layout.finalMarkerBelongsToSelectedHistory &&
+                ready[drawer]->layout.finalMarker.find("END OF ")==0;
+            fit=fit && ready[drawer]->layout.allWrappedLinesFit;
+        }
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest click;
+        click.drawer=Drawer::Metar; click.requestSequence=1;
+        xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(&state,click);
+        auto presentation=xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(&state,1,nullptr);
+        AccessoryPresentationState presenter;
+        AccessoryPresentationUpdateInput updateInput;
+        updateInput.presentation=presentation; updateInput.layout=layout;
+        updateInput.measurementContext=context->measurementContext;
+        updateInput.preparedPlan=ready[0];
+        const auto openStarted=std::chrono::steady_clock::now();
+        const auto open=UpdateAccessoryPresentation(&presenter,updateInput);
+        const auto openUs=static_cast<std::uint64_t>(std::chrono::duration_cast<
+            std::chrono::microseconds>(std::chrono::steady_clock::now()-openStarted).count());
+        click.drawer=Drawer::Atis; click.requestSequence=2;
+        xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(&state,click);
+        presentation=xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(&state,1,nullptr);
+        updateInput.presentation=presentation; updateInput.preparedPlan=ready[1];
+        const auto switchStarted=std::chrono::steady_clock::now();
+        const auto switched=UpdateAccessoryPresentation(&presenter,updateInput);
+        const auto switchUs=static_cast<std::uint64_t>(std::chrono::duration_cast<
+            std::chrono::microseconds>(std::chrono::steady_clock::now()-switchStarted).count());
+        const auto workerBeforeIdle=worker.SnapshotCounters();
+        const auto idle=RunUnchangedAccessoryPresentationUpdates(&presenter,updateInput,10000);
+        const auto workerAfterIdle=worker.SnapshotCounters();
+        const bool normalStartupReady=
+            worker.State()==AccessoryPreparationWorkerState::Ready &&
+            worker.Failure()==AccessoryPreparationWorkerFailure::None;
+        auto staleInput=updateInput;
+        staleInput.presentation.layoutGeneration=2;
+        const auto stale=UpdateAccessoryPresentation(&presenter,staleInput);
+        const auto historyCountsBeforeDisable=std::array<std::size_t,3>{
+            state.accessory.histories[0].entries.size(),
+            state.accessory.histories[1].entries.size(),
+            state.accessory.histories[2].entries.size()};
+        xvatsim::brain::DisableBrainOwnedAccessoryRuntime(&state);
+        worker.CancelAll();
+        worker.Stop();
+        const bool disabledStopped=worker.SnapshotCounters().runningWorkerThreads==0;
+        xvatsim::brain::EnableBrainOwnedAccessoryRuntime(&state);
+        worker.Start(mainThread);
+        const bool historiesPreserved=historyCountsBeforeDisable==
+            std::array<std::size_t,3>{
+                state.accessory.histories[0].entries.size(),
+                state.accessory.histories[1].entries.size(),
+                state.accessory.histories[2].entries.size()};
+        AccessoryPreparationRequest recreated;
+        recreated.key=keys[0]; recreated.snapshot=source[0]; recreated.layout=layout;
+        const bool recreatedRequested=submitEventually(&worker,recreated);
+        std::shared_ptr<const AccessoryPreparedDrawerPlan> recreatedReady;
+        const auto recreateDeadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+        while(!recreatedReady && std::chrono::steady_clock::now()<recreateDeadline) {
+            recreatedReady=worker.TryTakeReady(keys[0],nullptr);
+            if(!recreatedReady) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        const auto oldKey=keys[0];
+        xvatsim::brain::ResetBrainOwnedAccessoryForSessionReset(&state);
+        const auto clearedHandle=xvatsim::brain::ProjectBrainOwnedAccessoryPreparation(
+            &state,Drawer::Metar,nullptr);
+        AccessoryPreparationRequest clearedRequest;
+        clearedRequest.key=oldKey;
+        clearedRequest.key.historyGeneration=clearedHandle.historyGeneration;
+        clearedRequest.snapshot=clearedHandle.snapshot; clearedRequest.layout=layout;
+        submitEventually(&worker,clearedRequest);
+        const bool resetRejectedOld=worker.TryTakeReady(oldKey,nullptr)==nullptr;
+        xvatsim::brain::ResetBrainOwnedAccessoryForCallsignChange(
+            &state,"OLDPC","NEWPC");
+        worker.CancelAll();
+        const bool callsignRejectedOld=worker.TryTakeReady(oldKey,nullptr)==nullptr;
+        worker.Stop();
+        const auto counters=worker.SnapshotCounters();
+        const auto& prefix=parts[1];
+        context->observed[prefix+".started"]=Step3Bool(started);
+        context->observed[prefix+".all_ready"]=Step3Bool(
+            std::all_of(ready.begin(),ready.end(),[](const auto& value){return value!=nullptr;}));
+        context->observed[prefix+".reconstruction"]=Step3Bool(reconstruction);
+        context->observed[prefix+".markers"]=Step3Bool(markers);
+        context->observed[prefix+".fit"]=Step3Bool(fit);
+        context->observed[prefix+".maximum_retained_prepared"]=
+            Step3Bool(maximumRetainedPrepared);
+        context->observed[prefix+".open_under_budget"]=Step3Bool(
+            open.status==xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available && openUs<=16700);
+        context->observed[prefix+".switch_under_budget"]=Step3Bool(
+            switched.status==xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available && switchUs<=16700);
+        context->observed[prefix+".stale_rejected"]=Step3Bool(stale.preparationPending);
+        context->observed[prefix+".disable_stopped"]=Step3Bool(disabledStopped);
+        context->observed[prefix+".disable_enable_preserved"]=Step3Bool(historiesPreserved);
+        context->observed[prefix+".resources_recreated"]=Step3Bool(
+            recreatedRequested && recreatedReady!=nullptr);
+        context->observed[prefix+".replacement_proven"]=Step3Bool(
+            replacementReady!=nullptr && counters.jobsReplaced>0);
+        context->observed[prefix+".reset_rejected_stale"]=Step3Bool(resetRejectedOld);
+        context->observed[prefix+".callsign_rejected_stale"]=Step3Bool(callsignRejectedOld);
+        context->observed[prefix+".idle_zero"]=Step3Bool(
+            idle.delta.historyVisits==0 && idle.delta.entryCopies==0 && idle.delta.wrapVisits==0 &&
+            idle.delta.railRasterRequests==0 && idle.delta.drawerRasterRequests==0 &&
+            idle.delta.uploadRequests==0 &&
+            workerAfterIdle.jobsRequested==workerBeforeIdle.jobsRequested &&
+            workerAfterIdle.jobsStarted==workerBeforeIdle.jobsStarted &&
+            workerAfterIdle.enqueueAttemptCount==
+                workerBeforeIdle.enqueueAttemptCount);
+        context->observed[prefix+".jobs_requested_at_least_three"]=
+            Step3Bool(counters.jobsRequested>=3);
+        context->observed[prefix+".jobs_completed_at_least_three"]=
+            Step3Bool(counters.jobsCompleted>=3);
+        context->observed[prefix+".max_queue_depth"]=std::to_string(counters.maximumQueueDepth);
+        context->observed[prefix+".max_ready_count"]=std::to_string(counters.maximumReadyCacheCount);
+        context->observed[prefix+".queue_bounded"]=Step3Bool(counters.maximumQueueDepth<=3);
+        context->observed[prefix+".ready_bounded"]=Step3Bool(counters.maximumReadyCacheCount<=3);
+        context->observed[prefix+".priority_requested"]=Step3Bool(counters.priorityRequested);
+        context->observed[prefix+".priority_succeeded"]=Step3Bool(counters.prioritySucceeded);
+        context->observed[prefix+".thread_distinct"]=Step3Bool(
+            counters.workerThreadIdentity!=0 && counters.workerThreadIdentity!=mainThread);
+        context->observed[prefix+".prohibited_accesses"]=std::to_string(counters.prohibitedAccessCount);
+        context->observed[prefix+".threads_after_stop"]=std::to_string(counters.runningWorkerThreads);
+        context->observed[prefix+".wake_count"]=std::to_string(counters.workerWakeCount);
+        context->observed[prefix+".sleep_count"]=std::to_string(counters.workerSleepCount);
+        context->observed[prefix+".worker_slept_and_woke"]=Step3Bool(
+            counters.workerWakeCount>=1 && counters.workerSleepCount>=1);
+        context->observed[prefix+".max_slice_us"]=
+            std::to_string(counters.maximumContiguousExecutionMicroseconds);
+        context->observed[prefix+".publication_max_us"]=
+            std::to_string(counters.maximumPublicationMicroseconds);
+        context->observed[prefix+".open_us"]=std::to_string(openUs);
+        context->observed[prefix+".switch_us"]=std::to_string(switchUs);
+        context->observed[prefix+".publication_under_budget"]=Step3Bool(
+            counters.maximumPublicationMicroseconds<=16700);
+        context->observed[prefix+".contention_started"]=Step3Bool(
+            contentionStarted && contentionRequested && publicationGateEntered);
+        context->observed[prefix+".contention_nonblocking"]=Step3Bool(
+            contentionCheckUs<=1000 && contentionWrong==nullptr &&
+            contentionExact==nullptr);
+        context->observed[prefix+".contention_stale_rejected"]=Step3Bool(
+            contentionWrong==nullptr);
+        context->observed[prefix+".contention_exact_published"]=Step3Bool(
+            contentionExactPublished);
+        context->observed[prefix+".contention_at_least_two"]=Step3Bool(
+            contentionCounters.readinessContentionCount>=2);
+        context->observed[prefix+".enqueue_contention_nonblocking"]=Step3Bool(
+            !callerMarkedSubmitted && maximumContendedSubmissionUs<=16700 &&
+            contentionCounters.enqueueContentionCount>=3);
+        context->observed[prefix+".enqueue_caller_not_marked"]=
+            Step3Bool(!callerMarkedSubmitted);
+        context->observed[prefix+".enqueue_retry_exact"]=Step3Bool(
+            std::all_of(retriedSubmissions.begin(),retriedSubmissions.end(),
+                        [](bool value){return value;}) &&
+            staleAfterRetry==nullptr &&
+            std::all_of(contentionPublished.begin(),contentionPublished.end(),
+                        [](const auto& value){return value!=nullptr;}));
+        context->observed[prefix+".enqueue_rapid_serialized"]=Step3Bool(
+            rapidDecisions[0].action==
+                xvatsim::brain::BrainOwnedAccessoryDrawerAction::Opened &&
+            rapidDecisions[1].action==
+                xvatsim::brain::BrainOwnedAccessoryDrawerAction::Switched &&
+            rapidDecisions[2].action==
+                xvatsim::brain::BrainOwnedAccessoryDrawerAction::Switched &&
+            rapidState.accessory.selectionGeneration==3 &&
+            rapidUpdate.status==
+                xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available &&
+            rapidPresenter.activeSnapshot!=nullptr &&
+            rapidPresenter.activeSnapshot->activeDrawer==Drawer::Pdc &&
+            rapidUpdate.publishedSnapshotCount==1);
+        context->observed[prefix+".enqueue_idle_zero"]=Step3Bool(
+            contentionIdle.delta.historyVisits==0 &&
+            contentionIdle.delta.entryCopies==0 &&
+            contentionIdle.delta.wrapVisits==0 &&
+            contentionIdle.delta.railRasterRequests==0 &&
+            contentionIdle.delta.drawerRasterRequests==0 &&
+            contentionIdle.delta.uploadRequests==0 &&
+            contentionGdiDelta.measurementCalls==0 &&
+            contentionGdiDelta.bitmapConstructions==0 &&
+            contentionGdiDelta.graphicsConstructions==0 &&
+            contentionGdiDelta.fontConstructions==0 &&
+            contentionIdleAfter.enqueueAttemptCount==
+                contentionIdleBefore.enqueueAttemptCount &&
+            contentionIdleAfter.enqueueContentionCount==
+                contentionIdleBefore.enqueueContentionCount &&
+            contentionIdleAfter.jobsRequested==
+                contentionIdleBefore.jobsRequested &&
+            contentionIdleAfter.jobsStarted==contentionIdleBefore.jobsStarted &&
+            contentionIdleAfter.startupFailureDiagnosticCount==
+                contentionIdleBefore.startupFailureDiagnosticCount);
+        context->observed[prefix+".enqueue_counters_exact"]=Step3Bool(
+            contentionCounters.enqueueAttemptCount==
+                contentionCounters.enqueueContentionCount+
+                    contentionCounters.enqueueSuccessCount &&
+            contentionCounters.enqueueContentionCount>=3 &&
+            contentionCounters.enqueueSuccessCount==4 &&
+            contentionCounters.maximumEnqueueMicroseconds<=16700 &&
+            counters.enqueueReplacementCount==counters.jobsReplaced &&
+            counters.enqueueReplacementCount>0);
+        context->observed[prefix+".enqueue_attempts"]=
+            std::to_string(contentionCounters.enqueueAttemptCount);
+        context->observed[prefix+".enqueue_contentions"]=
+            std::to_string(contentionCounters.enqueueContentionCount);
+        context->observed[prefix+".enqueue_successes"]=
+            std::to_string(contentionCounters.enqueueSuccessCount);
+        context->observed[prefix+".enqueue_replacements"]=
+            std::to_string(contentionCounters.enqueueReplacementCount);
+        context->observed[prefix+".enqueue_max_us"]=
+            std::to_string(contentionCounters.maximumEnqueueMicroseconds);
+        context->observed[prefix+".normal_startup_ready"]=
+            Step3Bool(normalStartupReady && counters.startupSuccessCount>=2);
+        context->observed[prefix+".delayed_success_async"]=Step3Bool(
+            delayedSuccess.startReturned && delayedSuccess.repeatedStartReturned &&
+            delayedSuccess.startUs<=16700 && delayedSuccess.repeatedStartUs<=16700 &&
+            delayedSuccess.remainedStarting);
+        context->observed[prefix+".delayed_success_retained_exact"]=Step3Bool(
+            delayedSuccess.requestRetained && delayedSuccess.becameReady &&
+            delayedSuccess.exactPublished && delayedSuccess.stopped);
+        context->observed[prefix+".priority_failure_explicit"]=Step3Bool(
+            priorityFailure.startReturned &&
+            priorityFailure.repeatedStartReturned &&
+            priorityFailure.startUs<=16700 &&
+            priorityFailure.repeatedStartUs<=16700 &&
+            priorityFailure.remainedStarting && priorityFailure.failedState);
+        context->observed[prefix+".priority_failure_safe"]=Step3Bool(
+            priorityFailure.requestRetained && priorityFailure.requestRejected &&
+            priorityFailure.noReady &&
+            priorityFailure.noRetry && priorityFailure.oneDiagnostic &&
+            priorityFailure.bounded && priorityFailure.pendingResolved &&
+            priorityFailure.stopped);
+        context->observed[prefix+".measurement_failure_explicit"]=Step3Bool(
+            measurementFailure.startReturned &&
+            measurementFailure.repeatedStartReturned &&
+            measurementFailure.startUs<=16700 &&
+            measurementFailure.repeatedStartUs<=16700 &&
+            measurementFailure.remainedStarting &&
+            measurementFailure.failedState);
+        context->observed[prefix+".measurement_failure_safe"]=Step3Bool(
+            measurementFailure.requestRetained &&
+            measurementFailure.requestRejected && measurementFailure.noReady &&
+            measurementFailure.noRetry && measurementFailure.oneDiagnostic &&
+            measurementFailure.bounded && measurementFailure.pendingResolved &&
+            measurementFailure.stopped);
+        std::cout << "STEP3_WORKER_PROOF jobsRequested=" << counters.jobsRequested
+                  << " jobsReplaced=" << counters.jobsReplaced
+                  << " jobsStarted=" << counters.jobsStarted
+                  << " jobsCompleted=" << counters.jobsCompleted
+                  << " jobsCancelled=" << counters.jobsCancelled
+                  << " staleRejected=" << counters.staleResultsRejected
+                  << " maxQueueDepth=" << counters.maximumQueueDepth
+                  << " maxReadyCount=" << counters.maximumReadyCacheCount
+                  << " wakeCount=" << counters.workerWakeCount
+                  << " sleepCount=" << counters.workerSleepCount
+                  << " maxSliceUs=" << counters.maximumContiguousExecutionMicroseconds
+                  << " metarPrepTotalUs=" << counters.totalPreparationMicroseconds[0]
+                  << " atisPrepTotalUs=" << counters.totalPreparationMicroseconds[1]
+                  << " pdcPrepTotalUs=" << counters.totalPreparationMicroseconds[2]
+                  << " publicationMaxUs=" << counters.maximumPublicationMicroseconds
+                  << " readinessChecks=" << counters.readinessCheckCount
+                  << " readinessContentions=" << counters.readinessContentionCount
+                  << " forcedContentionUs=" << contentionCheckUs
+                  << " forcedContentions="
+                  << contentionCounters.readinessContentionCount
+                  << " enqueueAttempts="
+                  << contentionCounters.enqueueAttemptCount
+                  << " enqueueContentions="
+                  << contentionCounters.enqueueContentionCount
+                  << " enqueueSuccesses="
+                  << contentionCounters.enqueueSuccessCount
+                  << " enqueueReplacements="
+                  << contentionCounters.enqueueReplacementCount
+                  << " enqueueMaxUs="
+                  << contentionCounters.maximumEnqueueMicroseconds
+                  << " replacementCounter="
+                  << counters.enqueueReplacementCount
+                  << " startupAttempts=" << counters.startupAttemptCount
+                  << " startupSuccesses=" << counters.startupSuccessCount
+                  << " startupFailures=" << counters.startupFailureCount
+                  << " delayedStartUs=" << delayedSuccess.startUs
+                  << " delayedRepeatStartUs=" << delayedSuccess.repeatedStartUs
+                  << " delayedPriorityFailureStartUs=" << priorityFailure.startUs
+                  << " delayedGdiFailureStartUs=" << measurementFailure.startUs
+                  << " openPublishUs=" << openUs
+                  << " switchPublishUs=" << switchUs
+                  << " priorityRequested=" << (counters.priorityRequested?"true":"false")
+                  << " prioritySucceeded=" << (counters.prioritySucceeded?"true":"false")
+                  << " prohibitedAccesses=" << counters.prohibitedAccessCount
+                  << " threadsAfterStop=" << counters.runningWorkerThreads << '\n';
+        return true;
+    }
+    if (parts[0] == "restart" && parts.size() == 2) {
+        context->states[parts[1]].reset();
+        context->states[parts[1]] =
+            std::make_unique<xvatsim::brain::BrainOwnedRuntimeState>();
+        context->observed[parts[1] + ".restart_recreated"] = "true";
+        return true;
+    }
+    if (parts[0] == "mode" && parts.size() == 3) {
+        const auto mode = parts[2] == "VFR"
+            ? xvatsim::brain::BrainOwnedOperatingMode::VFR
+            : xvatsim::brain::BrainOwnedOperatingMode::IFR;
+        auto* state = context->State(parts[1]);
+        const auto result = xvatsim::brain::RequestBrainOwnedOperatingModeSelection(state, mode);
+        context->observed[parts[1] + ".mode"] =
+            result.effectiveMode == xvatsim::brain::BrainOwnedOperatingMode::VFR ? "VFR" : "IFR";
+        return true;
+    }
+    if (parts[0] == "accept" && parts.size() == 7) {
+        xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+        input.drawer = Step3DrawerFromToken(parts[2]);
+        input.stableKey = parts[3];
+        input.title = parts[4];
+        input.body = parts[5];
+        const auto result = xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(
+            context->State(parts[1]), input);
+        const auto prefix = parts[6];
+        context->observed[prefix + ".status"] = Step3Status(result.status);
+        context->observed[prefix + ".accepted"] = Step3Bool(result.accepted);
+        context->observed[prefix + ".duplicate"] = Step3Bool(result.duplicate);
+        context->observed[prefix + ".limited"] = Step3Bool(result.contentLimited);
+        context->observed[prefix + ".sequence"] = std::to_string(result.acceptedSequence);
+        context->observed[prefix + ".generation"] = std::to_string(result.historyGeneration);
+        return true;
+    }
+    if (parts[0] == "accept-oversized" && parts.size() == 5) {
+        xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+        input.drawer = Step3DrawerFromToken(parts[2]);
+        input.stableKey = parts[3];
+        input.title = std::string(129, 'T');
+        input.body = std::string(8189, 'Z') + "\xE2\x82\xAC" +
+            std::string(1000, 'Q');
+        const auto result = xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(
+            context->State(parts[1]), input);
+        const auto prefix = parts[4];
+        context->observed[prefix + ".status"] = Step3Status(result.status);
+        context->observed[prefix + ".accepted"] = Step3Bool(result.accepted);
+        context->observed[prefix + ".limited"] = Step3Bool(result.contentLimited);
+        const auto& history = context->State(parts[1])->accessory.histories[
+            Step3DrawerIndex(input.drawer)];
+        context->observed[prefix + ".stored_count"] =
+            std::to_string(history.entries.size());
+        if (!history.entries.empty()) {
+            const auto& stored = history.entries.front();
+            context->observed[prefix + ".stored_valid_utf8"] =
+                Step3Bool(Step3IsValidUtf8(stored.title) && Step3IsValidUtf8(stored.body));
+            context->observed[prefix + ".stored_marker_visible"] =
+                Step3Bool(stored.title.find("CONTENT LIMITED") != std::string::npos ||
+                          stored.body.find("CONTENT LIMITED") != std::string::npos);
+            context->observed[prefix + ".stored_bytes"] =
+                std::to_string(stored.retainedBytes);
+            context->observed[prefix + ".recounted_bytes"] =
+                std::to_string(stored.stableKey.size() + stored.title.size() + stored.body.size());
+            context->observed[prefix + ".title_bytes"] =
+                std::to_string(stored.title.size());
+            context->observed[prefix + ".body_bytes"] =
+                std::to_string(stored.body.size());
+            context->observed[prefix + ".title_within_limit"] =
+                Step3Bool(stored.title.size() <= 128);
+            context->observed[prefix + ".body_within_limit"] =
+                Step3Bool(stored.body.size() <= 8192);
+            context->observed[prefix + ".entry_within_limit"] =
+                Step3Bool(stored.retainedBytes <= 128 + 128 + 8192);
+            context->observed[prefix + ".drawer_within_limit"] =
+                Step3Bool(history.retainedBytes <= 65536);
+            const std::string marker="CONTENT LIMITED";
+            const bool markerAtEnd=
+                (stored.title.size()>=marker.size() &&
+                 stored.title.compare(stored.title.size()-marker.size(),marker.size(),marker)==0) ||
+                (stored.body.size()>=marker.size() &&
+                 stored.body.compare(stored.body.size()-marker.size(),marker.size(),marker)==0);
+            context->observed[prefix + ".marker_at_end"] = Step3Bool(markerAtEnd);
+            context->observed[prefix + ".marker_bytes_accounted"] = Step3Bool(
+                markerAtEnd && stored.retainedBytes==stored.stableKey.size()+
+                    stored.title.size()+stored.body.size());
+        } else {
+            context->observed[prefix + ".stored_valid_utf8"] = "false";
+            context->observed[prefix + ".stored_marker_visible"] = "false";
+            context->observed[prefix + ".stored_bytes"] = "0";
+            context->observed[prefix + ".recounted_bytes"] = "0";
+            context->observed[prefix + ".title_bytes"] = "0";
+            context->observed[prefix + ".body_bytes"] = "0";
+            context->observed[prefix + ".title_within_limit"] = "false";
+            context->observed[prefix + ".body_within_limit"] = "false";
+            context->observed[prefix + ".entry_within_limit"] = "false";
+            context->observed[prefix + ".drawer_within_limit"] = "false";
+            context->observed[prefix + ".marker_at_end"] = "false";
+            context->observed[prefix + ".marker_bytes_accounted"] = "false";
+        }
+        return true;
+    }
+    if (parts[0] == "accept-title-only-oversized" && parts.size() == 5) {
+        xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+        input.drawer=Step3DrawerFromToken(parts[2]);
+        input.stableKey=parts[3];
+        input.title=std::string(129,'T');
+        input.body="SHORT BODY";
+        const auto result=xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(
+            context->State(parts[1]),input);
+        const auto& history=context->State(parts[1])->accessory.histories[
+            Step3DrawerIndex(input.drawer)];
+        const auto stored=std::find_if(
+            history.entries.begin(),history.entries.end(),
+            [&](const auto& entry){return entry.stableKey==input.stableKey;});
+        const auto& prefix=parts[4];
+        context->observed[prefix+".accepted"]=Step3Bool(result.accepted);
+        context->observed[prefix+".limited"]=Step3Bool(result.contentLimited);
+        context->observed[prefix+".stored_title_marker"]=Step3Bool(
+            stored!=history.entries.end() &&
+            stored->title.find("CONTENT LIMITED")!=std::string::npos);
+        context->observed[prefix+".body_unchanged"]=Step3Bool(
+            stored!=history.entries.end() && stored->body=="SHORT BODY");
+        return true;
+    }
+    if (parts[0] == "accept-contract" && parts.size() == 5) {
+        xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+        input.drawer=Step3DrawerFromToken(parts[2]);
+        const auto& variant=parts[3];
+        if(variant=="key128") {
+            input.stableKey=std::string(128,'K'); input.title="TITLE"; input.body="BODY";
+        } else if(variant=="key129") {
+            input.stableKey=std::string(129,'K'); input.title="TITLE"; input.body="BODY";
+        } else if(variant=="empty-key") {
+            input.stableKey=""; input.title="TITLE"; input.body="BODY";
+        } else if(variant=="bad-key") {
+            input.stableKey=std::string("BAD\xC3\x28",5); input.title="TITLE"; input.body="BODY";
+        } else if(variant=="bad-title") {
+            input.stableKey="BAD_TITLE"; input.title=std::string("T\xC3\x28",3); input.body="BODY";
+        } else if(variant=="bad-body") {
+            input.stableKey="BAD_BODY"; input.title="TITLE"; input.body=std::string("B\xC3\x28",3);
+        } else if(variant=="crlf") {
+            input.stableKey="CRLF"; input.title="Title\r\nLine"; input.body="A  B\r\nC\tD";
+        } else if(variant=="case-upper") {
+            input.stableKey="CaseKey"; input.title="CASE"; input.body="UPPER";
+        } else if(variant=="case-lower") {
+            input.stableKey="casekey"; input.title="CASE"; input.body="LOWER";
+        } else if(variant=="key-crlf") {
+            input.stableKey="EQUIV\r\nKEY"; input.title="SAME"; input.body="SAME";
+        } else if(variant=="key-lf") {
+            input.stableKey="EQUIV\nKEY"; input.title="SAME"; input.body="SAME";
+        } else {
+            return fail("unknown history contract variant");
+        }
+        auto* state=context->State(parts[1]);
+        auto& history=state->accessory.histories[Step3DrawerIndex(input.drawer)];
+        const auto beforeCount=history.entries.size();
+        const auto result=xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(state,input);
+        const auto& prefix=parts[4];
+        context->observed[prefix+".status"]=Step3Status(result.status);
+        context->observed[prefix+".accepted"]=Step3Bool(result.accepted);
+        context->observed[prefix+".duplicate"]=Step3Bool(result.duplicate);
+        context->observed[prefix+".sequence"]=
+            std::to_string(result.acceptedSequence);
+        context->observed[prefix+".generation"]=
+            std::to_string(result.historyGeneration);
+        context->observed[prefix+".count_changed"]=
+            Step3Bool(history.entries.size()!=beforeCount);
+        const auto expectedStoredKey=Step3NormalizeCrlf(input.stableKey);
+        const auto stored=std::find_if(
+            history.entries.begin(),history.entries.end(),
+            [&](const auto& entry){return entry.stableKey==expectedStoredKey;});
+        context->observed[prefix+".stored"]=Step3Bool(stored!=history.entries.end());
+        context->observed[prefix+".stored_key_bytes"]=
+            stored==history.entries.end()?"0":std::to_string(stored->stableKey.size());
+        context->observed[prefix+".stored_key_exact"]=
+            Step3Bool(stored!=history.entries.end() &&
+                      stored->stableKey==expectedStoredKey);
+        context->observed[prefix+".source_digest_hex"]=
+            stored==history.entries.end()
+                ? ""
+                : Step3DigestHex(stored->sourceContentDigest);
+        context->observed[prefix+".key_crlf_normalized"]=Step3Bool(
+            stored!=history.entries.end() &&
+            stored->stableKey=="EQUIV\nKEY" &&
+            stored->stableKey.find('\r')==std::string::npos);
+        context->observed[prefix+".crlf_normalized"]=Step3Bool(
+            stored!=history.entries.end() &&
+            stored->title=="Title\nLine" && stored->body=="A  B\nC\tD");
+        context->observed[prefix+".whitespace_preserved"]=Step3Bool(
+            stored!=history.entries.end() &&
+            stored->body.find("A  B")!=std::string::npos &&
+            stored->body.find('\t')!=std::string::npos);
+        return true;
+    }
+    if (parts[0] == "accept-limited-tail-updates" && parts.size() == 4) {
+        auto* state=context->State(parts[1]);
+        const auto drawer=Step3DrawerFromToken(parts[2]);
+        const auto accept=[&](
+            const std::string& key,
+            const std::string& title,
+            const std::string& body) {
+            xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+            input.drawer=drawer;
+            input.stableKey=key;
+            input.title=title;
+            input.body=body;
+            return xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(state,input);
+        };
+        const auto& history=state->accessory.histories[Step3DrawerIndex(drawer)];
+        const auto findEntry=[&](const std::string& key) {
+            return std::find_if(
+                history.entries.begin(),history.entries.end(),
+                [&](const auto& entry){return entry.stableKey==key;});
+        };
+        const std::string titlePrefix(200,'T');
+        const auto titleFirst=accept("TAIL_TITLE",titlePrefix+"A","BODY");
+        const auto firstTitleEntry=findEntry("TAIL_TITLE");
+        const auto firstTitleDigest=firstTitleEntry==history.entries.end()
+            ? std::array<std::uint8_t,32>{}
+            : firstTitleEntry->sourceContentDigest;
+        const auto titleSecond=accept("TAIL_TITLE",titlePrefix+"B","BODY");
+        const auto secondTitleEntry=findEntry("TAIL_TITLE");
+        const auto secondTitleDigest=secondTitleEntry==history.entries.end()
+            ? std::array<std::uint8_t,32>{}
+            : secondTitleEntry->sourceContentDigest;
+        const std::string bodyPrefix(9000,'B');
+        const auto bodyFirst=accept("TAIL_BODY","TITLE",bodyPrefix+"A");
+        const auto firstBodyEntry=findEntry("TAIL_BODY");
+        const auto firstBodyDigest=firstBodyEntry==history.entries.end()
+            ? std::array<std::uint8_t,32>{}
+            : firstBodyEntry->sourceContentDigest;
+        const auto bodySecond=accept("TAIL_BODY","TITLE",bodyPrefix+"B");
+        const auto secondBodyEntry=findEntry("TAIL_BODY");
+        const auto secondBodyDigest=secondBodyEntry==history.entries.end()
+            ? std::array<std::uint8_t,32>{}
+            : secondBodyEntry->sourceContentDigest;
+        const auto storedTitle=findEntry("TAIL_TITLE");
+        const auto storedBody=findEntry("TAIL_BODY");
+        const auto& prefix=parts[3];
+        context->observed[prefix+".title_first_accepted"]=
+            Step3Bool(titleFirst.accepted);
+        context->observed[prefix+".title_update_accepted"]=
+            Step3Bool(titleSecond.accepted);
+        context->observed[prefix+".title_update_duplicate"]=
+            Step3Bool(titleSecond.duplicate);
+        context->observed[prefix+".title_sequence_advanced"]=Step3Bool(
+            titleSecond.acceptedSequence==titleFirst.acceptedSequence+1);
+        context->observed[prefix+".title_generation_advanced"]=Step3Bool(
+            titleSecond.historyGeneration==titleFirst.historyGeneration+1);
+        context->observed[prefix+".title_retained_limited"]=Step3Bool(
+            storedTitle!=history.entries.end() && storedTitle->contentLimited &&
+            storedTitle->title.size()==128);
+        context->observed[prefix+".title_sha256_changed"]=Step3Bool(
+            firstTitleDigest!=secondTitleDigest);
+        context->observed[prefix+".title_digest_bytes"]=
+            std::to_string(secondTitleDigest.size());
+        context->observed[prefix+".body_first_accepted"]=
+            Step3Bool(bodyFirst.accepted);
+        context->observed[prefix+".body_update_accepted"]=
+            Step3Bool(bodySecond.accepted);
+        context->observed[prefix+".body_update_duplicate"]=
+            Step3Bool(bodySecond.duplicate);
+        context->observed[prefix+".body_sequence_advanced"]=Step3Bool(
+            bodySecond.acceptedSequence==bodyFirst.acceptedSequence+1);
+        context->observed[prefix+".body_generation_advanced"]=Step3Bool(
+            bodySecond.historyGeneration==bodyFirst.historyGeneration+1);
+        context->observed[prefix+".body_retained_limited"]=Step3Bool(
+            storedBody!=history.entries.end() && storedBody->contentLimited &&
+            storedBody->body.size()==8192);
+        context->observed[prefix+".body_sha256_changed"]=Step3Bool(
+            firstBodyDigest!=secondBodyDigest);
+        context->observed[prefix+".body_digest_bytes"]=
+            std::to_string(secondBodyDigest.size());
+        return true;
+    }
+    if (parts[0] == "series" && parts.size() == 6) {
+        int count = 0;
+        int bodyLength = 0;
+        if (!parseInt(parts[3], &count) || !parseInt(parts[4], &bodyLength)) return fail("invalid series count");
+        auto* state = context->State(parts[1]);
+        auto drawer = Step3DrawerFromToken(parts[2]);
+        int accepted = 0;
+        for (int index = 1; index <= count; ++index) {
+            xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+            input.drawer = drawer;
+            input.stableKey = "K" + std::to_string(index);
+            input.title = "T" + std::to_string(index);
+            input.body = std::string(static_cast<std::size_t>(bodyLength), 'X');
+            if (xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(state, input).accepted) accepted++;
+        }
+        const auto& history = state->accessory.histories[Step3DrawerIndex(drawer)];
+        context->observed[parts[5] + ".accepted"] = std::to_string(accepted);
+        ObserveStep3History(history, parts[5], &context->observed);
+        context->observed[parts[5] + ".within_count_limit"] =
+            Step3Bool(history.entries.size() <= 32);
+        context->observed[parts[5] + ".within_byte_limit"] =
+            Step3Bool(history.retainedBytes <= 65536);
+        std::size_t recountedBytes = 0;
+        for (const auto& entry : history.entries) recountedBytes += entry.retainedBytes;
+        context->observed[parts[5] + ".recounted_bytes"] =
+            std::to_string(recountedBytes);
+        return true;
+    }
+    if (parts[0] == "click" && parts.size() == 5) {
+        int sequence = 0;
+        if (!parseInt(parts[3], &sequence)) return fail("invalid click sequence");
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+        request.drawer = Step3DrawerFromToken(parts[2]);
+        request.requestSequence = static_cast<std::uint64_t>(sequence);
+        const auto decision = xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+            context->State(parts[1]), request);
+        const auto prefix = parts[4];
+        context->observed[prefix + ".status"] = Step3Status(decision.status);
+        context->observed[prefix + ".action"] = Step3Action(decision.action);
+        context->observed[prefix + ".previous"] = Step3Drawer(decision.previousDrawer);
+        context->observed[prefix + ".active"] = Step3Drawer(decision.activeDrawer);
+        context->observed[prefix + ".generation"] = std::to_string(decision.selectionGeneration);
+        return true;
+    }
+    if (parts[0] == "click-from-hit" && parts.size() == 5) {
+        const auto hit = context->hits.find(parts[2]);
+        if (hit == context->hits.end()) return fail("hit result missing");
+        int sequence = 0;
+        if (!parseInt(parts[3], &sequence)) return fail("invalid click sequence");
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+        request.drawer = hit->second.drawer;
+        request.requestSequence = static_cast<std::uint64_t>(sequence);
+        const auto decision = xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+            context->State(parts[1]), request);
+        const auto& prefix = parts[4];
+        context->observed[prefix + ".hit_handled"] = Step3Bool(hit->second.handled);
+        context->observed[prefix + ".requested_drawer"] = Step3Drawer(request.drawer);
+        context->observed[prefix + ".status"] = Step3Status(decision.status);
+        context->observed[prefix + ".action"] = Step3Action(decision.action);
+        context->observed[prefix + ".previous"] = Step3Drawer(decision.previousDrawer);
+        context->observed[prefix + ".active"] = Step3Drawer(decision.activeDrawer);
+        context->observed[prefix + ".generation"] =
+            std::to_string(decision.selectionGeneration);
+        return true;
+    }
+    if (parts[0] == "click-queue-new" && parts.size() == 2) {
+        context->clickQueues[parts[1]] =
+            xvatsim::modules::overlay::AccessoryClickFactQueue{};
+        return true;
+    }
+    if (parts[0] == "click-queue-produce" && parts.size() == 5) {
+        int started = 0;
+        if(!parseInt(parts[3],&started)) return fail("invalid click start time");
+        auto& queue=context->clickQueues[parts[1]];
+        xvatsim::modules::overlay::AccessoryClickFact fact;
+        const auto produced=queue.Produce(
+            Step3DrawerFromToken(parts[2]),
+            static_cast<std::uint64_t>(started),
+            &fact);
+        const auto& prefix=parts[4];
+        context->observed[prefix+".produced"]=Step3Bool(produced);
+        context->observed[prefix+".drawer"]=Step3Drawer(fact.drawer);
+        context->observed[prefix+".sequence"]=
+            std::to_string(fact.requestSequence);
+        context->observed[prefix+".started_us"]=
+            std::to_string(fact.startedMicroseconds);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        context->observed[prefix+".next_sequence"]=
+            std::to_string(queue.NextSequence());
+        return true;
+    }
+    if (parts[0] == "click-queue-produce-hit" && parts.size() == 5) {
+        int started = 0;
+        if(!parseInt(parts[3],&started)) return fail("invalid hit click start time");
+        const auto hit=context->hits.find(parts[2]);
+        if(hit==context->hits.end()) return fail("click queue hit missing");
+        auto& queue=context->clickQueues[parts[1]];
+        xvatsim::modules::overlay::AccessoryClickFact fact;
+        const auto produced=queue.Produce(
+            hit->second.drawer,
+            static_cast<std::uint64_t>(started),
+            &fact);
+        const auto& prefix=parts[4];
+        context->observed[prefix+".hit_handled"]=
+            Step3Bool(hit->second.handled);
+        context->observed[prefix+".produced"]=Step3Bool(produced);
+        context->observed[prefix+".drawer"]=Step3Drawer(fact.drawer);
+        context->observed[prefix+".sequence"]=
+            std::to_string(fact.requestSequence);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        return true;
+    }
+    if (parts[0] == "click-queue-discard" && parts.size() == 3) {
+        auto& queue=context->clickQueues[parts[1]];
+        const auto nextBefore=queue.NextSequence();
+        const auto discarded=queue.DiscardPending();
+        const auto& prefix=parts[2];
+        context->observed[prefix+".discarded"]=std::to_string(discarded);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        context->observed[prefix+".next_sequence_unchanged"]=Step3Bool(
+            queue.NextSequence()==nextBefore);
+        context->observed[prefix+".discarded_total"]=
+            std::to_string(queue.DiscardedCount());
+        return true;
+    }
+    if (parts[0] == "click-queue-consume" && parts.size() == 3) {
+        auto& queue=context->clickQueues[parts[1]];
+        xvatsim::modules::overlay::AccessoryClickFact fact;
+        const auto consumed=queue.Consume(&fact);
+        const auto& prefix=parts[2];
+        context->observed[prefix+".consumed"]=Step3Bool(consumed);
+        context->observed[prefix+".drawer"]=
+            consumed ? Step3Drawer(fact.drawer) : "NONE";
+        context->observed[prefix+".sequence"]=
+            consumed ? std::to_string(fact.requestSequence) : "0";
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        return true;
+    }
+    if (parts[0] == "click-queue-consume-to-brain" && parts.size() == 4) {
+        auto& queue=context->clickQueues[parts[1]];
+        xvatsim::modules::overlay::AccessoryClickFact fact;
+        const auto consumed=queue.Consume(&fact);
+        const auto& prefix=parts[3];
+        context->observed[prefix+".consumed"]=Step3Bool(consumed);
+        if(!consumed) {
+            context->observed[prefix+".action"]="None";
+            return true;
+        }
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+        request.drawer=fact.drawer;
+        request.requestSequence=fact.requestSequence;
+        const auto decision=
+            xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+                context->State(parts[2]),request);
+        context->observed[prefix+".drawer"]=Step3Drawer(request.drawer);
+        context->observed[prefix+".requested_drawer"]=Step3Drawer(request.drawer);
+        context->observed[prefix+".sequence"]=
+            std::to_string(request.requestSequence);
+        context->observed[prefix+".action"]=Step3Action(decision.action);
+        context->observed[prefix+".generation"]=
+            std::to_string(decision.selectionGeneration);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        return true;
+    }
+    if (parts[0] == "dispatch-new" && parts.size() == 3) {
+        int epoch=0;
+        if(!parseInt(parts[2],&epoch)||epoch==0) {
+            return fail("invalid dispatch epoch");
+        }
+        context->inputDispatchers[parts[1]] =
+            xvatsim::modules::overlay::AccessoryInputDispatchCoordinator{};
+        auto collector=std::make_unique<
+            xvatsim::modules::overlay::AccessoryPerformanceCollector>();
+        collector->ResetForNewProcess(static_cast<std::uint64_t>(epoch));
+        context->dispatchPerformanceCollectors[parts[1]]=std::move(collector);
+        return true;
+    }
+    if (parts[0] == "dispatch-produce" && parts.size() == 6) {
+        int started=0;
+        if(!parseInt(parts[4],&started)) return fail("invalid dispatch click time");
+        auto dispatcher=context->inputDispatchers.find(parts[1]);
+        if(dispatcher==context->inputDispatchers.end()) {
+            return fail("input dispatcher missing");
+        }
+        auto& queue=context->clickQueues[parts[2]];
+        xvatsim::modules::overlay::AccessoryClickFact fact;
+        const auto produced=queue.Produce(
+            Step3DrawerFromToken(parts[3]),
+            static_cast<std::uint64_t>(started),&fact);
+        if(produced) dispatcher->second.RecordDispatchNotification();
+        const auto& prefix=parts[5];
+        context->observed[prefix+".produced"]=Step3Bool(produced);
+        context->observed[prefix+".sequence"]=
+            std::to_string(fact.requestSequence);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        ObserveStep3DispatchSnapshot(
+            dispatcher->second.Snapshot(),prefix,&context->observed);
+        return true;
+    }
+    if (parts[0] == "dispatch-begin-present" && parts.size() == 10) {
+        int layoutGeneration=0,dispatchTime=0;
+        if(!parseInt(parts[7],&layoutGeneration)||
+           !parseInt(parts[8],&dispatchTime)) {
+            return fail("invalid dispatch presentation input");
+        }
+        auto dispatcher=context->inputDispatchers.find(parts[1]);
+        auto collector=context->dispatchPerformanceCollectors.find(parts[1]);
+        const auto layout=context->layouts.find(parts[5]);
+        if(dispatcher==context->inputDispatchers.end()||
+           collector==context->dispatchPerformanceCollectors.end()) {
+            return fail("input dispatcher missing");
+        }
+        if(layout==context->layouts.end()) return fail("dispatch layout missing");
+        auto& queue=context->clickQueues[parts[2]];
+        auto* state=context->State(parts[3]);
+        auto& presenter=context->presenters[parts[4]];
+        xvatsim::modules::overlay::AccessoryClickFact fact;
+        const auto began=dispatcher->second.TryBegin(&queue,&fact);
+        const auto& prefix=parts[9];
+        context->observed[prefix+".began"]=Step3Bool(began);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        if(!began) {
+            ObserveStep3DispatchSnapshot(
+                dispatcher->second.Snapshot(),prefix,&context->observed);
+            return true;
+        }
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+        request.drawer=fact.drawer;
+        request.requestSequence=fact.requestSequence;
+        const auto decision=
+            xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+                state,request);
+        xvatsim::brain::BrainOwnedAccessoryProjectionCounters projectionCounters;
+        const auto presentation=
+            xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+                state,static_cast<std::uint64_t>(layoutGeneration),
+                &projectionCounters);
+        xvatsim::modules::overlay::AccessoryPresentationUpdateInput input;
+        input.presentation=presentation;
+        input.layout=layout->second;
+        input.preparedPlan=Step3PreparePresentationPlan(
+            context,presentation,layout->second);
+        input.measurementContext=context->measurementContext;
+        const auto main=context->mainCardSignatures.find(parts[6]);
+        if(main!=context->mainCardSignatures.end()) {
+            input.mainCardProductionSignature=main->second;
+        }
+        const auto update=
+            xvatsim::modules::overlay::UpdateAccessoryPresentation(
+                &presenter,input);
+        auto& renderGeneration=context->presenterRenderGenerations[parts[4]];
+        if(update.delta.railRasterRequests>0 ||
+           update.delta.drawerRasterRequests>0) {
+            ++renderGeneration;
+        }
+        const auto bound=dispatcher->second.BindPresentation(
+            fact.requestSequence,decision.action,
+            presenter.selectionGeneration,renderGeneration);
+        xvatsim::modules::overlay::AccessoryActionDispatchTimingInput timing;
+        timing.dispatchStartedMicroseconds=fact.startedMicroseconds;
+        timing.dispatchCompletedMicroseconds=
+            static_cast<std::uint64_t>(dispatchTime);
+        const auto timingBegan=bound && collector->second->BeginDrawerAction(
+            decision.action,fact.requestSequence,fact.startedMicroseconds,
+            presenter.selectionGeneration,renderGeneration,
+            static_cast<std::uint64_t>(dispatchTime),0,timing);
+        context->observed[prefix+".bound"]=Step3Bool(bound);
+        context->observed[prefix+".timing_began"]=Step3Bool(timingBegan);
+        context->observed[prefix+".sequence"]=
+            std::to_string(fact.requestSequence);
+        context->observed[prefix+".action"]=Step3Action(decision.action);
+        context->observed[prefix+".active"]=Step3Drawer(decision.activeDrawer);
+        context->observed[prefix+".selection_generation"]=
+            std::to_string(presenter.selectionGeneration);
+        context->observed[prefix+".render_generation"]=
+            std::to_string(renderGeneration);
+        context->observed[prefix+".dispatch_latency_us"]=
+            std::to_string(static_cast<std::uint64_t>(dispatchTime)>=
+                fact.startedMicroseconds
+                ? static_cast<std::uint64_t>(dispatchTime)-fact.startedMicroseconds
+                : 0);
+        context->observed[prefix+".projection_history_visits"]=
+            std::to_string(projectionCounters.historyVisits);
+        context->observed[prefix+".dispatch_record"]=
+            "began=true,sequence="+std::to_string(fact.requestSequence)+
+            ",action="+Step3Action(decision.action)+
+            ",dispatchLatencyUs="+
+                context->observed[prefix+".dispatch_latency_us"]+
+            ",selectionGeneration="+
+                std::to_string(presenter.selectionGeneration)+
+            ",renderGeneration="+std::to_string(renderGeneration)+
+            ",generalLoopInvocations=0";
+        ObserveStep3RenderCounters(update.delta,prefix,&context->observed);
+        ObserveStep3DispatchSnapshot(
+            dispatcher->second.Snapshot(),prefix,&context->observed);
+        return true;
+    }
+    if (parts[0] == "dispatch-draw" && parts.size() == 8) {
+        int completed=0;
+        if(!parseInt(parts[4],&completed)) return fail("invalid dispatch draw time");
+        auto dispatcher=context->inputDispatchers.find(parts[1]);
+        auto collector=context->dispatchPerformanceCollectors.find(parts[1]);
+        auto presenter=context->presenters.find(parts[3]);
+        if(dispatcher==context->inputDispatchers.end()||
+           collector==context->dispatchPerformanceCollectors.end()||
+           presenter==context->presenters.end()) {
+            return fail("dispatch draw state missing");
+        }
+        std::uint64_t selectionGeneration=presenter->second.selectionGeneration;
+        std::uint64_t renderGeneration=
+            context->presenterRenderGenerations[parts[3]];
+        if(parts[5]!="current") {
+            try { selectionGeneration=std::stoull(parts[5]); }
+            catch(...) { return fail("invalid draw selection generation"); }
+        }
+        if(parts[6]!="current") {
+            try { renderGeneration=std::stoull(parts[6]); }
+            catch(...) { return fail("invalid draw render generation"); }
+        }
+        const auto completion=dispatcher->second.CompleteMatchingDraw(
+            selectionGeneration,renderGeneration);
+        const auto matchingPerformanceAction=
+            collector->second->HasMatchingPendingAction(
+                selectionGeneration,renderGeneration,0);
+        xvatsim::modules::overlay::AccessoryActionDrawTimingInput drawTiming;
+        drawTiming.actionDrawWallMicroseconds=1;
+        const auto performanceCompleted=
+            collector->second->CompletePendingActions(
+                static_cast<std::uint64_t>(completed),
+                selectionGeneration,renderGeneration,0,0,0,drawTiming);
+        auto& queue=context->clickQueues[parts[2]];
+        if(completion.completed && queue.PendingCount()>0) {
+            dispatcher->second.RecordDispatchNotification();
+        }
+        const auto& prefix=parts[7];
+        context->observed[prefix+".completed"]=
+            Step3Bool(completion.completed);
+        context->observed[prefix+".sequence"]=
+            std::to_string(completion.fact.requestSequence);
+        context->observed[prefix+".action"]=Step3Action(completion.action);
+        context->observed[prefix+".performance_completed"]=
+            std::to_string(performanceCompleted);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        context->observed[prefix+".dispatch_record"]=
+            "completed="+Step3Bool(completion.completed)+
+            ",sequence="+std::to_string(completion.fact.requestSequence)+
+            ",action="+Step3Action(completion.action)+
+            ",selectionGeneration="+std::to_string(selectionGeneration)+
+            ",renderGeneration="+std::to_string(renderGeneration)+
+            ",performanceCompleted="+
+                std::to_string(performanceCompleted);
+        ObserveStep3DispatchSnapshot(
+            dispatcher->second.Snapshot(),prefix,&context->observed);
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),prefix,&context->observed);
+        return true;
+    }
+    if (parts[0] == "dispatch-invalidate" && parts.size() == 4) {
+        auto dispatcher=context->inputDispatchers.find(parts[1]);
+        auto collector=context->dispatchPerformanceCollectors.find(parts[1]);
+        if(dispatcher==context->inputDispatchers.end()||
+           collector==context->dispatchPerformanceCollectors.end()) {
+            return fail("input dispatcher missing");
+        }
+        const auto invalidated=dispatcher->second.InvalidateInFlight();
+        collector->second->DiscardPendingActions();
+        auto& queue=context->clickQueues[parts[2]];
+        const auto discarded=queue.DiscardPending();
+        const auto& prefix=parts[3];
+        context->observed[prefix+".invalidated"]=Step3Bool(invalidated);
+        context->observed[prefix+".discarded"]=std::to_string(discarded);
+        context->observed[prefix+".next_sequence"]=
+            std::to_string(queue.NextSequence());
+        ObserveStep3DispatchSnapshot(
+            dispatcher->second.Snapshot(),prefix,&context->observed);
+        return true;
+    }
+    if (parts[0] == "dispatch-snapshot" && parts.size() == 3) {
+        const auto dispatcher=context->inputDispatchers.find(parts[1]);
+        if(dispatcher==context->inputDispatchers.end()) {
+            return fail("input dispatcher missing");
+        }
+        ObserveStep3DispatchSnapshot(
+            dispatcher->second.Snapshot(),parts[2],&context->observed);
+        const auto snapshot=dispatcher->second.Snapshot();
+        context->observed[parts[2]+".dispatch_record"]=
+            "notifications="+std::to_string(snapshot.dispatchNotifications)+
+            ",beginAttempts="+std::to_string(snapshot.beginAttempts)+
+            ",begun="+std::to_string(snapshot.requestsBegun)+
+            ",bound="+std::to_string(snapshot.presentationsBound)+
+            ",completed="+
+                std::to_string(snapshot.matchingDrawCompletions)+
+            ",mismatched="+
+                std::to_string(snapshot.mismatchedDrawAttempts);
+        return true;
+    }
+    if (parts[0] == "project" && parts.size() == 4) {
+        int generation = 0;
+        if (!parseInt(parts[2], &generation)) return fail("invalid layout generation");
+        xvatsim::brain::BrainOwnedAccessoryProjectionCounters counters;
+        auto handle = xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+            context->State(parts[1]), static_cast<std::uint64_t>(generation), &counters);
+        context->snapshots[parts[3]] = handle;
+        context->observed[parts[3] + ".available"] = Step3Bool(handle.snapshot != nullptr &&
+            handle.snapshot->status == xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available);
+        context->observed[parts[3] + ".orb_count"] =
+            handle.snapshot ? std::to_string(handle.snapshot->orbs.size()) : "0";
+        context->observed[parts[3] + ".entry_count"] =
+            handle.snapshot ? std::to_string(handle.snapshot->entries.size()) : "0";
+        context->observed[parts[3] + ".active"] =
+            handle.snapshot ? Step3Drawer(handle.snapshot->activeDrawer) : "NONE";
+        context->observed[parts[3] + ".history_visits"] = std::to_string(counters.historyVisits);
+        context->observed[parts[3] + ".entries_copied"] = std::to_string(counters.entriesCopied);
+        context->observed[parts[3] + ".snapshot_identity"] =
+            std::to_string(handle.snapshot ? handle.snapshot->snapshotIdentity : 0);
+        context->observed[parts[3] + ".selection_generation"] =
+            std::to_string(handle.selectionGeneration);
+        context->observed[parts[3] + ".history_generation"] =
+            std::to_string(handle.historyGeneration);
+        context->observed[parts[3] + ".callsign"] =
+            handle.snapshot ? handle.snapshot->callsignIdentity : "";
+        std::vector<std::string> labels;
+        int neutralCount=0,selectedCount=0,openIndicatorCount=0;
+        std::string selectedDrawer;
+        if(handle.snapshot!=nullptr) {
+            for(const auto& orb:handle.snapshot->orbs) {
+                labels.push_back(orb.label);
+                if(orb.neutral) neutralCount++;
+                if(orb.selected) {
+                    selectedCount++;
+                    selectedDrawer=Step3Drawer(orb.drawer);
+                }
+                if(orb.selectedIndicator=="OPEN") openIndicatorCount++;
+            }
+        }
+        context->observed[parts[3]+".labels"]=JoinCsv(labels);
+        context->observed[parts[3]+".neutral_count"]=std::to_string(neutralCount);
+        context->observed[parts[3]+".selected_count"]=std::to_string(selectedCount);
+        context->observed[parts[3]+".selected_drawer"]=selectedDrawer;
+        context->observed[parts[3]+".open_indicator_count"]=
+            std::to_string(openIndicatorCount);
+        context->observed[parts[3]+".empty_state_text"]=
+            handle.snapshot ? handle.snapshot->emptyStateText : "";
+        bool placeholderCached=false;
+        if(handle.snapshot!=nullptr && !handle.snapshot->emptyStateText.empty()) {
+            for(const auto& history:context->State(parts[1])->accessory.histories) {
+                for(const auto& entry:history.entries) {
+                    placeholderCached=placeholderCached ||
+                        entry.title==handle.snapshot->emptyStateText ||
+                        entry.body==handle.snapshot->emptyStateText;
+                }
+            }
+        }
+        context->observed[parts[3]+".placeholder_cached"]=Step3Bool(placeholderCached);
+        std::vector<std::string> keys;
+        std::vector<std::string> bodies;
+        std::vector<std::string> sequences;
+        if (handle.snapshot != nullptr) {
+            for (const auto& entry : handle.snapshot->entries) {
+                keys.push_back(entry.stableKey);
+                bodies.push_back(entry.body);
+                sequences.push_back(std::to_string(entry.acceptedSequence));
+            }
+        }
+        context->observed[parts[3] + ".keys"] = JoinCsv(keys);
+        context->observed[parts[3] + ".bodies"] = JoinCsv(bodies);
+        context->observed[parts[3] + ".sequences"] = JoinCsv(sequences);
+        return true;
+    }
+    if (parts[0] == "history" && parts.size() == 4) {
+        const auto drawer = Step3DrawerFromToken(parts[2]);
+        const auto& history = context->State(parts[1])->accessory.histories[Step3DrawerIndex(drawer)];
+        ObserveStep3History(history, parts[3], &context->observed);
+        return true;
+    }
+    if (parts[0] == "seed-all" && parts.size() == 4) {
+        auto* state = context->State(parts[1]);
+        const xvatsim::brain::BrainOwnedAccessoryDrawerId drawers[]{
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::Metar,
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::Atis,
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::Pdc};
+        const char* tokens[]{"M", "A", "P"};
+        int accepted = 0;
+        for (std::size_t index = 0; index < 3; ++index) {
+            xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+            input.drawer = drawers[index];
+            input.stableKey = std::string(tokens[index]) + parts[2];
+            input.title = std::string(tokens[index]) + "-TITLE";
+            input.body = std::string(tokens[index]) + "-BODY-" + parts[2];
+            if (xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(state, input).accepted) {
+                accepted++;
+            }
+        }
+        context->observed[parts[3] + ".accepted"] = std::to_string(accepted);
+        bool keysCorrect=true,bodiesCorrect=true,sequencesCorrect=true;
+        bool bytesAccounted=true,generationsAdvanced=true;
+        for (std::size_t index = 0; index < 3; ++index) {
+            const auto& history=state->accessory.histories[index];
+            ObserveStep3History(
+                history,
+                parts[3] + "." + tokens[index],
+                &context->observed);
+            keysCorrect=keysCorrect && history.entries.size()==1 &&
+                history.entries.front().stableKey==std::string(tokens[index])+parts[2];
+            bodiesCorrect=bodiesCorrect && history.entries.size()==1 &&
+                history.entries.front().body==std::string(tokens[index])+"-BODY-"+parts[2];
+            sequencesCorrect=sequencesCorrect && history.entries.size()==1 &&
+                history.entries.front().acceptedSequence==1;
+            bytesAccounted=bytesAccounted && history.entries.size()==1 &&
+                history.retainedBytes==history.entries.front().retainedBytes &&
+                history.retainedBytes==history.entries.front().stableKey.size()+
+                    history.entries.front().title.size()+history.entries.front().body.size();
+            generationsAdvanced=generationsAdvanced && history.generation==1;
+        }
+        context->observed[parts[3]+".keys_correct"]=Step3Bool(keysCorrect);
+        context->observed[parts[3]+".bodies_correct"]=Step3Bool(bodiesCorrect);
+        context->observed[parts[3]+".sequences_correct"]=Step3Bool(sequencesCorrect);
+        context->observed[parts[3]+".bytes_accounted"]=Step3Bool(bytesAccounted);
+        context->observed[parts[3]+".generations_advanced"]=
+            Step3Bool(generationsAdvanced);
+        return true;
+    }
+    if (parts[0] == "accessory-state" && parts.size() == 3) {
+        const auto* state = context->State(parts[1]);
+        context->observed[parts[2] + ".active"] =
+            Step3Drawer(state->accessory.activeDrawer);
+        context->observed[parts[2] + ".callsign"] = state->accessory.callsignIdentity;
+        context->observed[parts[2] + ".callsign_generation"] =
+            std::to_string(state->accessory.callsignIdentityGeneration);
+        context->observed[parts[2] + ".clear_generation"] =
+            std::to_string(state->accessory.historyClearGeneration);
+        const char* tokens[]{"M", "A", "P"};
+        for (std::size_t index = 0; index < 3; ++index) {
+            ObserveStep3History(
+                state->accessory.histories[index],
+                parts[2] + "." + tokens[index],
+                &context->observed);
+        }
+        return true;
+    }
+    if (parts[0] == "compare-history-observations" && parts.size() == 4) {
+        const char* drawers[]{"M", "A", "P"};
+        const char* fields[]{"keys", "bodies", "sequences", "bytes", "generation"};
+        for (const auto* field : fields) {
+            bool equal = true;
+            for (const auto* drawer : drawers) {
+                const auto before = context->observed.find(
+                    parts[1] + "." + drawer + "." + field);
+                const auto after = context->observed.find(
+                    parts[2] + "." + drawer + "." + field);
+                if (before == context->observed.end() ||
+                    after == context->observed.end()) {
+                    return fail("history observation missing");
+                }
+                equal = equal && before->second == after->second;
+            }
+            context->observed[parts[3] + "." + field + "_equal"] = Step3Bool(equal);
+        }
+        return true;
+    }
+    if (parts[0] == "compare-cleared-history-observations" && parts.size() == 4) {
+        const char* drawers[]{"M", "A", "P"};
+        bool keysCleared=true,bodiesCleared=true,sequencesCleared=true;
+        bool bytesCleared=true,generationsAdvanced=true;
+        for (const auto* drawer : drawers) {
+            const auto key = [&](const std::string& prefix, const char* field) {
+                return context->observed.find(prefix + "." + drawer + "." + field);
+            };
+            const auto beforeGeneration=key(parts[1],"generation");
+            const auto afterGeneration=key(parts[2],"generation");
+            const auto afterKeys=key(parts[2],"keys");
+            const auto afterBodies=key(parts[2],"bodies");
+            const auto afterSequences=key(parts[2],"sequences");
+            const auto afterBytes=key(parts[2],"bytes");
+            if(beforeGeneration==context->observed.end() ||
+               afterGeneration==context->observed.end() ||
+               afterKeys==context->observed.end() ||
+               afterBodies==context->observed.end() ||
+               afterSequences==context->observed.end() ||
+               afterBytes==context->observed.end()) {
+                return fail("cleared history observation missing");
+            }
+            keysCleared=keysCleared && afterKeys->second.empty();
+            bodiesCleared=bodiesCleared && afterBodies->second.empty();
+            sequencesCleared=sequencesCleared && afterSequences->second.empty();
+            bytesCleared=bytesCleared && afterBytes->second=="0";
+            try {
+                generationsAdvanced=generationsAdvanced &&
+                    std::stoull(afterGeneration->second)==
+                        std::stoull(beforeGeneration->second)+1;
+            } catch (...) {
+                return fail("invalid history generation observation");
+            }
+        }
+        context->observed[parts[3]+".keys_cleared"]=Step3Bool(keysCleared);
+        context->observed[parts[3]+".bodies_cleared"]=Step3Bool(bodiesCleared);
+        context->observed[parts[3]+".sequences_cleared"]=Step3Bool(sequencesCleared);
+        context->observed[parts[3]+".bytes_cleared"]=Step3Bool(bytesCleared);
+        context->observed[parts[3]+".generations_advanced"]=
+            Step3Bool(generationsAdvanced);
+        return true;
+    }
+    if (parts[0] == "cache-refresh" && parts.size() == 2) {
+        xvatsim::brain::ResetBrainOwnedRuntimeCachePreservingFlightContext(context->State(parts[1]));
+        context->observed[parts[1] + ".cache_refreshed"] = "true";
+        return true;
+    }
+    if (parts[0] == "boundary" && (parts.size() == 4 || parts.size() == 6)) {
+        auto* state = context->State(parts[1]);
+        xvatsim::brain::BrainOwnedAccessoryBoundaryDecision decision;
+        if (parts[2] == "close-display") decision = xvatsim::brain::CloseBrainOwnedAccessoryForDisplayClose(state);
+        else if (parts[2] == "xpilot-disconnect") decision = xvatsim::brain::CloseBrainOwnedAccessoryForTemporaryXPilotDisconnect(state);
+        else if (parts[2] == "invalid-aircraft") decision = xvatsim::brain::CloseBrainOwnedAccessoryForInvalidAircraft(state);
+        else if (parts[2] == "plugin-disable") decision = xvatsim::brain::DisableBrainOwnedAccessoryRuntime(state);
+        else if (parts[2] == "plugin-enable") decision = xvatsim::brain::EnableBrainOwnedAccessoryRuntime(state);
+        else if (parts[2] == "overlay-sleep") decision = xvatsim::brain::CloseBrainOwnedAccessoryForTemporaryOverlaySleep(state);
+        else if (parts[2] == "session-reset") decision = xvatsim::brain::ResetBrainOwnedAccessoryForSessionReset(state);
+        else if (parts[2] == "new-flight") decision = xvatsim::brain::ResetBrainOwnedAccessoryForConfirmedNewFlight(state);
+        else if (parts[2] == "cold-dark") decision = xvatsim::brain::ResetBrainOwnedAccessoryForConfirmedColdDark(state);
+        else if (parts[2] == "callsign-change" && parts.size() == 6) {
+            decision = xvatsim::brain::ResetBrainOwnedAccessoryForCallsignChange(
+                state, parts[3], parts[4]);
+        }
+        else if (parts[2] == "plugin-stop") decision = xvatsim::brain::StopBrainOwnedAccessoryRuntime(state);
+        else return fail("unknown lifecycle entry point");
+        const auto& prefix = parts.back();
+        context->observed[prefix + ".status"] = Step3Status(decision.status);
+        context->observed[prefix + ".closed"] = Step3Bool(decision.drawerClosed);
+        context->observed[prefix + ".cleared"] = Step3Bool(decision.historiesCleared);
+        context->observed[prefix + ".cleared_before_identity"] =
+            Step3Bool(decision.clearedBeforeIdentityProjection);
+        context->observed[prefix + ".previous_callsign"] = decision.previousCallsign;
+        context->observed[prefix + ".active_callsign"] = decision.activeCallsign;
+        context->observed[prefix + ".clear_generation"] =
+            std::to_string(decision.historyClearGeneration);
+        context->observed[prefix + ".identity_generation"] =
+            std::to_string(decision.callsignIdentityGeneration);
+        return true;
+    }
+    if (parts[0] == "layout" && parts.size() == 10) {
+        int width=0,height=0,left=0,top=0,open=0;
+        if (!parseInt(parts[2],&width)||!parseInt(parts[3],&height)||!parseInt(parts[5],&left)||
+            !parseInt(parts[6],&top)||!parseInt(parts[8],&open)) return fail("invalid layout integer");
+        xvatsim::modules::overlay::AccessoryLayoutInput input;
+        input.screenWidth=width; input.screenHeight=height; input.scale=std::stof(parts[4]);
+        input.windowLeft=left; input.windowTop=top; input.drawerOpen=open!=0;
+        input.cardAnimationProgress=std::stof(parts[7]);
+        auto result=ResolveStep3Layout(context,input);
+        context->layouts[parts[9]]=result;
+        context->observed[parts[9]+".status"]=Step3Status(result.status);
+        context->observed[parts[9]+".visible"]=Step3Bool(result.accessoriesVisible);
+        context->observed[parts[9]+".interactive"]=Step3Bool(result.accessoriesInteractive);
+        context->observed[parts[9]+".orb_count"]=std::to_string(result.orbs.size());
+        context->observed[parts[9]+".closed_width"]=std::to_string(result.closedWidth);
+        context->observed[parts[9]+".closed_height"]=std::to_string(result.closedHeight);
+        context->observed[parts[9]+".open_width"]=std::to_string(result.openWidth);
+        context->observed[parts[9]+".open_height"]=std::to_string(result.openHeight);
+        context->observed[parts[9]+".closed_design_width"]=
+            std::to_string(result.closedDesignWidth);
+        context->observed[parts[9]+".closed_design_height"]=
+            std::to_string(result.closedDesignHeight);
+        context->observed[parts[9]+".open_design_width"]=
+            std::to_string(result.openDesignWidth);
+        context->observed[parts[9]+".open_design_height"]=
+            std::to_string(result.openDesignHeight);
+        context->observed[parts[9]+".orb_design_diameter"]=
+            std::to_string(result.orbDiameterDesignPixels);
+        context->observed[parts[9]+".dirty"]=Step3Bool(result.positionSettingsDirty);
+        context->observed[parts[9]+".inside"]=Step3Bool(result.allPhysicalBoundsInsideScreen);
+        context->observed[parts[9]+".temporary_clamp"]=
+            Step3Bool(result.temporaryClampApplied);
+        context->observed[parts[9]+".closed_size_restored"]=
+            Step3Bool(result.closedDimensionsRestored);
+        context->observed[parts[9]+".anchor_restored"]=
+            Step3Bool(result.closedAnchorRestored);
+        context->observed[parts[9]+".drawer_content_inset"]=
+            std::to_string(result.drawerContentInset);
+        context->observed[parts[9]+".drawer_header_top"]=
+            std::to_string(result.drawerHeaderTop);
+        context->observed[parts[9]+".drawer_header_height"]=
+            std::to_string(result.drawerHeaderHeight);
+        context->observed[parts[9]+".drawer_content_top"]=
+            std::to_string(result.drawerContentTop);
+        context->observed[parts[9]+".drawer_content_bottom"]=
+            std::to_string(result.drawerContentBottom);
+        context->observed[parts[9]+".drawer_line_height"]=
+            std::to_string(result.drawerLineHeight);
+        context->observed[parts[9]+".drawer_visible_capacity"]=
+            std::to_string(result.drawerVisibleLineCapacity);
+        context->observed[parts[9]+".drawer_capacity_pixel_fit"]=
+            Step3Bool(result.drawerContentTop +
+                result.drawerVisibleLineCapacity * result.drawerLineHeight <=
+                result.drawerContentBottom);
+        context->observed[parts[9]+".drawer_next_line_clips"]=
+            Step3Bool(result.drawerContentTop +
+                (result.drawerVisibleLineCapacity + 1) * result.drawerLineHeight >
+                result.drawerContentBottom);
+        if(!result.orbs.empty()) context->observed[parts[9]+".orb_diameter"]=std::to_string(result.orbs.front().diameterPhysicalPixels);
+        return true;
+    }
+    if (parts[0] == "layout-warm" && parts.size() == 4) {
+        int iterations=0;
+        if(!parseInt(parts[1],&iterations)) return fail("invalid layout warm count");
+        xvatsim::modules::overlay::AccessoryLayoutInput input;
+        input.scale=std::stof(parts[2]);
+        input.drawerOpen=true;
+        input.cardAnimationProgress=1.0f;
+        input.typography=context->Typography(input.scale);
+        const auto gdiBefore=
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        int available=0;
+        for(int index=0;index<iterations;++index) {
+            const auto layout=
+                xvatsim::modules::overlay::ResolveAccessoryLayout(input);
+            if(layout.status==
+                xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available) {
+                available++;
+            }
+        }
+        const auto gdiAfter=
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto& prefix=parts[3];
+        context->observed[prefix+".iterations"]=std::to_string(iterations);
+        context->observed[prefix+".available"]=std::to_string(available);
+        const auto gdiDelta=Step3GdiCounterDelta(gdiBefore,gdiAfter);
+        ObserveStep3GdiCounters(
+            gdiDelta,
+            prefix,
+            &context->observed);
+        context->observed[prefix+".zero_work_record"]=
+            "iterations="+std::to_string(iterations)+
+            ",gdi="+std::to_string(gdiDelta.measurementCalls)+
+            ",bitmaps="+std::to_string(gdiDelta.bitmapConstructions)+
+            ",graphics="+std::to_string(gdiDelta.graphicsConstructions)+
+            ",fonts="+std::to_string(gdiDelta.fontConstructions);
+        return true;
+    }
+    if (parts[0] == "layout-matrix" && parts.size() == 2) {
+        const int screens[][2]{{1280,720},{1920,1080},{3840,2160}};
+        const float scales[]{0.85f,1.0f,1.35f};
+        int cases=0,available=0,violations=0,boundsPass=0;
+        int capacityCases=0,capacityHeightPass=0,capacityRemainingPass=0;
+        int exactDesignPass=0;
+        int temporaryClampPass=0,intentionalPass=0,restorePass=0;
+        int screenChangeClampPass=0,intentionalAnchorRestorePass=0;
+        for(const auto& screen:screens) for(float scale:scales) for(int edge=0;edge<4;++edge){
+            xvatsim::modules::overlay::AccessoryLayoutInput input;
+            input.screenWidth=screen[0]; input.screenHeight=screen[1]; input.scale=scale;
+            input.drawerOpen=true; input.cardAnimationProgress=1.0f;
+            input.savedClosedAnchorValid=true;
+            input.savedClosedAnchorLeft=screen[0]/2;
+            input.savedClosedAnchorTop=screen[1]/2;
+            input.windowLeft=edge==0 ? -200 : (edge==1 ? screen[0]+200 : screen[0]/2);
+            input.windowTop=edge==2 ? screen[1]+200 : (edge==3 ? -200 : screen[1]/2);
+            const auto result=ResolveStep3Layout(context,input);
+            cases++;
+            if(result.status==xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available) available++; else violations++;
+            const auto rectInside=[&](const xvatsim::modules::overlay::AccessoryRect& rect){
+                return rect.left>=0 && rect.bottom>=0 && rect.right<=screen[0] &&
+                    rect.top<=screen[1] && rect.left<=rect.right && rect.bottom<=rect.top;
+            };
+            bool physicalBounds = result.allPhysicalBoundsInsideScreen &&
+                result.resolvedBounds.left >= 0 && result.resolvedBounds.bottom >= 0 &&
+                result.resolvedBounds.right <= screen[0] && result.resolvedBounds.top <= screen[1] &&
+                rectInside(result.resolvedBounds) && rectInside(result.drawerBounds);
+            for(const auto& orb:result.orbs) physicalBounds=physicalBounds && rectInside(orb.bounds);
+            if (physicalBounds) boundsPass++; else violations++;
+            const bool exactDesign = result.closedDesignWidth==430 &&
+                result.closedDesignHeight==374 && result.openDesignWidth==430 &&
+                result.openDesignHeight==506 && result.orbDiameterDesignPixels==52 &&
+                result.railDesignBounds.top==320 && result.railDesignBounds.bottom==372 &&
+                result.drawerDesignBounds.top==378 && result.drawerDesignBounds.bottom==494 &&
+                result.mainCardToRailGapDesignPixels==2 &&
+                result.interOrbGapDesignPixels==16 &&
+                result.railToDrawerGapDesignPixels==6 &&
+                result.openBottomMarginDesignPixels==12;
+            if(exactDesign) exactDesignPass++; else violations++;
+            if(screen[1]==720 && scale==1.35f) {
+                capacityCases++;
+                if(result.openHeight==683) capacityHeightPass++; else violations++;
+                const int remainingCapacity=screen[1]-result.openHeight;
+                if(remainingCapacity==37 && remainingCapacity>=16) {
+                    capacityRemainingPass++;
+                } else {
+                    violations++;
+                }
+            }
+            const bool temporary = result.temporaryClampApplied &&
+                !result.positionSettingsDirty && !result.intentionalMoveApplied;
+            if (temporary) temporaryClampPass++; else violations++;
+
+            auto intentionalInput = input;
+            intentionalInput.anchorOperation =
+                xvatsim::modules::overlay::AccessoryAnchorOperation::IntentionalMove;
+            const auto intentional=ResolveStep3Layout(context,intentionalInput);
+            const bool intentionalOk = intentional.intentionalMoveApplied &&
+                intentional.positionSettingsDirty;
+            if (intentionalOk) intentionalPass++; else violations++;
+
+            auto closedInput = input;
+            closedInput.drawerOpen = false;
+            closedInput.anchorOperation =
+                xvatsim::modules::overlay::AccessoryAnchorOperation::CloseDrawer;
+            closedInput.windowLeft = result.resolvedLeft;
+            closedInput.windowTop = result.resolvedTop;
+            const auto closed=ResolveStep3Layout(context,closedInput);
+            const int expectedClosedLeft=std::clamp(
+                closedInput.savedClosedAnchorLeft,
+                0,
+                std::max(0,closedInput.screenWidth-closed.closedWidth));
+            const int expectedClosedTop=std::clamp(
+                closedInput.savedClosedAnchorTop,
+                std::min(closed.closedHeight,closedInput.screenHeight),
+                closedInput.screenHeight);
+            const bool restored = closed.closedDimensionsRestored &&
+                closed.closedAnchorRestored && !closed.positionSettingsDirty &&
+                closed.resolvedLeft==expectedClosedLeft &&
+                closed.resolvedTop==expectedClosedTop &&
+                closed.resolvedBounds.right-closed.resolvedBounds.left==closed.closedWidth &&
+                closed.resolvedBounds.top-closed.resolvedBounds.bottom==closed.closedHeight;
+            if (restored) restorePass++; else violations++;
+
+            auto changedScreenInput=closedInput;
+            changedScreenInput.savedClosedAnchorLeft=screen[0]+200;
+            changedScreenInput.savedClosedAnchorTop=screen[1]+200;
+            const auto changedScreen=ResolveStep3Layout(context,changedScreenInput);
+            const bool screenChangedClamped=
+                changedScreen.closedAnchorRestored &&
+                changedScreen.temporaryClampApplied &&
+                !changedScreen.positionSettingsDirty &&
+                changedScreen.allPhysicalBoundsInsideScreen;
+            if(screenChangedClamped) screenChangeClampPass++; else violations++;
+
+            auto intentionalClosedInput=closedInput;
+            intentionalClosedInput.savedClosedAnchorLeft=
+                intentional.restorableClosedAnchorLeft;
+            intentionalClosedInput.savedClosedAnchorTop=
+                intentional.restorableClosedAnchorTop;
+            intentionalClosedInput.windowLeft=intentional.resolvedLeft;
+            intentionalClosedInput.windowTop=intentional.resolvedTop;
+            const auto intentionalClosed=
+                ResolveStep3Layout(context,intentionalClosedInput);
+            const bool intentionalAnchorRestored=
+                intentional.restorableClosedAnchorLeft==intentional.resolvedLeft &&
+                intentional.restorableClosedAnchorTop==intentional.resolvedTop &&
+                intentionalClosed.closedAnchorRestored &&
+                intentionalClosed.resolvedLeft==intentional.restorableClosedAnchorLeft &&
+                intentionalClosed.resolvedTop==intentional.restorableClosedAnchorTop &&
+                !intentionalClosed.positionSettingsDirty;
+            if(intentionalAnchorRestored) intentionalAnchorRestorePass++;
+            else violations++;
+        }
+        context->observed[parts[1]+".cases"]=std::to_string(cases);
+        context->observed[parts[1]+".available_cases"]=std::to_string(available);
+        context->observed[parts[1]+".bounds_pass"]=std::to_string(boundsPass);
+        context->observed[parts[1]+".capacity_cases"]=std::to_string(capacityCases);
+        context->observed[parts[1]+".capacity_height_pass"]=
+            std::to_string(capacityHeightPass);
+        context->observed[parts[1]+".capacity_remaining_pass"]=
+            std::to_string(capacityRemainingPass);
+        context->observed[parts[1]+".exact_design_pass"]=
+            std::to_string(exactDesignPass);
+        context->observed[parts[1]+".temporary_clamp_pass"]=std::to_string(temporaryClampPass);
+        context->observed[parts[1]+".intentional_pass"]=std::to_string(intentionalPass);
+        context->observed[parts[1]+".restore_pass"]=std::to_string(restorePass);
+        context->observed[parts[1]+".screen_change_clamp_pass"]=
+            std::to_string(screenChangeClampPass);
+        context->observed[parts[1]+".intentional_anchor_restore_pass"]=
+            std::to_string(intentionalAnchorRestorePass);
+        context->observed[parts[1]+".violations"]=std::to_string(violations);
+        return true;
+    }
+    if (parts[0] == "anchor-contract" && parts.size() == 2) {
+        using xvatsim::modules::overlay::AccessoryAnchorOperation;
+        using xvatsim::modules::overlay::AccessoryAnchorState;
+        using xvatsim::modules::overlay::AccessoryAnchorUpdateInput;
+        using xvatsim::modules::overlay::AccessoryRect;
+        const auto& prefix = parts[1];
+        int violations = 0;
+        const auto updateAnchor = [context](
+            AccessoryAnchorState* state,
+            AccessoryAnchorOperation operation,
+            bool drawerOpen,
+            int left,
+            int top,
+            int screenWidth,
+            int screenHeight,
+            float scale) {
+            AccessoryAnchorUpdateInput input;
+            input.operation = operation;
+            input.layout.screenWidth = screenWidth;
+            input.layout.screenHeight = screenHeight;
+            input.layout.windowLeft = left;
+            input.layout.windowTop = top;
+            input.layout.scale = scale;
+            input.layout.cardAnimationProgress = 1.0f;
+            input.layout.drawerOpen = drawerOpen;
+            input.layout.typography = context->Typography(scale);
+            return xvatsim::modules::overlay::UpdateAccessoryAnchorState(
+                state, input);
+        };
+        const auto rectTranslated = [](const AccessoryRect& before,
+                                       const AccessoryRect& after,
+                                       int deltaX,
+                                       int deltaY) {
+            return after.left - before.left == deltaX &&
+                after.right - before.right == deltaX &&
+                after.top - before.top == deltaY &&
+                after.bottom - before.bottom == deltaY;
+        };
+        const auto allAttached = [&](const auto& before, const auto& after) {
+            const int deltaX = after.resolvedLeft - before.resolvedLeft;
+            const int deltaY = after.resolvedTop - before.resolvedTop;
+            bool attached =
+                rectTranslated(before.mainCardBounds, after.mainCardBounds,
+                    deltaX, deltaY) &&
+                rectTranslated(before.railBounds, after.railBounds,
+                    deltaX, deltaY) &&
+                before.orbs.size() == after.orbs.size();
+            if (before.drawerBounds.right > before.drawerBounds.left ||
+                after.drawerBounds.right > after.drawerBounds.left) {
+                attached = attached && rectTranslated(
+                    before.drawerBounds, after.drawerBounds, deltaX, deltaY);
+            }
+            for (std::size_t index = 0;
+                 attached && index < before.orbs.size(); ++index) {
+                attached = rectTranslated(
+                    before.orbs[index].bounds,
+                    after.orbs[index].bounds,
+                    deltaX,
+                    deltaY);
+                if (!attached) break;
+                const auto& orb = after.orbs[index];
+                const auto hit = xvatsim::modules::overlay::HitTestAccessoryOrb(
+                    after,
+                    (orb.bounds.left + orb.bounds.right) / 2,
+                    (orb.bounds.top + orb.bounds.bottom) / 2);
+                attached = hit.handled && hit.drawer == orb.drawer;
+            }
+            return attached;
+        };
+
+        int compactScalePass = 0;
+        int sixLinePass = 0;
+        int contentSeparationPass = 0;
+        std::vector<std::string> compactPhysicalSizes;
+        for (const float scale : {0.85f, 1.0f, 1.35f}) {
+            AccessoryAnchorState state;
+            const auto initialized = updateAnchor(
+                &state, AccessoryAnchorOperation::Initialize,
+                false, 300, 700, 1280, 720, scale);
+            const auto opened = updateAnchor(
+                &state, AccessoryAnchorOperation::OpenDrawer,
+                true, initialized.layout.resolvedLeft,
+                initialized.layout.resolvedTop, 1280, 720, scale);
+            const bool compact =
+                initialized.layout.closedDesignWidth == 430 &&
+                initialized.layout.closedDesignHeight == 374 &&
+                opened.layout.openDesignWidth == 430 &&
+                opened.layout.openDesignHeight == 506 &&
+                opened.layout.railDesignBounds.left == 118 &&
+                opened.layout.railDesignBounds.top == 320 &&
+                opened.layout.railDesignBounds.right == 306 &&
+                opened.layout.railDesignBounds.bottom == 372 &&
+                opened.layout.drawerDesignBounds.left == 0 &&
+                opened.layout.drawerDesignBounds.top == 378 &&
+                opened.layout.drawerDesignBounds.right == 430 &&
+                opened.layout.drawerDesignBounds.bottom == 494 &&
+                opened.layout.openBottomMarginDesignPixels == 12 &&
+                opened.layout.railToDrawerGapDesignPixels == 6 &&
+                initialized.layout.resolvedBounds.top -
+                    initialized.layout.resolvedBounds.bottom ==
+                    initialized.layout.closedHeight &&
+                initialized.layout.drawerBounds.left ==
+                    initialized.layout.drawerBounds.right;
+            if (compact) compactScalePass++; else violations++;
+            if (opened.layout.drawerVisibleLineCapacity == 6) {
+                sixLinePass++;
+            } else {
+                violations++;
+            }
+            bool separated = opened.layout.railDesignBounds.top >= 320;
+            for (const auto& orb : opened.layout.orbs) {
+                separated = separated && orb.designBounds.top == 320 &&
+                    orb.designBounds.bottom == 372 &&
+                    orb.designCenter.y == 346;
+            }
+            if (separated) contentSeparationPass++; else violations++;
+            compactPhysicalSizes.push_back(
+                std::to_string(initialized.layout.closedHeight) + "/" +
+                std::to_string(opened.layout.openHeight));
+        }
+
+        AccessoryAnchorState closedDragState;
+        auto closedPrevious = updateAnchor(
+            &closedDragState, AccessoryAnchorOperation::Initialize,
+            false, 300, 900, 1920, 1080, 1.0f);
+        int closedDragSamples = 0;
+        int closedAttachmentPass = 0;
+        for (const auto target : std::array<std::pair<int, int>, 3>{{
+                 {360, 860}, {430, 810}, {520, 760}}}) {
+            const auto moved = updateAnchor(
+                &closedDragState, AccessoryAnchorOperation::IntentionalMove,
+                false, target.first, target.second, 1920, 1080, 1.0f);
+            closedDragSamples++;
+            const bool pass = allAttached(closedPrevious.layout, moved.layout) &&
+                moved.positionSettingsDirty &&
+                closedDragState.currentAnchorLeft == moved.layout.resolvedLeft &&
+                closedDragState.currentAnchorTop == moved.layout.resolvedTop &&
+                closedDragState.savedClosedAnchorLeft == moved.layout.resolvedLeft &&
+                closedDragState.savedClosedAnchorTop == moved.layout.resolvedTop;
+            if (pass) closedAttachmentPass++; else violations++;
+            closedPrevious = moved;
+        }
+        const auto finalClosedLeft = closedPrevious.layout.resolvedLeft;
+        const auto finalClosedTop = closedPrevious.layout.resolvedTop;
+        const auto ordinaryClosed = updateAnchor(
+            &closedDragState, AccessoryAnchorOperation::OrdinaryRefresh,
+            false, finalClosedLeft, finalClosedTop, 1920, 1080, 1.0f);
+        const bool closedReleaseRetained =
+            ordinaryClosed.layout.resolvedLeft == finalClosedLeft &&
+            ordinaryClosed.layout.resolvedTop == finalClosedTop &&
+            !ordinaryClosed.positionSettingsDirty &&
+            !ordinaryClosed.layout.closedAnchorRestored;
+        if (!closedReleaseRetained) violations++;
+        const auto disableRefresh = updateAnchor(
+            &closedDragState, AccessoryAnchorOperation::OrdinaryRefresh,
+            false, finalClosedLeft, finalClosedTop, 1920, 1080, 1.0f);
+        const auto enableRefresh = updateAnchor(
+            &closedDragState, AccessoryAnchorOperation::OrdinaryRefresh,
+            false, finalClosedLeft, finalClosedTop, 1920, 1080, 1.0f);
+        const bool disableEnableRetained =
+            disableRefresh.layout.resolvedLeft == finalClosedLeft &&
+            disableRefresh.layout.resolvedTop == finalClosedTop &&
+            enableRefresh.layout.resolvedLeft == finalClosedLeft &&
+            enableRefresh.layout.resolvedTop == finalClosedTop &&
+            !disableRefresh.positionSettingsDirty &&
+            !enableRefresh.positionSettingsDirty;
+        if (!disableEnableRetained) violations++;
+
+        auto openPrevious = updateAnchor(
+            &closedDragState, AccessoryAnchorOperation::OpenDrawer,
+            true, finalClosedLeft, finalClosedTop, 1920, 1080, 1.0f);
+        int openDragSamples = 0;
+        int openAttachmentPass = 0;
+        for (const auto target : std::array<std::pair<int, int>, 3>{{
+                 {570, 800}, {640, 850}, {710, 900}}}) {
+            const auto moved = updateAnchor(
+                &closedDragState, AccessoryAnchorOperation::IntentionalMove,
+                true, target.first, target.second, 1920, 1080, 1.0f);
+            openDragSamples++;
+            const bool pass = allAttached(openPrevious.layout, moved.layout) &&
+                moved.positionSettingsDirty &&
+                closedDragState.intentionalMoveSinceOpen &&
+                closedDragState.savedClosedAnchorLeft == moved.layout.resolvedLeft &&
+                closedDragState.savedClosedAnchorTop == moved.layout.resolvedTop;
+            if (pass) openAttachmentPass++; else violations++;
+            openPrevious = moved;
+        }
+        const auto closeAfterOpenDrag = updateAnchor(
+            &closedDragState, AccessoryAnchorOperation::CloseDrawer,
+            false, openPrevious.layout.resolvedLeft,
+            openPrevious.layout.resolvedTop, 1920, 1080, 1.0f);
+        const bool openDragReplacedAnchor =
+            closeAfterOpenDrag.explicitClosedAnchorRestored &&
+            closeAfterOpenDrag.layout.resolvedLeft ==
+                openPrevious.layout.resolvedLeft &&
+            closeAfterOpenDrag.layout.resolvedTop ==
+                openPrevious.layout.resolvedTop &&
+            !closeAfterOpenDrag.positionSettingsDirty;
+        if (!openDragReplacedAnchor) violations++;
+
+        AccessoryAnchorState temporaryClampState;
+        const auto preOpen = updateAnchor(
+            &temporaryClampState, AccessoryAnchorOperation::Initialize,
+            false, 400, 520, 1280, 720, 1.35f);
+        const auto clampedOpen = updateAnchor(
+            &temporaryClampState, AccessoryAnchorOperation::OpenDrawer,
+            true, preOpen.layout.resolvedLeft, preOpen.layout.resolvedTop,
+            1280, 720, 1.35f);
+        const auto clampedOpenRefresh = updateAnchor(
+            &temporaryClampState, AccessoryAnchorOperation::OrdinaryRefresh,
+            true, clampedOpen.layout.resolvedLeft,
+            clampedOpen.layout.resolvedTop, 1280, 720, 1.35f);
+        const bool temporaryClampSurvivedRefresh =
+            temporaryClampState.temporaryOpenClampApplied &&
+            clampedOpenRefresh.layout.resolvedLeft ==
+                clampedOpen.layout.resolvedLeft &&
+            clampedOpenRefresh.layout.resolvedTop ==
+                clampedOpen.layout.resolvedTop;
+        const auto restoredClose = updateAnchor(
+            &temporaryClampState, AccessoryAnchorOperation::CloseDrawer,
+            false, clampedOpenRefresh.layout.resolvedLeft,
+            clampedOpenRefresh.layout.resolvedTop, 1280, 720, 1.35f);
+        const bool temporaryClampRestored =
+            clampedOpen.savedClosedAnchorCaptured &&
+            clampedOpen.temporaryOpenClampApplied &&
+            temporaryClampSurvivedRefresh &&
+            preOpen.layout.resolvedTop == 520 &&
+            clampedOpen.layout.resolvedTop == 683 &&
+            restoredClose.explicitClosedAnchorRestored &&
+            restoredClose.layout.resolvedLeft == preOpen.layout.resolvedLeft &&
+            restoredClose.layout.resolvedTop == preOpen.layout.resolvedTop &&
+            !restoredClose.positionSettingsDirty;
+        if (!temporaryClampRestored) violations++;
+
+        AccessoryAnchorState screenClampState;
+        updateAnchor(&screenClampState, AccessoryAnchorOperation::Initialize,
+            false, 1400, 900, 1920, 1080, 1.0f);
+        const auto technicalClamp = updateAnchor(
+            &screenClampState, AccessoryAnchorOperation::ScreenBoundsChanged,
+            false, 1400, 900, 1280, 720, 1.0f);
+        const auto afterTechnicalRefresh = updateAnchor(
+            &screenClampState, AccessoryAnchorOperation::OrdinaryRefresh,
+            false, technicalClamp.layout.resolvedLeft,
+            technicalClamp.layout.resolvedTop, 1280, 720, 1.0f);
+        const bool technicalClampPass =
+            technicalClamp.layout.temporaryClampApplied &&
+            !technicalClamp.positionSettingsDirty &&
+            screenClampState.savedClosedAnchorLeft ==
+                technicalClamp.layout.resolvedLeft &&
+            screenClampState.savedClosedAnchorTop ==
+                technicalClamp.layout.resolvedTop &&
+            afterTechnicalRefresh.layout.resolvedLeft ==
+                technicalClamp.layout.resolvedLeft &&
+            afterTechnicalRefresh.layout.resolvedTop ==
+                technicalClamp.layout.resolvedTop &&
+            !afterTechnicalRefresh.layout.closedAnchorRestored;
+        if (!technicalClampPass) violations++;
+
+        xvatsim::brain::BrainOwnedRuntimeState brainState;
+        xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput historyInput;
+        historyInput.drawer = xvatsim::brain::BrainOwnedAccessoryDrawerId::Metar;
+        historyInput.stableKey = "TRANSLATION";
+        historyInput.title = "Translation proof";
+        historyInput.body = "Texture-local content remains unchanged.";
+        const auto accepted =
+            xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(
+                &brainState, historyInput);
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest selection;
+        selection.drawer = xvatsim::brain::BrainOwnedAccessoryDrawerId::Metar;
+        selection.requestSequence = 1;
+        const auto selected =
+            xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+                &brainState, selection);
+        AccessoryAnchorState translationState;
+        const auto translationClosed = updateAnchor(
+            &translationState, AccessoryAnchorOperation::Initialize,
+            false, 300, 900, 1920, 1080, 1.0f);
+        const auto translationOpen = updateAnchor(
+            &translationState, AccessoryAnchorOperation::OpenDrawer,
+            true, translationClosed.layout.resolvedLeft,
+            translationClosed.layout.resolvedTop, 1920, 1080, 1.0f);
+        const auto presentation =
+            xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+                &brainState, 1, nullptr);
+        xvatsim::modules::overlay::AccessoryPresentationState presenter;
+        xvatsim::modules::overlay::AccessoryPresentationUpdateInput warmInput;
+        warmInput.presentation = presentation;
+        warmInput.layout = translationOpen.layout;
+        warmInput.preparedPlan = Step3PreparePresentationPlan(
+            context, presentation, translationOpen.layout);
+        warmInput.mainCardProductionSignature = "translation-main";
+        warmInput.measurementContext = context->measurementContext;
+        const auto warm = xvatsim::modules::overlay::UpdateAccessoryPresentation(
+            &presenter, warmInput);
+        const auto railSignature = presenter.railRenderSignature;
+        const auto drawerSignature = presenter.drawerRenderSignature;
+        const auto snapshotIdentity = presenter.activeSnapshotIdentity;
+        const auto gdiBefore =
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto translated = updateAnchor(
+            &translationState, AccessoryAnchorOperation::IntentionalMove,
+            true, 480, 780, 1920, 1080, 1.0f);
+        auto translatedInput = warmInput;
+        translatedInput.layout = translated.layout;
+        const auto translatedUpdate =
+            xvatsim::modules::overlay::UpdateAccessoryPresentation(
+                &presenter, translatedInput);
+        const auto gdiAfter =
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto gdiDelta = Step3GdiCounterDelta(gdiBefore, gdiAfter);
+        const auto& delta = translatedUpdate.delta;
+        const bool translationZeroWork = accepted.accepted &&
+            selected.action ==
+                xvatsim::brain::BrainOwnedAccessoryDrawerAction::Opened &&
+            warm.delta.railRasterRequests == 1 &&
+            warm.delta.drawerRasterRequests == 1 &&
+            allAttached(translationOpen.layout, translated.layout) &&
+            delta.historyVisits == 0 && delta.entryCopies == 0 &&
+            delta.wrapVisits == 0 && delta.mainCardRasterRequests == 0 &&
+            delta.railRasterRequests == 0 &&
+            delta.drawerRasterRequests == 0 && delta.uploadRequests == 0 &&
+            gdiDelta.measurementCalls == 0 &&
+            gdiDelta.bitmapConstructions == 0 &&
+            gdiDelta.graphicsConstructions == 0 &&
+            gdiDelta.fontConstructions == 0 &&
+            presenter.railRenderSignature == railSignature &&
+            presenter.drawerRenderSignature == drawerSignature &&
+            presenter.activeSnapshotIdentity == snapshotIdentity &&
+            presenter.layoutGeneration == 1;
+        if (!translationZeroWork) violations++;
+
+        context->observed[prefix + ".compact_scale_pass"] =
+            std::to_string(compactScalePass);
+        context->observed[prefix + ".compact_physical_sizes"] =
+            JoinCsv(compactPhysicalSizes);
+        context->observed[prefix + ".six_line_pass"] =
+            std::to_string(sixLinePass);
+        context->observed[prefix + ".content_separation_pass"] =
+            std::to_string(contentSeparationPass);
+        context->observed[prefix + ".closed_drag_samples"] =
+            std::to_string(closedDragSamples);
+        context->observed[prefix + ".closed_attachment_pass"] =
+            std::to_string(closedAttachmentPass);
+        context->observed[prefix + ".closed_release_retained"] =
+            Step3Bool(closedReleaseRetained);
+        context->observed[prefix + ".ordinary_refresh_retained"] =
+            Step3Bool(closedReleaseRetained);
+        context->observed[prefix + ".disable_enable_retained"] =
+            Step3Bool(disableEnableRetained);
+        context->observed[prefix + ".open_drag_samples"] =
+            std::to_string(openDragSamples);
+        context->observed[prefix + ".open_attachment_pass"] =
+            std::to_string(openAttachmentPass);
+        context->observed[prefix + ".open_drag_replaced_anchor"] =
+            Step3Bool(openDragReplacedAnchor);
+        context->observed[prefix + ".temporary_clamp_restored"] =
+            Step3Bool(temporaryClampRestored);
+        context->observed[prefix + ".technical_clamp_pass"] =
+            Step3Bool(technicalClampPass);
+        context->observed[prefix + ".translation_zero_work"] =
+            Step3Bool(translationZeroWork);
+        context->observed[prefix + ".translation_history_visits"] =
+            std::to_string(delta.historyVisits);
+        context->observed[prefix + ".translation_copies"] =
+            std::to_string(delta.entryCopies);
+        context->observed[prefix + ".translation_wraps"] =
+            std::to_string(delta.wrapVisits);
+        context->observed[prefix + ".translation_rail"] =
+            std::to_string(delta.railRasterRequests);
+        context->observed[prefix + ".translation_drawer"] =
+            std::to_string(delta.drawerRasterRequests);
+        context->observed[prefix + ".translation_uploads"] =
+            std::to_string(delta.uploadRequests);
+        context->observed[prefix + ".translation_gdi"] =
+            std::to_string(gdiDelta.measurementCalls);
+        context->observed[prefix + ".violations"] =
+            std::to_string(violations);
+        return true;
+    }
+    if (parts[0] == "hit-matrix" && parts.size() == 2) {
+        const float scales[]{0.85f,1.0f,1.35f};
+        int layouts=0,visibleOrbs=0,centerHits=0,edgeHits=0,outsideMisses=0;
+        int gapMisses=0,drawerIdentityMatches=0,labelFits=0,openFits=0;
+        int designDiameterPass=0,physicalDiameterPass=0,coordinatePass=0;
+        int labelMeasurementPass=0,indicatorMeasurementPass=0;
+        std::vector<std::string> physicalDiameters;
+        std::vector<std::string> labelMeasurements;
+        std::vector<std::string> indicatorMeasurements;
+        for(float scale:scales){
+            xvatsim::modules::overlay::AccessoryLayoutInput input;
+            input.scale=scale; input.cardAnimationProgress=1.0f;
+            const auto layout=ResolveStep3Layout(context,input);
+            if(layout.status==xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available) layouts++;
+            if(layout.orbDiameterDesignPixels==52) designDiameterPass++;
+            const int expectedPhysical=static_cast<int>(std::lround(52.0f*scale));
+            physicalDiameters.push_back(layout.orbs.empty()
+                ? "0"
+                : std::to_string(layout.orbs.front().diameterPhysicalPixels));
+            bool layoutPhysicalPass=layout.orbs.size()==3;
+            bool layoutCoordinatePass=layout.orbs.size()==3 &&
+                layout.railDesignBounds.top==320 && layout.railDesignBounds.bottom==372 &&
+                layout.drawerDesignBounds.top==378 && layout.drawerDesignBounds.bottom==494 &&
+                layout.interOrbGapDesignPixels==16;
+            for(const auto& orb:layout.orbs){
+                if(orb.visible) visibleOrbs++;
+                if(orb.labelFits) labelFits++;
+                if(orb.openIndicatorFits) openFits++;
+                const bool labelMeasured=
+                    orb.labelMeasuredWidth>0 && orb.labelMeasuredHeight>0 &&
+                    orb.labelMeasuredWidth<=orb.labelAvailableWidth &&
+                    orb.labelMeasuredHeight<=orb.labelAvailableHeight;
+                const bool indicatorMeasured=
+                    orb.openIndicatorMeasuredWidth>0 &&
+                    orb.openIndicatorMeasuredHeight>0 &&
+                    orb.openIndicatorMeasuredWidth<=orb.openIndicatorAvailableWidth &&
+                    orb.openIndicatorMeasuredHeight<=orb.openIndicatorAvailableHeight;
+                if(labelMeasured) labelMeasurementPass++;
+                if(indicatorMeasured) indicatorMeasurementPass++;
+                std::ostringstream labelRecord;
+                labelRecord << scale << ':' << Step3Drawer(orb.drawer) << '='
+                    << orb.labelMeasuredWidth << 'x' << orb.labelMeasuredHeight
+                    << '/' << orb.labelAvailableWidth << 'x'
+                    << orb.labelAvailableHeight;
+                labelMeasurements.push_back(labelRecord.str());
+                std::ostringstream indicatorRecord;
+                indicatorRecord << scale << ':' << Step3Drawer(orb.drawer) << '='
+                    << orb.openIndicatorMeasuredWidth << 'x'
+                    << orb.openIndicatorMeasuredHeight << '/'
+                    << orb.openIndicatorAvailableWidth << 'x'
+                    << orb.openIndicatorAvailableHeight;
+                indicatorMeasurements.push_back(indicatorRecord.str());
+                const int x=(orb.bounds.left+orb.bounds.right)/2;
+                const int y=(orb.bounds.top+orb.bounds.bottom)/2;
+                const int radius=orb.diameterPhysicalPixels/2;
+                const auto center=xvatsim::modules::overlay::HitTestAccessoryOrb(layout,x,y);
+                const auto edge=xvatsim::modules::overlay::HitTestAccessoryOrb(layout,x+radius-1,y);
+                const auto outside=xvatsim::modules::overlay::HitTestAccessoryOrb(layout,x+radius+1,y);
+                if(center.handled) centerHits++;
+                if(edge.handled) edgeHits++;
+                if(!outside.handled) outsideMisses++;
+                if(center.handled && center.drawer==orb.drawer) drawerIdentityMatches++;
+                layoutPhysicalPass=layoutPhysicalPass &&
+                    orb.diameterPhysicalPixels==expectedPhysical;
+            }
+            if(layout.orbs.size()==3) {
+                const int expectedLeft[]{118,186,254};
+                const int expectedRight[]{170,238,306};
+                const int expectedCenterX[]{144,212,280};
+                for(std::size_t index=0;index<3;++index) {
+                    const auto& orb=layout.orbs[index];
+                    layoutCoordinatePass=layoutCoordinatePass &&
+                        orb.designBounds.left==expectedLeft[index] &&
+                        orb.designBounds.right==expectedRight[index] &&
+                        orb.designBounds.top==320 && orb.designBounds.bottom==372 &&
+                        orb.designCenter.x==expectedCenterX[index] &&
+                        orb.designCenter.y==346;
+                }
+            }
+            if(layoutPhysicalPass) physicalDiameterPass++;
+            if(layoutCoordinatePass) coordinatePass++;
+            for(std::size_t index=1;index<layout.orbs.size();++index){
+                const int gapX=(layout.orbs[index-1].bounds.right+layout.orbs[index].bounds.left)/2;
+                const int gapY=(layout.orbs[index].bounds.top+layout.orbs[index].bounds.bottom)/2;
+                if(!xvatsim::modules::overlay::HitTestAccessoryOrb(layout,gapX,gapY).handled) gapMisses++;
+            }
+        }
+        context->observed[parts[1]+".layouts"]=std::to_string(layouts);
+        context->observed[parts[1]+".visible_orbs"]=std::to_string(visibleOrbs);
+        context->observed[parts[1]+".center_hits"]=std::to_string(centerHits);
+        context->observed[parts[1]+".edge_hits"]=std::to_string(edgeHits);
+        context->observed[parts[1]+".outside_misses"]=std::to_string(outsideMisses);
+        context->observed[parts[1]+".gap_misses"]=std::to_string(gapMisses);
+        context->observed[parts[1]+".identity_matches"]=std::to_string(drawerIdentityMatches);
+        context->observed[parts[1]+".design_diameter_pass"]=
+            std::to_string(designDiameterPass);
+        context->observed[parts[1]+".physical_diameter_pass"]=
+            std::to_string(physicalDiameterPass);
+        context->observed[parts[1]+".physical_diameters"]=JoinCsv(physicalDiameters);
+        context->observed[parts[1]+".coordinate_pass"]=
+            std::to_string(coordinatePass);
+        context->observed[parts[1]+".label_fits"]=std::to_string(labelFits);
+        context->observed[parts[1]+".open_fits"]=std::to_string(openFits);
+        context->observed[parts[1]+".label_measurement_pass"]=
+            std::to_string(labelMeasurementPass);
+        context->observed[parts[1]+".indicator_measurement_pass"]=
+            std::to_string(indicatorMeasurementPass);
+        context->observed[parts[1]+".label_measurement_record"]=
+            JoinCsv(labelMeasurements);
+        context->observed[parts[1]+".indicator_measurement_record"]=
+            JoinCsv(indicatorMeasurements);
+        return true;
+    }
+    if (parts[0] == "hit" && parts.size() == 5) {
+        int x=0,y=0; if(!parseInt(parts[2],&x)||!parseInt(parts[3],&y)) return fail("invalid hit point");
+        auto found=context->layouts.find(parts[1]); if(found==context->layouts.end()) return fail("layout missing");
+        auto result=xvatsim::modules::overlay::HitTestAccessoryOrb(found->second,x,y);
+        context->hits[parts[4]]=result;
+        context->observed[parts[4]+".status"]=Step3Status(result.status);
+        context->observed[parts[4]+".handled"]=Step3Bool(result.handled);
+        context->observed[parts[4]+".drawer"]=Step3Drawer(result.drawer);
+        return true;
+    }
+    if (parts[0] == "hit-orb" && parts.size() == 5) {
+        const auto layout=context->layouts.find(parts[1]);
+        if(layout==context->layouts.end()) return fail("layout missing");
+        const auto drawer=Step3DrawerFromToken(parts[2]);
+        const auto orb=std::find_if(
+            layout->second.orbs.begin(),layout->second.orbs.end(),
+            [&](const auto& candidate){return candidate.drawer==drawer;});
+        if(orb==layout->second.orbs.end()) {
+            context->hits[parts[4]]={};
+            context->observed[parts[4]+".status"]="unavailable";
+            context->observed[parts[4]+".handled"]="false";
+            context->observed[parts[4]+".drawer"]="NONE";
+            return true;
+        }
+        const int centerX=(orb->bounds.left+orb->bounds.right)/2;
+        const int centerY=(orb->bounds.top+orb->bounds.bottom)/2;
+        const int radius=orb->diameterPhysicalPixels/2;
+        int x=centerX;
+        if(parts[3]=="edge") x=centerX+radius-1;
+        else if(parts[3]=="outside") x=centerX+radius+1;
+        const auto result=xvatsim::modules::overlay::HitTestAccessoryOrb(
+            layout->second,x,centerY);
+        context->hits[parts[4]]=result;
+        context->observed[parts[4]+".status"]=Step3Status(result.status);
+        context->observed[parts[4]+".handled"]=Step3Bool(result.handled);
+        context->observed[parts[4]+".drawer"]=Step3Drawer(result.drawer);
+        return true;
+    }
+    if (parts[0] == "wrap" && parts.size() == 3) {
+        xvatsim::modules::overlay::AccessoryTextLayoutInput input;
+        if(parts[1]=="normal") input.text="METAR data is not enabled in Step 3.";
+        else if(parts[1]=="words") input.text=
+            "Measured wrapping keeps complete words together whenever the next word "
+            "would exceed the available drawer width.";
+        else if(parts[1]=="whitespace") input.text="A  B\r\nC\tD";
+        else if(parts[1]=="token") input.text=std::string(256,'A');
+        else if(parts[1]=="long") input.text=std::string(4096,'L');
+        else input.text=std::string(8189,'Z') + "\xE2\x82\xAC" + std::string(1000,'Q');
+        input.contentWidth=340; input.maxRetainedBytes=8192;
+        auto result=xvatsim::modules::overlay::BuildAccessoryTextLayout(
+            context->measurementContext,input);
+        context->observed[parts[2]+".status"]=Step3Status(result.status);
+        context->observed[parts[2]+".fits"]=Step3Bool(result.allLinesFit);
+        context->observed[parts[2]+".measurement_available"]=
+            Step3Bool(result.measurementAvailable);
+        context->observed[parts[2]+".word_wrapped"]=
+            Step3Bool(result.usedWordWrapping);
+        context->observed[parts[2]+".character_fallback"]=
+            Step3Bool(result.usedCharacterFallback);
+        context->observed[parts[2]+".maximum_measured_width"]=
+            std::to_string(result.maximumMeasuredLineWidth);
+        context->observed[parts[2]+".measured_within_width"]=Step3Bool(
+            result.maximumMeasuredLineWidth<=input.contentWidth);
+        context->observed[parts[2]+".limited"]=Step3Bool(result.contentLimited);
+        context->observed[parts[2]+".valid_utf8"]=Step3Bool(result.validUtf8);
+        context->observed[parts[2]+".valid_boundary"]=
+            Step3Bool(result.endedAtValidUtf8Boundary &&
+                      Step3IsValidUtf8(result.reconstructedText));
+        context->observed[parts[2]+".marker_visible"]=
+            Step3Bool(result.contentLimitedMarkerVisible &&
+                      result.reconstructedText.find("CONTENT LIMITED") != std::string::npos);
+        context->observed[parts[2]+".retained_bytes"]=
+            std::to_string(result.retainedBytes);
+        context->observed[parts[2]+".reconstructed_exact"]=
+            Step3Bool(result.reconstructedText == input.text);
+        const std::string permittedNormalized = parts[1]=="whitespace"
+            ? std::string("A  B\nC\tD")
+            : input.text;
+        context->observed[parts[2]+".normalization_contract"]=
+            Step3Bool(result.reconstructedText == permittedNormalized);
+        context->observed[parts[2]+".reconstructed_matches_lines"]=
+            Step3Bool(
+                Step3RemoveLineFeeds(result.reconstructedText)==
+                Step3ConcatenateLines(result.lines));
+        context->observed[parts[2]+".line_count"]=std::to_string(result.lines.size());
+        context->observed[parts[2]+".duration_us"]=
+            std::to_string(result.elapsedMicroseconds);
+        context->observed[parts[2]+".within_16_7ms"]=
+            Step3Bool(result.elapsedMicroseconds<=16700);
+        context->observed[parts[2]+".timing_record"]=
+            std::to_string(result.elapsedMicroseconds)+"us";
+        context->observed[parts[2]+".final_marker"]=result.finalMarker;
+        return true;
+    }
+    if (parts[0] == "wrap-measurement-matrix" && parts.size() == 2) {
+        const float scales[]{0.85f,1.0f,1.35f};
+        const std::string words=
+            "Measured wrapping keeps complete words together whenever the next word "
+            "would exceed the available drawer width.";
+        const std::string token(256,'A');
+        int availableCases=0,wordFitCases=0,wordWrapCases=0;
+        int tokenFitCases=0,tokenFallbackCases=0,violations=0;
+        std::vector<std::string> records;
+        for(const auto scale:scales) {
+            const int contentWidth=static_cast<int>(std::lround(340.0f*scale));
+            xvatsim::modules::overlay::AccessoryTextLayoutInput wordInput;
+            wordInput.text=words;
+            wordInput.contentWidth=contentWidth;
+            wordInput.maxRetainedBytes=8192;
+            wordInput.scale=scale;
+            wordInput.fontRole=
+                xvatsim::modules::overlay::AccessoryFontRole::DrawerBody;
+            const auto wordResult=
+                xvatsim::modules::overlay::BuildAccessoryTextLayout(
+                    context->measurementContext,wordInput);
+            auto tokenInput=wordInput;
+            tokenInput.text=token;
+            const auto tokenResult=
+                xvatsim::modules::overlay::BuildAccessoryTextLayout(
+                    context->measurementContext,tokenInput);
+            const bool available=
+                wordResult.measurementAvailable && tokenResult.measurementAvailable;
+            const bool wordFit=wordResult.allLinesFit &&
+                wordResult.maximumMeasuredLineWidth<=contentWidth;
+            const bool tokenFit=tokenResult.allLinesFit &&
+                tokenResult.maximumMeasuredLineWidth<=contentWidth;
+            if(available) availableCases++; else violations++;
+            if(wordFit) wordFitCases++; else violations++;
+            if(wordResult.usedWordWrapping) wordWrapCases++; else violations++;
+            if(tokenFit) tokenFitCases++; else violations++;
+            if(tokenResult.usedCharacterFallback) tokenFallbackCases++;
+            else violations++;
+            std::ostringstream record;
+            record << scale << ":words="
+                   << wordResult.maximumMeasuredLineWidth << '/' << contentWidth
+                   << ":token=" << tokenResult.maximumMeasuredLineWidth
+                   << '/' << contentWidth;
+            records.push_back(record.str());
+        }
+        const auto& prefix=parts[1];
+        context->observed[prefix+".cases"]="3";
+        context->observed[prefix+".available_cases"]=
+            std::to_string(availableCases);
+        context->observed[prefix+".word_fit_cases"]=
+            std::to_string(wordFitCases);
+        context->observed[prefix+".word_wrap_cases"]=
+            std::to_string(wordWrapCases);
+        context->observed[prefix+".token_fit_cases"]=
+            std::to_string(tokenFitCases);
+        context->observed[prefix+".token_fallback_cases"]=
+            std::to_string(tokenFallbackCases);
+        context->observed[prefix+".violations"]=std::to_string(violations);
+        context->observed[prefix+".measurement_record"]=JoinCsv(records);
+        return true;
+    }
+    if (parts[0] == "wrap-performance-matrix" && parts.size() == 2) {
+        const auto fillExact=[](
+            const std::string& pattern,
+            std::size_t bytes,
+            const std::string& tail=std::string{}) {
+            std::string value;
+            value.reserve(bytes);
+            const auto bodyBytes=bytes-tail.size();
+            while(value.size()+pattern.size()<=bodyBytes) value+=pattern;
+            while(value.size()<bodyBytes) value.push_back('X');
+            value+=tail;
+            return value;
+        };
+        std::vector<std::string> inputs{
+            fillExact("W",8192),
+            fillExact("M",8192),
+            fillExact("Q",8192),
+            fillExact("i",8192),
+            fillExact("l",8192),
+            fillExact(".",8192),
+            fillExact("1",8192),
+            fillExact("WiM1",8192),
+            fillExact("Ab9Z",8192),
+            fillExact(".,;!",8192),
+            fillExact("Wili",8192),
+            fillExact("Q1iM",8192),
+            fillExact("A",8192,"X"),
+            fillExact("A",8192,"Y"),
+            fillExact("B",8192,"Z"),
+            fillExact("B",8192,"Q"),
+            fillExact("\xC3\xA9",8192),
+            fillExact("\xE2\x82\xAC",8192,"XX"),
+            fillExact("\xF0\x9F\x9B\xA9",8192),
+            fillExact("W\xC3\xA9\xE2\x82\xAC",8192,"Z")};
+        int validInputs=0,fitPass=0,reconstructionPass=0;
+        int fallbackPass=0,withinPass=0;
+        std::vector<std::uint64_t> durations;
+        std::vector<std::string> durationRecords;
+        for(std::size_t index=0;index<inputs.size();++index) {
+            xvatsim::modules::overlay::AccessoryTextLayoutInput input;
+            input.text=inputs[index];
+            input.contentWidth=340;
+            input.maxRetainedBytes=8192;
+            input.scale=1.0f;
+            input.fontRole=
+                xvatsim::modules::overlay::AccessoryFontRole::DrawerBody;
+            const auto result=
+                xvatsim::modules::overlay::BuildAccessoryTextLayout(
+                    context->measurementContext,input);
+            if(Step3IsValidUtf8(input.text) && input.text.size()==8192) {
+                validInputs++;
+            }
+            if(result.allLinesFit && result.maximumMeasuredLineWidth<=340) {
+                fitPass++;
+            }
+            if(result.reconstructedText==input.text &&
+                Step3ConcatenateLines(result.lines)==input.text) {
+                reconstructionPass++;
+            }
+            if(result.usedCharacterFallback) fallbackPass++;
+            if(result.elapsedMicroseconds<=16700) withinPass++;
+            durations.push_back(result.elapsedMicroseconds);
+            durationRecords.push_back(
+                std::to_string(index+1)+"="+
+                std::to_string(result.elapsedMicroseconds)+"us");
+        }
+        auto sortedDurations=durations;
+        std::sort(sortedDurations.begin(),sortedDurations.end());
+        const auto percentile=[&](double fraction) {
+            const auto rank=static_cast<std::size_t>(
+                std::ceil(fraction*static_cast<double>(sortedDurations.size())));
+            return sortedDurations[std::max<std::size_t>(1,rank)-1];
+        };
+        const auto& prefix=parts[1];
+        context->observed[prefix+".count"]=std::to_string(inputs.size());
+        context->observed[prefix+".distinct_count"]=std::to_string(
+            std::unordered_set<std::string>(inputs.begin(),inputs.end()).size());
+        context->observed[prefix+".valid_inputs"]=std::to_string(validInputs);
+        context->observed[prefix+".fit_pass"]=std::to_string(fitPass);
+        context->observed[prefix+".reconstruction_pass"]=
+            std::to_string(reconstructionPass);
+        context->observed[prefix+".fallback_pass"]=
+            std::to_string(fallbackPass);
+        context->observed[prefix+".within_pass"]=std::to_string(withinPass);
+        context->observed[prefix+".p50_us"]=std::to_string(percentile(0.50));
+        context->observed[prefix+".p95_us"]=std::to_string(percentile(0.95));
+        context->observed[prefix+".maximum_us"]=
+            std::to_string(sortedDurations.back());
+        context->observed[prefix+".timing_record"]=
+            JoinCsv(durationRecords)+",p50="+
+            context->observed[prefix+".p50_us"]+"us,p95="+
+            context->observed[prefix+".p95_us"]+"us,max="+
+            context->observed[prefix+".maximum_us"]+"us";
+        return true;
+    }
+    if (parts[0] == "history-layout" && parts.size() == 4) {
+        const auto found=context->snapshots.find(parts[1]);
+        const auto layout=context->layouts.find(parts[2]);
+        if(found==context->snapshots.end() || found->second.snapshot==nullptr) {
+            context->observed[parts[3]+".status"]="unavailable";
+            context->observed[parts[3]+".drawer"]="NONE";
+            context->observed[parts[3]+".keys"]="";
+            context->observed[parts[3]+".titles"]="";
+            context->observed[parts[3]+".bodies"]="";
+            context->observed[parts[3]+".sequences"]="";
+            context->observed[parts[3]+".maximum_offset"]="0";
+            context->observed[parts[3]+".final_marker"]="";
+            context->observed[parts[3]+".marker_owned"]="false";
+            return true;
+        }
+        if(layout==context->layouts.end()) return fail("history layout geometry missing");
+        const auto result=xvatsim::modules::overlay::BuildAccessoryHistoryLayout(
+            context->measurementContext,*found->second.snapshot,layout->second);
+        context->observed[parts[3]+".status"]=Step3Status(result.status);
+        context->observed[parts[3]+".drawer"]=Step3Drawer(result.drawer);
+        context->observed[parts[3]+".keys"]=JoinCsv(result.renderedEntryKeys);
+        context->observed[parts[3]+".titles"]=JoinCsv(result.renderedEntryTitles);
+        context->observed[parts[3]+".bodies"]=JoinCsv(result.renderedEntryBodies);
+        context->observed[parts[3]+".pairing_intact"]=Step3Bool(
+            result.renderedEntryKeys.size()==result.renderedEntryTitles.size() &&
+            result.renderedEntryKeys.size()==result.renderedEntryBodies.size() &&
+            result.renderedEntryKeys.size()==result.renderedTitleLines.size() &&
+            result.renderedEntryKeys.size()==result.renderedBodyLines.size());
+        bool titleMarkerVisible=false;
+        std::size_t measuredTitleLines=0;
+        std::size_t measuredBodyLines=0;
+        for(const auto& lines:result.renderedTitleLines) {
+            measuredTitleLines+=lines.size();
+            titleMarkerVisible=titleMarkerVisible ||
+                Step3ConcatenateLines(lines).find("CONTENT LIMITED")!=
+                    std::string::npos;
+        }
+        for(const auto& lines:result.renderedBodyLines) {
+            measuredBodyLines+=lines.size();
+        }
+        context->observed[parts[3]+".title_marker_visible"]=
+            Step3Bool(titleMarkerVisible);
+        context->observed[parts[3]+".title_line_count"]=
+            std::to_string(measuredTitleLines);
+        context->observed[parts[3]+".body_line_count"]=
+            std::to_string(measuredBodyLines);
+        std::vector<std::string> sequences;
+        for(const auto value:result.renderedAcceptedSequences) {
+            sequences.push_back(std::to_string(value));
+        }
+        context->observed[parts[3]+".sequences"]=JoinCsv(sequences);
+        context->observed[parts[3]+".maximum_offset"]=std::to_string(result.maximumOffset);
+        context->observed[parts[3]+".visible_capacity"]=
+            std::to_string(result.visibleLineCapacity);
+        context->observed[parts[3]+".total_lines"]=
+            std::to_string(result.totalScrollableLineCount);
+        context->observed[parts[3]+".capacity_matches_layout"]=Step3Bool(
+            result.visibleLineCapacity==layout->second.drawerVisibleLineCapacity);
+        context->observed[parts[3]+".all_wrapped_lines_fit"]=
+            Step3Bool(result.allWrappedLinesFit);
+        context->observed[parts[3]+".final_marker"]=result.finalMarker;
+        context->observed[parts[3]+".marker_owned"]=
+            Step3Bool(result.finalMarkerBelongsToSelectedHistory);
+        return true;
+    }
+    if (parts[0] == "wheel-point" && parts.size() == 7) {
+        int clicks=0,offset=0,maximum=0;
+        try { clicks=std::stoi(parts[3]); } catch (...) { return fail("invalid wheel clicks"); }
+        if(!parseInt(parts[4],&offset)||!parseInt(parts[5],&maximum)) {
+            return fail("invalid wheel input");
+        }
+        const auto layout=context->layouts.find(parts[1]);
+        if(layout==context->layouts.end()) return fail("wheel layout missing");
+        xvatsim::modules::overlay::AccessoryWheelInput input;
+        input.layout=layout->second;
+        const auto center=[](const auto& rect){
+            return std::pair<int,int>{(rect.left+rect.right)/2,(rect.top+rect.bottom)/2};
+        };
+        std::pair<int,int> point;
+        if(parts[2]=="drawer") point=center(layout->second.drawerBounds);
+        else if(parts[2]=="main") point=center(layout->second.mainCardBounds);
+        else point={layout->second.resolvedBounds.right+1,layout->second.resolvedBounds.top+1};
+        input.pointerX=point.first;
+        input.pointerY=point.second;
+        input.wheelClicks=clicks;
+        input.drawerOffset=offset;
+        input.drawerMaximumOffset=maximum;
+        input.mainCardOffset=offset;
+        input.mainCardMaximumOffset=maximum;
+        auto result=xvatsim::modules::overlay::ApplyAccessoryWheel(input);
+        context->observed[parts[6]+".status"]=Step3Status(result.status);
+        context->observed[parts[6]+".scope"]=Step3WheelScope(result.scope);
+        context->observed[parts[6]+".handled"]=Step3Bool(result.handled);
+        context->observed[parts[6]+".drawer_changed"]=Step3Bool(result.drawerChanged);
+        context->observed[parts[6]+".main_changed"]=Step3Bool(result.mainCardChanged);
+        context->observed[parts[6]+".raster"]=Step3Bool(result.accessoryRasterRequested);
+        context->observed[parts[6]+".drawer_offset"]=std::to_string(result.drawerOffset);
+        context->observed[parts[6]+".main_offset"]=std::to_string(result.mainCardOffset);
+        context->observed[parts[6]+".pointer_x"]=std::to_string(input.pointerX);
+        context->observed[parts[6]+".pointer_y"]=std::to_string(input.pointerY);
+        return true;
+    }
+    if (parts[0] == "perf-new" && parts.size() == 3) {
+        int epoch=0;
+        if(!parseInt(parts[2],&epoch) || epoch==0) return fail("invalid performance epoch");
+        auto collector=std::make_unique<
+            xvatsim::modules::overlay::AccessoryPerformanceCollector>();
+        collector->ResetForNewProcess(static_cast<std::uint64_t>(epoch));
+        context->performanceCollectors[parts[1]]=std::move(collector);
+        return true;
+    }
+    if (parts[0] == "perf-record-series" && parts.size() == 5) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        const auto category=Step3PerformanceCategoryFromToken(parts[2]);
+        if(category==xvatsim::modules::overlay::AccessoryPerformanceCategory::Count) {
+            return fail("invalid performance category");
+        }
+        int recorded=0;
+        for(const auto& value:Split(parts[3],',')) {
+            try {
+                collector->second->Record(category,std::stoull(value));
+                ++recorded;
+            } catch (...) {
+                return fail("invalid performance series");
+            }
+        }
+        context->observed[parts[4]+".recorded"]=std::to_string(recorded);
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),parts[4],&context->observed);
+        return true;
+    }
+    if (parts[0] == "perf-raster-reason" && parts.size() == 6) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        const bool drawer=parts[2]=="drawer";
+        if(!drawer && parts[2]!="rail") return fail("invalid raster surface");
+        const auto reason=Step3RasterReasonFromToken(parts[3]);
+        if(reason==xvatsim::modules::overlay::AccessoryRasterReason::Count) {
+            return fail("invalid raster reason");
+        }
+        int count=0;
+        if(!parseInt(parts[4],&count) || count<0) {
+            return fail("invalid raster reason count");
+        }
+        for(int index=0;index<count;++index) {
+            collector->second->RecordRasterReason(drawer,reason);
+        }
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),parts[5],&context->observed);
+        return true;
+    }
+    if (parts[0] == "perf-begin-dual-action" && parts.size() == 18) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        using Action=xvatsim::brain::BrainOwnedAccessoryDrawerAction;
+        Action action=Action::None;
+        if(parts[2]=="Opened") action=Action::Opened;
+        else if(parts[2]=="Switched") action=Action::Switched;
+        else if(parts[2]=="Closed") action=Action::Closed;
+        const bool cpuAvailable=parts[10]=="true";
+        if(!cpuAvailable && parts[10]!="false") {
+            return fail("invalid thread CPU availability");
+        }
+        try {
+            xvatsim::modules::overlay::AccessoryActionDispatchTimingInput timing;
+            timing.dispatchStartedMicroseconds=std::stoull(parts[5]);
+            timing.dispatchCompletedMicroseconds=std::stoull(parts[6]);
+            for(std::size_t index=0;index<5;++index) {
+                timing.stages.elapsedMicroseconds[index]=
+                    std::stoull(parts[12+index]);
+            }
+            const auto began=collector->second->BeginDrawerAction(
+                action,std::stoull(parts[3]),std::stoull(parts[4]),
+                std::stoull(parts[7]),std::stoull(parts[8]),
+                std::stoull(parts[6]),std::stoull(parts[9]),timing);
+            context->observed[parts[17]+".began"]=Step3Bool(began);
+        } catch (...) {
+            return fail("invalid dual-clock action input");
+        }
+        return true;
+    }
+    if (parts[0] == "perf-complete-dual" && parts.size() == 14) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        const bool cpuAvailable=parts[9]=="true";
+        if(!cpuAvailable && parts[9]!="false") {
+            return fail("invalid draw thread CPU availability");
+        }
+        try {
+            xvatsim::modules::overlay::AccessoryActionDrawTimingInput timing;
+            timing.actionDrawWallMicroseconds=std::stoull(parts[8]);
+            timing.renderWallFailure=parts[11]!="none";
+            if(timing.renderWallFailure) {
+                timing.renderWallFailureCategory=
+                    Step3PerformanceCategoryFromToken(parts[11]);
+                if(timing.renderWallFailureCategory==
+                    xvatsim::modules::overlay::AccessoryPerformanceCategory::Count) {
+                    return fail("invalid render wall failure category");
+                }
+            }
+            timing.renderWallFailureMicroseconds=std::stoull(parts[12]);
+            const auto matching=collector->second->HasMatchingPendingAction(
+                std::stoull(parts[3]),std::stoull(parts[4]),
+                std::stoull(parts[7]));
+            const auto completed=collector->second->CompletePendingActions(
+                std::stoull(parts[2]),std::stoull(parts[3]),
+                std::stoull(parts[4]),std::stoull(parts[5]),
+                std::stoull(parts[6]),std::stoull(parts[7]),timing);
+            context->observed[parts[13]+".completed"]=
+                std::to_string(completed);
+            ObserveStep3PerformanceSnapshot(
+                collector->second->Snapshot(),parts[13],&context->observed);
+        } catch (...) {
+            return fail("invalid dual-clock completion input");
+        }
+        return true;
+    }
+    if (parts[0] == "perf-begin-phased-action" && parts.size() == 10) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        using Action=xvatsim::brain::BrainOwnedAccessoryDrawerAction;
+        Action action=Action::None;
+        if(parts[2]=="Opened") action=Action::Opened;
+        else if(parts[2]=="Switched") action=Action::Switched;
+        else if(parts[2]=="Closed") action=Action::Closed;
+        try {
+            xvatsim::modules::overlay::AccessoryActionDispatchTimingInput timing;
+            timing.dispatchStartedMicroseconds=std::stoull(parts[4]);
+            timing.dispatchCompletedMicroseconds=std::stoull(parts[5]);
+            const auto began=collector->second->BeginDrawerAction(
+                action,std::stoull(parts[3]),std::stoull(parts[4]),
+                std::stoull(parts[6]),std::stoull(parts[7]),
+                std::stoull(parts[5]),std::stoull(parts[8]),timing);
+            context->observed[parts[9]+".began"]=Step3Bool(began);
+        } catch (...) {
+            return fail("invalid phased action input");
+        }
+        return true;
+    }
+    if (parts[0] == "perf-complete-phased" && parts.size() == 10) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        try {
+            xvatsim::modules::overlay::AccessoryActionDrawTimingInput timing;
+            timing.actionDrawWallMicroseconds=std::stoull(parts[8]);
+            const auto completed=collector->second->CompletePendingActions(
+                std::stoull(parts[2]),std::stoull(parts[3]),
+                std::stoull(parts[4]),std::stoull(parts[5]),
+                std::stoull(parts[6]),std::stoull(parts[7]),
+                timing);
+            context->observed[parts[9]+".completed"]=
+                std::to_string(completed);
+            ObserveStep3PerformanceSnapshot(
+                collector->second->Snapshot(),parts[9],&context->observed);
+        } catch (...) {
+            return fail("invalid phased completion input");
+        }
+        return true;
+    }
+    if (parts[0] == "perf-begin-action" && parts.size() == 6) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        int sequence=0,started=0;
+        if(!parseInt(parts[3],&sequence)||!parseInt(parts[4],&started)) {
+            return fail("invalid performance action input");
+        }
+        using Action=xvatsim::brain::BrainOwnedAccessoryDrawerAction;
+        Action action=Action::None;
+        if(parts[2]=="Opened") action=Action::Opened;
+        else if(parts[2]=="Switched") action=Action::Switched;
+        else if(parts[2]=="Closed") action=Action::Closed;
+        const auto began=collector->second->BeginDrawerAction(
+            action,static_cast<std::uint64_t>(sequence),
+            static_cast<std::uint64_t>(started));
+        context->observed[parts[5]+".began"]=Step3Bool(began);
+        return true;
+    }
+    if (parts[0] == "perf-begin-scroll" && parts.size() == 4) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        int started=0;
+        if(!parseInt(parts[2],&started)) return fail("invalid scroll start");
+        context->observed[parts[3]+".began"]=Step3Bool(
+            collector->second->BeginEffectiveScroll(
+                static_cast<std::uint64_t>(started)));
+        return true;
+    }
+    if (parts[0] == "perf-complete" && parts.size() == 4) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        int completed=0;
+        if(!parseInt(parts[2],&completed)) return fail("invalid completion time");
+        context->observed[parts[3]+".completed"]=std::to_string(
+            collector->second->CompletePendingActions(
+                static_cast<std::uint64_t>(completed)));
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),parts[3],&context->observed);
+        return true;
+    }
+    if (parts[0] == "perf-warning" && parts.size() == 3) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        xvatsim::modules::overlay::AccessoryPerformanceCategory category;
+        std::uint64_t elapsed=0;
+        const auto emitted=collector->second->ConsumeFirstViolationWarning(
+            &category,&elapsed);
+        context->observed[parts[2]+".emitted"]=Step3Bool(emitted);
+        context->observed[parts[2]+".category"]=emitted
+            ? xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(category)
+            : "none";
+        context->observed[parts[2]+".elapsed_us"]=std::to_string(elapsed);
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),parts[2],&context->observed);
+        return true;
+    }
+    if (parts[0] == "perf-publish" && parts.size() == 3) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        xvatsim::modules::overlay::AccessoryPerformanceSnapshot snapshot;
+        const auto published=
+            collector->second->BeginAggregatePublication(&snapshot);
+        context->observed[parts[2]+".published"]=Step3Bool(published);
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),parts[2],&context->observed);
+        return true;
+    }
+    if (parts[0] == "perf-snapshot" && parts.size() == 3) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),parts[2],&context->observed);
+        return true;
+    }
+    if (parts[0] == "presenter-new" && parts.size() == 2) {
+        context->presenters[parts[1]] =
+            xvatsim::modules::overlay::AccessoryPresentationState{};
+        return true;
+    }
+    if (parts[0] == "presenter-update" && parts.size() == 6) {
+        const auto snapshot=context->snapshots.find(parts[2]);
+        const auto layout=context->layouts.find(parts[3]);
+        if(snapshot==context->snapshots.end()) return fail("presentation snapshot missing");
+        if(layout==context->layouts.end()) return fail("presentation layout missing");
+        xvatsim::modules::overlay::AccessoryPresentationUpdateInput input;
+        input.presentation=snapshot->second;
+        input.layout=layout->second;
+        input.preparedPlan=Step3PreparePresentationPlan(
+            context,snapshot->second,layout->second);
+        input.measurementContext=context->measurementContext;
+        const auto main=context->mainCardSignatures.find(parts[4]);
+        if(main!=context->mainCardSignatures.end()) input.mainCardProductionSignature=main->second;
+        auto& presenter=context->presenters[parts[1]];
+        const auto gdiBefore=
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto result=xvatsim::modules::overlay::UpdateAccessoryPresentation(&presenter,input);
+        const auto gdiAfter=
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto& prefix=parts[5];
+        context->observed[prefix+".status"]=Step3Status(result.status);
+        context->observed[prefix+".snapshot_changed"]=Step3Bool(result.snapshotChanged);
+        context->observed[prefix+".selection_changed"]=Step3Bool(result.selectionChanged);
+        context->observed[prefix+".history_changed"]=Step3Bool(result.historyChanged);
+        context->observed[prefix+".layout_changed"]=Step3Bool(result.layoutChanged);
+        context->observed[prefix+".plan_built"]=Step3Bool(result.cachedPlanBuilt);
+        context->observed[prefix+".offset_reset"]=Step3Bool(result.drawerOffsetReset);
+        context->observed[prefix+".main_unchanged"]=Step3Bool(result.mainCardUnchanged);
+        context->observed[prefix+".published_count"]=
+            std::to_string(result.publishedSnapshotCount);
+        context->observed[prefix+".published_drawer"]=Step3Drawer(result.publishedDrawer);
+        context->observed[prefix+".intermediate_none"]=
+            Step3Bool(result.intermediateNonePublished);
+        ObserveStep3RenderCounters(result.delta,prefix,&context->observed);
+        ObserveStep3GdiCounters(
+            Step3GdiCounterDelta(gdiBefore,gdiAfter),
+            prefix,
+            &context->observed);
+        context->observed[prefix+".offset"]=std::to_string(presenter.drawerOffset);
+        context->observed[prefix+".maximum_offset"]=
+            std::to_string(presenter.drawerMaximumOffset);
+        context->observed[prefix+".snapshot_identity"]=
+            std::to_string(presenter.activeSnapshotIdentity);
+        context->observed[prefix+".selection_generation"]=
+            std::to_string(presenter.selectionGeneration);
+        context->observed[prefix+".history_generation"]=
+            std::to_string(presenter.historyGeneration);
+        context->observed[prefix+".layout_generation"]=
+            std::to_string(presenter.layoutGeneration);
+        context->observed[prefix+".keys"]=presenter.preparedPlan ?
+            JoinCsv(presenter.preparedPlan->layout.renderedEntryKeys) : "";
+        context->observed[prefix+".titles"]=presenter.preparedPlan ?
+            JoinCsv(presenter.preparedPlan->layout.renderedEntryTitles) : "";
+        context->observed[prefix+".bodies"]=presenter.preparedPlan ?
+            JoinCsv(presenter.preparedPlan->layout.renderedEntryBodies) : "";
+        context->observed[prefix+".title_marker_visible"]=
+            Step3Bool(Step3PresenterTitleMarkerVisible(presenter));
+        context->observed[prefix+".pairing_intact"]=
+            Step3Bool(Step3PresenterPairingIntact(presenter));
+        return true;
+    }
+    if (parts[0] == "presenter-warm" && parts.size() == 7) {
+        int iterations=0;
+        if(!parseInt(parts[5],&iterations)) return fail("invalid warm iteration count");
+        const auto snapshot=context->snapshots.find(parts[2]);
+        const auto layout=context->layouts.find(parts[3]);
+        if(snapshot==context->snapshots.end()) return fail("warm snapshot missing");
+        if(layout==context->layouts.end()) return fail("warm layout missing");
+        xvatsim::modules::overlay::AccessoryPresentationUpdateInput input;
+        input.presentation=snapshot->second;
+        input.layout=layout->second;
+        input.preparedPlan=Step3PreparePresentationPlan(
+            context,snapshot->second,layout->second);
+        input.measurementContext=context->measurementContext;
+        const auto main=context->mainCardSignatures.find(parts[4]);
+        if(main!=context->mainCardSignatures.end()) input.mainCardProductionSignature=main->second;
+        auto& presenter=context->presenters[parts[1]];
+        const auto gdiBefore=
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto result=
+            xvatsim::modules::overlay::RunUnchangedAccessoryPresentationUpdates(
+                &presenter,input,iterations);
+        const auto gdiAfter=
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto& prefix=parts[6];
+        context->observed[prefix+".status"]=Step3Status(result.status);
+        context->observed[prefix+".iterations"]=std::to_string(result.iterations);
+        ObserveStep3RenderCounters(result.delta,prefix,&context->observed);
+        const auto gdiDelta=Step3GdiCounterDelta(gdiBefore,gdiAfter);
+        ObserveStep3GdiCounters(
+            gdiDelta,
+            prefix,
+            &context->observed);
+        context->observed[prefix+".zero_work_record"]=
+            "iterations="+std::to_string(result.iterations)+
+            ",gdi="+std::to_string(gdiDelta.measurementCalls)+
+            ",history="+std::to_string(result.delta.historyVisits)+
+            ",copies="+std::to_string(result.delta.entryCopies)+
+            ",wraps="+std::to_string(result.delta.wrapVisits)+
+            ",main="+std::to_string(result.delta.mainCardRasterRequests)+
+            ",rail="+std::to_string(result.delta.railRasterRequests)+
+            ",drawer="+std::to_string(result.delta.drawerRasterRequests)+
+            ",uploads="+std::to_string(result.delta.uploadRequests);
+        return true;
+    }
+    if (parts[0] == "presenter-scroll" && parts.size() == 6) {
+        int clicks=0;
+        try { clicks=std::stoi(parts[4]); } catch (...) { return fail("invalid presenter scroll"); }
+        const auto layout=context->layouts.find(parts[2]);
+        if(layout==context->layouts.end()) return fail("presenter scroll layout missing");
+        xvatsim::modules::overlay::AccessoryPresentationScrollInput input;
+        input.layout=layout->second;
+        if(parts[3]=="drawer") {
+            input.pointerX=(input.layout.drawerBounds.left+input.layout.drawerBounds.right)/2;
+            input.pointerY=(input.layout.drawerBounds.top+input.layout.drawerBounds.bottom)/2;
+        } else if(parts[3]=="main") {
+            input.pointerX=(input.layout.mainCardBounds.left+input.layout.mainCardBounds.right)/2;
+            input.pointerY=(input.layout.mainCardBounds.top+input.layout.mainCardBounds.bottom)/2;
+        } else if(parts[3]=="outside") {
+            input.pointerX=input.layout.resolvedBounds.right+1;
+            input.pointerY=input.layout.resolvedBounds.bottom+1;
+        } else {
+            return fail("invalid presenter scroll pointer region");
+        }
+        input.wheelClicks=clicks;
+        auto& presenter=context->presenters[parts[1]];
+        const auto result=xvatsim::modules::overlay::ScrollAccessoryPresentation(
+            &presenter,input);
+        const auto& prefix=parts[5];
+        context->observed[prefix+".status"]=Step3Status(result.status);
+        context->observed[prefix+".scope"]=Step3WheelScope(result.scope);
+        context->observed[prefix+".handled"]=Step3Bool(result.handled);
+        context->observed[prefix+".changed"]=Step3Bool(result.changed);
+        context->observed[prefix+".reached_final"]=Step3Bool(result.reachedFinalMarker);
+        context->observed[prefix+".previous_offset"]=std::to_string(result.previousOffset);
+        context->observed[prefix+".offset"]=std::to_string(result.drawerOffset);
+        context->observed[prefix+".maximum_offset"]=
+            std::to_string(result.drawerMaximumOffset);
+        context->observed[prefix+".snapshot_identity"]=
+            std::to_string(presenter.activeSnapshotIdentity);
+        context->observed[prefix+".selection_generation"]=
+            std::to_string(presenter.selectionGeneration);
+        context->observed[prefix+".history_generation"]=
+            std::to_string(presenter.historyGeneration);
+        context->observed[prefix+".layout_generation"]=
+            std::to_string(presenter.layoutGeneration);
+        ObserveStep3RenderCounters(result.delta,prefix,&context->observed);
+        return true;
+    }
+    if (parts[0] == "presenter-scroll-to-max" && parts.size() == 4) {
+        const auto layout=context->layouts.find(parts[2]);
+        if(layout==context->layouts.end()) return fail("presenter max scroll layout missing");
+        auto& presenter=context->presenters[parts[1]];
+        const int measuredMaximum=presenter.drawerMaximumOffset;
+        const int requiredClicks=std::max(1,measuredMaximum-presenter.drawerOffset+1);
+        xvatsim::modules::overlay::AccessoryPresentationScrollInput input;
+        input.layout=layout->second;
+        input.pointerX=(input.layout.drawerBounds.left+input.layout.drawerBounds.right)/2;
+        input.pointerY=(input.layout.drawerBounds.top+input.layout.drawerBounds.bottom)/2;
+        input.wheelClicks=requiredClicks;
+        const auto result=xvatsim::modules::overlay::ScrollAccessoryPresentation(
+            &presenter,input);
+        const auto& prefix=parts[3];
+        context->observed[prefix+".status"]=Step3Status(result.status);
+        context->observed[prefix+".scope"]=Step3WheelScope(result.scope);
+        context->observed[prefix+".measured_maximum"]=std::to_string(measuredMaximum);
+        context->observed[prefix+".requested_clicks"]=std::to_string(requiredClicks);
+        context->observed[prefix+".offset"]=std::to_string(result.drawerOffset);
+        context->observed[prefix+".maximum_offset"]=
+            std::to_string(result.drawerMaximumOffset);
+        context->observed[prefix+".at_measured_maximum"]=
+            Step3Bool(result.drawerOffset==measuredMaximum);
+        context->observed[prefix+".reached_final"]=Step3Bool(result.reachedFinalMarker);
+        context->observed[prefix+".snapshot_identity"]=
+            std::to_string(presenter.activeSnapshotIdentity);
+        context->observed[prefix+".selection_generation"]=
+            std::to_string(presenter.selectionGeneration);
+        context->observed[prefix+".history_generation"]=
+            std::to_string(presenter.historyGeneration);
+        context->observed[prefix+".layout_generation"]=
+            std::to_string(presenter.layoutGeneration);
+        ObserveStep3RenderCounters(result.delta,prefix,&context->observed);
+        const auto renderPlan=
+            xvatsim::modules::overlay::BuildAccessoryDrawerRenderPlan(
+                presenter,layout->second);
+        context->observed[prefix+".render_capacity"]=
+            std::to_string(renderPlan.visibleLineCapacity);
+        context->observed[prefix+".render_visible_count"]=
+            std::to_string(renderPlan.visibleLines.size());
+        context->observed[prefix+".render_total_lines"]=
+            std::to_string(renderPlan.totalLineCount);
+        context->observed[prefix+".render_pixel_fit"]=
+            Step3Bool(renderPlan.everyLineFitsPixelGeometry);
+        context->observed[prefix+".render_final_marker_visible"]=
+            Step3Bool(renderPlan.finalMarkerVisible);
+        return true;
+    }
+    if (parts[0] == "drawer-render-plan" && parts.size() == 4) {
+        const auto presenter=context->presenters.find(parts[1]);
+        const auto layout=context->layouts.find(parts[2]);
+        if(presenter==context->presenters.end()) return fail("render presenter missing");
+        if(layout==context->layouts.end()) return fail("render layout missing");
+        const auto result=
+            xvatsim::modules::overlay::BuildAccessoryDrawerRenderPlan(
+                presenter->second,layout->second);
+        const auto& prefix=parts[3];
+        context->observed[prefix+".status"]=Step3Status(result.status);
+        context->observed[prefix+".capacity"]=
+            std::to_string(result.visibleLineCapacity);
+        context->observed[prefix+".visible_count"]=
+            std::to_string(result.visibleLines.size());
+        context->observed[prefix+".first_line"]=
+            std::to_string(result.firstVisibleLine);
+        context->observed[prefix+".total_lines"]=
+            std::to_string(result.totalLineCount);
+        context->observed[prefix+".pixel_fit"]=
+            Step3Bool(result.everyLineFitsPixelGeometry);
+        context->observed[prefix+".final_marker_visible"]=
+            Step3Bool(result.finalMarkerVisible);
+        context->observed[prefix+".visible_count_within_capacity"]=Step3Bool(
+            static_cast<int>(result.visibleLines.size())<=
+                result.visibleLineCapacity);
+        return true;
+    }
+    if (parts[0] == "presenter-observe" && parts.size() == 3) {
+        const auto& presenter=context->presenters[parts[1]];
+        const auto& prefix=parts[2];
+        context->observed[prefix+".offset"]=std::to_string(presenter.drawerOffset);
+        context->observed[prefix+".maximum_offset"]=
+            std::to_string(presenter.drawerMaximumOffset);
+        context->observed[prefix+".snapshot_identity"]=
+            std::to_string(presenter.activeSnapshotIdentity);
+        context->observed[prefix+".selection_generation"]=
+            std::to_string(presenter.selectionGeneration);
+        context->observed[prefix+".history_generation"]=
+            std::to_string(presenter.historyGeneration);
+        context->observed[prefix+".layout_generation"]=
+            std::to_string(presenter.layoutGeneration);
+        context->observed[prefix+".plan_available"]=Step3Bool(presenter.cachedPlanAvailable);
+        context->observed[prefix+".keys"]=presenter.preparedPlan ?
+            JoinCsv(presenter.preparedPlan->layout.renderedEntryKeys) : "";
+        context->observed[prefix+".titles"]=presenter.preparedPlan ?
+            JoinCsv(presenter.preparedPlan->layout.renderedEntryTitles) : "";
+        context->observed[prefix+".bodies"]=presenter.preparedPlan ?
+            JoinCsv(presenter.preparedPlan->layout.renderedEntryBodies) : "";
+        context->observed[prefix+".title_marker_visible"]=
+            Step3Bool(Step3PresenterTitleMarkerVisible(presenter));
+        context->observed[prefix+".pairing_intact"]=
+            Step3Bool(Step3PresenterPairingIntact(presenter));
+        context->observed[prefix+".final_marker"]=presenter.finalHistoryMarker;
+        context->observed[prefix+".main_signature"]=presenter.mainCardProductionSignature;
+        ObserveStep3RenderCounters(presenter.counters,prefix,&context->observed);
+        return true;
+    }
+    if ((parts[0] == "pipeline" || parts[0] == "pipeline-alternate") &&
+        parts.size() == 2) {
+        xvatsim::brain::FinalDisplaySnapshot display;
+        display.available = true;
+        display.source = xvatsim::brain::BoardSource::Enroute;
+        xvatsim::brain::FinalDisplayStationSnapshot station;
+        const bool alternate=parts[0]=="pipeline-alternate";
+        station.role = alternate
+            ? xvatsim::brain::StationRole::Approach
+            : xvatsim::brain::StationRole::Center;
+        station.callsign = alternate ? "SOCAL_APP" : "LAX_CTR";
+        station.frequency = alternate ? "124.300" : "125.800";
+        station.online = true;
+        display.stations.push_back(station);
+        xvatsim::brain::AircraftStateSnapshot aircraft;
+        aircraft.valid = true;
+        xvatsim::brain::XPilotSessionSnapshot xpilot;
+        xpilot.connected = true;
+        const auto view=xvatsim::brain::BrainOrchestrator::BuildOverlayViewModel(
+            xvatsim::brain::WorkflowStage::Enroute,
+            aircraft,
+            xpilot,
+            {}, {}, {}, {}, display, {}, {});
+        context->observed[parts[1]+".visible"]=Step3Bool(view.visible);
+        context->observed[parts[1]+".title"]=view.title;
+        context->observed[parts[1]+".body_count"]=std::to_string(view.bodyLines.size());
+        std::ostringstream signature;
+        signature << (view.visible ? "visible" : "hidden") << '|' << view.title;
+        for(const auto& line:view.bodyLines) signature << '|' << line.text;
+        context->mainCardSignatures[parts[1]]=signature.str();
+        context->observed[parts[1]+".signature"]=signature.str();
+        return true;
+    }
+    return fail("unknown Step 3 action");
+}
+
+int RunStep3ContractProbe(const ScenarioData& scenario) {
+    if (scenario.step3.actions.empty() || scenario.step3.expectations.empty()) {
+        std::cerr << "STEP3_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                  << ": executable actions and expectations are required\n";
+        return 2;
+    }
+
+    Step3ExecutionContext context;
+    for (const auto& action : scenario.step3.actions) {
+        std::string error;
+        if (!ExecuteStep3Action(action, &context, &error)) {
+            std::cerr << "STEP3_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                      << ": " << error << "\n";
+            return 2;
+        }
+    }
+
+    int failures = 0;
+    for (const auto& expectation : scenario.step3.expectations) {
+        const auto separator = expectation.find('=');
+        if (separator == std::string::npos || separator == 0) {
+            std::cerr << "STEP3_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                      << ": invalid expectation: " << expectation << "\n";
+            return 2;
+        }
+        const auto key = expectation.substr(0, separator);
+        const auto expectedToken = expectation.substr(separator + 1);
+        auto observed = context.observed.find(key);
+        if (observed == context.observed.end()) {
+            std::cerr << "STEP3_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                      << ": expectation has no operation-produced observation: " << key << "\n";
+            return 2;
+        }
+        std::string expected = expectedToken;
+        if (!expectedToken.empty() && expectedToken.front() == '@') {
+            const auto reference = context.observed.find(expectedToken.substr(1));
+            if (reference == context.observed.end()) {
+                std::cerr << "STEP3_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                          << ": missing expectation reference: " << expectedToken << "\n";
+                return 2;
+            }
+            expected = reference->second;
+        }
+        if (observed->second != expected) {
+            std::cerr << "STEP3_ASSERTION_FAILED: " << scenario.name << ": " << key
+                      << " expected=" << expected << " observed=" << observed->second << "\n";
+            failures++;
+        }
+    }
+    if (failures != 0) return 1;
+    std::vector<std::pair<std::string,std::string>> measurementRecords;
+    std::vector<std::pair<std::string,std::string>> timingRecords;
+    std::vector<std::pair<std::string,std::string>> zeroWorkRecords;
+    std::vector<std::pair<std::string,std::string>> dispatchRecords;
+    for(const auto& observation:context.observed) {
+        if(observation.first.size()>=18 &&
+           observation.first.compare(
+               observation.first.size()-18,
+               18,
+               "measurement_record")==0) {
+            measurementRecords.push_back(observation);
+        }
+        if(observation.first.size()>=13 &&
+           observation.first.compare(
+               observation.first.size()-13,
+               13,
+               "timing_record")==0) {
+            timingRecords.push_back(observation);
+        }
+        if(observation.first.size()>=16 &&
+           observation.first.compare(
+               observation.first.size()-16,
+               16,
+               "zero_work_record")==0) {
+            zeroWorkRecords.push_back(observation);
+        }
+        if(observation.first.size()>=15 &&
+           observation.first.compare(
+               observation.first.size()-15,
+               15,
+               "dispatch_record")==0) {
+            dispatchRecords.push_back(observation);
+        }
+    }
+    std::sort(measurementRecords.begin(),measurementRecords.end());
+    for(const auto& record:measurementRecords) {
+        std::cout << "STEP3_GDIPLUS_MEASUREMENT: " << record.first
+                  << '=' << record.second << "\n";
+    }
+    std::sort(timingRecords.begin(),timingRecords.end());
+    for(const auto& record:timingRecords) {
+        std::cout << "STEP3_GDIPLUS_TIMING: " << record.first
+                  << '=' << record.second << "\n";
+    }
+    std::sort(zeroWorkRecords.begin(),zeroWorkRecords.end());
+    for(const auto& record:zeroWorkRecords) {
+        std::cout << "STEP3_ZERO_WORK: " << record.first
+                  << '=' << record.second << "\n";
+    }
+    std::sort(dispatchRecords.begin(),dispatchRecords.end());
+    for(const auto& record:dispatchRecords) {
+        std::cout << "STEP3_EVENT_DISPATCH: " << record.first
+                  << '=' << record.second << "\n";
+    }
+    std::cout << "Scenario passed: " << scenario.name << "\n";
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -11259,6 +15241,9 @@ int main(int argc, char** argv) {
 
     if (!scenario.operatingMode.probe.empty()) {
         return RunOperatingModeProbe(scenario);
+    }
+    if (!scenario.step3.actions.empty()) {
+        return RunStep3ContractProbe(scenario);
     }
 
     auto workflowState = scenario.workflowState;
