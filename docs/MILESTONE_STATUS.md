@@ -1,6 +1,6 @@
 # Milestone Status
 
-Updated: 2026-08-27
+Updated: 2026-08-28
 
 ## Current Position
 
@@ -13,20 +13,24 @@ its subject must be `docs: prepare V2 Step 4 session handoff`, and its scope
 must be exactly the three handoff documentation files. Its final SHA cannot be
 embedded in those same committed bytes and must be resolved from Git.
 
-Step 4 - VATSIM METAR has an approved Contract Gate and an implemented offline
-candidate awaiting Director review. Deployment, X-Plane/xPilot startup, live
-VATSIM traffic, and controlled live proof remain separately gated and were not
-performed.
+Step 4 - VATSIM METAR has completed its corrective offline implementation and
+proof after the first controlled-live attempt exposed a WinHTTP callback
+registration defect. Deployment, X-Plane/xPilot startup, live VATSIM traffic,
+and controlled live reproof remain separately gated and were not performed by
+the correction.
 
-The candidate regression baseline is 547 saved scenarios. The canonical
+The corrected regression baseline is 561 saved scenarios. The canonical
 release-gate fingerprint is
-`780ABD3A26E0E6C96ADBB3261BB6C3960B21D658F4613C21754BBDD516DF8902`.
+`6AB913C1C0658A0CDE93A84D369267DDFDCD7FDE27797BF097FDB70DD574EF94`.
 
-The repository has zero tracked or staged changes at this handoff. There are
-116 intentionally preserved untracked evidence files under `outputs/`; they
-must not be cleaned, staged, or altered without separate authorization.
-Their inventory fingerprint is
+The corrective gate began from zero tracked or staged changes. Two protected
+untracked evidence sets remain outside the corrective commits: the original
+116 files and the 34-file failed-live-proof set (33 standard untracked files
+plus one ignored diagnostic log). Neither set may be cleaned, staged, moved, or
+altered. The original inventory fingerprint is
 `B63A3726E4B785FD80D982AA564A63124D0F815CBFBC9A579AC4E00CF4956D51`.
+The failed-live-proof manifest SHA-256 is
+`7CA785AC6367AD9C32D6F89C8CAB8A6205BE3E622C343AB847A44ADB6D939ED0`.
 X-Plane and xPilot are stopped, and active/staged `.xpl` counts are zero.
 
 XVatsim V1.2.3 remains the closed public freeware Windows/X-Plane 12/xPilot
@@ -110,19 +114,25 @@ work and X-Plane frame cadence. The maximum fixture-ON preparation wait was
 2,227,032 microseconds, and the fixture-OFF cold wait was 256,838 microseconds.
 Neither produced a visible UI failure or recurring idle work.
 
-## Step 4 - VATSIM METAR Candidate
+## Step 4 - VATSIM METAR Corrected Candidate
 
-- Status: offline implementation and proof complete; Director acceptance and
-  controlled live proof pending.
+- Status: corrected and offline-proven; controlled live reproof is not
+  authorized.
 - Added one removable asynchronous source restricted to the official VATSIM
   single-airport METAR endpoint.
 - The brain owns the primary airport, lookup, request priority, cadence,
   freshness, parsing, category, cache, history, spotlight, lifecycle, and final
   presentation. The plugin uses the generic asynchronous worker-binding seam.
-- Added 53 focused scenarios; focused result is 53/53 and complete saved
-  regression is 547/547.
+- Added 14 corrective scenarios; focused result is 67/67 and complete saved
+  regression is 561/561.
+- Corrected WinHTTP send completion registration and proved a complete local
+  loopback send/receive/HTTP/JSON/harvest/brain-parse lifecycle.
+- Added bounded dispatch, terminal-worker, and brain-disposition diagnostics,
+  including cleanup-only lifecycle drain rejection.
+- Reduced the METAR ORB to neutral `METAR` or exact ICAO/category lines; all
+  detailed state remains in the drawer.
 - Fresh Windows Release proof and fixture-off normal plugin builds passed.
-- Fourteen production-raster visual cases reproduced with zero PNG hash
+- Fifteen production-raster visual cases reproduced with zero PNG hash
   differences; main-card production signatures were identical in every case.
 - The 100,000-cycle warm-idle proof recorded zero parsing, fingerprinting,
   history, wrapping, rasterization, or upload deltas.

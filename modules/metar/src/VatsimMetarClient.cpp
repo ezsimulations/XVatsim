@@ -64,6 +64,7 @@ struct AsyncContext {
     HANDLE phaseEvent = nullptr;
     HANDLE closingEvent = nullptr;
     std::atomic<DWORD> status{0};
+    std::atomic<DWORD_PTR> operationResult{0};
     std::atomic<DWORD> error{0};
     std::atomic<DWORD> available{0};
     std::atomic<DWORD> transferred{0};
@@ -86,6 +87,8 @@ void CALLBACK WinHttpCallback(
             statusInformationLength >= sizeof(WINHTTP_ASYNC_RESULT)) {
             const auto* result =
                 static_cast<const WINHTTP_ASYNC_RESULT*>(statusInformation);
+            context->operationResult.store(
+                result->dwResult, std::memory_order_release);
             context->error.store(result->dwError, std::memory_order_release);
         } else {
             context->error.store(ERROR_GEN_FAILURE, std::memory_order_release);
@@ -123,6 +126,7 @@ enum class WaitResult {
 void PreparePhase(AsyncContext* context) {
     ResetEvent(context->phaseEvent);
     context->status.store(0, std::memory_order_release);
+    context->operationResult.store(0, std::memory_order_release);
     context->error.store(0, std::memory_order_release);
     context->available.store(0, std::memory_order_release);
     context->transferred.store(0, std::memory_order_release);
@@ -155,14 +159,34 @@ brain::BrainMetarWorkerFact FailureFact(
     const brain::BrainMetarWorkerRequest& request,
     brain::BrainMetarWorkerStatus status,
     std::string diagnostic,
-    std::chrono::steady_clock::time_point start) {
+    std::chrono::steady_clock::time_point start,
+    brain::BrainMetarTransportStage terminalStage =
+        brain::BrainMetarTransportStage::Startup,
+    brain::BrainMetarWinHttpOperation operation =
+        brain::BrainMetarWinHttpOperation::None,
+    std::uint64_t operationResult = 0,
+    std::uint32_t error = 0,
+    std::uint32_t progress = brain::BrainMetarTransportProgressNone) {
     brain::BrainMetarWorkerFact fact;
     fact.request = request;
     fact.status = status;
     fact.diagnostic = std::move(diagnostic);
+    fact.terminalStage = terminalStage;
+    fact.winHttpOperation = operation;
+    fact.winHttpResult = operationResult;
+    fact.winHttpError = error;
+    fact.transportProgress = progress;
     fact.completedMonotonicMs = MonotonicMilliseconds();
     fact.networkElapsedUs = ElapsedMicroseconds(start);
     return fact;
+}
+
+std::uint32_t WaitError(
+    WaitResult wait,
+    const AsyncContext& context) {
+    if (wait == WaitResult::Cancelled) return ERROR_OPERATION_ABORTED;
+    if (wait == WaitResult::TimedOut) return ERROR_TIMEOUT;
+    return context.error.load(std::memory_order_acquire);
 }
 
 }  // namespace
@@ -279,12 +303,19 @@ struct VatsimMetarClient::Implementation {
         context.phaseEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         context.closingEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (context.phaseEvent == nullptr || context.closingEvent == nullptr) {
+            const auto error = GetLastError();
             if (context.phaseEvent != nullptr) CloseHandle(context.phaseEvent);
             if (context.closingEvent != nullptr) CloseHandle(context.closingEvent);
             return FailureFact(request,
                 brain::BrainMetarWorkerStatus::TransportFailure,
-                "event-creation-failed", started);
+                "event-creation-failed", started,
+                brain::BrainMetarTransportStage::Startup,
+                brain::BrainMetarWinHttpOperation::CreateEventHandle,
+                FALSE, error);
         }
+
+        std::uint32_t transportProgress =
+            brain::BrainMetarTransportProgressNone;
 
         HINTERNET session = WinHttpOpen(
             kUserAgent, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
@@ -316,12 +347,25 @@ struct VatsimMetarClient::Implementation {
             handlesClosed.store(true, std::memory_order_release);
             return fact;
         };
-        if (session == nullptr || !WinHttpSetTimeouts(
-                session, kResolveTimeoutMs, kConnectTimeoutMs,
-                kSendTimeoutMs, kReceiveTimeoutMs)) {
+        if (session == nullptr) {
+            const auto error = GetLastError();
             return finish(FailureFact(request,
                 brain::BrainMetarWorkerStatus::TransportFailure,
-                "session-open-failed", started));
+                "session-open-failed", started,
+                brain::BrainMetarTransportStage::Startup,
+                brain::BrainMetarWinHttpOperation::OpenSession,
+                FALSE, error));
+        }
+        if (!WinHttpSetTimeouts(
+                session, kResolveTimeoutMs, kConnectTimeoutMs,
+                kSendTimeoutMs, kReceiveTimeoutMs)) {
+            const auto error = GetLastError();
+            return finish(FailureFact(request,
+                brain::BrainMetarWorkerStatus::TransportFailure,
+                "timeout-configuration-failed", started,
+                brain::BrainMetarTransportStage::Startup,
+                brain::BrainMetarWinHttpOperation::ConfigureTimeouts,
+                FALSE, error));
         }
         const wchar_t* requestHost = kHost;
         INTERNET_PORT requestPort = INTERNET_DEFAULT_HTTPS_PORT;
@@ -335,29 +379,41 @@ struct VatsimMetarClient::Implementation {
 #endif
         connection = WinHttpConnect(session, requestHost, requestPort, 0);
         if (connection == nullptr) {
+            const auto error = GetLastError();
             return finish(FailureFact(request,
                 brain::BrainMetarWorkerStatus::TransportFailure,
-                "connect-handle-failed", started));
+                "connect-handle-failed", started,
+                brain::BrainMetarTransportStage::Startup,
+                brain::BrainMetarWinHttpOperation::Connect,
+                FALSE, error));
         }
         requestHandle = WinHttpOpenRequest(
             connection, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER,
             WINHTTP_DEFAULT_ACCEPT_TYPES, requestFlags);
         if (requestHandle == nullptr) {
+            const auto error = GetLastError();
             return finish(FailureFact(request,
                 brain::BrainMetarWorkerStatus::TransportFailure,
-                "request-handle-failed", started));
+                "request-handle-failed", started,
+                brain::BrainMetarTransportStage::Startup,
+                brain::BrainMetarWinHttpOperation::OpenRequest,
+                FALSE, error));
         }
         callbacksClosed.store(false, std::memory_order_release);
         DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
         if (!WinHttpSetOption(requestHandle, WINHTTP_OPTION_REDIRECT_POLICY,
                               &redirectPolicy, sizeof(redirectPolicy))) {
+            const auto error = GetLastError();
             return finish(FailureFact(request,
                 brain::BrainMetarWorkerStatus::TransportFailure,
-                "redirect-policy-failed", started));
+                "redirect-policy-failed", started,
+                brain::BrainMetarTransportStage::Startup,
+                brain::BrainMetarWinHttpOperation::ConfigureRedirects,
+                FALSE, error));
         }
         const auto callback = WinHttpSetStatusCallback(
             requestHandle, WinHttpCallback,
-            WINHTTP_CALLBACK_FLAG_SEND_REQUEST |
+            WINHTTP_CALLBACK_FLAG_SENDREQUEST_COMPLETE |
                 WINHTTP_CALLBACK_FLAG_HEADERS_AVAILABLE |
                 WINHTTP_CALLBACK_FLAG_DATA_AVAILABLE |
                 WINHTTP_CALLBACK_FLAG_READ_COMPLETE |
@@ -365,9 +421,13 @@ struct VatsimMetarClient::Implementation {
                 WINHTTP_CALLBACK_FLAG_HANDLES,
             0);
         if (callback == WINHTTP_INVALID_STATUS_CALLBACK) {
+            const auto error = GetLastError();
             return finish(FailureFact(request,
                 brain::BrainMetarWorkerStatus::TransportFailure,
-                "callback-registration-failed", started));
+                "callback-registration-failed", started,
+                brain::BrainMetarTransportStage::Startup,
+                brain::BrainMetarWinHttpOperation::RegisterCallback,
+                FALSE, error));
         }
         callbackRegistered = true;
         activeRequest.store(requestHandle, std::memory_order_release);
@@ -377,10 +437,14 @@ struct VatsimMetarClient::Implementation {
             requestHandle, L"Accept: application/json\r\n", -1L,
             WINHTTP_NO_REQUEST_DATA, 0, 0,
             reinterpret_cast<DWORD_PTR>(&context));
-        if (!sendResult && GetLastError() != ERROR_IO_PENDING) {
+        const auto sendError = sendResult ? ERROR_SUCCESS : GetLastError();
+        if (!sendResult && sendError != ERROR_IO_PENDING) {
             return finish(FailureFact(request,
                 brain::BrainMetarWorkerStatus::TransportFailure,
-                "send-start-failed", started));
+                "send-start-failed", started,
+                brain::BrainMetarTransportStage::SendStart,
+                brain::BrainMetarWinHttpOperation::SendRequest,
+                FALSE, sendError, transportProgress));
         }
         auto wait = WaitForPhase(
             &context, WINHTTP_CALLBACK_STATUS_SENDREQUEST_COMPLETE,
@@ -392,16 +456,29 @@ struct VatsimMetarClient::Implementation {
                 wait == WaitResult::Cancelled
                     ? brain::BrainMetarWorkerStatus::Cancelled
                     : brain::BrainMetarWorkerStatus::TransportFailure,
-                wait == WaitResult::Cancelled ? "cancelled-send" : "send-failed",
-                started));
+                wait == WaitResult::Cancelled
+                    ? "cancelled-send-completion"
+                    : wait == WaitResult::TimedOut
+                        ? "send-completion-timeout"
+                        : "send-completion-failed",
+                started,
+                brain::BrainMetarTransportStage::SendCompletion,
+                brain::BrainMetarWinHttpOperation::SendRequest,
+                context.operationResult.load(std::memory_order_acquire),
+                WaitError(wait, context), transportProgress));
         }
+        transportProgress |= brain::BrainMetarSendCompletionObserved;
 
         PreparePhase(&context);
         const auto receiveResult = WinHttpReceiveResponse(requestHandle, nullptr);
-        if (!receiveResult && GetLastError() != ERROR_IO_PENDING) {
+        const auto receiveError = receiveResult ? ERROR_SUCCESS : GetLastError();
+        if (!receiveResult && receiveError != ERROR_IO_PENDING) {
             return finish(FailureFact(request,
                 brain::BrainMetarWorkerStatus::TransportFailure,
-                "receive-start-failed", started));
+                "receive-start-failed", started,
+                brain::BrainMetarTransportStage::ReceiveStart,
+                brain::BrainMetarWinHttpOperation::ReceiveResponse,
+                FALSE, receiveError, transportProgress));
         }
         wait = WaitForPhase(
             &context, WINHTTP_CALLBACK_STATUS_HEADERS_AVAILABLE,
@@ -412,92 +489,165 @@ struct VatsimMetarClient::Implementation {
                     ? brain::BrainMetarWorkerStatus::Cancelled
                     : brain::BrainMetarWorkerStatus::TransportFailure,
                 wait == WaitResult::Cancelled
-                    ? "cancelled-receive" : "receive-failed", started));
+                    ? "cancelled-response-headers"
+                    : wait == WaitResult::TimedOut
+                        ? "response-headers-timeout"
+                        : "response-headers-failed",
+                started,
+                brain::BrainMetarTransportStage::ResponseHeaders,
+                brain::BrainMetarWinHttpOperation::ReceiveResponse,
+                context.operationResult.load(std::memory_order_acquire),
+                WaitError(wait, context), transportProgress));
         }
+        transportProgress |= brain::BrainMetarResponseHeadersReceived;
 
         DWORD httpStatus = 0;
         DWORD httpStatusSize = sizeof(httpStatus);
-        if (!WinHttpQueryHeaders(
+        const auto headerResult = WinHttpQueryHeaders(
                 requestHandle,
                 WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                 WINHTTP_HEADER_NAME_BY_INDEX, &httpStatus, &httpStatusSize,
-                WINHTTP_NO_HEADER_INDEX) || httpStatus != 200) {
+                WINHTTP_NO_HEADER_INDEX);
+        const auto headerError = headerResult ? ERROR_SUCCESS : GetLastError();
+        if (!headerResult || httpStatus != 200) {
             auto fact = FailureFact(request,
                 brain::BrainMetarWorkerStatus::HttpFailure,
-                "http-status-rejected", started);
+                headerResult ? "http-status-rejected" : "header-query-failed",
+                started,
+                headerResult
+                    ? brain::BrainMetarTransportStage::HttpStatus
+                    : brain::BrainMetarTransportStage::ResponseHeaders,
+                brain::BrainMetarWinHttpOperation::QueryHeaders,
+                headerResult, headerError, transportProgress);
             fact.httpStatus = static_cast<int>(httpStatus);
             return finish(std::move(fact));
         }
+        transportProgress |= brain::BrainMetarHttp200Accepted;
 
         std::string payload;
         for (;;) {
             PreparePhase(&context);
             const auto queryResult =
                 WinHttpQueryDataAvailable(requestHandle, nullptr);
-            if (!queryResult && GetLastError() != ERROR_IO_PENDING) {
-                return finish(FailureFact(request,
+            const auto queryError = queryResult ? ERROR_SUCCESS : GetLastError();
+            if (!queryResult && queryError != ERROR_IO_PENDING) {
+                auto fact = FailureFact(request,
                     brain::BrainMetarWorkerStatus::TransportFailure,
-                    "query-data-start-failed", started));
+                    "data-availability-start-failed", started,
+                    brain::BrainMetarTransportStage::DataAvailability,
+                    brain::BrainMetarWinHttpOperation::QueryDataAvailable,
+                    FALSE, queryError, transportProgress);
+                fact.httpStatus = 200;
+                fact.payloadBytes = payload.size();
+                return finish(std::move(fact));
             }
             wait = WaitForPhase(
                 &context, WINHTTP_CALLBACK_STATUS_DATA_AVAILABLE,
                 RemainingTimeoutMs(started, kReceiveTimeoutMs));
             if (wait != WaitResult::Completed) {
-                return finish(FailureFact(request,
+                auto fact = FailureFact(request,
                     wait == WaitResult::Cancelled
                         ? brain::BrainMetarWorkerStatus::Cancelled
                         : brain::BrainMetarWorkerStatus::TransportFailure,
                     wait == WaitResult::Cancelled
-                        ? "cancelled-query-data" : "query-data-failed", started));
+                        ? "cancelled-data-availability"
+                        : wait == WaitResult::TimedOut
+                            ? "data-availability-timeout"
+                            : "data-availability-failed",
+                    started,
+                    brain::BrainMetarTransportStage::DataAvailability,
+                    brain::BrainMetarWinHttpOperation::QueryDataAvailable,
+                    context.operationResult.load(std::memory_order_acquire),
+                    WaitError(wait, context), transportProgress);
+                fact.httpStatus = 200;
+                fact.payloadBytes = payload.size();
+                return finish(std::move(fact));
             }
             const auto available = context.available.load(std::memory_order_acquire);
             if (available == 0) break;
             if (payload.size() + available > kMaxPayloadBytes) {
-                return finish(FailureFact(request,
+                auto fact = FailureFact(request,
                     brain::BrainMetarWorkerStatus::PayloadRejected,
-                    "payload-too-large", started));
+                    "payload-too-large", started,
+                    brain::BrainMetarTransportStage::PayloadValidation,
+                    brain::BrainMetarWinHttpOperation::QueryDataAvailable,
+                    TRUE, ERROR_SUCCESS, transportProgress);
+                fact.httpStatus = 200;
+                fact.payloadBytes = payload.size() + available;
+                return finish(std::move(fact));
             }
             std::vector<char> buffer(available);
             PreparePhase(&context);
             const auto readResult = WinHttpReadData(
                 requestHandle, buffer.data(), available, nullptr);
-            if (!readResult && GetLastError() != ERROR_IO_PENDING) {
-                return finish(FailureFact(request,
+            const auto readError = readResult ? ERROR_SUCCESS : GetLastError();
+            if (!readResult && readError != ERROR_IO_PENDING) {
+                auto fact = FailureFact(request,
                     brain::BrainMetarWorkerStatus::TransportFailure,
-                    "read-start-failed", started));
+                    "read-start-failed", started,
+                    brain::BrainMetarTransportStage::Read,
+                    brain::BrainMetarWinHttpOperation::ReadData,
+                    FALSE, readError, transportProgress);
+                fact.httpStatus = 200;
+                fact.payloadBytes = payload.size();
+                return finish(std::move(fact));
             }
             wait = WaitForPhase(
                 &context, WINHTTP_CALLBACK_STATUS_READ_COMPLETE,
                 RemainingTimeoutMs(started, kReceiveTimeoutMs));
             if (wait != WaitResult::Completed) {
-                return finish(FailureFact(request,
+                auto fact = FailureFact(request,
                     wait == WaitResult::Cancelled
                         ? brain::BrainMetarWorkerStatus::Cancelled
                         : brain::BrainMetarWorkerStatus::TransportFailure,
                     wait == WaitResult::Cancelled
-                        ? "cancelled-read" : "read-failed", started));
+                        ? "cancelled-read"
+                        : wait == WaitResult::TimedOut
+                            ? "read-timeout" : "read-failed",
+                    started,
+                    brain::BrainMetarTransportStage::Read,
+                    brain::BrainMetarWinHttpOperation::ReadData,
+                    context.operationResult.load(std::memory_order_acquire),
+                    WaitError(wait, context), transportProgress);
+                fact.httpStatus = 200;
+                fact.payloadBytes = payload.size();
+                return finish(std::move(fact));
             }
             const auto transferred =
                 context.transferred.load(std::memory_order_acquire);
             if (transferred > available ||
                 payload.size() + transferred > kMaxPayloadBytes) {
-                return finish(FailureFact(request,
+                auto fact = FailureFact(request,
                     brain::BrainMetarWorkerStatus::PayloadRejected,
-                    "payload-bound-rejected", started));
+                    "payload-bound-rejected", started,
+                    brain::BrainMetarTransportStage::PayloadValidation,
+                    brain::BrainMetarWinHttpOperation::ReadData,
+                    TRUE, ERROR_SUCCESS, transportProgress);
+                fact.httpStatus = 200;
+                fact.payloadBytes = payload.size() + transferred;
+                return finish(std::move(fact));
             }
             payload.append(buffer.data(), transferred);
         }
+        transportProgress |= brain::BrainMetarPayloadReadComplete;
 
         const auto extracted = ExtractVatsimMetarJson(normalized, payload);
         if (!extracted.accepted) {
             auto status = extracted.reason == "wrong-station"
                 ? brain::BrainMetarWorkerStatus::WrongStation
                 : brain::BrainMetarWorkerStatus::JsonRejected;
-            auto fact = FailureFact(request, status, extracted.reason, started);
+            const auto stage = extracted.reason == "wrong-station"
+                ? brain::BrainMetarTransportStage::StationValidation
+                : brain::BrainMetarTransportStage::JsonValidation;
+            auto fact = FailureFact(
+                request, status, extracted.reason, started, stage,
+                brain::BrainMetarWinHttpOperation::None,
+                TRUE, ERROR_SUCCESS, transportProgress);
             fact.httpStatus = 200;
             fact.payloadBytes = payload.size();
             return finish(std::move(fact));
         }
+        transportProgress |= brain::BrainMetarJsonAccepted;
         brain::BrainMetarWorkerFact fact;
         fact.status = brain::BrainMetarWorkerStatus::Success;
         fact.request = request;
@@ -507,6 +657,11 @@ struct VatsimMetarClient::Implementation {
         fact.completedMonotonicMs = MonotonicMilliseconds();
         fact.networkElapsedUs = ElapsedMicroseconds(started);
         fact.payloadBytes = payload.size();
+        fact.terminalStage = brain::BrainMetarTransportStage::Completed;
+        fact.winHttpOperation =
+            brain::BrainMetarWinHttpOperation::ReadData;
+        fact.winHttpResult = TRUE;
+        fact.transportProgress = transportProgress;
         fact.diagnostic = "vatsim-metar-accepted";
         return finish(std::move(fact));
     }

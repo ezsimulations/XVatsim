@@ -282,6 +282,48 @@ enum class BrainMetarWorkerStatus {
     WrongStation,
 };
 
+enum class BrainMetarTransportStage {
+    None,
+    Startup,
+    SendStart,
+    SendCompletion,
+    ReceiveStart,
+    ResponseHeaders,
+    HttpStatus,
+    DataAvailability,
+    Read,
+    PayloadValidation,
+    JsonValidation,
+    StationValidation,
+    Completed,
+};
+
+enum class BrainMetarWinHttpOperation {
+    None,
+    CreateEventHandle,
+    OpenSession,
+    ConfigureTimeouts,
+    Connect,
+    OpenRequest,
+    ConfigureRedirects,
+    RegisterCallback,
+    SendRequest,
+    ReceiveResponse,
+    QueryHeaders,
+    QueryDataAvailable,
+    ReadData,
+    CloseRequest,
+};
+
+enum BrainMetarTransportProgress : std::uint32_t {
+    BrainMetarTransportProgressNone = 0,
+    BrainMetarSendCompletionObserved = 1U << 0,
+    BrainMetarResponseHeadersReceived = 1U << 1,
+    BrainMetarHttp200Accepted = 1U << 2,
+    BrainMetarPayloadReadComplete = 1U << 3,
+    BrainMetarJsonAccepted = 1U << 4,
+};
+
 enum class BrainMetarFlightCategory {
     Unknown,
     Vfr,
@@ -331,8 +373,52 @@ struct BrainMetarWorkerFact {
     long long completedMonotonicMs = 0;
     long long networkElapsedUs = 0;
     std::size_t payloadBytes = 0;
+    BrainMetarTransportStage terminalStage = BrainMetarTransportStage::None;
+    BrainMetarWinHttpOperation winHttpOperation =
+        BrainMetarWinHttpOperation::None;
+    std::uint64_t winHttpResult = 0;
+    std::uint32_t winHttpError = 0;
+    std::uint32_t transportProgress = BrainMetarTransportProgressNone;
     std::string diagnostic;
     std::string source = "VATSIM_METAR";
+};
+
+struct BrainMetarDispatchDiagnostic {
+    bool available = false;
+    BrainMetarWorkerRequest request;
+};
+
+struct BrainMetarTerminalDiagnostic {
+    bool available = false;
+    BrainMetarWorkerRequest request;
+    std::string stationIcao;
+    BrainMetarWorkerStatus status = BrainMetarWorkerStatus::None;
+    BrainMetarTransportStage terminalStage = BrainMetarTransportStage::None;
+    BrainMetarWinHttpOperation winHttpOperation =
+        BrainMetarWinHttpOperation::None;
+    std::uint64_t winHttpResult = 0;
+    std::uint32_t winHttpError = 0;
+    std::uint32_t transportProgress = BrainMetarTransportProgressNone;
+    int httpStatus = 0;
+    std::size_t payloadBytes = 0;
+    long long networkElapsedUs = 0;
+    long long completedMonotonicMs = 0;
+    std::string diagnostic;
+    std::string source;
+};
+
+struct BrainMetarDispositionDiagnostic {
+    bool available = false;
+    std::uint64_t requestId = 0;
+    std::string airportIcao;
+    bool accepted = false;
+    bool parsingAttempted = false;
+    std::string parserReason;
+    BrainMetarFlightCategory acceptedCategory =
+        BrainMetarFlightCategory::Unknown;
+    bool historyMutated = false;
+    bool presentationChanged = false;
+    std::string reason;
 };
 
 struct BrainMetarWorkerShutdownSnapshot {
@@ -340,6 +426,9 @@ struct BrainMetarWorkerShutdownSnapshot {
     bool running = false;
     bool handlesClosed = true;
     bool callbacksClosed = true;
+    bool terminalFactDrained = false;
+    BrainMetarTerminalDiagnostic terminalDiagnostic;
+    BrainMetarDispositionDiagnostic dispositionDiagnostic;
 };
 
 class BrainMetarWorker {
@@ -460,6 +549,9 @@ struct BrainOwnedAsyncFactCycleOutput {
     long long acceptedNetworkElapsedUs = 0;
     long long simulatorThreadElapsedUs = 0;
     std::string reason;
+    BrainMetarDispatchDiagnostic dispatchDiagnostic;
+    BrainMetarTerminalDiagnostic terminalDiagnostic;
+    BrainMetarDispositionDiagnostic dispositionDiagnostic;
 };
 
 struct BrainOwnedCandidateCompletion {

@@ -284,6 +284,13 @@ void ClearFlightRecoveryState();
 void ResetDiagnosticsTraceState();
 std::string CurrentDiagnosticsDateToken();
 void AppendDiagnosticsLogLine(const std::string& line);
+std::string SanitizeLogText(std::string value, std::size_t maxChars);
+void LogMetarAsyncDiagnostics(
+    const xvatsim::brain::BrainOwnedAsyncFactCycleOutput& output);
+void LogMetarLifecycleDiagnostics(
+    const xvatsim::brain::BrainMetarWorkerShutdownSnapshot& snapshot);
+xvatsim::brain::BrainMetarWorkerShutdownSnapshot
+ApplyBoundAsyncWorkerLifecycleBoundary(bool clearAcceptedState);
 void SynchronizeAccessoryPresentation(
     xvatsim::modules::overlay::AccessoryDispatchStageWallTimings*
         acceptedActionStages = nullptr);
@@ -999,10 +1006,7 @@ void UpdateFlightContextIfNeeded(
         &gBrainOwnedRuntimeState,
         output.flightContext);
     if (output.shouldResetFlightScopedState) {
-        xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
-            &gBrainOwnedRuntimeState,
-            gAsyncFactWorkerHost.Bindings(),
-            true);
+        (void)ApplyBoundAsyncWorkerLifecycleBoundary(true);
         DiscardPendingAccessoryClickFacts();
         xvatsim::brain::ResetBrainOwnedAccessoryForConfirmedNewFlight(
             &gBrainOwnedRuntimeState);
@@ -1234,6 +1238,180 @@ std::string SanitizeLogText(std::string value, std::size_t maxChars = kMaxLogFie
         }
     }
     return sanitized;
+}
+
+const char* MetarRequestPurposeToken(
+    xvatsim::brain::BrainMetarRequestPurpose purpose) {
+    using Purpose = xvatsim::brain::BrainMetarRequestPurpose;
+    switch (purpose) {
+        case Purpose::PrimaryTarget: return "primary-target";
+        case Purpose::PilotLookup: return "pilot-lookup";
+        case Purpose::PrimaryRefresh: return "primary-refresh";
+        default: return "unknown";
+    }
+}
+
+const char* MetarWorkerStatusToken(
+    xvatsim::brain::BrainMetarWorkerStatus status) {
+    using Status = xvatsim::brain::BrainMetarWorkerStatus;
+    switch (status) {
+        case Status::None: return "none";
+        case Status::Pending: return "pending";
+        case Status::Success: return "success";
+        case Status::Cancelled: return "cancelled";
+        case Status::InvalidRequest: return "invalid-request";
+        case Status::TransportFailure: return "transport-failure";
+        case Status::HttpFailure: return "http-failure";
+        case Status::PayloadRejected: return "payload-rejected";
+        case Status::JsonRejected: return "json-rejected";
+        case Status::WrongStation: return "wrong-station";
+        default: return "unknown";
+    }
+}
+
+const char* MetarTransportStageToken(
+    xvatsim::brain::BrainMetarTransportStage stage) {
+    using Stage = xvatsim::brain::BrainMetarTransportStage;
+    switch (stage) {
+        case Stage::None: return "none";
+        case Stage::Startup: return "startup";
+        case Stage::SendStart: return "send-start";
+        case Stage::SendCompletion: return "send-completion";
+        case Stage::ReceiveStart: return "receive-start";
+        case Stage::ResponseHeaders: return "response-headers";
+        case Stage::HttpStatus: return "http-status";
+        case Stage::DataAvailability: return "data-availability";
+        case Stage::Read: return "read";
+        case Stage::PayloadValidation: return "payload-validation";
+        case Stage::JsonValidation: return "json-validation";
+        case Stage::StationValidation: return "station-validation";
+        case Stage::Completed: return "completed";
+        default: return "unknown";
+    }
+}
+
+const char* MetarWinHttpOperationToken(
+    xvatsim::brain::BrainMetarWinHttpOperation operation) {
+    using Operation = xvatsim::brain::BrainMetarWinHttpOperation;
+    switch (operation) {
+        case Operation::None: return "none";
+        case Operation::CreateEventHandle: return "create-event";
+        case Operation::OpenSession: return "open-session";
+        case Operation::ConfigureTimeouts: return "configure-timeouts";
+        case Operation::Connect: return "connect";
+        case Operation::OpenRequest: return "open-request";
+        case Operation::ConfigureRedirects: return "configure-redirects";
+        case Operation::RegisterCallback: return "register-callback";
+        case Operation::SendRequest: return "send-request";
+        case Operation::ReceiveResponse: return "receive-response";
+        case Operation::QueryHeaders: return "query-headers";
+        case Operation::QueryDataAvailable: return "query-data-available";
+        case Operation::ReadData: return "read-data";
+        case Operation::CloseRequest: return "close-request";
+        default: return "unknown";
+    }
+}
+
+const char* MetarCategoryDiagnosticToken(
+    xvatsim::brain::BrainMetarFlightCategory category) {
+    using Category = xvatsim::brain::BrainMetarFlightCategory;
+    switch (category) {
+        case Category::Vfr: return "VFR";
+        case Category::Mvfr: return "MVFR";
+        case Category::Ifr: return "IFR";
+        case Category::Lifr: return "LIFR";
+        case Category::Unknown:
+        default: return "UNKNOWN";
+    }
+}
+
+void LogMetarTerminalDiagnostic(
+    const xvatsim::brain::BrainMetarTerminalDiagnostic& diagnostic) {
+    if (!diagnostic.available) return;
+    std::ostringstream stream;
+    stream << "event=metar-terminal"
+           << " requestId=" << diagnostic.request.requestId
+           << " purpose=" << MetarRequestPurposeToken(
+                  diagnostic.request.purpose)
+           << " icao=" << SanitizeLogText(
+                  diagnostic.request.airportIcao, 4)
+           << " returnedIcao=" << SanitizeLogText(
+                  diagnostic.stationIcao, 4)
+           << " primaryGeneration="
+           << diagnostic.request.primaryGeneration
+           << " lookupGeneration="
+           << diagnostic.request.lookupGeneration
+           << " stage=" << MetarTransportStageToken(
+                  diagnostic.terminalStage)
+           << " status=" << MetarWorkerStatusToken(diagnostic.status)
+           << " reason=" << SanitizeLogText(diagnostic.diagnostic, 80)
+           << " operation=" << MetarWinHttpOperationToken(
+                  diagnostic.winHttpOperation)
+           << " result=" << diagnostic.winHttpResult
+           << " winhttpError=" << diagnostic.winHttpError
+           << " httpStatus=" << diagnostic.httpStatus
+           << " payloadBytes=" << diagnostic.payloadBytes
+           << " networkUs=" << diagnostic.networkElapsedUs
+           << " completedMonotonicMs="
+           << diagnostic.completedMonotonicMs
+           << " progress=" << diagnostic.transportProgress
+           << " source=" << SanitizeLogText(diagnostic.source, 24);
+    AppendDiagnosticsLogLine(stream.str());
+}
+
+void LogMetarDispositionDiagnostic(
+    const xvatsim::brain::BrainMetarDispositionDiagnostic& diagnostic) {
+    if (!diagnostic.available) return;
+    std::ostringstream stream;
+    stream << "event=metar-brain-disposition"
+           << " requestId=" << diagnostic.requestId
+           << " icao=" << SanitizeLogText(diagnostic.airportIcao, 4)
+           << " disposition=" << (diagnostic.accepted ? "accepted" : "rejected")
+           << " parseAttempted=" << diagnostic.parsingAttempted
+           << " parserReason=" << SanitizeLogText(
+                  diagnostic.parserReason, 80)
+           << " category=" << MetarCategoryDiagnosticToken(
+                  diagnostic.acceptedCategory)
+           << " historyMutated=" << diagnostic.historyMutated
+           << " presentationChanged=" << diagnostic.presentationChanged
+           << " reason=" << SanitizeLogText(diagnostic.reason, 80);
+    AppendDiagnosticsLogLine(stream.str());
+}
+
+void LogMetarAsyncDiagnostics(
+    const xvatsim::brain::BrainOwnedAsyncFactCycleOutput& output) {
+    if (output.dispatchDiagnostic.available) {
+        const auto& request = output.dispatchDiagnostic.request;
+        std::ostringstream stream;
+        stream << "event=metar-dispatch"
+               << " requestId=" << request.requestId
+               << " purpose=" << MetarRequestPurposeToken(request.purpose)
+               << " icao=" << SanitizeLogText(request.airportIcao, 4)
+               << " primaryGeneration=" << request.primaryGeneration
+               << " lookupGeneration=" << request.lookupGeneration
+               << " dispatchedMonotonicMs="
+               << request.dispatchedMonotonicMs;
+        AppendDiagnosticsLogLine(stream.str());
+    }
+    LogMetarTerminalDiagnostic(output.terminalDiagnostic);
+    LogMetarDispositionDiagnostic(output.dispositionDiagnostic);
+}
+
+void LogMetarLifecycleDiagnostics(
+    const xvatsim::brain::BrainMetarWorkerShutdownSnapshot& snapshot) {
+    LogMetarTerminalDiagnostic(snapshot.terminalDiagnostic);
+    LogMetarDispositionDiagnostic(snapshot.dispositionDiagnostic);
+}
+
+xvatsim::brain::BrainMetarWorkerShutdownSnapshot
+ApplyBoundAsyncWorkerLifecycleBoundary(bool clearAcceptedState) {
+    const auto snapshot =
+        xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+            &gBrainOwnedRuntimeState,
+            gAsyncFactWorkerHost.Bindings(),
+            clearAcceptedState);
+    LogMetarLifecycleDiagnostics(snapshot);
+    return snapshot;
 }
 
 std::string SummarizeAuthorityProofs(
@@ -2574,10 +2752,7 @@ void DiscardPendingAccessoryClickFacts() {
 }
 
 void ResetSessionState() {
-    xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
-        &gBrainOwnedRuntimeState,
-        gAsyncFactWorkerHost.Bindings(),
-        true);
+    (void)ApplyBoundAsyncWorkerLifecycleBoundary(true);
     DiscardPendingAccessoryClickFacts();
     xvatsim::brain::ResetBrainOwnedAccessoryForSessionReset(
         &gBrainOwnedRuntimeState);
@@ -2595,10 +2770,7 @@ void ApplyAircraftRuntimeBoundaryDecision(
         ResetPluginRuntimeState(false, false, true);
     }
     if (decision.shouldResetSessionRuntimeCaches) {
-        xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
-            &gBrainOwnedRuntimeState,
-            gAsyncFactWorkerHost.Bindings(),
-            true);
+        (void)ApplyBoundAsyncWorkerLifecycleBoundary(true);
         DiscardPendingAccessoryClickFacts();
         xvatsim::brain::ResetBrainOwnedAccessoryForConfirmedColdDark(
             &gBrainOwnedRuntimeState);
@@ -2695,10 +2867,7 @@ SessionBoundaryResult HandleXPilotSessionBoundary(
             pilotIdentitySnapshot.normalizedCallsign.empty()
                 ? xPilotSessionSnapshot.callsign
                 : pilotIdentitySnapshot.normalizedCallsign);
-        xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
-            &gBrainOwnedRuntimeState,
-            gAsyncFactWorkerHost.Bindings(),
-            true);
+        (void)ApplyBoundAsyncWorkerLifecycleBoundary(true);
         DiscardPendingAccessoryClickFacts();
         xvatsim::brain::ResetBrainOwnedAccessoryForCallsignChange(
             &gBrainOwnedRuntimeState,
@@ -4688,21 +4857,7 @@ void RefreshOverlayFromBrainEngineer3() {
     const auto asyncFactOutput = RunBoundAsyncFactCycle(
         xPilotSessionSnapshot.connected,
         workflowStage);
-    if (asyncFactOutput.requestDispatched ||
-        asyncFactOutput.completionAccepted ||
-        asyncFactOutput.completionRejected ||
-        asyncFactOutput.presentationChanged) {
-        RecordDiagnosticJob(
-            "AsyncFactCycle",
-            asyncFactOutput.reason,
-            0,
-            "brain-owned",
-            asyncFactOutput.presentationChanged
-                ? "visible-state-changed"
-                : "fact-state-changed",
-            {},
-            diagnostics.route);
-    }
+    LogMetarAsyncDiagnostics(asyncFactOutput);
     const auto enrouteInitialHoldActive =
         UpdateEnrouteInitialDisplayHold(workflowStage);
 
@@ -5041,10 +5196,7 @@ PLUGIN_API void XPluginStop() {
     LogAccessoryPerformanceSnapshot("plugin-stop");
     xvatsim::brain::StopBrainOwnedAccessoryRuntime(
         &gBrainOwnedRuntimeState);
-    xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
-        &gBrainOwnedRuntimeState,
-        gAsyncFactWorkerHost.Bindings(),
-        true);
+    (void)ApplyBoundAsyncWorkerLifecycleBoundary(true);
     ResetPluginRuntimeState(true, true);
     gOverlayWindow.Destroy();
     gOverlayWindow.SetAccessoryInputDispatchCallback(nullptr, nullptr);
@@ -5079,10 +5231,7 @@ PLUGIN_API void XPluginDisable() {
     LogAccessoryPerformanceSnapshot("plugin-disable");
     xvatsim::brain::DisableBrainOwnedAccessoryRuntime(
         &gBrainOwnedRuntimeState);
-    xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
-        &gBrainOwnedRuntimeState,
-        gAsyncFactWorkerHost.Bindings(),
-        false);
+    (void)ApplyBoundAsyncWorkerLifecycleBoundary(false);
     ResetPluginRuntimeState(true, true, true);
     xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
         &gBrainOwnedRuntimeState,

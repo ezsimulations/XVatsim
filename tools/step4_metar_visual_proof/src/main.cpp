@@ -35,19 +35,22 @@ struct VisualSpec {
 const VisualSpec kVisuals[]{
     {"01_unknown_no_primary.png", "unknown"},
     {"02_primary_pending.png", "pending"},
-    {"03_primary_vfr.png", "vfr"},
-    {"04_primary_mvfr.png", "mvfr"},
-    {"05_primary_ifr.png", "ifr"},
-    {"06_primary_lifr.png", "lifr"},
-    {"07_primary_stale.png", "stale"},
-    {"08_pinned_primary_history.png", "history"},
-    {"09_lookup_pending.png", "lookup-pending"},
-    {"10_lookup_spotlight.png", "lookup-spotlight"},
-    {"11_lookup_failure.png", "lookup-failure"},
-    {"12_primary_preempts_spotlight.png", "preempted"},
-    {"13_long_raw_metar_wrapping.png", "long"},
+    {"03_primary_unavailable.png", "unavailable"},
+    {"04_primary_stale.png", "stale"},
+    {"05_primary_vfr.png", "vfr"},
+    {"06_primary_mvfr.png", "mvfr"},
+    {"07_primary_ifr.png", "ifr"},
+    {"08_primary_lifr.png", "lifr"},
+    {"09_selected_no_open.png", "selected"},
+    {"10_lookup_pending.png", "lookup-pending"},
+    {"11_lookup_spotlight.png", "lookup-spotlight"},
+    {"12_lookup_failure.png", "lookup-failure"},
+    {"13_primary_preempts_spotlight.png", "preempted"},
     {"14_main_card_zero_difference.png", "main-card"},
 };
+
+constexpr std::uint64_t kAcceptedMainCardSignature =
+    8'949'928'878'432'326'300ULL;
 
 std::uint64_t ElapsedUs(std::chrono::steady_clock::time_point started) {
     return static_cast<std::uint64_t>(
@@ -235,43 +238,42 @@ brain::BrainOwnedRuntimeState BuildState(const std::string& variant) {
     brain::BrainOwnedRuntimeState state;
     brain::EnableBrainOwnedAccessoryRuntime(&state);
     state.metar.initialized = true;
-    state.metar.primaryAirportIcao = variant == "unknown" ? "" : "KSAN";
+    state.metar.primaryAirportIcao = variant == "unknown" ? "" : "KDFW";
     state.metar.visibleState = variant == "unknown"
         ? brain::BrainMetarVisibleState::Unavailable
         : variant == "pending"
             ? brain::BrainMetarVisibleState::Pending
+            : variant == "unavailable"
+                ? brain::BrainMetarVisibleState::Unavailable
             : brain::BrainMetarVisibleState::Fresh;
     state.metar.sourceHealth = variant == "pending"
         ? brain::BrainMetarSourceHealth::Pending
-        : brain::BrainMetarSourceHealth::Healthy;
-    std::string raw = "KSAN 271952Z 24009KT 10SM FEW050";
-    if (variant == "mvfr") raw = "KSAN 271952Z 24009KT 4SM BKN020";
-    if (variant == "ifr") raw = "KSAN 271952Z 24009KT 2SM BKN008";
+        : variant == "unavailable"
+            ? brain::BrainMetarSourceHealth::Failed
+            : brain::BrainMetarSourceHealth::Healthy;
+    std::string raw = "KDFW 271952Z 18010KT 10SM FEW050";
+    if (variant == "mvfr") raw = "KDFW 271952Z 18010KT 4SM BKN020";
+    if (variant == "ifr") raw = "KDFW 271952Z 18010KT 2SM BKN008";
     if (variant == "lifr" || variant == "preempted") {
-        raw = "SPECI KSAN 271954Z 24009KT M1/4SM VV003";
+        raw = "SPECI KDFW 271954Z 18010KT M1/4SM VV003";
     }
-    if (variant == "long") {
-        raw = "METAR KSAN 271952Z 24009KT 10SM FEW050 SCT120 "
-              "RMK AO2 SLP132 T01940128 WIND DATA REMAINS THE OFFICIAL RAW VATSIM REPORT "
-              "AND THIS DETERMINISTIC PROOF EXERCISES MULTIPLE WRAPPED DRAWER LINES "
-              "WITHOUT ALTERING OR SUMMARIZING THE ACCEPTED SOURCE TEXT";
-    }
-    if (variant != "unknown" && variant != "pending") {
-        state.metar.primaryObservation = Parse("KSAN", raw);
+    if (variant != "unknown" && variant != "pending" &&
+        variant != "unavailable") {
+        state.metar.primaryObservation = Parse("KDFW", raw);
         state.metar.primaryContentFingerprint = brain::FingerprintBrainMetarContent(raw);
         state.metar.visibleFetchAgeMinutes = 2;
         if (variant == "stale") state.metar.visibleState = brain::BrainMetarVisibleState::Stale;
-        AddHistory(&state, "METAR|KSAN|" +
+        AddHistory(&state, "METAR|KDFW|" +
             std::to_string(state.metar.primaryObservation.observationUnixSeconds),
-            "KSAN · AUTOMATIC TARGET · 1952Z", raw,
+            "KDFW · AUTOMATIC TARGET · 1952Z", raw,
             state.metar.primaryObservation.observationUnixSeconds);
     }
-    if (variant == "history" || variant == "lookup-pending" ||
+    if (variant == "lookup-pending" ||
         variant == "lookup-spotlight" || variant == "lookup-failure" ||
         variant == "preempted") {
-        AddHistory(&state, "METAR|KDFW|1787852820",
-                   "KDFW · AUTOMATIC TARGET · 1747Z",
-                   "KDFW 271747Z 16008KT 10SM FEW050", 1'787'852'820);
+        AddHistory(&state, "METAR|KSAN|1787852820",
+                   "KSAN · AUTOMATIC TARGET · 1747Z",
+                   "KSAN 271747Z 24009KT 10SM FEW050", 1'787'852'820);
         AddHistory(&state, "METAR|KABQ|1787860380",
                    "KABQ · PILOT REQUEST · 1953Z",
                    "KABQ 271953Z 18012KT 4SM BKN020", 1'787'860'380);
@@ -297,6 +299,52 @@ brain::BrainOwnedRuntimeState BuildState(const std::string& variant) {
     request.requestSequence = 1;
     (void)brain::RequestBrainOwnedAccessoryDrawerSelection(&state, request);
     return state;
+}
+
+const brain::BrainOwnedAccessoryOrbPresentation* MetarOrb(
+    const brain::BrainOwnedAccessoryPresentationHandle& presentation) {
+    if (!presentation.snapshot) return nullptr;
+    for (const auto& orb : presentation.snapshot->orbs) {
+        if (orb.drawer == brain::BrainOwnedAccessoryDrawerId::Metar) {
+            return &orb;
+        }
+    }
+    return nullptr;
+}
+
+bool ValidateExactOrbStrings(
+    brain::BrainOwnedRuntimeState* state,
+    const std::string& variant,
+    std::uint64_t generation) {
+    const auto presentation = brain::ProjectBrainOwnedAccessoryPresentation(
+        state, generation, nullptr);
+    const auto* orb = MetarOrb(presentation);
+    if (orb == nullptr) return false;
+    const bool neutral = variant == "unknown" || variant == "pending" ||
+        variant == "unavailable" || variant == "stale";
+    if (neutral) {
+        return orb->label == "METAR" && orb->airportIcao.empty() &&
+            orb->categoryText.empty() && orb->stateText.empty() &&
+            orb->selectedIndicator.empty() && orb->neutral &&
+            orb->tone ==
+                brain::BrainOwnedAccessoryOrbPresentation::Tone::Gray;
+    }
+    std::string expectedCategory = "VFR";
+    auto expectedTone = brain::BrainOwnedAccessoryOrbPresentation::Tone::Green;
+    if (variant == "mvfr") {
+        expectedCategory = "MVFR";
+        expectedTone = brain::BrainOwnedAccessoryOrbPresentation::Tone::Blue;
+    } else if (variant == "ifr") {
+        expectedCategory = "IFR";
+        expectedTone = brain::BrainOwnedAccessoryOrbPresentation::Tone::Red;
+    } else if (variant == "lifr" || variant == "preempted") {
+        expectedCategory = "LIFR";
+        expectedTone = brain::BrainOwnedAccessoryOrbPresentation::Tone::Magenta;
+    }
+    return orb->label.empty() && orb->airportIcao == "KDFW" &&
+        orb->categoryText == expectedCategory && orb->stateText.empty() &&
+        orb->selectedIndicator.empty() && !orb->neutral &&
+        orb->tone == expectedTone;
 }
 
 struct RenderResult {
@@ -387,6 +435,49 @@ RenderResult Render(
     return result;
 }
 
+overlay::OfflineRasterImage RenderMinimalOrbStateMatrix(
+    overlay::AccessoryTextMeasurementContext* measurement,
+    std::uint64_t* generation,
+    bool* exactStringsValid) {
+    const std::string variants[]{"unknown", "vfr", "mvfr", "ifr", "lifr"};
+    std::vector<overlay::OfflineRasterImage> rails;
+    const auto typography = overlay::PrepareAccessoryTypography(measurement, 1.0f);
+    for (const auto& variant : variants) {
+        auto state = BuildState(variant);
+        const auto currentGeneration = (*generation)++;
+        *exactStringsValid = *exactStringsValid &&
+            ValidateExactOrbStrings(&state, variant, currentGeneration);
+        overlay::AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 120;
+        layoutInput.windowTop = 940;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = false;
+        layoutInput.typography = &typography;
+        const auto layout = overlay::ResolveAccessoryLayout(layoutInput);
+        const auto presentation = brain::ProjectBrainOwnedAccessoryPresentation(
+            &state, currentGeneration, nullptr);
+        rails.push_back(overlay::RenderProductionAccessoryRailForOfflineProof(
+            layout, *presentation.snapshot));
+    }
+    const int gap = 12;
+    int width = gap;
+    int height = 0;
+    for (const auto& rail : rails) {
+        width += rail.width + gap;
+        height = std::max(height, rail.height + 2 * gap);
+    }
+    auto matrix = Canvas(width, height);
+    int left = gap;
+    for (const auto& rail : rails) {
+        Blit(&matrix, rail, left, gap);
+        left += rail.width + gap;
+    }
+    return matrix;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -413,14 +504,20 @@ int main(int argc, char** argv) {
     performance << "file,projection_us,wrapping_us,presentation_us,raster_us,main_card_signature\n";
     std::size_t baselineMainCardSignature = 0;
     bool failed = false;
+    bool exactStringsValid = true;
     std::uint64_t generation = 1;
     for (const auto& visual : kVisuals) {
         auto state = BuildState(visual.variant);
-        const auto rendered = Render(&state, measurement, generation++);
+        const auto currentGeneration = generation++;
+        exactStringsValid = exactStringsValid &&
+            ValidateExactOrbStrings(
+                &state, visual.variant, currentGeneration);
+        const auto rendered = Render(&state, measurement, currentGeneration);
         if (baselineMainCardSignature == 0) {
             baselineMainCardSignature = rendered.mainCardSignature;
         }
         if (rendered.mainCardSignature != baselineMainCardSignature ||
+            rendered.mainCardSignature != kAcceptedMainCardSignature ||
             !SavePng(outputDirectory / visual.filename, rendered.composite)) {
             failed = true;
         }
@@ -428,6 +525,15 @@ int main(int argc, char** argv) {
                     << rendered.wrapUs << ',' << rendered.updateUs << ','
                     << rendered.rasterUs << ',' << rendered.mainCardSignature << '\n';
     }
+    const auto matrix = RenderMinimalOrbStateMatrix(
+        measurement, &generation, &exactStringsValid);
+    if (!SavePng(
+            outputDirectory / "15_minimal_orb_state_matrix.png", matrix)) {
+        failed = true;
+    }
+    performance << "15_minimal_orb_state_matrix.png,0,0,0,0,"
+                << baselineMainCardSignature << '\n';
+    failed = failed || !exactStringsValid;
     overlay::ShutdownAccessoryTextMeasurement(measurement);
     Gdiplus::GdiplusShutdown(token);
 
@@ -440,6 +546,8 @@ int main(int argc, char** argv) {
         sums << Sha256(outputDirectory / visual.filename) << "  "
              << visual.filename << '\n';
     }
+    sums << Sha256(outputDirectory / "15_minimal_orb_state_matrix.png")
+         << "  15_minimal_orb_state_matrix.png\n";
     sums << Sha256(outputDirectory / "performance.csv")
          << "  performance.csv\n";
     {
@@ -450,6 +558,7 @@ int main(int argc, char** argv) {
         std::cerr << "Step 4 visual proof failed\n";
         return 1;
     }
-    std::cout << "Step 4 visual proof wrote 14 deterministic images\n";
+    std::cout << "Step 4 corrective visual proof wrote 15 deterministic images"
+              << " with exact ORB strings and unchanged main-card signature\n";
     return 0;
 }

@@ -1118,49 +1118,48 @@ RasterImage RenderAccessoryRailImage(
 
         const bool detailedMetar =
             presentation.drawer == brain::BrainOwnedAccessoryDrawerId::Metar &&
-            (!presentation.airportIcao.empty() ||
-             !presentation.categoryText.empty());
+            !presentation.airportIcao.empty() &&
+            !presentation.categoryText.empty();
         const auto labelHeight = std::max(8.0f, 11.0f * layout.scale);
-        const auto labelTop = top + (detailedMetar ? diameter * 0.08f :
-            (presentation.selected ? diameter * 0.25f : diameter * 0.35f));
-        DrawAccessoryText(
-            &graphics,
-            RectF(left, labelTop, diameter, labelHeight),
-            presentation.label,
-            &labelFont,
-            labelColor,
-            StringAlignmentCenter);
         if (detailedMetar) {
             DrawAccessoryText(
                 &graphics,
-                RectF(left, top + diameter * 0.28f, diameter,
+                RectF(left, top + diameter * 0.27f, diameter,
                       std::max(7.0f, 9.0f * layout.scale)),
-                presentation.airportIcao.empty() ? "----" :
-                    presentation.airportIcao,
+                presentation.airportIcao,
                 &metarDetailFont, labelColor, StringAlignmentCenter);
             DrawAccessoryText(
                 &graphics,
-                RectF(left, top + diameter * 0.48f, diameter,
+                RectF(left, top + diameter * 0.53f, diameter,
                       std::max(7.0f, 9.0f * layout.scale)),
                 presentation.categoryText,
                 &metarDetailFont, labelColor, StringAlignmentCenter);
-            if (!presentation.stateText.empty()) {
-                DrawAccessoryText(
-                    &graphics,
-                    RectF(left, top + diameter * 0.68f, diameter,
-                          std::max(6.0f, 8.0f * layout.scale)),
-                    presentation.stateText,
-                    &indicatorFont, indicatorColor, StringAlignmentCenter);
-            }
-        } else if (presentation.selected && !presentation.selectedIndicator.empty()) {
+        } else {
+            const bool neutralMetar =
+                presentation.drawer ==
+                    brain::BrainOwnedAccessoryDrawerId::Metar;
+            const auto labelTop = top + (neutralMetar
+                ? diameter * 0.40f
+                : presentation.selected
+                    ? diameter * 0.25f : diameter * 0.35f);
             DrawAccessoryText(
                 &graphics,
-                RectF(left, top + diameter * 0.56f, diameter,
-                      std::max(8.0f, 11.0f * layout.scale)),
-                presentation.selectedIndicator,
-                &indicatorFont,
-                indicatorColor,
+                RectF(left, labelTop, diameter, labelHeight),
+                presentation.label,
+                &labelFont,
+                labelColor,
                 StringAlignmentCenter);
+            if (!neutralMetar && presentation.selected &&
+                !presentation.selectedIndicator.empty()) {
+                DrawAccessoryText(
+                    &graphics,
+                    RectF(left, top + diameter * 0.56f, diameter,
+                          std::max(8.0f, 11.0f * layout.scale)),
+                    presentation.selectedIndicator,
+                    &indicatorFont,
+                    indicatorColor,
+                    StringAlignmentCenter);
+            }
         }
     }
     return CaptureBitmap(&bitmap);

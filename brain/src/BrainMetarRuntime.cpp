@@ -464,12 +464,57 @@ void RejectBrainOwnedMetarWorkerFact(
         ? "metar-completion-rejected" : reason;
 }
 
+BrainMetarTerminalDiagnostic BuildTerminalDiagnostic(
+    const BrainMetarWorkerFact& fact) {
+    BrainMetarTerminalDiagnostic diagnostic;
+    diagnostic.available = true;
+    diagnostic.request = fact.request;
+    diagnostic.stationIcao = fact.stationIcao;
+    diagnostic.status = fact.status;
+    diagnostic.terminalStage = fact.terminalStage;
+    diagnostic.winHttpOperation = fact.winHttpOperation;
+    diagnostic.winHttpResult = fact.winHttpResult;
+    diagnostic.winHttpError = fact.winHttpError;
+    diagnostic.transportProgress = fact.transportProgress;
+    diagnostic.httpStatus = fact.httpStatus;
+    diagnostic.payloadBytes = fact.payloadBytes;
+    diagnostic.networkElapsedUs = fact.networkElapsedUs;
+    diagnostic.completedMonotonicMs = fact.completedMonotonicMs;
+    diagnostic.diagnostic = fact.diagnostic;
+    diagnostic.source = fact.source;
+    return diagnostic;
+}
+
+void BeginDispositionDiagnostic(
+    const BrainMetarWorkerFact& fact,
+    BrainOwnedAsyncFactCycleOutput* output) {
+    if (output == nullptr) return;
+    output->dispositionDiagnostic.available = true;
+    output->dispositionDiagnostic.requestId = fact.request.requestId;
+    output->dispositionDiagnostic.airportIcao = fact.request.airportIcao;
+    output->dispositionDiagnostic.parserReason = "not-attempted";
+}
+
+void FinalizeDispositionDiagnostic(
+    const BrainOwnedRuntimeState& state,
+    std::uint64_t historyMutationBefore,
+    std::uint64_t presentationGenerationBefore,
+    BrainOwnedAsyncFactCycleOutput* output) {
+    if (output == nullptr || !output->dispositionDiagnostic.available) return;
+    output->dispositionDiagnostic.historyMutated =
+        state.metar.historyMutationCount != historyMutationBefore;
+    output->dispositionDiagnostic.presentationChanged =
+        state.metar.presentationGeneration != presentationGenerationBefore;
+    output->dispositionDiagnostic.reason = output->reason;
+}
+
 void CommitBrainOwnedMetarWorkerFact(
     BrainOwnedRuntimeState* state,
     const BrainMetarWorkerFact& fact,
     const BrainOwnedAsyncFactCycleInput& input,
     BrainOwnedAsyncFactCycleOutput* output) {
     if (state == nullptr || output == nullptr) return;
+    BeginDispositionDiagnostic(fact, output);
     if (!RequestMatchesCurrent(state->metar, fact)) {
         RejectBrainOwnedMetarWorkerFact(
             state, output, "metar-completion-generation-rejected");
@@ -555,12 +600,15 @@ void CommitBrainOwnedMetarWorkerFact(
             ++state->metar.completionAcceptedCount;
             output->completionAccepted = true;
             output->reason = "metar-identical-health-updated";
+            output->dispositionDiagnostic.accepted = true;
             return;
         }
 
         ++state->metar.parseCount;
         auto parsed = ParseBrainOwnedMetarReport(
             fact.stationIcao, fact.rawMetar, input.utcUnixSeconds);
+        output->dispositionDiagnostic.parsingAttempted = true;
+        output->dispositionDiagnostic.parserReason = parsed.diagnostic;
         if (!parsed.valid) {
             RecordPrimaryFailure(state, input.monotonicMs,
                                  &output->presentationChanged);
@@ -588,6 +636,8 @@ void CommitBrainOwnedMetarWorkerFact(
         TouchPresentation(state);
         output->presentationChanged = true;
         output->completionAccepted = true;
+        output->dispositionDiagnostic.accepted = true;
+        output->dispositionDiagnostic.acceptedCategory = parsed.category;
         ++state->metar.completionAcceptedCount;
         output->reason = "metar-primary-content-accepted";
         return;
@@ -626,6 +676,9 @@ void CommitBrainOwnedMetarWorkerFact(
             state->metar.lookupPresentationOwnershipValid = false;
         }
         output->completionAccepted = true;
+        output->dispositionDiagnostic.accepted = true;
+        output->dispositionDiagnostic.acceptedCategory =
+            state->metar.lookupObservation.category;
         ++state->metar.completionAcceptedCount;
         output->reason = "metar-lookup-identical-content-accepted";
         return;
@@ -634,6 +687,8 @@ void CommitBrainOwnedMetarWorkerFact(
     ++state->metar.parseCount;
     auto parsed = ParseBrainOwnedMetarReport(
         fact.stationIcao, fact.rawMetar, input.utcUnixSeconds);
+    output->dispositionDiagnostic.parsingAttempted = true;
+    output->dispositionDiagnostic.parserReason = parsed.diagnostic;
     if (!parsed.valid) {
         HandleLookupFailure(state, input.monotonicMs,
                             &output->presentationChanged);
@@ -664,6 +719,8 @@ void CommitBrainOwnedMetarWorkerFact(
         state->metar.lookupPresentationOwnershipValid = false;
     }
     output->completionAccepted = true;
+    output->dispositionDiagnostic.accepted = true;
+    output->dispositionDiagnostic.acceptedCategory = parsed.category;
     ++state->metar.completionAcceptedCount;
     output->reason = "metar-lookup-content-accepted";
 }
@@ -981,7 +1038,10 @@ BrainOwnedAsyncFactCycleOutput RunBrainOwnedAsyncFactCycle(
     BrainMetarWorkerFact harvested;
     const bool hasHarvested = workers.metar != nullptr &&
         workers.metar->TryHarvest(&harvested);
-    if (hasHarvested) state->metar.activeRequest.reset();
+    if (hasHarvested) {
+        state->metar.activeRequest.reset();
+        output.terminalDiagnostic = BuildTerminalDiagnostic(harvested);
+    }
 
     if (!input.pluginEnabled || !input.xpilotConnected) {
         state->metar.dispatchSuspendedForDisconnect = true;
@@ -1006,12 +1066,24 @@ BrainOwnedAsyncFactCycleOutput RunBrainOwnedAsyncFactCycle(
     }
 
     if (hasHarvested) {
+        const auto historyMutationBefore = state->metar.historyMutationCount;
+        const auto presentationGenerationBefore =
+            state->metar.presentationGeneration;
         CommitBrainOwnedMetarWorkerFact(state, harvested, input, &output);
+        FinalizeDispositionDiagnostic(
+            *state, historyMutationBefore, presentationGenerationBefore,
+            &output);
     }
     if (reconnecting && state->metar.deferredDisconnectedFact.has_value()) {
         const auto deferred = *state->metar.deferredDisconnectedFact;
         state->metar.deferredDisconnectedFact.reset();
+        const auto historyMutationBefore = state->metar.historyMutationCount;
+        const auto presentationGenerationBefore =
+            state->metar.presentationGeneration;
         CommitBrainOwnedMetarWorkerFact(state, deferred, input, &output);
+        FinalizeDispositionDiagnostic(
+            *state, historyMutationBefore, presentationGenerationBefore,
+            &output);
     }
 
     DropLostPresentationOwnership(state);
@@ -1098,6 +1170,8 @@ BrainOwnedAsyncFactCycleOutput RunBrainOwnedAsyncFactCycle(
     state->metar.activeRequest = request;
     ++state->metar.requestDispatchCount;
     output.requestDispatched = true;
+    output.dispatchDiagnostic.available = true;
+    output.dispatchDiagnostic.request = *request;
     output.reason = "metar-worker-dispatched";
     if (request->purpose != BrainMetarRequestPurpose::PilotLookup) {
         const auto prior = state->metar.sourceHealth;
@@ -1114,9 +1188,29 @@ BrainMetarWorkerShutdownSnapshot ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
     BrainOwnedRuntimeState* state,
     const BrainOwnedAsyncWorkerBindings& workers,
     bool clearAcceptedState) {
-    if (workers.metar != nullptr) workers.metar->CancelAndJoin();
     BrainMetarWorkerShutdownSnapshot snapshot;
-    if (workers.metar != nullptr) snapshot = workers.metar->ShutdownSnapshot();
+    if (workers.metar != nullptr) {
+        workers.metar->CancelAndJoin();
+        BrainMetarWorkerFact drained;
+        const bool drainedFact = workers.metar->TryHarvest(&drained);
+        snapshot = workers.metar->ShutdownSnapshot();
+        if (drainedFact) {
+            snapshot.terminalFactDrained = true;
+            snapshot.terminalDiagnostic = BuildTerminalDiagnostic(drained);
+            snapshot.dispositionDiagnostic.available = true;
+            snapshot.dispositionDiagnostic.requestId = drained.request.requestId;
+            snapshot.dispositionDiagnostic.airportIcao =
+                drained.request.airportIcao;
+            snapshot.dispositionDiagnostic.accepted = false;
+            snapshot.dispositionDiagnostic.parsingAttempted = false;
+            snapshot.dispositionDiagnostic.parserReason =
+                "not-attempted-lifecycle-boundary";
+            snapshot.dispositionDiagnostic.historyMutated = false;
+            snapshot.dispositionDiagnostic.presentationChanged = false;
+            snapshot.dispositionDiagnostic.reason =
+                "metar-lifecycle-terminal-drained-rejected";
+        }
+    }
     if (state != nullptr) {
         state->metar.activeRequest.reset();
         state->metar.deferredDisconnectedFact.reset();

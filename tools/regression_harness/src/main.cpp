@@ -15266,7 +15266,6 @@ public:
 
     void CancelAndJoin() override {
         running = false;
-        ready.reset();
         ++cancelCount;
     }
 
@@ -15315,9 +15314,16 @@ public:
 };
 
 #if defined(_WIN32)
-class Step4StalledLoopbackPeer {
+class Step4LoopbackHttpPeer {
 public:
-    Step4StalledLoopbackPeer() {
+    struct Response {
+        int status = 200;
+        std::string body;
+        bool stall = false;
+    };
+
+    explicit Step4LoopbackHttpPeer(Response response)
+        : response_(std::move(response)) {
         WSADATA data{};
         if (WSAStartup(MAKEWORD(2, 2), &data) != 0) return;
         winsockStarted_ = true;
@@ -15341,20 +15347,70 @@ public:
         thread_ = std::thread([this]() {
             const auto client = accept(listener_, nullptr, nullptr);
             if (client == INVALID_SOCKET) return;
-            char request[2048]{};
-            if (recv(client, request, sizeof(request), 0) > 0) {
+            client_.store(client, std::memory_order_release);
+            std::string request;
+            char chunk[1024]{};
+            while (request.find("\r\n\r\n") == std::string::npos &&
+                   request.size() < 8192) {
+                const auto received = recv(client, chunk, sizeof(chunk), 0);
+                if (received <= 0) break;
+                request.append(chunk, static_cast<std::size_t>(received));
+            }
+            const auto lineEnd = request.find("\r\n");
+            const auto firstLine = request.substr(0, lineEnd);
+            const auto firstSpace = firstLine.find(' ');
+            const auto secondSpace = firstSpace == std::string::npos
+                ? std::string::npos : firstLine.find(' ', firstSpace + 1);
+            if (firstSpace != std::string::npos &&
+                secondSpace != std::string::npos) {
+                {
+                    std::lock_guard<std::mutex> lock(requestMutex_);
+                    requestPath_ = firstLine.substr(
+                        firstSpace + 1, secondSpace - firstSpace - 1);
+                }
                 accepted_.store(true, std::memory_order_release);
+            }
+            if (response_.stall) {
                 while (!stop_.load(std::memory_order_acquire)) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
+            } else {
+                const auto reason = response_.status == 200 ? "OK" : "ERROR";
+                std::ostringstream response;
+                response << "HTTP/1.1 " << response_.status << ' ' << reason
+                         << "\r\nContent-Type: application/json"
+                         << "\r\nContent-Length: " << response_.body.size()
+                         << "\r\nConnection: close\r\n\r\n"
+                         << response_.body;
+                const auto bytes = response.str();
+                std::size_t sent = 0;
+                while (sent < bytes.size()) {
+                    const auto count = send(
+                        client, bytes.data() + sent,
+                        static_cast<int>(bytes.size() - sent), 0);
+                    if (count <= 0) break;
+                    sent += static_cast<std::size_t>(count);
+                }
+                responseCompleted_.store(
+                    sent == bytes.size(), std::memory_order_release);
             }
-            shutdown(client, SD_BOTH);
-            closesocket(client);
+            const auto owned = client_.exchange(
+                INVALID_SOCKET, std::memory_order_acq_rel);
+            if (owned != INVALID_SOCKET) {
+                shutdown(owned, SD_BOTH);
+                closesocket(owned);
+            }
         });
     }
 
-    ~Step4StalledLoopbackPeer() {
+    ~Step4LoopbackHttpPeer() {
         stop_.store(true, std::memory_order_release);
+        const auto client = client_.exchange(
+            INVALID_SOCKET, std::memory_order_acq_rel);
+        if (client != INVALID_SOCKET) {
+            shutdown(client, SD_BOTH);
+            closesocket(client);
+        }
         if (listener_ != INVALID_SOCKET) {
             closesocket(listener_);
             listener_ = INVALID_SOCKET;
@@ -15367,14 +15423,26 @@ public:
     bool Accepted() const {
         return accepted_.load(std::memory_order_acquire);
     }
+    bool ResponseCompleted() const {
+        return responseCompleted_.load(std::memory_order_acquire);
+    }
+    std::string RequestPath() const {
+        std::lock_guard<std::mutex> lock(requestMutex_);
+        return requestPath_;
+    }
     unsigned short Port() const { return port_; }
 
 private:
+    Response response_;
     bool winsockStarted_ = false;
     SOCKET listener_ = INVALID_SOCKET;
+    std::atomic<SOCKET> client_{INVALID_SOCKET};
     unsigned short port_ = 0;
     std::atomic<bool> accepted_{false};
+    std::atomic<bool> responseCompleted_{false};
     std::atomic<bool> stop_{false};
+    mutable std::mutex requestMutex_;
+    std::string requestPath_;
     std::thread thread_;
 };
 #endif
@@ -15437,6 +15505,81 @@ struct Step4Fixture {
         return Cycle(1);
     }
 };
+
+#if defined(_WIN32)
+struct Step4LoopbackRunResult {
+    bool dispatched = false;
+    bool terminal = false;
+    bool disposition = false;
+    bool responseCompleted = false;
+    std::string requestPath;
+    xvatsim::brain::BrainMetarTerminalDiagnostic terminalDiagnostic;
+    xvatsim::brain::BrainMetarDispositionDiagnostic dispositionDiagnostic;
+    xvatsim::brain::BrainMetarWorkerShutdownSnapshot shutdown;
+    std::uint64_t parseCount = 0;
+    std::uint64_t historyMutationCount = 0;
+    bool primaryValid = false;
+    xvatsim::brain::BrainMetarFlightCategory category =
+        xvatsim::brain::BrainMetarFlightCategory::Unknown;
+    long long elapsedMs = 0;
+};
+
+Step4LoopbackRunResult RunStep4LoopbackLifecycle(
+    Step4LoopbackHttpPeer::Response response) {
+    Step4LoopbackRunResult result;
+    Step4LoopbackHttpPeer peer(std::move(response));
+    if (!peer.Ready()) return result;
+    xvatsim::modules::metar::VatsimMetarClient::ProofEndpoint endpoint;
+    endpoint.host = L"127.0.0.1";
+    endpoint.port = peer.Port();
+    endpoint.secure = false;
+    xvatsim::modules::metar::VatsimMetarClient client(endpoint);
+    xvatsim::brain::BrainOwnedRuntimeState state;
+    xvatsim::brain::EnableBrainOwnedAccessoryRuntime(&state);
+    xvatsim::brain::BrainOwnedAsyncFactCycleInput input;
+    input.pluginEnabled = true;
+    input.xpilotConnected = true;
+    input.workflowStage = xvatsim::brain::WorkflowStage::Departure;
+    input.operatingMode = xvatsim::brain::BrainOwnedOperatingMode::IFR;
+    input.flightContext.active = true;
+    input.flightContext.callsign = "N123XV";
+    input.flightContext.departureIcao = "KDFW";
+    input.flightContext.destinationIcao = "KSAN";
+    input.monotonicMs = 1'000;
+    input.utcUnixSeconds = 1'787'860'800;
+    xvatsim::brain::BrainOwnedAsyncWorkerBindings bindings;
+    bindings.metar = &client;
+    const auto started = std::chrono::steady_clock::now();
+    auto cycle = xvatsim::brain::RunBrainOwnedAsyncFactCycle(
+        &state, input, bindings);
+    result.dispatched = cycle.dispatchDiagnostic.available;
+    const auto deadline = started + std::chrono::seconds(2);
+    while (std::chrono::steady_clock::now() < deadline) {
+        ++input.monotonicMs;
+        cycle = xvatsim::brain::RunBrainOwnedAsyncFactCycle(
+            &state, input, bindings);
+        if (cycle.terminalDiagnostic.available) {
+            result.terminal = true;
+            result.disposition = cycle.dispositionDiagnostic.available;
+            result.terminalDiagnostic = cycle.terminalDiagnostic;
+            result.dispositionDiagnostic = cycle.dispositionDiagnostic;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    result.elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - started).count();
+    result.requestPath = peer.RequestPath();
+    result.responseCompleted = peer.ResponseCompleted();
+    result.parseCount = state.metar.parseCount;
+    result.historyMutationCount = state.metar.historyMutationCount;
+    result.primaryValid = state.metar.primaryObservation.valid;
+    result.category = state.metar.primaryObservation.category;
+    client.CancelAndJoin();
+    result.shutdown = client.ShutdownSnapshot();
+    return result;
+}
+#endif
 
 const xvatsim::brain::BrainOwnedAccessoryOrbPresentation* Step4MetarOrb(
     const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& handle) {
@@ -15504,7 +15647,306 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
     const std::string primaryIfr = "KSAN 271952Z 24009KT 2SM BKN008";
     const std::string lookupMvfr = "KABQ 271953Z 18012KT 4SM BKN020";
 
-    if (probe == "ifr_departure_primary_only" ||
+    const auto requireNeutralMetarOrb = [&](BrainOwnedRuntimeState* state) {
+        const auto handle = ProjectBrainOwnedAccessoryPresentation(
+            state, 1, nullptr);
+        const auto* orb = Step4MetarOrb(handle);
+        require(orb != nullptr, "METAR ORB missing");
+        if (orb == nullptr) return;
+        require(orb->label == "METAR", "neutral ORB must contain METAR");
+        require(orb->airportIcao.empty() && orb->categoryText.empty() &&
+                    orb->stateText.empty() && orb->selectedIndicator.empty(),
+                "neutral ORB contains forbidden additional text");
+        require(orb->tone == BrainOwnedAccessoryOrbPresentation::Tone::Gray &&
+                    orb->neutral,
+                "neutral ORB must use neutral gray tone");
+    };
+    const auto requireSuccessfulMetarOrb = [&](
+        BrainOwnedRuntimeState* state,
+        const std::string& airport,
+        const std::string& category,
+        BrainOwnedAccessoryOrbPresentation::Tone tone) {
+        const auto handle = ProjectBrainOwnedAccessoryPresentation(
+            state, 1, nullptr);
+        const auto* orb = Step4MetarOrb(handle);
+        require(orb != nullptr, "METAR ORB missing");
+        if (orb == nullptr) return;
+        require(orb->label.empty(),
+                "successful ORB must remove METAR title");
+        require(orb->airportIcao == airport &&
+                    orb->categoryText == category,
+                "successful ORB must contain exact ICAO/category lines");
+        require(orb->stateText.empty() &&
+                    orb->selectedIndicator.empty(),
+                "successful ORB contains forbidden state/open text");
+        require(orb->tone == tone && !orb->neutral,
+                "successful ORB tone mismatch");
+    };
+
+    if (probe == "correction_sendrequest_completion_callback") {
+        require(Step4FileContains(
+                    "modules/metar/src/VatsimMetarClient.cpp",
+                    "WINHTTP_CALLBACK_FLAG_SENDREQUEST_COMPLETE"),
+                "send-request-complete callback flag is not registered");
+        require(!Step4FileContains(
+                    "modules/metar/src/VatsimMetarClient.cpp",
+                    "WINHTTP_CALLBACK_FLAG_SEND_REQUEST |"),
+                "legacy send-request callback flag remains registered");
+        require(Step4FileContains(
+                    "modules/metar/src/VatsimMetarClient.cpp",
+                    "WINHTTP_CALLBACK_STATUS_SENDREQUEST_COMPLETE"),
+                "send completion state is not awaited");
+    } else if (probe == "correction_real_winhttp_loopback_success") {
+#if defined(_WIN32)
+        const auto run = RunStep4LoopbackLifecycle({
+            200,
+            "[{\"id\":\"KDFW\",\"metar\":\"KDFW 271951Z 18010KT 10SM FEW050\"}]",
+            false});
+        const auto requiredProgress =
+            BrainMetarSendCompletionObserved |
+            BrainMetarResponseHeadersReceived |
+            BrainMetarHttp200Accepted |
+            BrainMetarPayloadReadComplete |
+            BrainMetarJsonAccepted;
+        require(run.dispatched && run.terminal && run.disposition,
+                "loopback lifecycle did not dispatch, harvest, and dispose");
+        require(run.requestPath == "/KDFW?format=json",
+                "loopback request path mismatch");
+        require(run.responseCompleted,
+                "loopback peer did not complete response");
+        require(run.terminalDiagnostic.status == BrainMetarWorkerStatus::Success &&
+                    run.terminalDiagnostic.terminalStage ==
+                        BrainMetarTransportStage::Completed &&
+                    run.terminalDiagnostic.httpStatus == 200 &&
+                    run.terminalDiagnostic.source == "VATSIM_METAR" &&
+                    run.terminalDiagnostic.stationIcao == "KDFW" &&
+                    (run.terminalDiagnostic.transportProgress & requiredProgress) ==
+                        requiredProgress,
+                "successful WinHTTP terminal lifecycle is incomplete");
+        require(run.terminalDiagnostic.request.airportIcao == "KDFW" &&
+                    run.parseCount == 1 && run.primaryValid &&
+                    run.category == BrainMetarFlightCategory::Vfr &&
+                    run.historyMutationCount == 1 &&
+                    run.dispositionDiagnostic.accepted &&
+                    run.dispositionDiagnostic.parsingAttempted &&
+                    run.dispositionDiagnostic.acceptedCategory ==
+                        BrainMetarFlightCategory::Vfr,
+                "loopback fact did not reach one brain parse and acceptance");
+        require(run.elapsedMs <= 2'000 && !run.shutdown.running &&
+                    run.shutdown.handlesClosed && run.shutdown.callbacksClosed,
+                "loopback success exceeded bound or leaked worker state");
+        std::cout << "STEP4_CORRECTION_LOOPBACK_SUCCESS: elapsed_ms="
+                  << run.elapsedMs << " path=" << run.requestPath
+                  << " parse_count=" << run.parseCount << "\n";
+#else
+        require(false, "real WinHTTP loopback proof requires Windows");
+#endif
+    } else if (probe == "correction_real_winhttp_http_failure_ledger") {
+#if defined(_WIN32)
+        const auto run = RunStep4LoopbackLifecycle({503, "{}", false});
+        require(run.terminal && run.disposition &&
+                    run.terminalDiagnostic.status ==
+                        BrainMetarWorkerStatus::HttpFailure &&
+                    run.terminalDiagnostic.terminalStage ==
+                        BrainMetarTransportStage::HttpStatus &&
+                    run.terminalDiagnostic.httpStatus == 503 &&
+                    run.terminalDiagnostic.diagnostic ==
+                        "http-status-rejected" &&
+                    !run.dispositionDiagnostic.accepted &&
+                    !run.dispositionDiagnostic.parsingAttempted &&
+                    run.parseCount == 0,
+                "HTTP failure ledger is incomplete or attempted parsing");
+#else
+        require(false, "real WinHTTP loopback proof requires Windows");
+#endif
+    } else if (probe == "correction_real_winhttp_json_failure_ledger") {
+#if defined(_WIN32)
+        const auto run = RunStep4LoopbackLifecycle({200, "{malformed", false});
+        require(run.terminal && run.disposition &&
+                    run.terminalDiagnostic.status ==
+                        BrainMetarWorkerStatus::JsonRejected &&
+                    run.terminalDiagnostic.terminalStage ==
+                        BrainMetarTransportStage::JsonValidation &&
+                    run.terminalDiagnostic.diagnostic == "malformed-json" &&
+                    !run.dispositionDiagnostic.accepted &&
+                    !run.dispositionDiagnostic.parsingAttempted &&
+                    run.parseCount == 0,
+                "JSON failure ledger is incomplete or attempted parsing");
+#else
+        require(false, "real WinHTTP loopback proof requires Windows");
+#endif
+    } else if (probe == "correction_transport_timeout_ledger") {
+        const struct {
+            BrainMetarTransportStage stage;
+            BrainMetarWinHttpOperation operation;
+            BrainMetarWorkerStatus status;
+            const char* reason;
+        } diagnosticCases[]{
+            {BrainMetarTransportStage::Startup,
+             BrainMetarWinHttpOperation::OpenSession,
+             BrainMetarWorkerStatus::TransportFailure, "startup-failure"},
+            {BrainMetarTransportStage::SendStart,
+             BrainMetarWinHttpOperation::SendRequest,
+             BrainMetarWorkerStatus::TransportFailure, "send-start-failure"},
+            {BrainMetarTransportStage::ReceiveStart,
+             BrainMetarWinHttpOperation::ReceiveResponse,
+             BrainMetarWorkerStatus::TransportFailure, "receive-start-failure"},
+            {BrainMetarTransportStage::ResponseHeaders,
+             BrainMetarWinHttpOperation::ReceiveResponse,
+             BrainMetarWorkerStatus::TransportFailure, "header-failure"},
+            {BrainMetarTransportStage::DataAvailability,
+             BrainMetarWinHttpOperation::QueryDataAvailable,
+             BrainMetarWorkerStatus::TransportFailure,
+             "data-availability-failure"},
+            {BrainMetarTransportStage::Read,
+             BrainMetarWinHttpOperation::ReadData,
+             BrainMetarWorkerStatus::TransportFailure, "read-failure"},
+            {BrainMetarTransportStage::PayloadValidation,
+             BrainMetarWinHttpOperation::ReadData,
+             BrainMetarWorkerStatus::PayloadRejected,
+             "payload-bound-rejection"},
+            {BrainMetarTransportStage::StationValidation,
+             BrainMetarWinHttpOperation::None,
+             BrainMetarWorkerStatus::WrongStation,
+             "wrong-station-rejection"},
+        };
+        for (const auto& item : diagnosticCases) {
+            Step4Fixture ledger;
+            ledger.Cycle();
+            BrainMetarWorkerFact ledgerFact;
+            ledgerFact.request = ledger.worker.requests.back();
+            ledgerFact.status = item.status;
+            ledgerFact.terminalStage = item.stage;
+            ledgerFact.winHttpOperation = item.operation;
+            ledgerFact.winHttpError = 123;
+            ledgerFact.diagnostic = item.reason;
+            ledger.worker.ready = ledgerFact;
+            ledger.worker.running = false;
+            const auto ledgerOutput = ledger.Cycle(1);
+            require(ledgerOutput.terminalDiagnostic.available &&
+                        ledgerOutput.terminalDiagnostic.terminalStage ==
+                            item.stage &&
+                        ledgerOutput.terminalDiagnostic.winHttpOperation ==
+                            item.operation &&
+                        ledgerOutput.terminalDiagnostic.status == item.status &&
+                        ledgerOutput.terminalDiagnostic.diagnostic == item.reason &&
+                        ledgerOutput.dispositionDiagnostic.available &&
+                        !ledgerOutput.dispositionDiagnostic.accepted &&
+                        !ledgerOutput.dispositionDiagnostic.parsingAttempted &&
+                        ledger.state.metar.parseCount == 0,
+                    std::string("terminal diagnostic matrix mismatch: ") +
+                        item.reason);
+        }
+        Step4Fixture f;
+        const auto dispatch = f.Cycle();
+        BrainMetarWorkerFact fact;
+        fact.request = f.worker.requests.back();
+        fact.status = BrainMetarWorkerStatus::TransportFailure;
+        fact.terminalStage = BrainMetarTransportStage::SendCompletion;
+        fact.winHttpOperation = BrainMetarWinHttpOperation::SendRequest;
+        fact.winHttpError = ERROR_TIMEOUT;
+        fact.diagnostic = "send-completion-timeout";
+        fact.completedMonotonicMs = f.input.monotonicMs + 5'000;
+        fact.networkElapsedUs = 5'000'000;
+        f.worker.ready = fact;
+        f.worker.running = false;
+        const auto terminal = f.Cycle(5'000);
+        require(dispatch.dispatchDiagnostic.available &&
+                    terminal.terminalDiagnostic.available &&
+                    terminal.terminalDiagnostic.terminalStage ==
+                        BrainMetarTransportStage::SendCompletion &&
+                    terminal.terminalDiagnostic.diagnostic ==
+                        "send-completion-timeout" &&
+                    terminal.terminalDiagnostic.winHttpError == ERROR_TIMEOUT,
+                "send-completion timeout stage was not preserved");
+        require(terminal.dispositionDiagnostic.available &&
+                    !terminal.dispositionDiagnostic.accepted &&
+                    !terminal.dispositionDiagnostic.parsingAttempted &&
+                    f.state.metar.parseCount == 0 &&
+                    f.state.metar.historyMutationCount == 0,
+                "transport timeout reached parser or mutated history");
+    } else if (probe == "correction_parser_rejection_ledger") {
+        Step4Fixture f;
+        f.Cycle();
+        BrainMetarWorkerFact fact;
+        fact.request = f.worker.requests.back();
+        fact.status = BrainMetarWorkerStatus::Success;
+        fact.stationIcao = "KDFW";
+        fact.rawMetar = "KDFW RMK TRUNCATED";
+        fact.httpStatus = 200;
+        fact.terminalStage = BrainMetarTransportStage::Completed;
+        fact.diagnostic = "vatsim-metar-accepted";
+        f.worker.ready = fact;
+        f.worker.running = false;
+        const auto output = f.Cycle(1);
+        require(output.terminalDiagnostic.available &&
+                    output.terminalDiagnostic.status ==
+                        BrainMetarWorkerStatus::Success &&
+                    output.dispositionDiagnostic.available &&
+                    !output.dispositionDiagnostic.accepted &&
+                    output.dispositionDiagnostic.parsingAttempted &&
+                    output.dispositionDiagnostic.parserReason ==
+                        "observation-time-missing" &&
+                    f.state.metar.parseCount == 1 &&
+                    f.state.metar.historyMutationCount == 0,
+                "parser rejection disposition ledger mismatch");
+    } else if (probe == "correction_orb_startup_metar_only") {
+        BrainOwnedRuntimeState state;
+        EnableBrainOwnedAccessoryRuntime(&state);
+        state.metar.initialized = true;
+        requireNeutralMetarOrb(&state);
+    } else if (probe == "correction_orb_pending_metar_only") {
+        Step4Fixture f;
+        f.Cycle();
+        requireNeutralMetarOrb(&f.state);
+    } else if (probe == "correction_orb_unavailable_metar_only") {
+        Step4Fixture f;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::TransportFailure);
+        f.Cycle(1);
+        requireNeutralMetarOrb(&f.state);
+    } else if (probe == "correction_orb_stale_metar_only") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.state.metar.visibleState = BrainMetarVisibleState::Stale;
+        ++f.state.metar.presentationGeneration;
+        requireNeutralMetarOrb(&f.state);
+    } else if (probe == "correction_orb_success_exact_two_lines") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+    } else if (probe == "correction_orb_cached_success_exact_two_lines") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.state.metar.visibleState = BrainMetarVisibleState::Cached;
+        ++f.state.metar.presentationGeneration;
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+    } else if (probe == "correction_orb_selected_has_no_open_text") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar);
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+    } else if (probe == "correction_lookup_never_changes_orb") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+        f.SubmitLookup("KABQ");
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+        f.AcceptLookup(lookupMvfr);
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+    } else if (probe == "ifr_departure_primary_only" ||
         probe == "ifr_departure_no_arrival_prefetch") {
         Step4Fixture f;
         f.Cycle();
@@ -15881,9 +16323,12 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         const auto* orb = Step4MetarOrb(presentation);
         require(f.state.metar.visibleState == BrainMetarVisibleState::Stale,
                 "monotonic freshness deadline must stale");
-        require(orb && orb->categoryText == "UNKNOWN" &&
+        require(orb && orb->label == "METAR" &&
+                    orb->airportIcao.empty() && orb->categoryText.empty() &&
+                    orb->stateText.empty() &&
+                    orb->selectedIndicator.empty() &&
                     orb->tone == BrainOwnedAccessoryOrbPresentation::Tone::Gray,
-                "stale ORB must be gray unknown");
+                "stale ORB must be neutral METAR only");
     } else if (probe == "history_isolation") {
         Step4Fixture f;
         BrainOwnedAccessoryHistoryEntryInput atis;
@@ -15917,6 +16362,33 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(!f.state.metar.primaryObservation.valid &&
                     f.state.accessory.histories[0].entries.empty(),
                 "hard boundary must clear METAR state/history");
+
+        Step4Fixture cleanup;
+        cleanup.Cycle();
+        cleanup.worker.Complete(
+            BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+        BrainOwnedAsyncWorkerBindings cleanupBindings;
+        cleanupBindings.metar = &cleanup.worker;
+        const auto parseBefore = cleanup.state.metar.parseCount;
+        const auto historyBefore = cleanup.state.metar.historyMutationCount;
+        const auto presentationBefore =
+            cleanup.state.metar.presentationGeneration;
+        const auto cleanupSnapshot =
+            ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+                &cleanup.state, cleanupBindings, false);
+        require(cleanupSnapshot.terminalFactDrained &&
+                    cleanupSnapshot.terminalDiagnostic.available &&
+                    cleanupSnapshot.dispositionDiagnostic.available &&
+                    !cleanupSnapshot.dispositionDiagnostic.accepted &&
+                    !cleanupSnapshot.dispositionDiagnostic.parsingAttempted &&
+                    !cleanupSnapshot.dispositionDiagnostic.historyMutated &&
+                    !cleanupSnapshot.dispositionDiagnostic.presentationChanged &&
+                    cleanup.state.metar.parseCount == parseBefore &&
+                    cleanup.state.metar.historyMutationCount == historyBefore &&
+                    cleanup.state.metar.presentationGeneration ==
+                        presentationBefore &&
+                    !cleanup.state.metar.primaryObservation.valid,
+                "lifecycle drain parsed or accepted cancelled-boundary weather");
     } else if (probe == "worker_prompt_cancel_join") {
         long long maximumCancellationMs = 0;
         for (int phase = 0; phase < 5; ++phase) {
@@ -15946,13 +16418,16 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - started).count();
             maximumCancellationMs = std::max(maximumCancellationMs, elapsed);
+            BrainMetarWorkerFact drained;
+            const bool terminalDrained = client.TryHarvest(&drained);
             const auto shutdown = client.ShutdownSnapshot();
             require(elapsed <= 500 && !shutdown.running && shutdown.handlesClosed &&
-                        shutdown.callbacksClosed,
+                        shutdown.callbacksClosed && terminalDrained &&
+                        drained.status == BrainMetarWorkerStatus::Cancelled,
                     "worker cancellation exceeded bound or leaked state");
         }
 #if defined(_WIN32)
-        Step4StalledLoopbackPeer peer;
+        Step4LoopbackHttpPeer peer({200, {}, true});
         require(peer.Ready(), "stalled loopback peer failed to start");
         xvatsim::modules::metar::VatsimMetarClient::ProofEndpoint endpoint;
         endpoint.host = L"127.0.0.1";
@@ -15980,11 +16455,16 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 std::chrono::steady_clock::now() - loopbackStarted).count();
         maximumCancellationMs = std::max(
             maximumCancellationMs, loopbackCancellationMs);
+        BrainMetarWorkerFact loopbackDrained;
+        const bool loopbackTerminalDrained =
+            loopbackClient.TryHarvest(&loopbackDrained);
         const auto loopbackShutdown = loopbackClient.ShutdownSnapshot();
         require(loopbackCancellationMs <= 500 &&
                     !loopbackShutdown.running &&
                     loopbackShutdown.handlesClosed &&
-                    loopbackShutdown.callbacksClosed,
+                    loopbackShutdown.callbacksClosed &&
+                    loopbackTerminalDrained &&
+                    loopbackDrained.status == BrainMetarWorkerStatus::Cancelled,
                 "real WinHTTP loopback cancellation leaked or exceeded bound");
         std::cout << "STEP4_LOOPBACK_SHUTDOWN: accepted=true max_ms="
                   << loopbackCancellationMs << " limit_ms=500\n";
@@ -16020,9 +16500,16 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         (void)xvatsim::modules::overlay::UpdateAccessoryPresentation(
             &presenter, update);
         BrainOwnedAccessoryProjectionCounters recurringProjection;
+        std::uint64_t recurringMetarDiagnostics = 0;
         const auto brainStarted = std::chrono::steady_clock::now();
         for (int index = 0; index < 100'000; ++index) {
-            f.Cycle();
+            const auto cycle = f.Cycle();
+            recurringMetarDiagnostics +=
+                cycle.dispatchDiagnostic.available ? 1U : 0U;
+            recurringMetarDiagnostics +=
+                cycle.terminalDiagnostic.available ? 1U : 0U;
+            recurringMetarDiagnostics +=
+                cycle.dispositionDiagnostic.available ? 1U : 0U;
             BrainOwnedAccessoryProjectionCounters counters;
             (void)ProjectBrainOwnedAccessoryPresentation(&f.state, 1, &counters);
             recurringProjection.historyVisits += counters.historyVisits;
@@ -16043,7 +16530,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     f.state.metar.fingerprintCount == before.fingerprintCount &&
                     f.state.metar.historyMutationCount == before.historyMutationCount &&
                     f.state.metar.contentGeneration == before.contentGeneration &&
-                    f.state.metar.presentationGeneration == before.presentationGeneration,
+                    f.state.metar.presentationGeneration == before.presentationGeneration &&
+                    recurringMetarDiagnostics == 0,
                 "warm unchanged cycles performed recurring content work");
         require(recurringProjection.historyVisits == 0 &&
                     recurringProjection.entriesCopied == 0 &&
@@ -16062,7 +16550,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         std::cout << "STEP4_WARM_IDLE: cycles=100000 brain_us="
                   << brainElapsedUs << " accessory_us=" << accessoryElapsedUs
                   << " parse_delta=0 fingerprint_delta=0 history_delta=0"
-                  << " wraps_delta=0 rasters_delta=0 uploads_delta=0\n";
+                  << " wraps_delta=0 rasters_delta=0 uploads_delta=0"
+                  << " terminal_diagnostics_delta=0 publications_delta=0\n";
         xvatsim::modules::overlay::ShutdownAccessoryTextMeasurement(
             update.measurementContext);
     } else if (probe == "normal_binary_source_isolation") {
@@ -16103,7 +16592,12 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             f.AcceptPrimary(item.raw);
             const auto handle = ProjectBrainOwnedAccessoryPresentation(&f.state, 1, nullptr);
             const auto* orb = Step4MetarOrb(handle);
-            require(orb && orb->categoryText == item.text && orb->tone == item.tone,
+            require(orb && orb->label.empty() &&
+                        orb->airportIcao == "KDFW" &&
+                        orb->categoryText == item.text &&
+                        orb->stateText.empty() &&
+                        orb->selectedIndicator.empty() &&
+                        orb->tone == item.tone,
                     std::string("ORB category/tone mismatch: ") + item.text);
         }
     } else if (probe == "pinned_primary_not_history") {

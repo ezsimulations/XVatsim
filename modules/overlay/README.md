@@ -40,11 +40,15 @@ simulator-thread dispatch/presentation work, X-Plane frame-cadence wait, and
 raster/upload/draw timing. A matching generation must be drawn before an action
 is recorded complete.
 
-Step 4 renders the brain-approved primary METAR ICAO, category text and tone,
-pending/cached/stale/unavailable state, pinned primary section, chronological
-history, and bounded lookup pending/spotlight/failure presentations. Color is
-never the only category signal. Hidden changes do not prepare or rasterize the
-drawer; the current content is prepared once when selected.
+Step 4 renders exactly one neutral `METAR` line when there is no usable primary
+observation. A usable fresh or still-fresh cached primary renders exactly two
+lines: ICAO and VFR/MVFR/IFR/LIFR, with the corresponding category tone. The
+selected state is border-only; `OPEN`, freshness, pending, unavailable, stale,
+and lookup text never appear inside the ORB. Detailed state, raw text, pinned
+primary content, chronological history, and bounded lookup
+pending/spotlight/failure presentations remain in the drawer. Hidden changes
+do not prepare or rasterize the drawer; current content is prepared once when
+selected.
 
 The overlay does not select airports, validate lookups, schedule requests,
 parse weather, classify categories, decide freshness, reorder history, or own

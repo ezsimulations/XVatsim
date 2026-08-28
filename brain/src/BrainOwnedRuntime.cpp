@@ -6788,18 +6788,19 @@ void ProjectBrainOwnedMetarOrbPresentation(
     BrainOwnedAccessoryOrbPresentation* orb) {
     if (orb == nullptr || !state.metar.initialized) return;
     const auto& metar = state.metar;
-    orb->airportIcao = metar.primaryAirportIcao;
-    auto category = metar.primaryObservation.category;
-    if (metar.visibleState == BrainMetarVisibleState::Stale ||
-        metar.visibleState == BrainMetarVisibleState::Unavailable ||
-        metar.primaryAirportIcao.empty()) {
-        category = BrainMetarFlightCategory::Unknown;
-    }
-    orb->categoryText = BrainMetarCategoryToken(category);
-    orb->stateText = BrainMetarVisibleStateToken(metar.visibleState);
-    orb->selectedIndicator = orb->selected ? "OPEN" : "";
+    const auto category = metar.primaryObservation.category;
+    const bool usable = metar.primaryObservation.valid &&
+        !metar.primaryAirportIcao.empty() &&
+        category != BrainMetarFlightCategory::Unknown &&
+        (metar.visibleState == BrainMetarVisibleState::Fresh ||
+         metar.visibleState == BrainMetarVisibleState::Cached);
+    orb->label = usable ? "" : "METAR";
+    orb->airportIcao = usable ? metar.primaryAirportIcao : "";
+    orb->categoryText = usable ? BrainMetarCategoryToken(category) : "";
+    orb->stateText.clear();
+    orb->selectedIndicator.clear();
     using Tone = BrainOwnedAccessoryOrbPresentation::Tone;
-    switch (category) {
+    switch (usable ? category : BrainMetarFlightCategory::Unknown) {
         case BrainMetarFlightCategory::Vfr: orb->tone = Tone::Green; break;
         case BrainMetarFlightCategory::Mvfr: orb->tone = Tone::Blue; break;
         case BrainMetarFlightCategory::Ifr: orb->tone = Tone::Red; break;
@@ -6807,7 +6808,7 @@ void ProjectBrainOwnedMetarOrbPresentation(
         case BrainMetarFlightCategory::Unknown:
         default: orb->tone = Tone::Gray; break;
     }
-    orb->neutral = category == BrainMetarFlightCategory::Unknown;
+    orb->neutral = !usable;
 }
 
 BrainOwnedAccessoryBoundaryDecision CloseAccessoryPreservingHistory(

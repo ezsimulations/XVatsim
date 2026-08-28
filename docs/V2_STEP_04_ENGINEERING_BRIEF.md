@@ -2,10 +2,11 @@
 
 ## Status and scope
 
-Step 4 is an implementation candidate pending Director review. It adds one
-removable asynchronous VATSIM METAR fact source to the accepted Step 3 ORB rail
-and information drawer. It does not deploy a plugin, start X-Plane or xPilot,
-or perform a live VATSIM request. Those activities remain separately gated.
+Step 4 is corrected and offline-proven pending a separately gated controlled
+live reproof. It adds one removable asynchronous VATSIM METAR fact source to
+the accepted Step 3 ORB rail and information drawer. The corrective work did
+not deploy a plugin, start X-Plane or xPilot, or perform a live VATSIM request.
+Those activities remain separately gated.
 
 The governing rule is unchanged:
 
@@ -34,6 +35,13 @@ bounded phase and total deadlines, a 65,536-byte response ceiling, and a
 4,096-byte raw-report ceiling. Cancellation signals the active operation,
 closes the request handle, waits for callback closure, and joins within the
 locked 500-millisecond shutdown limit.
+
+The corrective transport pass registers the exact send-request-complete
+callback before waiting for `SENDREQUEST_COMPLETE`. Bounded production
+diagnostics emit exactly one dispatch, one harvested terminal, and one brain
+disposition record per request, without raw bodies or METAR text. A completion
+drained during disable/stop cleanup is rejected without parsing, cache/history
+mutation, presentation change, or further scheduling.
 
 ## Brain-owned policy
 
@@ -110,9 +118,14 @@ existing hard-boundary semantics. No boundary permits a surviving worker.
 
 ## Proof boundary
 
-Fifty-three Step 4 scenarios bring the saved suite from 494 to 547. Offline
+Sixty-seven Step 4 scenarios bring the saved suite from 494 to 561. Offline
 proof includes focused and full regression, deterministic production-raster
 visuals, warm-idle counters, request/backoff and worker-shutdown checks, fresh
 Windows Release fixture and normal builds, binary hashes, and normal-binary
 fixture/source isolation. Controlled live VATSIM/X-Plane proof and deployment
 remain explicitly unperformed and separately gated.
+
+The METAR ORB is deliberately minimal. Startup, no target, pending,
+unavailable, and stale states show only neutral `METAR`. A usable fresh or
+still-fresh cached primary shows only its ICAO and exact flight category on two
+lines. Selection remains border-only, and lookup state never changes ORB text.
