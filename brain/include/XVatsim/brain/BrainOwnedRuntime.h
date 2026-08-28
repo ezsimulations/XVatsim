@@ -414,6 +414,8 @@ struct BrainMetarDispositionDiagnostic {
     bool accepted = false;
     bool parsingAttempted = false;
     std::string parserReason;
+    std::uint64_t parserElapsedMicroseconds = 0;
+    bool parserRanOnSimulatorFlightLoopHarvestPath = false;
     BrainMetarFlightCategory acceptedCategory =
         BrainMetarFlightCategory::Unknown;
     bool historyMutated = false;

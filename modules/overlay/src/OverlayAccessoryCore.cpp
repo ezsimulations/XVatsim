@@ -42,6 +42,12 @@ struct AccessoryTextMeasurementContext {
 
 namespace {
 
+std::uint64_t AccessorySteadyMicroseconds() {
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
 std::size_t PreparationDrawerIndex(
     brain::BrainOwnedAccessoryDrawerId drawer) {
     switch (drawer) {
@@ -610,10 +616,38 @@ std::string RailSignature(
     const brain::BrainOwnedAccessoryPresentationSnapshot& snapshot,
     const AccessoryLayoutResult& layout) {
     std::ostringstream stream;
-    stream << snapshot.selectionGeneration << '|' << DrawerToken(snapshot.activeDrawer)
-           << '|' << snapshot.contentGeneration
-           << '|' << layout.closedWidth << 'x' << layout.closedHeight
-           << '|' << layout.accessoriesVisible << '|' << layout.accessoriesInteractive;
+    stream << layout.railBounds.right - layout.railBounds.left << 'x'
+           << layout.railBounds.top - layout.railBounds.bottom << '|'
+           << static_cast<int>(std::lround(layout.scale * 1000.0f)) << '|'
+           << layout.accessoriesVisible;
+    const auto count = std::min(layout.orbs.size(), snapshot.orbs.size());
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& orb = layout.orbs[index];
+        const auto& presentation = snapshot.orbs[index];
+        const bool detailedMetar =
+            presentation.drawer == brain::BrainOwnedAccessoryDrawerId::Metar &&
+            !presentation.airportIcao.empty() &&
+            !presentation.categoryText.empty();
+        const bool neutralMetar =
+            presentation.drawer == brain::BrainOwnedAccessoryDrawerId::Metar;
+        stream << '|' << static_cast<int>(presentation.drawer)
+               << ':' << static_cast<int>(presentation.tone)
+               << ':' << presentation.selected
+               << ':' << presentation.neutral
+               << ':' << orb.bounds.left - layout.railBounds.left
+               << ',' << layout.railBounds.top - orb.bounds.top
+               << ',' << orb.diameterPhysicalPixels
+               << ':' << detailedMetar;
+        if (detailedMetar) {
+            stream << ':' << presentation.airportIcao
+                   << ':' << presentation.categoryText;
+        } else {
+            stream << ':' << presentation.label;
+            if (!neutralMetar && presentation.selected) {
+                stream << ':' << presentation.selectedIndicator;
+            }
+        }
+    }
     return stream.str();
 }
 
@@ -687,6 +721,56 @@ ResolveAccessoryPreparationAvailability(
     result.retryStartup = state == AccessoryPreparationWorkerState::Stopped;
     result.cancelPendingAction = pendingAction &&
         state == AccessoryPreparationWorkerState::Failed;
+    return result;
+}
+
+AccessoryDeferredTimingBreakdown ResolveAccessoryDeferredTiming(
+    const AccessoryDeferredTimingInput& input) {
+    AccessoryDeferredTimingBreakdown result;
+    if (input.waitStartedMicroseconds == 0 ||
+        input.bindStartedMicroseconds < input.waitStartedMicroseconds) {
+        return result;
+    }
+    const auto start = input.waitStartedMicroseconds;
+    const auto end = input.bindStartedMicroseconds;
+    result.totalMicroseconds = end - start;
+    const auto clamp = [start, end](std::uint64_t value) {
+        return std::clamp(value, start, end);
+    };
+    const auto workerStarted = clamp(input.workerStartedMicroseconds);
+    const auto workerCompleted = std::max(
+        workerStarted, clamp(input.workerCompletedMicroseconds));
+    const auto published = std::max(
+        workerCompleted, clamp(input.publishedMicroseconds));
+    const auto readyCollected = std::max(
+        published, clamp(input.readyCollectedMicroseconds));
+    const bool ordered = input.workerStartedMicroseconds != 0 &&
+        input.workerCompletedMicroseconds >= input.workerStartedMicroseconds &&
+        input.publishedMicroseconds >= input.workerCompletedMicroseconds &&
+        input.readyCollectedMicroseconds >= input.publishedMicroseconds;
+    if (ordered) {
+        result.workerQueueWaitMicroseconds = workerStarted - start;
+        result.workerPreparationMicroseconds =
+            workerCompleted - workerStarted;
+        result.workerPublicationHandoffMicroseconds =
+            published - workerCompleted;
+        result.publicationToReadyCollectionMicroseconds =
+            readyCollected - published;
+        result.readyToBindWaitMicroseconds = end - readyCollected;
+    } else {
+        result.unattributedMicroseconds = result.totalMicroseconds;
+    }
+    const auto attributed = result.workerQueueWaitMicroseconds +
+        result.workerPreparationMicroseconds +
+        result.workerPublicationHandoffMicroseconds +
+        result.publicationToReadyCollectionMicroseconds +
+        result.readyToBindWaitMicroseconds +
+        result.unattributedMicroseconds;
+    result.exact = attributed == result.totalMicroseconds;
+    if (!result.exact && attributed < result.totalMicroseconds) {
+        result.unattributedMicroseconds += result.totalMicroseconds - attributed;
+        result.exact = true;
+    }
     return result;
 }
 
@@ -789,6 +873,8 @@ struct AccessoryPreparationWorker::Implementation {
         }
         auto plan = std::make_shared<AccessoryPreparedDrawerPlan>();
         plan->key = request.key;
+        plan->requestedMicroseconds = request.requestedMicroseconds;
+        plan->workerStartedMicroseconds = AccessorySteadyMicroseconds();
         plan->workerThreadIdentity = GetCurrentThreadId();
         plan->layout.status = brain::BrainOwnedAccessoryOperationStatus::Available;
         plan->layout.drawer = request.key.drawer;
@@ -923,6 +1009,8 @@ struct AccessoryPreparationWorker::Implementation {
             }
             const auto started = std::chrono::steady_clock::now();
             const auto prepared = Prepare(context, request);
+            const auto workerCompletedMicroseconds =
+                AccessorySteadyMicroseconds();
             const auto elapsed = static_cast<std::uint64_t>(
                 std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now() - started).count());
@@ -950,6 +1038,10 @@ struct AccessoryPreparationWorker::Implementation {
             }
             const_cast<AccessoryPreparedDrawerPlan*>(prepared.get())
                 ->preparationMicroseconds = elapsed;
+            const_cast<AccessoryPreparedDrawerPlan*>(prepared.get())
+                ->workerCompletedMicroseconds = workerCompletedMicroseconds;
+            const_cast<AccessoryPreparedDrawerPlan*>(prepared.get())
+                ->publishedMicroseconds = AccessorySteadyMicroseconds();
             ready[index] = prepared;
             ++counters.jobsCompleted;
             counters.maximumReadyCacheCount = std::max<std::uint64_t>(
@@ -1831,12 +1923,15 @@ AccessoryPresentationUpdateResult UpdateAccessoryPresentation(
         state->layoutGeneration != input.presentation.layoutGeneration;
     const bool anyPresentationChange = result.snapshotChanged || result.selectionChanged ||
         result.historyChanged || contentChanged || result.layoutChanged;
+    const auto candidateRailSignature = RailSignature(snapshot, input.layout);
+    result.railAppearanceChanged = !hadSnapshot ||
+        state->railRenderSignature != candidateRailSignature;
     result.mainCardUnchanged = state->mainCardProductionSignature.empty() ||
         state->mainCardProductionSignature == input.mainCardProductionSignature;
     if (!anyPresentationChange &&
         state->mainCardProductionSignature == input.mainCardProductionSignature) return result;
 
-    if (result.selectionChanged || result.layoutChanged || !hadSnapshot) {
+    if (result.railAppearanceChanged) {
         result.delta.railRasterRequests = 1;
     }
     const bool drawerOpen = snapshot.activeDrawer != brain::BrainOwnedAccessoryDrawerId::None;
@@ -1888,7 +1983,7 @@ AccessoryPresentationUpdateResult UpdateAccessoryPresentation(
     state->contentGeneration = input.presentation.contentGeneration;
     state->layoutGeneration = input.presentation.layoutGeneration;
     state->mainCardProductionSignature = input.mainCardProductionSignature;
-    state->railRenderSignature = RailSignature(snapshot, input.layout);
+    state->railRenderSignature = candidateRailSignature;
     state->drawerRenderSignature = drawerOpen
         ? DrawerSignature(snapshot, input.layout, state->drawerOffset)
         : std::string{};
@@ -2216,6 +2311,8 @@ const char* AccessoryActionTimingClassificationToken(
             return "SYNCHRONOUS-WALL-FAILURE";
         case AccessoryActionTimingClassification::RenderWallFailure:
             return "RENDER-WALL-FAILURE";
+        case AccessoryActionTimingClassification::LivenessFailure:
+            return "LIVENESS-FAILURE";
         case AccessoryActionTimingClassification::TimingUnavailable:
         default:
             return "TIMING-UNAVAILABLE";
@@ -2325,6 +2422,7 @@ void AccessoryPerformanceCollector::ResetForNewProcess(std::uint64_t epoch) {
     preparationLimitedCount_ = 0;
     synchronousWallFailureCount_ = 0;
     renderWallFailureCount_ = 0;
+    livenessFailureCount_ = 0;
     timingUnavailableCount_ = 0;
     cadenceContractFailureCount_ = 0;
     missedEligibleDraws_ = 0;
@@ -2410,6 +2508,18 @@ bool AccessoryPerformanceCollector::BeginAction(
             ? startedMicroseconds
             : timing.dispatchStartedMicroseconds,
         timing.preparationWaitMicroseconds,
+        timing.preparationRequestedMicroseconds,
+        timing.workerStartedMicroseconds,
+        timing.workerCompletedMicroseconds,
+        timing.workerPublishedMicroseconds,
+        timing.readyCollectedMicroseconds,
+        timing.bindingStartedMicroseconds,
+        timing.workerQueueWaitMicroseconds,
+        timing.workerPreparationMicroseconds,
+        timing.workerPublicationHandoffMicroseconds,
+        timing.publicationToReadyCollectionMicroseconds,
+        timing.readyToBindWaitMicroseconds,
+        timing.preparationUnattributedMicroseconds,
         timing.stages};
     return true;
 }
@@ -2527,6 +2637,22 @@ std::size_t AccessoryPerformanceCollector::CompletePendingActions(
         timing.expectedDrawOrdinal = action.expectedDrawOrdinal;
         timing.matchingDrawOrdinal = matchingDrawOrdinal;
         timing.preparationWaitMicroseconds = action.preparationWaitMicroseconds;
+        timing.preparationRequestedMicroseconds =
+            action.preparationRequestedMicroseconds;
+        timing.workerStartedMicroseconds = action.workerStartedMicroseconds;
+        timing.workerCompletedMicroseconds = action.workerCompletedMicroseconds;
+        timing.workerPublishedMicroseconds = action.workerPublishedMicroseconds;
+        timing.readyCollectedMicroseconds = action.readyCollectedMicroseconds;
+        timing.bindingStartedMicroseconds = action.bindingStartedMicroseconds;
+        timing.workerQueueWaitMicroseconds = action.workerQueueWaitMicroseconds;
+        timing.workerPreparationMicroseconds = action.workerPreparationMicroseconds;
+        timing.workerPublicationHandoffMicroseconds =
+            action.workerPublicationHandoffMicroseconds;
+        timing.publicationToReadyCollectionMicroseconds =
+            action.publicationToReadyCollectionMicroseconds;
+        timing.readyToBindWaitMicroseconds = action.readyToBindWaitMicroseconds;
+        timing.preparationUnattributedMicroseconds =
+            action.preparationUnattributedMicroseconds;
         timing.drawSampleId = drawSampleId;
         timing.sharedDrawSample = matchedCount > 1;
         timing.drawSampleFanOut = matchedCount;
@@ -2563,6 +2689,18 @@ std::size_t AccessoryPerformanceCollector::CompletePendingActions(
                 timing.dispatchWallMicroseconds + timing.preparationWaitMicroseconds +
                 timing.callbackWaitMicroseconds +
                 timing.matchingDrawCallbackElapsedMicroseconds;
+        const auto accountedMicroseconds =
+            timing.queuedBeforeDispatchMicroseconds +
+            timing.dispatchWallMicroseconds +
+            timing.preparationWaitMicroseconds +
+            timing.callbackWaitMicroseconds +
+            timing.matchingDrawCallbackElapsedMicroseconds;
+        timing.totalUnattributedMicroseconds =
+            timing.endToEndMicroseconds > accountedMicroseconds
+                ? timing.endToEndMicroseconds - accountedMicroseconds : 0;
+        timing.totalOverlapMicroseconds =
+            accountedMicroseconds > timing.endToEndMicroseconds
+                ? accountedMicroseconds - timing.endToEndMicroseconds : 0;
 
         bool stageFailure = false;
         for (const auto elapsed : timing.stages.elapsedMicroseconds) {
@@ -2578,7 +2716,13 @@ std::size_t AccessoryPerformanceCollector::CompletePendingActions(
         bool violation = false;
         AccessoryPerformanceCategory violationCategory = action.category;
         std::uint64_t violationUs = timing.endToEndMicroseconds;
-        if (drawTiming.renderWallFailure) {
+        if (timing.endToEndMicroseconds > 500'000) {
+            timing.classification =
+                AccessoryActionTimingClassification::LivenessFailure;
+            ++livenessFailureCount_; violation = true;
+            violationCategory = action.category;
+            violationUs = timing.endToEndMicroseconds;
+        } else if (drawTiming.renderWallFailure) {
             timing.classification = AccessoryActionTimingClassification::RenderWallFailure;
             ++renderWallFailureCount_; violation = true;
             violationCategory = drawTiming.renderWallFailureCategory;
@@ -2740,6 +2884,7 @@ AccessoryPerformanceSnapshot AccessoryPerformanceCollector::Snapshot() const {
     snapshot.preparationLimitedCount = preparationLimitedCount_;
     snapshot.synchronousWallFailureCount = synchronousWallFailureCount_;
     snapshot.renderWallFailureCount = renderWallFailureCount_;
+    snapshot.livenessFailureCount = livenessFailureCount_;
     snapshot.timingUnavailableCount = timingUnavailableCount_;
     snapshot.cadenceContractFailureCount = cadenceContractFailureCount_;
     snapshot.missedEligibleDraws = missedEligibleDraws_;

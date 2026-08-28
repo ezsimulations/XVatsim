@@ -336,6 +336,7 @@ enum class AccessoryActionTimingClassification : std::size_t {
     PreparationLimited,
     SynchronousWallFailure,
     RenderWallFailure,
+    LivenessFailure,
     TimingUnavailable,
 };
 
@@ -358,6 +359,18 @@ struct AccessoryActionDispatchTimingInput {
     std::uint64_t dispatchCompletedMicroseconds = 0;
     std::uint64_t dispatchStartedMicroseconds = 0;
     std::uint64_t preparationWaitMicroseconds = 0;
+    std::uint64_t preparationRequestedMicroseconds = 0;
+    std::uint64_t workerStartedMicroseconds = 0;
+    std::uint64_t workerCompletedMicroseconds = 0;
+    std::uint64_t workerPublishedMicroseconds = 0;
+    std::uint64_t readyCollectedMicroseconds = 0;
+    std::uint64_t bindingStartedMicroseconds = 0;
+    std::uint64_t workerQueueWaitMicroseconds = 0;
+    std::uint64_t workerPreparationMicroseconds = 0;
+    std::uint64_t workerPublicationHandoffMicroseconds = 0;
+    std::uint64_t publicationToReadyCollectionMicroseconds = 0;
+    std::uint64_t readyToBindWaitMicroseconds = 0;
+    std::uint64_t preparationUnattributedMicroseconds = 0;
     AccessoryDispatchStageWallTimings stages{};
 };
 
@@ -399,6 +412,20 @@ struct AccessoryActionTimingRecord {
     std::uint64_t matchingDrawCallbackElapsedMicroseconds = 0;
     std::uint64_t combinedActionWallMicroseconds = 0;
     std::uint64_t preparationWaitMicroseconds = 0;
+    std::uint64_t preparationRequestedMicroseconds = 0;
+    std::uint64_t workerStartedMicroseconds = 0;
+    std::uint64_t workerCompletedMicroseconds = 0;
+    std::uint64_t workerPublishedMicroseconds = 0;
+    std::uint64_t readyCollectedMicroseconds = 0;
+    std::uint64_t bindingStartedMicroseconds = 0;
+    std::uint64_t workerQueueWaitMicroseconds = 0;
+    std::uint64_t workerPreparationMicroseconds = 0;
+    std::uint64_t workerPublicationHandoffMicroseconds = 0;
+    std::uint64_t publicationToReadyCollectionMicroseconds = 0;
+    std::uint64_t readyToBindWaitMicroseconds = 0;
+    std::uint64_t preparationUnattributedMicroseconds = 0;
+    std::uint64_t totalUnattributedMicroseconds = 0;
+    std::uint64_t totalOverlapMicroseconds = 0;
     std::uint64_t drawSampleId = 0;
     bool sharedDrawSample = false;
     std::uint64_t drawSampleFanOut = 0;
@@ -437,6 +464,7 @@ struct AccessoryPerformanceSnapshot {
     std::uint64_t preparationLimitedCount = 0;
     std::uint64_t synchronousWallFailureCount = 0;
     std::uint64_t renderWallFailureCount = 0;
+    std::uint64_t livenessFailureCount = 0;
     std::uint64_t timingUnavailableCount = 0;
     std::uint64_t cadenceContractFailureCount = 0;
     std::uint64_t missedEligibleDraws = 0;
@@ -531,6 +559,18 @@ private:
         std::uint64_t expectedDrawOrdinal = 0;
         std::uint64_t dispatchStartedMicroseconds = 0;
         std::uint64_t preparationWaitMicroseconds = 0;
+        std::uint64_t preparationRequestedMicroseconds = 0;
+        std::uint64_t workerStartedMicroseconds = 0;
+        std::uint64_t workerCompletedMicroseconds = 0;
+        std::uint64_t workerPublishedMicroseconds = 0;
+        std::uint64_t readyCollectedMicroseconds = 0;
+        std::uint64_t bindingStartedMicroseconds = 0;
+        std::uint64_t workerQueueWaitMicroseconds = 0;
+        std::uint64_t workerPreparationMicroseconds = 0;
+        std::uint64_t workerPublicationHandoffMicroseconds = 0;
+        std::uint64_t publicationToReadyCollectionMicroseconds = 0;
+        std::uint64_t readyToBindWaitMicroseconds = 0;
+        std::uint64_t preparationUnattributedMicroseconds = 0;
         AccessoryDispatchStageWallTimings stages{};
     };
 
@@ -568,6 +608,7 @@ private:
     std::uint64_t preparationLimitedCount_ = 0;
     std::uint64_t synchronousWallFailureCount_ = 0;
     std::uint64_t renderWallFailureCount_ = 0;
+    std::uint64_t livenessFailureCount_ = 0;
     std::uint64_t timingUnavailableCount_ = 0;
     std::uint64_t cadenceContractFailureCount_ = 0;
     std::uint64_t missedEligibleDraws_ = 0;
@@ -670,15 +711,43 @@ struct AccessoryPreparationKey {
 struct AccessoryPreparedDrawerPlan {
     AccessoryPreparationKey key;
     AccessoryHistoryLayoutResult layout;
+    std::uint64_t requestedMicroseconds = 0;
+    std::uint64_t workerStartedMicroseconds = 0;
+    std::uint64_t workerCompletedMicroseconds = 0;
+    std::uint64_t publishedMicroseconds = 0;
     std::uint64_t preparationMicroseconds = 0;
     std::uint64_t maximumContiguousSliceMicroseconds = 0;
     std::uint64_t workerThreadIdentity = 0;
 };
 
+struct AccessoryDeferredTimingInput {
+    std::uint64_t waitStartedMicroseconds = 0;
+    std::uint64_t bindStartedMicroseconds = 0;
+    std::uint64_t workerStartedMicroseconds = 0;
+    std::uint64_t workerCompletedMicroseconds = 0;
+    std::uint64_t publishedMicroseconds = 0;
+    std::uint64_t readyCollectedMicroseconds = 0;
+};
+
+struct AccessoryDeferredTimingBreakdown {
+    std::uint64_t totalMicroseconds = 0;
+    std::uint64_t workerQueueWaitMicroseconds = 0;
+    std::uint64_t workerPreparationMicroseconds = 0;
+    std::uint64_t workerPublicationHandoffMicroseconds = 0;
+    std::uint64_t publicationToReadyCollectionMicroseconds = 0;
+    std::uint64_t readyToBindWaitMicroseconds = 0;
+    std::uint64_t unattributedMicroseconds = 0;
+    bool exact = false;
+};
+
+AccessoryDeferredTimingBreakdown ResolveAccessoryDeferredTiming(
+    const AccessoryDeferredTimingInput& input);
+
 struct AccessoryPreparationRequest {
     AccessoryPreparationKey key;
     std::shared_ptr<const brain::BrainOwnedAccessoryPreparationSnapshot> snapshot;
     AccessoryLayoutResult layout;
+    std::uint64_t requestedMicroseconds = 0;
 };
 
 enum class AccessoryPreparationWorkerState {
@@ -873,6 +942,7 @@ struct AccessoryPresentationUpdateResult {
     bool selectionChanged = false;
     bool historyChanged = false;
     bool layoutChanged = false;
+    bool railAppearanceChanged = false;
     bool cachedPlanBuilt = false;
     bool preparationPending = false;
     bool drawerOffsetReset = false;

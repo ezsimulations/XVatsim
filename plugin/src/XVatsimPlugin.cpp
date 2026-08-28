@@ -1370,6 +1370,11 @@ void LogMetarDispositionDiagnostic(
            << " parseAttempted=" << diagnostic.parsingAttempted
            << " parserReason=" << SanitizeLogText(
                   diagnostic.parserReason, 80)
+           << " parserElapsedUs="
+           << diagnostic.parserElapsedMicroseconds
+           << " parserPath="
+           << (diagnostic.parserRanOnSimulatorFlightLoopHarvestPath
+                   ? "simulator-flight-loop-harvest" : "not-run")
            << " category=" << MetarCategoryDiagnosticToken(
                   diagnostic.acceptedCategory)
            << " historyMutated=" << diagnostic.historyMutated
@@ -3085,6 +3090,8 @@ void LogAccessoryPerformanceSnapshot(const char* boundary) {
          << snapshot.synchronousWallFailureCount
          << " renderWallFailureCount="
          << snapshot.renderWallFailureCount
+         << " livenessFailureCount="
+         << snapshot.livenessFailureCount
          << " timingUnavailableCount="
          << snapshot.timingUnavailableCount
          << " cadenceContractFailureCount="
@@ -3249,6 +3256,24 @@ void LogAccessoryPerformanceSnapshot(const char* boundary) {
          << " combinedActionWallUs="
          << action.combinedActionWallMicroseconds
          << " preparationWaitUs=" << action.preparationWaitMicroseconds
+         << " preparationRequestedUs="
+         << action.preparationRequestedMicroseconds
+         << " workerStartedUs=" << action.workerStartedMicroseconds
+         << " workerCompletedUs=" << action.workerCompletedMicroseconds
+         << " workerPublishedUs=" << action.workerPublishedMicroseconds
+         << " readyCollectedUs=" << action.readyCollectedMicroseconds
+         << " bindingStartedUs=" << action.bindingStartedMicroseconds
+         << " workerQueueWaitUs=" << action.workerQueueWaitMicroseconds
+         << " workerPreparationUs=" << action.workerPreparationMicroseconds
+         << " workerPublicationHandoffUs="
+         << action.workerPublicationHandoffMicroseconds
+         << " publicationToReadyCollectionUs="
+         << action.publicationToReadyCollectionMicroseconds
+         << " readyToBindWaitUs=" << action.readyToBindWaitMicroseconds
+         << " preparationUnattributedUs="
+         << action.preparationUnattributedMicroseconds
+         << " totalUnattributedUs=" << action.totalUnattributedMicroseconds
+         << " totalOverlapUs=" << action.totalOverlapMicroseconds
          << " drawSampleId=" << action.drawSampleId
          << " sharedDrawSample="
          << (action.sharedDrawSample ? "true" : "false")

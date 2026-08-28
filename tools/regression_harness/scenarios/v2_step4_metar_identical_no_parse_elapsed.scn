@@ -1,0 +1,2 @@
+name=v2_step4_metar_identical_no_parse_elapsed
+step4.probe=metar_parse_elapsed_diagnostic

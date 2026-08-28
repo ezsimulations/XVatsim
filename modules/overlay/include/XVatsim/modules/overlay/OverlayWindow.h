@@ -159,6 +159,7 @@ private:
     void RetryPendingAccessoryPreparations();
     bool PublishReadyAccessoryPreparation();
     void ClearDeferredAccessoryInputBinding(bool cancelInFlight);
+    void ResetAccessoryPreparationTiming();
     void NotifyNextAccessoryInputIfPending();
     AccessoryPreparationKey BuildAccessoryPreparationKey(
         brain::BrainOwnedAccessoryDrawerId drawer,
@@ -212,6 +213,7 @@ private:
     std::array<std::optional<AccessoryPreparationRequest>, 3>
         accessoryPendingPreparationRequests_{};
     std::uint64_t accessoryPreparationWaitStartedMicroseconds_ = 0;
+    std::uint64_t accessoryPreparationReadyCollectedMicroseconds_ = 0;
     bool accessoryDeferredBindingPending_ = false;
     OverlayAccessoryClickFact accessoryDeferredBindingFact_{};
     brain::BrainOwnedAccessoryDrawerAction accessoryDeferredBindingAction_ =

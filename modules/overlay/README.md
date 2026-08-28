@@ -70,3 +70,18 @@ parse weather, classify categories, decide freshness, reorder history, or own
 spotlight deadlines. VATSIM ATIS, PDC, and private-message sources remain
 unconnected.
 
+## Step 4 Automatic ORB Publication And Timing Attribution
+
+The rail invalidation key is the rendered rail, not the accessory content
+generation. It includes only fields capable of changing rail pixels. An
+accepted primary METAR therefore publishes one automatic rail raster/upload
+without a pilot click, while drawer history, lookup spotlight, fetch age, and
+identical-primary changes perform no rail work.
+
+Deferred preparation timing remains owned until binding or explicit terminal
+cancellation. The action ledger separately attributes worker queue wait, worker
+CPU, publication handoff, ready collection, ready-to-bind delay, simulator-thread
+dispatch, frame cadence, and draw work. It reports lost or overlapping time
+instead of assigning asynchronous waits to the synchronous 16.7-millisecond
+budget. The 500-millisecond end-to-end liveness limit remains independent.
+

@@ -1015,3 +1015,18 @@ expiry without parse/history mutation, ATIS/PDC/close ownership, zero delayed
 METAR reopen, and Segoe UI Bold 10.0-design-pixel METAR ORB text at 0.85, 1.0,
 and 1.35 scale. Together with the existing Step 3 and Step 4 suites, the saved
 baseline is 590 scenarios.
+
+Step 4 automatic ORB publication and timing proof
+--------------------------------------------------
+
+The 40 `v2_step4_orb_publication_*`, `v2_step4_accessory_timing_*`, and
+METAR parse-timing scenarios preserve both pre-correction red reproductions and
+prove the corrected production paths. They cover rendered-field rail signature
+transitions, one-raster/one-upload publication, drawer-only zero-rail changes,
+100,000 unchanged updates, deferred timing phase decomposition, frame versus
+preparation versus synchronous classification, 500-millisecond liveness,
+lifecycle cancellation, and brain-owned parse elapsed/path diagnostics.
+
+Together with the mandatory prior suites, the saved baseline is 630 scenarios
+with canonical fingerprint
+`24F3438A454DD66EF46DA334F18761F501E241884EC0E496EF2D737CBF21790C`.

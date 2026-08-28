@@ -53,6 +53,17 @@ const VisualSpec kVisuals[]{
     {"20_pdc_owns_spotlight_expiry.png", "pdc-ownership"},
     {"21_metar_closed_no_delayed_reopen.png", "metar-closed"},
     {"22_normal_scale_cockpit_orb_crop.png", "orb-crop"},
+    {"23_neutral_before_primary_acceptance.png", "unknown"},
+    {"24_automatic_kdfw_vfr_no_click.png", "vfr"},
+    {"25_automatic_kdfw_mvfr_transition.png", "mvfr"},
+    {"26_automatic_ksan_primary_transition.png", "ksan-ifr"},
+    {"27_closed_drawer_automatic_update.png", "vfr"},
+    {"28_atis_selected_during_metar_update.png", "atis-ownership"},
+    {"29_pdc_selected_during_metar_update.png", "pdc-ownership"},
+    {"30_kabq_spotlight_unchanged_kdfw_orb.png", "lookup-spotlight"},
+    {"31_identical_primary_zero_rail_difference.png", "vfr"},
+    {"32_actual_rail_before_pixel_comparison.png", "unknown"},
+    {"33_actual_rail_after_pixel_comparison.png", "vfr"},
 };
 
 constexpr std::uint64_t kAcceptedMainCardSignature =
@@ -244,15 +255,19 @@ brain::BrainOwnedRuntimeState BuildState(const std::string& variant) {
     brain::BrainOwnedRuntimeState state;
     brain::EnableBrainOwnedAccessoryRuntime(&state);
     state.metar.initialized = true;
-    state.metar.primaryAirportIcao = variant == "unknown" ? "" : "KDFW";
+    const bool ksan = variant == "ksan-ifr";
+    const bool pending = variant == "pending" || variant == "atis-pending" ||
+        variant == "pdc-pending";
+    state.metar.primaryAirportIcao = variant == "unknown" ? "" :
+        (ksan ? "KSAN" : "KDFW");
     state.metar.visibleState = variant == "unknown"
         ? brain::BrainMetarVisibleState::Unavailable
-        : variant == "pending"
+        : pending
             ? brain::BrainMetarVisibleState::Pending
             : variant == "unavailable"
                 ? brain::BrainMetarVisibleState::Unavailable
             : brain::BrainMetarVisibleState::Fresh;
-    state.metar.sourceHealth = variant == "pending"
+    state.metar.sourceHealth = pending
         ? brain::BrainMetarSourceHealth::Pending
         : variant == "unavailable"
             ? brain::BrainMetarSourceHealth::Failed
@@ -260,18 +275,20 @@ brain::BrainOwnedRuntimeState BuildState(const std::string& variant) {
     std::string raw = "KDFW 271952Z 18010KT 10SM FEW050";
     if (variant == "mvfr") raw = "KDFW 271952Z 18010KT 4SM BKN020";
     if (variant == "ifr") raw = "KDFW 271952Z 18010KT 2SM BKN008";
+    if (ksan) raw = "KSAN 271952Z 24009KT 2SM BKN008";
     if (variant == "lifr" || variant == "preempted") {
         raw = "SPECI KDFW 271954Z 18010KT M1/4SM VV003";
     }
-    if (variant != "unknown" && variant != "pending" &&
+    if (variant != "unknown" && !pending &&
         variant != "unavailable") {
-        state.metar.primaryObservation = Parse("KDFW", raw);
+        state.metar.primaryObservation = Parse(ksan ? "KSAN" : "KDFW", raw);
         state.metar.primaryContentFingerprint = brain::FingerprintBrainMetarContent(raw);
         state.metar.visibleFetchAgeMinutes = 2;
         if (variant == "stale") state.metar.visibleState = brain::BrainMetarVisibleState::Stale;
-        AddHistory(&state, "METAR|KDFW|" +
+        AddHistory(&state, std::string("METAR|") + (ksan ? "KSAN|" : "KDFW|") +
             std::to_string(state.metar.primaryObservation.observationUnixSeconds),
-            "KDFW · AUTOMATIC TARGET · 1952Z", raw,
+            std::string(ksan ? "KSAN" : "KDFW") +
+                " · AUTOMATIC TARGET · 1952Z", raw,
             state.metar.primaryObservation.observationUnixSeconds);
     }
     if (variant == "lookup-pending" ||
@@ -301,9 +318,9 @@ brain::BrainOwnedRuntimeState BuildState(const std::string& variant) {
     }
     state.metar.presentationGeneration = 1;
     brain::BrainOwnedAccessorySelectionRequest request;
-    request.drawer = variant == "atis-ownership"
+    request.drawer = (variant == "atis-ownership" || variant == "atis-pending")
         ? brain::BrainOwnedAccessoryDrawerId::Atis
-        : variant == "pdc-ownership"
+        : (variant == "pdc-ownership" || variant == "pdc-pending")
             ? brain::BrainOwnedAccessoryDrawerId::Pdc
             : brain::BrainOwnedAccessoryDrawerId::Metar;
     request.requestSequence = 1;
@@ -313,6 +330,17 @@ brain::BrainOwnedRuntimeState BuildState(const std::string& variant) {
         (void)brain::RequestBrainOwnedAccessoryDrawerSelection(&state, request);
     }
     return state;
+}
+
+void CloseActiveDrawer(brain::BrainOwnedRuntimeState* state) {
+    if (state == nullptr || state->accessory.activeDrawer ==
+            brain::BrainOwnedAccessoryDrawerId::None) {
+        return;
+    }
+    brain::BrainOwnedAccessorySelectionRequest close;
+    close.drawer = state->accessory.activeDrawer;
+    close.requestSequence = state->accessory.lastConsumedClickSequence + 1;
+    (void)brain::RequestBrainOwnedAccessoryDrawerSelection(state, close);
 }
 
 const brain::BrainOwnedAccessoryOrbPresentation* MetarOrb(
@@ -355,7 +383,12 @@ bool ValidateExactOrbStrings(
         expectedCategory = "LIFR";
         expectedTone = brain::BrainOwnedAccessoryOrbPresentation::Tone::Magenta;
     }
-    return orb->label.empty() && orb->airportIcao == "KDFW" &&
+    const auto expectedAirport = variant == "ksan-ifr" ? "KSAN" : "KDFW";
+    if (variant == "ksan-ifr") {
+        expectedCategory = "IFR";
+        expectedTone = brain::BrainOwnedAccessoryOrbPresentation::Tone::Red;
+    }
+    return orb->label.empty() && orb->airportIcao == expectedAirport &&
         orb->categoryText == expectedCategory && orb->stateText.empty() &&
         orb->selectedIndicator.empty() && !orb->neutral &&
         orb->tone == expectedTone;
@@ -540,6 +573,95 @@ overlay::OfflineRasterImage RenderTwoLineOrbScaleMatrix(
     return matrix;
 }
 
+std::shared_ptr<const overlay::AccessoryPreparedDrawerPlan> PreparePlan(
+    overlay::AccessoryTextMeasurementContext* measurement,
+    const brain::BrainOwnedAccessoryPresentationHandle& presentation,
+    const overlay::AccessoryLayoutResult& layout) {
+    if (!presentation.snapshot || presentation.snapshot->activeDrawer ==
+            brain::BrainOwnedAccessoryDrawerId::None) {
+        return {};
+    }
+    auto plan = std::make_shared<overlay::AccessoryPreparedDrawerPlan>();
+    plan->key.drawer = presentation.snapshot->activeDrawer;
+    plan->key.historyGeneration = presentation.historyGeneration;
+    plan->key.contentGeneration = presentation.contentGeneration;
+    plan->key.layoutGeneration = presentation.layoutGeneration;
+    plan->key.scaleThousandths = 1000;
+    plan->key.contentWidth = std::max(
+        1, layout.drawerBounds.right - layout.drawerBounds.left -
+            (2 * layout.drawerContentInset));
+    plan->key.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+    plan->layout = overlay::BuildAccessoryHistoryLayout(
+        measurement, *presentation.snapshot, layout);
+    return plan;
+}
+
+bool ValidatePublicationTransition(
+    overlay::AccessoryTextMeasurementContext* measurement,
+    const std::string& name,
+    const std::string& beforeVariant,
+    const std::string& afterVariant,
+    bool drawerOpen,
+    std::uint64_t expectedRail,
+    std::uint64_t expectedDrawer,
+    std::ostringstream* report,
+    std::uint64_t* generation) {
+    auto beforeState = BuildState(beforeVariant);
+    auto afterState = BuildState(afterVariant);
+    if (!drawerOpen) {
+        for (auto* state : {&beforeState, &afterState}) {
+            if (state->accessory.activeDrawer !=
+                    brain::BrainOwnedAccessoryDrawerId::None) {
+                brain::BrainOwnedAccessorySelectionRequest close;
+                close.drawer = state->accessory.activeDrawer;
+                close.requestSequence = 2;
+                (void)brain::RequestBrainOwnedAccessoryDrawerSelection(
+                    state, close);
+            }
+        }
+    }
+    overlay::AccessoryLayoutInput input;
+    input.screenWidth = 1920;
+    input.screenHeight = 1080;
+    input.windowLeft = 120;
+    input.windowTop = 940;
+    input.scale = 1.0f;
+    input.cardAnimationProgress = 1.0f;
+    input.drawerOpen = drawerOpen;
+    const auto typography = overlay::PrepareAccessoryTypography(measurement, 1.0f);
+    input.typography = &typography;
+    const auto layout = overlay::ResolveAccessoryLayout(input);
+    auto before = brain::ProjectBrainOwnedAccessoryPresentation(
+        &beforeState, (*generation)++, nullptr);
+    auto after = brain::ProjectBrainOwnedAccessoryPresentation(
+        &afterState, (*generation)++, nullptr);
+    after.contentGeneration = before.contentGeneration + 1;
+    after.historyGeneration = before.historyGeneration + 1;
+    after.layoutGeneration = before.layoutGeneration;
+    overlay::AccessoryPresentationState presenter;
+    overlay::AccessoryPresentationUpdateInput update;
+    update.layout = layout;
+    update.mainCardProductionSignature =
+        std::to_string(kAcceptedMainCardSignature);
+    update.measurementContext = measurement;
+    update.presentation = before;
+    update.preparedPlan = PreparePlan(measurement, before, layout);
+    (void)overlay::UpdateAccessoryPresentation(&presenter, update);
+    update.presentation = after;
+    update.preparedPlan = PreparePlan(measurement, after, layout);
+    const auto result = overlay::UpdateAccessoryPresentation(&presenter, update);
+    const auto expectedUpload = expectedRail + expectedDrawer;
+    if (report != nullptr) {
+        *report << name << ',' << result.delta.railRasterRequests << ','
+                << result.delta.uploadRequests << ','
+                << result.delta.drawerRasterRequests << ','
+                << (result.railAppearanceChanged ? "true" : "false") << '\n';
+    }
+    return result.delta.railRasterRequests == expectedRail &&
+        result.delta.drawerRasterRequests == expectedDrawer &&
+        result.delta.uploadRequests == expectedUpload;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -570,6 +692,12 @@ int main(int argc, char** argv) {
     std::uint64_t generation = 1;
     for (const auto& visual : kVisuals) {
         auto state = BuildState(visual.variant);
+        const auto proofNumber = std::stoi(visual.filename.substr(0, 2));
+        if (proofNumber == 23 || proofNumber == 24 || proofNumber == 25 ||
+            proofNumber == 26 || proofNumber == 27 || proofNumber == 31 ||
+            proofNumber == 32 || proofNumber == 33) {
+            CloseActiveDrawer(&state);
+        }
         const auto currentGeneration = generation++;
         exactStringsValid = exactStringsValid &&
             ValidateExactOrbStrings(
@@ -604,6 +732,35 @@ int main(int argc, char** argv) {
     }
     performance << "16_two_line_orb_scale_matrix.png,0,0,0,0,"
                 << baselineMainCardSignature << '\n';
+    std::ostringstream publication;
+    publication << "transition,rail_rasters,uploads,drawer_rasters,rail_appearance_changed\n";
+    failed = !ValidatePublicationTransition(
+        measurement, "neutral_to_kdfw_vfr_closed", "unknown", "vfr", false,
+        1, 0, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "kdfw_vfr_to_mvfr_closed", "vfr", "mvfr", false,
+        1, 0, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "kdfw_to_ksan_closed", "vfr", "ksan-ifr", false,
+        1, 0, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "success_to_neutral_closed", "vfr", "unavailable", false,
+        1, 0, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "metar_open_primary_change", "pending", "vfr", true,
+        1, 1, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "atis_owns_primary_change", "atis-pending", "atis-ownership", true,
+        1, 1, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "pdc_owns_primary_change", "pdc-pending", "pdc-ownership", true,
+        1, 1, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "lookup_spotlight_unchanged_primary", "vfr", "lookup-spotlight", true,
+        0, 1, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "identical_primary_content_only", "vfr", "vfr", false,
+        0, 0, &publication, &generation) || failed;
     failed = failed || !exactStringsValid;
     overlay::ShutdownAccessoryTextMeasurement(measurement);
     Gdiplus::GdiplusShutdown(token);
@@ -611,6 +768,11 @@ int main(int argc, char** argv) {
     {
         std::ofstream output(outputDirectory / "performance.csv", std::ios::binary);
         output << performance.str();
+    }
+    {
+        std::ofstream output(
+            outputDirectory / "publication_counts.csv", std::ios::binary);
+        output << publication.str();
     }
     std::ostringstream sums;
     for (const auto& visual : kVisuals) {
@@ -623,6 +785,8 @@ int main(int argc, char** argv) {
          << "  16_two_line_orb_scale_matrix.png\n";
     sums << Sha256(outputDirectory / "performance.csv")
          << "  performance.csv\n";
+    sums << Sha256(outputDirectory / "publication_counts.csv")
+         << "  publication_counts.csv\n";
     {
         std::ofstream output(outputDirectory / "SHA256SUMS.txt", std::ios::binary);
         output << sums.str();
@@ -631,7 +795,7 @@ int main(int argc, char** argv) {
         std::cerr << "Step 4 visual proof failed\n";
         return 1;
     }
-    std::cout << "Step 4 accessory-liveness visual proof wrote 22 deterministic images"
-              << " with exact ORB strings and unchanged main-card signature\n";
+    std::cout << "Step 4 ORB-publication visual proof wrote 33 deterministic images"
+              << " with exact ORB strings, transition counts, and unchanged main-card signature\n";
     return 0;
 }

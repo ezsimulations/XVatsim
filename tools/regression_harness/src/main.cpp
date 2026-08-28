@@ -15662,6 +15662,14 @@ bool Step4FileContains(
     return content.find(token) != std::string::npos;
 }
 
+std::string Step4ReadFile(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return {};
+    return {
+        std::istreambuf_iterator<char>(input),
+        std::istreambuf_iterator<char>()};
+}
+
 int RunStep4ContractProbe(const ScenarioData& scenario) {
     using namespace xvatsim::brain;
     using xvatsim::modules::metar::BuildVatsimMetarRequestPath;
@@ -15711,7 +15719,473 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "successful ORB tone mismatch");
     };
 
-    if (probe == "correction_sendrequest_completion_callback") {
+    if (probe == "orb_publication_precorrection_reproduction") {
+        using namespace xvatsim::modules::overlay;
+        Step4Fixture fixture;
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "ORB publication reproduction measurement unavailable");
+        if (measurement != nullptr) {
+            AccessoryLayoutInput layoutInput;
+            layoutInput.screenWidth = 1920;
+            layoutInput.screenHeight = 1080;
+            layoutInput.windowLeft = 100;
+            layoutInput.windowTop = 900;
+            layoutInput.scale = 1.0f;
+            layoutInput.cardAnimationProgress = 1.0f;
+            layoutInput.drawerOpen = false;
+            const auto layout = ResolveAccessoryLayout(layoutInput);
+            AccessoryPresentationState presenter;
+            AccessoryPresentationUpdateInput update;
+            update.presentation = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, 1, nullptr);
+            update.layout = layout;
+            update.mainCardProductionSignature = "orb-publication-red-proof";
+            update.measurementContext = measurement;
+            const auto neutral = UpdateAccessoryPresentation(&presenter, update);
+            require(neutral.delta.railRasterRequests == 1,
+                    "initial neutral rail did not raster once");
+            const auto neutralSignature = presenter.railRenderSignature;
+
+            const auto accepted = fixture.AcceptPrimary(primaryVfr);
+            require(accepted.presentationChanged && accepted.contentChanged,
+                    "primary acceptance did not advance brain presentation/content");
+            update.presentation = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, 1, nullptr);
+            const auto automatic = UpdateAccessoryPresentation(&presenter, update);
+            const auto acceptedSignature = presenter.railRenderSignature;
+            const auto* acceptedOrb = Step4MetarOrb(update.presentation);
+            require(acceptedOrb != nullptr &&
+                        acceptedOrb->airportIcao == "KDFW" &&
+                        acceptedOrb->categoryText == "VFR",
+                    "accepted snapshot does not contain KDFW/VFR");
+            require(acceptedSignature != neutralSignature,
+                    "accepted rendered rail signature did not change");
+            require(automatic.delta.railRasterRequests == 1 &&
+                        automatic.delta.uploadRequests == 1,
+                    "accepted visible ORB did not request one automatic rail raster/upload");
+            require(automatic.delta.drawerRasterRequests == 0,
+                    "closed drawer acceptance requested drawer raster work");
+            ShutdownAccessoryTextMeasurement(measurement);
+        }
+    } else if (probe == "accessory_timing_precorrection_reproduction") {
+        using namespace xvatsim::modules::overlay;
+        const auto source = Step4ReadFile(
+            "modules/overlay/src/OverlayWindow.cpp");
+        const auto clearBegin = source.find(
+            "void OverlayWindow::ClearDeferredAccessoryInputBinding");
+        const auto clearEnd = clearBegin == std::string::npos
+            ? std::string::npos
+            : source.find("void OverlayWindow::NotifyNextAccessoryInputIfPending",
+                          clearBegin);
+        const auto clearBody = clearBegin == std::string::npos ||
+                clearEnd == std::string::npos
+            ? std::string{}
+            : source.substr(clearBegin, clearEnd - clearBegin);
+        require(clearBegin != std::string::npos && clearEnd != std::string::npos,
+                "deferred cleanup source seam unavailable");
+        require(clearBody.find(
+                    "accessoryPreparationWaitStartedMicroseconds_ = 0;") ==
+                    std::string::npos,
+                "deferred cleanup erased timing ownership before terminal binding");
+
+        auto collector = std::make_unique<AccessoryPerformanceCollector>();
+        AccessoryActionDispatchTimingInput lostTiming;
+        lostTiming.dispatchStartedMicroseconds = 1'000;
+        lostTiming.dispatchCompletedMicroseconds = 101'000;
+        lostTiming.preparationWaitMicroseconds = 0;
+        lostTiming.stages.elapsedMicroseconds[static_cast<std::size_t>(
+            AccessoryDispatchStage::BrainDecision)] = 2;
+        lostTiming.stages.elapsedMicroseconds[static_cast<std::size_t>(
+            AccessoryDispatchStage::BrainProjectionHistoryCopy)] = 5;
+        lostTiming.stages.elapsedMicroseconds[static_cast<std::size_t>(
+            AccessoryDispatchStage::GenerationBinding)] = 1;
+        require(collector->BeginDrawerAction(
+                    BrainOwnedAccessoryDrawerAction::Opened,
+                    1, 1'000, 1, 1, 101'000, 1, lostTiming),
+                "timing reproduction action did not begin");
+        AccessoryActionDrawTimingInput draw;
+        draw.actionDrawWallMicroseconds = 500;
+        require(collector->CompletePendingActions(
+                    102'000, 1, 1, 101'000, 100'000, 1, draw) == 1,
+                "timing reproduction action did not complete");
+        const auto snapshot = collector->Snapshot();
+        require(snapshot.lastAction.preparationWaitMicroseconds == 0 &&
+                    snapshot.lastAction.dispatchWallMicroseconds == 100'000 &&
+                    snapshot.lastAction.classification ==
+                        AccessoryActionTimingClassification::SynchronousWallFailure,
+                "lost wait did not reproduce synchronous-wall misclassification");
+    } else if (probe == "orb_publication_transition_matrix") {
+        using namespace xvatsim::modules::overlay;
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "ORB transition matrix measurement unavailable");
+        if (measurement != nullptr) {
+            const auto resolveLayout = [](bool drawerOpen) {
+                AccessoryLayoutInput input;
+                input.screenWidth = 1920;
+                input.screenHeight = 1080;
+                input.windowLeft = 100;
+                input.windowTop = 900;
+                input.scale = 1.0f;
+                input.cardAnimationProgress = 1.0f;
+                input.drawerOpen = drawerOpen;
+                return ResolveAccessoryLayout(input);
+            };
+            const auto makePlan = [&](const auto& presentation,
+                                      const auto& layout) {
+                if (!presentation.snapshot || presentation.snapshot->activeDrawer ==
+                        BrainOwnedAccessoryDrawerId::None) {
+                    return std::shared_ptr<const AccessoryPreparedDrawerPlan>{};
+                }
+                auto plan = std::make_shared<AccessoryPreparedDrawerPlan>();
+                plan->key.drawer = presentation.snapshot->activeDrawer;
+                plan->key.historyGeneration = presentation.historyGeneration;
+                plan->key.contentGeneration = presentation.contentGeneration;
+                plan->key.layoutGeneration = presentation.layoutGeneration;
+                plan->key.scaleThousandths = static_cast<int>(
+                    std::lround(layout.scale * 1000.0f));
+                plan->key.contentWidth = std::max(
+                    1, layout.drawerBounds.right - layout.drawerBounds.left -
+                        (2 * layout.drawerContentInset));
+                plan->key.visibleLineCapacity =
+                    layout.drawerVisibleLineCapacity;
+                plan->layout = BuildAccessoryHistoryLayout(
+                    measurement, *presentation.snapshot, layout);
+                return std::shared_ptr<const AccessoryPreparedDrawerPlan>{plan};
+            };
+            const auto updatePresenter = [&](AccessoryPresentationState* presenter,
+                                             const auto& presentation,
+                                             const auto& layout) {
+                AccessoryPresentationUpdateInput input;
+                input.presentation = presentation;
+                input.layout = layout;
+                input.mainCardProductionSignature = "orb-transition-matrix";
+                input.measurementContext = measurement;
+                input.preparedPlan = makePlan(presentation, layout);
+                return UpdateAccessoryPresentation(presenter, input);
+            };
+            const struct {
+                const char* raw;
+                const char* category;
+            } categoryCases[]{
+                {"KDFW 271951Z 18010KT 10SM SKC", "VFR"},
+                {"KDFW 271951Z 18010KT 4SM BKN020", "MVFR"},
+                {"KDFW 271951Z 18010KT 2SM BKN008", "IFR"},
+                {"KDFW 271951Z 18010KT M1/4SM VV003", "LIFR"},
+            };
+            for (const auto& item : categoryCases) {
+                Step4Fixture fixture;
+                AccessoryPresentationState presenter;
+                const auto layout = resolveLayout(false);
+                const auto neutral = updatePresenter(
+                    &presenter,
+                    ProjectBrainOwnedAccessoryPresentation(
+                        &fixture.state, 1, nullptr),
+                    layout);
+                require(neutral.delta.railRasterRequests == 1 &&
+                            neutral.delta.uploadRequests == 1,
+                        "neutral rail did not publish exactly once");
+                fixture.AcceptPrimary(item.raw);
+                const auto acceptedPresentation =
+                    ProjectBrainOwnedAccessoryPresentation(
+                        &fixture.state, 1, nullptr);
+                const auto* orb = Step4MetarOrb(acceptedPresentation);
+                const auto accepted = updatePresenter(
+                    &presenter, acceptedPresentation, layout);
+                require(orb != nullptr && orb->airportIcao == "KDFW" &&
+                            orb->categoryText == item.category,
+                        std::string("ORB matrix content mismatch: ") +
+                            item.category);
+                require(accepted.railAppearanceChanged &&
+                            accepted.delta.railRasterRequests == 1 &&
+                            accepted.delta.uploadRequests == 1 &&
+                            accepted.delta.drawerRasterRequests == 0,
+                        std::string("ORB matrix work mismatch: ") +
+                            item.category);
+                const auto repeated = updatePresenter(
+                    &presenter, acceptedPresentation, layout);
+                require(!repeated.railAppearanceChanged &&
+                            repeated.delta.railRasterRequests == 0 &&
+                            repeated.delta.uploadRequests == 0 &&
+                            repeated.delta.drawerRasterRequests == 0,
+                        "repeated accepted snapshot performed rail work");
+            }
+
+            Step4Fixture categoryTransition;
+            AccessoryPresentationState categoryPresenter;
+            const auto closedLayout = resolveLayout(false);
+            updatePresenter(
+                &categoryPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &categoryTransition.state, 1, nullptr), closedLayout);
+            categoryTransition.AcceptPrimary(categoryCases[0].raw);
+            updatePresenter(
+                &categoryPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &categoryTransition.state, 1, nullptr), closedLayout);
+            categoryTransition.Cycle(60'000);
+            categoryTransition.worker.Complete(
+                BrainMetarWorkerStatus::Success, "KDFW", categoryCases[1].raw);
+            categoryTransition.Cycle(1);
+            const auto categoryChanged = updatePresenter(
+                &categoryPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &categoryTransition.state, 1, nullptr), closedLayout);
+            require(categoryChanged.delta.railRasterRequests == 1 &&
+                        categoryChanged.delta.uploadRequests == 1,
+                    "VFR to MVFR did not publish one rail transition");
+
+            categoryTransition.state.metar.visibleState =
+                BrainMetarVisibleState::Stale;
+            ++categoryTransition.state.metar.presentationGeneration;
+            const auto stale = updatePresenter(
+                &categoryPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &categoryTransition.state, 1, nullptr), closedLayout);
+            require(stale.delta.railRasterRequests == 1 &&
+                        stale.delta.uploadRequests == 1,
+                    "successful primary to neutral did not publish once");
+
+            Step4Fixture primaryTransition;
+            primaryTransition.AcceptPrimary(primaryVfr);
+            AccessoryPresentationState primaryPresenter;
+            updatePresenter(
+                &primaryPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &primaryTransition.state, 1, nullptr), closedLayout);
+            primaryTransition.input.workflowStage = WorkflowStage::Enroute;
+            primaryTransition.Cycle(1);
+            primaryTransition.worker.Complete(
+                BrainMetarWorkerStatus::Success, "KSAN", primaryIfr);
+            primaryTransition.Cycle(1);
+            const auto airportChanged = updatePresenter(
+                &primaryPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &primaryTransition.state, 1, nullptr), closedLayout);
+            require(airportChanged.delta.railRasterRequests == 1 &&
+                        airportChanged.delta.uploadRequests == 1,
+                    "KDFW to KSAN did not publish one rail transition");
+
+            for (const auto selectedDrawer : {
+                     BrainOwnedAccessoryDrawerId::Metar,
+                     BrainOwnedAccessoryDrawerId::Atis,
+                     BrainOwnedAccessoryDrawerId::Pdc}) {
+                Step4Fixture selected;
+                selected.Cycle();
+                Step4SelectDrawer(&selected.state, selectedDrawer);
+                AccessoryPresentationState selectedPresenter;
+                const auto openLayout = resolveLayout(true);
+                updatePresenter(
+                    &selectedPresenter,
+                    ProjectBrainOwnedAccessoryPresentation(
+                        &selected.state, 1, nullptr), openLayout);
+                selected.worker.Complete(
+                    BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+                selected.Cycle(1);
+                const auto changed = updatePresenter(
+                    &selectedPresenter,
+                    ProjectBrainOwnedAccessoryPresentation(
+                        &selected.state, 1, nullptr), openLayout);
+                require(changed.delta.railRasterRequests == 1 &&
+                            changed.delta.uploadRequests >= 1 &&
+                            selected.state.accessory.activeDrawer == selectedDrawer,
+                        "selected drawer lost ownership during primary update");
+            }
+
+            Step4Fixture lookup;
+            lookup.AcceptPrimary(primaryVfr);
+            Step4SelectDrawer(&lookup.state, BrainOwnedAccessoryDrawerId::Metar);
+            AccessoryPresentationState lookupPresenter;
+            const auto openLayout = resolveLayout(true);
+            updatePresenter(
+                &lookupPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &lookup.state, 1, nullptr), openLayout);
+            lookup.SubmitLookup("KABQ");
+            updatePresenter(
+                &lookupPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &lookup.state, 1, nullptr), openLayout);
+            lookup.AcceptLookup(lookupMvfr);
+            const auto spotlight = updatePresenter(
+                &lookupPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &lookup.state, 1, nullptr), openLayout);
+            require(spotlight.delta.railRasterRequests == 0 &&
+                        spotlight.delta.drawerRasterRequests == 1 &&
+                        spotlight.delta.uploadRequests == 1,
+                    "lookup spotlight changed unchanged primary ORB");
+            lookup.Cycle(8'000);
+            const auto spotlightExpired = updatePresenter(
+                &lookupPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &lookup.state, 1, nullptr), openLayout);
+            require(spotlightExpired.delta.railRasterRequests == 0 &&
+                        spotlightExpired.delta.drawerRasterRequests == 1,
+                    "spotlight expiry performed rail work");
+
+            const auto warmHandle = ProjectBrainOwnedAccessoryPresentation(
+                &lookup.state, 1, nullptr);
+        const auto warm = RunUnchangedAccessoryPresentationUpdates(
+                &lookupPresenter,
+                AccessoryPresentationUpdateInput{
+                    warmHandle, openLayout, "orb-transition-matrix",
+                    measurement, makePlan(warmHandle, openLayout), false},
+                100'000);
+            require(warm.delta.railRasterRequests == 0 &&
+                        warm.delta.drawerRasterRequests == 0 &&
+                        warm.delta.uploadRequests == 0 &&
+                        warm.delta.snapshotPublications == 0,
+                    "warm repeated ORB matrix performed recurring work");
+            std::cout << "STEP4_ORB_PUBLICATION: automatic_latency_bound_us=500000"
+                         " rail_raster_per_visible_change=1"
+                         " rail_upload_per_visible_change=1"
+                         " closed_drawer_rasters=0"
+                         " unchanged_iterations=100000"
+                         " unchanged_rail_rasters=0 unchanged_uploads=0\n";
+            ShutdownAccessoryTextMeasurement(measurement);
+        }
+    } else if (probe == "accessory_timing_attribution_matrix") {
+        using namespace xvatsim::modules::overlay;
+        AccessoryDeferredTimingInput input;
+        input.waitStartedMicroseconds = 1'000;
+        input.bindStartedMicroseconds = 101'000;
+        input.workerStartedMicroseconds = 11'000;
+        input.workerCompletedMicroseconds = 21'000;
+        input.publishedMicroseconds = 22'000;
+        input.readyCollectedMicroseconds = 90'000;
+        const auto breakdown = ResolveAccessoryDeferredTiming(input);
+        require(breakdown.exact && breakdown.totalMicroseconds == 100'000 &&
+                    breakdown.workerQueueWaitMicroseconds == 10'000 &&
+                    breakdown.workerPreparationMicroseconds == 10'000 &&
+                    breakdown.workerPublicationHandoffMicroseconds == 1'000 &&
+                    breakdown.publicationToReadyCollectionMicroseconds == 68'000 &&
+                    breakdown.readyToBindWaitMicroseconds == 11'000 &&
+                    breakdown.unattributedMicroseconds == 0,
+                "deferred timing phase decomposition is not exact");
+
+        auto collector = std::make_unique<AccessoryPerformanceCollector>();
+        AccessoryActionDispatchTimingInput timing;
+        timing.dispatchStartedMicroseconds = 1'000;
+        timing.dispatchCompletedMicroseconds = 101'010;
+        timing.preparationWaitMicroseconds = breakdown.totalMicroseconds;
+        timing.workerQueueWaitMicroseconds =
+            breakdown.workerQueueWaitMicroseconds;
+        timing.workerPreparationMicroseconds =
+            breakdown.workerPreparationMicroseconds;
+        timing.workerPublicationHandoffMicroseconds =
+            breakdown.workerPublicationHandoffMicroseconds;
+        timing.publicationToReadyCollectionMicroseconds =
+            breakdown.publicationToReadyCollectionMicroseconds;
+        timing.readyToBindWaitMicroseconds =
+            breakdown.readyToBindWaitMicroseconds;
+        timing.stages.elapsedMicroseconds[static_cast<std::size_t>(
+            AccessoryDispatchStage::BrainDecision)] = 2;
+        timing.stages.elapsedMicroseconds[static_cast<std::size_t>(
+            AccessoryDispatchStage::BrainProjectionHistoryCopy)] = 5;
+        timing.stages.elapsedMicroseconds[static_cast<std::size_t>(
+            AccessoryDispatchStage::GenerationBinding)] = 1;
+        require(collector->BeginDrawerAction(
+                    BrainOwnedAccessoryDrawerAction::Opened,
+                    1, 1'000, 1, 1, 101'010, 1, timing),
+                "attributed deferred action did not begin");
+        AccessoryActionDrawTimingInput draw;
+        draw.actionDrawWallMicroseconds = 500;
+        require(collector->CompletePendingActions(
+                    117'000, 1, 1, 116'000, 101'000, 1, draw) == 1,
+                "attributed deferred action did not complete");
+        const auto attributed = collector->Snapshot().lastAction;
+        require(attributed.classification ==
+                    AccessoryActionTimingClassification::PreparationLimited &&
+                    attributed.dispatchWallMicroseconds == 10 &&
+                    attributed.preparationWaitMicroseconds == 100'000 &&
+                    attributed.workerPreparationMicroseconds == 10'000 &&
+                    attributed.callbackWaitMicroseconds == 14'990 &&
+                    attributed.accountingExact &&
+                    attributed.totalUnattributedMicroseconds == 0 &&
+                    attributed.totalOverlapMicroseconds == 0,
+                "deferred action was not classified as preparation-limited");
+
+        auto frameCollector = std::make_unique<AccessoryPerformanceCollector>();
+        AccessoryActionDispatchTimingInput frameTiming;
+        frameTiming.dispatchStartedMicroseconds = 1'000;
+        frameTiming.dispatchCompletedMicroseconds = 1'010;
+        require(frameCollector->BeginDrawerAction(
+                    BrainOwnedAccessoryDrawerAction::Opened,
+                    2, 1'000, 1, 1, 1'010, 1, frameTiming),
+                "frame-cadence action did not begin");
+        require(frameCollector->CompletePendingActions(
+                    52'000, 1, 1, 51'000, 1'000, 1, draw) == 1,
+                "frame-cadence action did not complete");
+        require(frameCollector->Snapshot().lastAction.classification ==
+                    AccessoryActionTimingClassification::FrameCadenceLimited,
+                "frame delay was misclassified as synchronous work");
+
+        auto syncCollector = std::make_unique<AccessoryPerformanceCollector>();
+        AccessoryActionDispatchTimingInput syncTiming;
+        syncTiming.dispatchStartedMicroseconds = 1'000;
+        syncTiming.dispatchCompletedMicroseconds = 21'000;
+        require(syncCollector->BeginDrawerAction(
+                    BrainOwnedAccessoryDrawerAction::Opened,
+                    3, 1'000, 1, 1, 21'000, 1, syncTiming),
+                "synchronous failure action did not begin");
+        require(syncCollector->CompletePendingActions(
+                    22'000, 1, 1, 21'000, 1'000, 1, draw) == 1,
+                "synchronous failure action did not complete");
+        require(syncCollector->Snapshot().lastAction.classification ==
+                    AccessoryActionTimingClassification::SynchronousWallFailure,
+                "true synchronous violation was hidden");
+
+        auto livenessCollector = std::make_unique<AccessoryPerformanceCollector>();
+        AccessoryActionDispatchTimingInput livenessTiming;
+        livenessTiming.dispatchStartedMicroseconds = 1'000;
+        livenessTiming.dispatchCompletedMicroseconds = 1'010;
+        require(livenessCollector->BeginDrawerAction(
+                    BrainOwnedAccessoryDrawerAction::Opened,
+                    4, 1'000, 1, 1, 1'010, 1, livenessTiming),
+                "liveness failure action did not begin");
+        require(livenessCollector->CompletePendingActions(
+                    502'000, 1, 1, 501'000, 1'000, 1, draw) == 1,
+                "liveness failure action did not complete");
+        const auto liveness = livenessCollector->Snapshot();
+        require(liveness.lastAction.classification ==
+                    AccessoryActionTimingClassification::LivenessFailure &&
+                    liveness.livenessFailureCount == 1,
+                "action above 500 milliseconds was not a liveness failure");
+        std::cout << "STEP4_ACCESSORY_TIMING: preparation_wait_us="
+                  << attributed.preparationWaitMicroseconds
+                  << " synchronous_us=" << attributed.dispatchWallMicroseconds
+                  << " worker_preparation_us="
+                  << attributed.workerPreparationMicroseconds
+                  << " frame_wait_us=" << attributed.callbackWaitMicroseconds
+                  << " attributed_end_to_end_us="
+                  << attributed.endToEndMicroseconds
+                  << " liveness_limit_us=500000"
+                     " true_sync_failure_us=20000"
+                     " unattributed_us=0 overlap_us=0\n";
+    } else if (probe == "metar_parse_elapsed_diagnostic") {
+        Step4Fixture changed;
+        const auto accepted = changed.AcceptPrimary(primaryVfr);
+        require(accepted.dispositionDiagnostic.parsingAttempted &&
+                    accepted.dispositionDiagnostic.
+                        parserRanOnSimulatorFlightLoopHarvestPath &&
+                    accepted.dispositionDiagnostic.parserElapsedMicroseconds <
+                        16'700,
+                "changed METAR parse timing/path diagnostic missing or over budget");
+        changed.Cycle(60'000);
+        changed.worker.Complete(
+            BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+        const auto identical = changed.Cycle(1);
+        require(!identical.dispositionDiagnostic.parsingAttempted &&
+                    identical.dispositionDiagnostic.parserElapsedMicroseconds == 0 &&
+                    !identical.dispositionDiagnostic.
+                        parserRanOnSimulatorFlightLoopHarvestPath,
+                "identical METAR reported parser work");
+        std::cout << "STEP4_METAR_PARSE_TIMING: changed_parse_us="
+                  << accepted.dispositionDiagnostic.parserElapsedMicroseconds
+                  << " flight_loop_harvest=true identical_parse_us=0\n";
+    } else if (probe == "correction_sendrequest_completion_callback") {
         require(Step4FileContains(
                     "modules/metar/src/VatsimMetarClient.cpp",
                     "WINHTTP_CALLBACK_FLAG_SENDREQUEST_COMPLETE"),

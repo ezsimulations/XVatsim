@@ -13,17 +13,18 @@ its subject must be `docs: prepare V2 Step 4 session handoff`, and its scope
 must be exactly the three handoff documentation files. Its final SHA cannot be
 embedded in those same committed bytes and must be resolved from Git.
 
-Step 4 - VATSIM METAR has completed a second corrective offline implementation
+Step 4 - VATSIM METAR has completed a third corrective offline implementation
 and proof. The first correction fixed WinHTTP send completion and was live
-proven. The second corrected accessory-rail liveness after a content-only render
-generation superseded an accepted click's exact generation, and enlarged the
-minimal successful METAR ORB text. Deployment, X-Plane/xPilot startup, live
-VATSIM traffic, and controlled live reproof remain separately gated and were
-not performed by the accessory correction.
+proven. The second corrected accessory-rail liveness and enlarged the minimal
+METAR ORB. The third makes an accepted primary METAR invalidate and publish the
+rail automatically from rendered-field differences, and restores exact timing
+ownership across deferred preparation and generation binding. Deployment,
+X-Plane/xPilot startup, live VATSIM traffic, and controlled live reproof remain
+separately gated and were not performed by this correction.
 
-The corrected regression baseline is 590 saved scenarios. The canonical
+The corrected regression baseline is 630 saved scenarios. The canonical
 release-gate fingerprint is
-`765008264996DBE603FFB6B30D9CD0000B3CA59FA37BBA8C1D62D16CFD47E498`.
+`24F3438A454DD66EF46DA334F18761F501E241884EC0E496EF2D737CBF21790C`.
 
 The corrective gate began from zero tracked or staged changes. Two protected
 untracked evidence sets remain outside the corrective commits: the original
@@ -116,7 +117,7 @@ work and X-Plane frame cadence. The maximum fixture-ON preparation wait was
 2,227,032 microseconds, and the fixture-OFF cold wait was 256,838 microseconds.
 Neither produced a visible UI failure or recurring idle work.
 
-## Step 4 - VATSIM METAR Accessory-Liveness Corrected Candidate
+## Step 4 - VATSIM METAR ORB-Publication Corrected Candidate
 
 - Status: corrected and offline-proven; controlled live reproof is not
   authorized.
@@ -125,8 +126,9 @@ Neither produced a visible UI failure or recurring idle work.
 - The brain owns the primary airport, lookup, request priority, cadence,
   freshness, parsing, category, cache, history, spotlight, lifecycle, and final
   presentation. The plugin uses the generic asynchronous worker-binding seam.
-- Added 29 accessory-liveness/readability scenarios; Step 3 is 31/31, complete
-  Step 4 is 96/96, and complete saved regression is 590/590.
+- Added 40 ORB-publication/timing corrective scenarios after the 29 prior
+  accessory-liveness/readability scenarios; Step 3 is 31/31, complete Step 4 is
+  136/136, and complete saved regression is 630/630.
 - Corrected WinHTTP send completion registration and proved a complete local
   loopback send/receive/HTTP/JSON/harvest/brain-parse lifecycle.
 - Added bounded dispatch, terminal-worker, and brain-disposition diagnostics,
@@ -139,8 +141,17 @@ Neither produced a visible UI failure or recurring idle work.
   it and newer selections explicitly supersede it.
 - Failed deferred binding and lifecycle close/disable/stop now release and clear
   all queued, deferred, in-flight, and performance-action state.
+- Rendered-field signature comparison automatically publishes accepted primary
+  METAR changes with one rail raster/upload, while drawer-only, lookup-only,
+  age-only, and identical-primary changes remain rail-zero.
+- Deferred preparation timestamps remain owned until binding or explicit
+  cancellation. Diagnostics separate worker CPU, worker/publication waits,
+  frame cadence, synchronous dispatch, and draw work without hiding a true
+  16.7-millisecond synchronous violation or 500-millisecond liveness failure.
+- Changed accepted METAR content records parser/classifier elapsed time and the
+  simulator flight-loop harvest path; identical content reports no parse.
 - Fresh Windows Release proof and fixture-off normal plugin builds passed.
-- Twenty-two production-raster visual cases reproduced with zero PNG hash
+- Thirty-three production-raster visual cases reproduced with zero PNG hash
   differences; main-card production signatures were identical in every case.
 - The 100,000-cycle warm-idle proof recorded zero parsing, fingerprinting,
   history, wrapping, rasterization, or upload deltas.
@@ -150,6 +161,8 @@ Neither produced a visible UI failure or recurring idle work.
   no Step 4 proof transport, synthetic report, NOAA, or Aviation Weather marker.
 - Evidence is under `outputs/v2_step_04_*`; the 116 pre-existing untracked
   evidence files remain excluded and preserved.
+- Initial-plan audit disposition:
+  `INITIAL-PLAN WORKLOAD ACCEPTED AS CURRENT BASELINE — NO SAFE NARROW CHANGE PROPOSED`.
 
 The accepted one-time flight-plan construction spike is established V1
 behavior for initial flight context, frequency ordering, route resolution, and

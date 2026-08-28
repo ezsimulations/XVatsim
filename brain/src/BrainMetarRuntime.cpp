@@ -605,10 +605,17 @@ void CommitBrainOwnedMetarWorkerFact(
         }
 
         ++state->metar.parseCount;
+        const auto parseStarted = std::chrono::steady_clock::now();
         auto parsed = ParseBrainOwnedMetarReport(
             fact.stationIcao, fact.rawMetar, input.utcUnixSeconds);
         output->dispositionDiagnostic.parsingAttempted = true;
         output->dispositionDiagnostic.parserReason = parsed.diagnostic;
+        output->dispositionDiagnostic.parserElapsedMicroseconds =
+            static_cast<std::uint64_t>(std::chrono::duration_cast<
+                std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - parseStarted).count());
+        output->dispositionDiagnostic.
+            parserRanOnSimulatorFlightLoopHarvestPath = true;
         if (!parsed.valid) {
             RecordPrimaryFailure(state, input.monotonicMs,
                                  &output->presentationChanged);
@@ -685,10 +692,17 @@ void CommitBrainOwnedMetarWorkerFact(
     }
 
     ++state->metar.parseCount;
+    const auto parseStarted = std::chrono::steady_clock::now();
     auto parsed = ParseBrainOwnedMetarReport(
         fact.stationIcao, fact.rawMetar, input.utcUnixSeconds);
     output->dispositionDiagnostic.parsingAttempted = true;
     output->dispositionDiagnostic.parserReason = parsed.diagnostic;
+    output->dispositionDiagnostic.parserElapsedMicroseconds =
+        static_cast<std::uint64_t>(std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - parseStarted).count());
+    output->dispositionDiagnostic.
+        parserRanOnSimulatorFlightLoopHarvestPath = true;
     if (!parsed.valid) {
         HandleLookupFailure(state, input.monotonicMs,
                             &output->presentationChanged);
