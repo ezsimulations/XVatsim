@@ -1,31 +1,94 @@
-Continue XVatsim V2 from the repository's locked roadmap and execution protocol.
+Continue XVatsim V2 using the repository as the authoritative shared memory.
 
-Repo:
+Repository:
 C:\Users\DARRON\OneDrive\Documents\XVatsim-V2
+
+Locked starting state:
+- Branch: v2-development
+- Accepted Step 3 product/receipt closeout commit:
+  0c4ac545c1e484d5029e465e9eb99aa49fd19b08
+- Current HEAD is the handoff documentation commit; resolve its SHA locally.
+- Current HEAD subject: docs: prepare V2 Step 4 session handoff
+- Current HEAD parent: 0c4ac545c1e484d5029e465e9eb99aa49fd19b08
+- Current HEAD scope: exactly docs/NEXT_SESSION_HANDOFF.md,
+  docs/NEXT_SESSION_START_PROMPT.txt, and docs/MILESTONE_STATUS.md
+- V2 Steps 1, 2, and 3 are accepted and complete.
+- Saved scenarios: 494
+- Canonical scenario fingerprint:
+  16AA355061096CC9EBB87A1E437422FEABB8B45CDF41D7057FF9853802BF8BCB
+- Tracked and staged changes: zero.
+- There are 116 intentionally preserved untracked evidence files under outputs/.
+  Do not modify, move, delete, stage, commit, or clean them.
+- Preserved evidence inventory fingerprint:
+  B63A3726E4B785FD80D982AA564A63124D0F815CBFBC9A579AC4E00CF4956D51
+- X-Plane and xPilot are stopped.
+- Active and staged .xpl files: zero.
+
+Working arrangement:
+- Darron is product owner and bridge.
+- ChatGPT is Director.
+- Codex is Engineer.
+- The repository is the durable shared memory.
+- Architecture rule:
+  Brain decides. Modules produce facts. UI displays brain-approved facts.
 
 First inspect:
 git status --short --branch
-git log -5 --oneline --decorate
+git log -8 --oneline --decorate
+git rev-parse HEAD
+git rev-parse HEAD^
+git show -s --format=%s HEAD
+git diff-tree --no-commit-id --name-only -r HEAD
 
-Then read, in order:
-1. docs/V2_0_0_ROADMAP.md
-2. docs/V2_EXECUTION_PROTOCOL.md
-3. docs/V2_STEP_01_ENGINEERING_BRIEF.md
-4. docs/BRAIN_OWNED_RUNTIME_CONTRACT.md
-5. docs/ARCHITECTURE.md
-6. docs/V1_2_3_PATCH_CLOSEOUT.md
+Verify the branch, current HEAD subject, parent, and exact three-file scope;
+tracked/staged changes 0; preserved evidence 116; scenarios 494; active/staged
+.xpl 0/0; and Step 4 implementation not begun.
 
-Current state:
-- V1.2.3 is the closed public Windows/X-Plane 12/xPilot baseline.
-- V2.0 remains Windows-only. Mac and Linux support are deferred.
-- V2 scope is dedicated VFR plus METAR, VATSIM ATIS, and approved
-  PDC/private-message ORBs attached to the existing main-card design.
-- Work proceeds one approved, proven, and committed slice at a time.
-- The architecture rule remains:
-  Brain decides. Modules produce facts. UI displays brain-approved facts.
+Then read these primary sources in order:
+1. docs/NEXT_SESSION_HANDOFF.md
+2. docs/V2_0_0_ROADMAP.md
+3. docs/V2_EXECUTION_PROTOCOL.md
+4. docs/ARCHITECTURE.md
+5. brain/README.md
+6. modules/overlay/README.md
+7. outputs/v2_step_01_windows_proof_baseline_receipt.md
+8. outputs/v2_step_02_ifr_vfr_mode_foundation_receipt.md
+9. outputs/v2_step_03_orb_rail_information_drawer_receipt.md
 
-Current task:
-- Read docs/V2_STEP_01_ENGINEERING_BRIEF.md.
-- Inspect the existing build and release-validation tooling.
-- Present the exact Step 1 Contract Gate.
-- Do not edit source or tooling until Darron explicitly approves that gate.
+Additional references:
+10. docs/BRAIN_OWNED_RUNTIME_CONTRACT.md
+11. docs/MILESTONE_STATUS.md
+
+Accepted Step 3 closeout:
+- Implementation/evidence commit:
+  219aa594adccb02143d02ea2f725761d85a6fe5f
+- Receipt commit:
+  0c4ac545c1e484d5029e465e9eb99aa49fd19b08
+- Receipt SHA-256:
+  4EEFEA63980736A74B1621A8005AF3383299946C14CC4658FA41F156CBEF84A9
+
+The next roadmap item is Step 4 - METAR. Step 4 has not begun, and this prompt
+does not authorize implementation. Darron will identify whether the next task is
+Director planning or Codex engineering. The Director must issue a bounded brief;
+Codex must inspect without editing and present a Contract Gate; Darron must
+explicitly approve that gate before any Step 4 implementation, build,
+deployment, live test, or commit.
+
+Director next action: verify this state, review Step 4 METAR product decisions,
+prepare a bounded Step 4 engineering brief, and withhold implementation
+authorization until Darron approves the reviewed Contract Gate.
+
+Engineer next action: verify this state; after receiving the Director brief,
+perform only a read-only METAR/source/architecture audit and present an exact
+Step 4 Contract Gate. Do not edit, build, deploy, test live, or commit Step 4
+work before Darron's explicit approval.
+
+Step 3 controlled rollback passed. The plugin root, preferences, and logs were
+restored to their verified pretest state. Active/staged .xpl is 0/0; V2 Test
+and the Step 3 backup remain preserved; V1 was untouched.
+
+V1.2.3 remains the closed Windows/X-Plane 12/xPilot public baseline and must not
+be reopened by V2 work. V2 remains Windows-only; Mac and Linux are deferred.
+
+Do not infer authority from previous sessions. Stop and report if the locked
+repository, evidence, scenario, or external rollback state differs.

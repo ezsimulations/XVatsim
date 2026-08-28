@@ -1,15 +1,142 @@
 # Milestone Status
 
-Updated: 2026-08-26
+Updated: 2026-08-27
 
 ## Current Position
 
-Milestones 1 through 9 are complete on the authoritative rebuild plan, and the
-five-flight live battle-test gate passed for the installed V1 runtime hash
-`81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A`.
+XVatsim V2 development is on branch `v2-development`. The accepted Step 3
+product/receipt closeout baseline is
+`0c4ac545c1e484d5029e465e9eb99aa49fd19b08`. Steps 1, 2, and 3 are accepted
+and complete. The authorized handoff documentation commit will become the
+current `HEAD`; its parent must be `0c4ac545c1e484d5029e465e9eb99aa49fd19b08`,
+its subject must be `docs: prepare V2 Step 4 session handoff`, and its scope
+must be exactly the three handoff documentation files. Its final SHA cannot be
+embedded in those same committed bytes and must be resolved from Git.
 
-XVatsim V1.2.3 is the current public freeware Windows/X-Plane 12/xPilot
-release. It is distributed through X-Plane.org and GitHub Releases.
+The next roadmap item is Step 4 - METAR, which has not begun and requires a new
+Director brief, Codex Contract Gate, and Darron approval before implementation.
+
+The current regression baseline is 494 saved scenarios. The canonical
+release-gate fingerprint is
+`16AA355061096CC9EBB87A1E437422FEABB8B45CDF41D7057FF9853802BF8BCB`.
+
+The repository has zero tracked or staged changes at this handoff. There are
+116 intentionally preserved untracked evidence files under `outputs/`; they
+must not be cleaned, staged, or altered without separate authorization.
+Their inventory fingerprint is
+`B63A3726E4B785FD80D982AA564A63124D0F815CBFBC9A579AC4E00CF4956D51`.
+X-Plane and xPilot are stopped, and active/staged `.xpl` counts are zero.
+
+XVatsim V1.2.3 remains the closed public freeware Windows/X-Plane 12/xPilot
+baseline. V2 work must not reopen it. V2 remains Windows-only; Mac and Linux are
+deferred until native validation resources are available.
+
+## V2 Accepted Milestones
+
+### Step 1 - Windows V2 Proof Baseline
+
+- Status: accepted and complete.
+- Commit:
+  `2684b2f80c112673b8b9326edee1b0840c0ea9e4`.
+- Receipt:
+  `outputs/v2_step_01_windows_proof_baseline_receipt.md`.
+- Receipt SHA-256:
+  `7A762200007C2AB0817C2DBE1997624F7CA17416A542012B641C153C18A39727`.
+- Established clean Release builds, deterministic scenario discovery and
+  ordering, aggregate fingerprints, binary hashes, elapsed-time evidence,
+  atomic receipt publication, and intentional negative-count propagation.
+
+### Step 2 - Explicit IFR/VFR Mode Foundation
+
+- Status: accepted and complete.
+- Proven implementation:
+  `8b10841fd19a1ee1a908b74ffd3246e36b029647`.
+- Original receipt closeout:
+  `eaf57da8359e14ab0b23cff3bc47f1f4e04f698e`.
+- Proof-integrity correction:
+  `fc6ee9bd8962f8ddd983cfeb08875c54d4fc706d`.
+- Corrected receipt closeout:
+  `ac0f86261ebb12c7cdd0fc166f971ea738ad1f22`.
+- Receipt:
+  `outputs/v2_step_02_ifr_vfr_mode_foundation_receipt.md`.
+- Receipt SHA-256:
+  `9C7770DA29B354C1DE2F35224D9AFF9F0D02BC4658B8885EEDC3EA3C8F1FABF4`.
+- Established explicit persistent brain-owned IFR/VFR selection without
+  changing existing controller, workflow, route, frequency, or main-card
+  behavior.
+
+### Step 3 - ORB Rail And Information Drawer Foundation
+
+- Status: accepted and complete.
+- Proven implementation and evidence:
+  `219aa594adccb02143d02ea2f725761d85a6fe5f`.
+- Receipt-only closeout:
+  `0c4ac545c1e484d5029e465e9eb99aa49fd19b08`.
+- Receipt:
+  `outputs/v2_step_03_orb_rail_information_drawer_receipt.md`.
+- Receipt SHA-256:
+  `4EEFEA63980736A74B1621A8005AF3383299946C14CC4658FA41F156CBEF84A9`.
+- Added three attached ORBs, one visible drawer surface, and three independent
+  brain-owned in-memory histories.
+- The brain owns selection, ordering, deduplication, limits, eviction,
+  generations, and lifecycle decisions. The overlay owns bounded click facts,
+  presentation-only scrolling, geometry, hit testing, rasterization, and
+  rendering.
+- One below-normal event-driven preparation worker consumes immutable
+  brain-approved snapshots and publishes exact-generation prepared plans
+  through nonblocking handoffs.
+- Rendering is change-driven. Accepted idle proof showed zero recurring
+  accessory history traversal, wrapping, GDI+ measurement, enqueue,
+  rasterization, upload, or diagnostic work. Shutdown left zero worker threads.
+- Normal Step 3 has no live METAR, ATIS, PDC, or private-message source.
+  Synthetic fixture code is compile-time isolated and absent from the normal
+  plugin.
+
+## Step 3 Performance Conclusion
+
+The final fixture-ON reproof had zero synchronous, render, cadence, timing, or
+missed-draw failures. Maximum combined synchronous action work was 3,643
+microseconds; drawer rasterization was 2,534 microseconds; drawer upload was 210
+microseconds; and completed accessory draw was 188 microseconds.
+
+The final fixture-OFF smoke had no hard failure. Maximum combined synchronous
+action work was 1,357 microseconds; rasterization was 668 microseconds; upload
+was 74 microseconds; and completed accessory draw was 137 microseconds.
+
+Preparation wait is asynchronous and is kept separate from simulator-thread
+work and X-Plane frame cadence. The maximum fixture-ON preparation wait was
+2,227,032 microseconds, and the fixture-OFF cold wait was 256,838 microseconds.
+Neither produced a visible UI failure or recurring idle work.
+
+The accepted one-time flight-plan construction spike is established V1
+behavior for initial flight context, frequency ordering, route resolution, and
+polygon-map construction. It is outside Step 3 accessory performance
+classification. Future V2 work must continue preventing recurring flight-cycle
+CPU spikes, polling, repeated parsing, unnecessary rendering, network work, or
+diagnostic spam.
+
+## Step 3 Controlled Rollback
+
+The controlled rollback passed. The X-Plane plugin root, preferences, and logs
+were restored to their verified pretest state. Active `.xpl` count is zero;
+staged `V2 Test` `.xpl` count is zero; and `V2 Test` plus the Step 3 backup
+remain preserved. V1 was not searched for, moved, restored, or modified.
+
+- Rollback manifest SHA-256:
+  `D3943D78D037203E1A70847B38001D75854CFA7FD734A8E3B98A4C683564E89E`.
+- Pretest backup manifest SHA-256:
+  `A0B19A2ED9A37240CF11B78FF51F2FC964D652D64C94E4148868FCD8FCF4287D`.
+
+## Working Arrangement
+
+- Darron is product owner, final decision-maker, and bridge.
+- ChatGPT is Director and owns briefs, Contract Gate review, and acceptance.
+- Codex is Engineer and implements only approved, bounded scope.
+- The repository is the durable shared memory between tasks.
+
+The architecture contract remains:
+
+`Brain decides. Modules produce facts. UI displays brain-approved facts.`
 
 ## V1.2.3 Patch Release
 
