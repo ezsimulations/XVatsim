@@ -604,6 +604,7 @@ std::string RailSignature(
     const AccessoryLayoutResult& layout) {
     std::ostringstream stream;
     stream << snapshot.selectionGeneration << '|' << DrawerToken(snapshot.activeDrawer)
+           << '|' << snapshot.contentGeneration
            << '|' << layout.closedWidth << 'x' << layout.closedHeight
            << '|' << layout.accessoriesVisible << '|' << layout.accessoriesInteractive;
     return stream.str();
@@ -615,6 +616,7 @@ std::string DrawerSignature(
     int offset) {
     std::ostringstream stream;
     stream << snapshot.snapshotIdentity << '|' << snapshot.historyGeneration
+           << '|' << snapshot.contentGeneration
            << '|' << DrawerToken(snapshot.activeDrawer) << '|'
            << layout.openWidth << 'x' << layout.openHeight << '|' << offset;
     return stream.str();
@@ -638,6 +640,7 @@ bool AccessoryPreparationKey::operator==(
     const AccessoryPreparationKey& other) const {
     return drawer == other.drawer &&
         historyGeneration == other.historyGeneration &&
+        contentGeneration == other.contentGeneration &&
         layoutGeneration == other.layoutGeneration &&
         typographyGeneration == other.typographyGeneration &&
         scaleThousandths == other.scaleThousandths &&
@@ -1815,10 +1818,12 @@ AccessoryPresentationUpdateResult UpdateAccessoryPresentation(
         state->activeSnapshot->activeDrawer != snapshot.activeDrawer;
     result.historyChanged = !hadSnapshot ||
         state->historyGeneration != input.presentation.historyGeneration;
+    const bool contentChanged = !hadSnapshot ||
+        state->contentGeneration != input.presentation.contentGeneration;
     result.layoutChanged = !hadSnapshot ||
         state->layoutGeneration != input.presentation.layoutGeneration;
     const bool anyPresentationChange = result.snapshotChanged || result.selectionChanged ||
-        result.historyChanged || result.layoutChanged;
+        result.historyChanged || contentChanged || result.layoutChanged;
     result.mainCardUnchanged = state->mainCardProductionSignature.empty() ||
         state->mainCardProductionSignature == input.mainCardProductionSignature;
     if (!anyPresentationChange &&
@@ -1833,6 +1838,8 @@ AccessoryPresentationUpdateResult UpdateAccessoryPresentation(
             input.preparedPlan->key.drawer == snapshot.activeDrawer &&
             input.preparedPlan->key.historyGeneration ==
                 input.presentation.historyGeneration &&
+            input.preparedPlan->key.contentGeneration ==
+                input.presentation.contentGeneration &&
             input.preparedPlan->key.layoutGeneration ==
                 input.presentation.layoutGeneration;
         if (!planMatches) {
@@ -1871,6 +1878,7 @@ AccessoryPresentationUpdateResult UpdateAccessoryPresentation(
     state->activeSnapshotIdentity = snapshot.snapshotIdentity;
     state->selectionGeneration = input.presentation.selectionGeneration;
     state->historyGeneration = input.presentation.historyGeneration;
+    state->contentGeneration = input.presentation.contentGeneration;
     state->layoutGeneration = input.presentation.layoutGeneration;
     state->mainCardProductionSignature = input.mainCardProductionSignature;
     state->railRenderSignature = RailSignature(snapshot, input.layout);

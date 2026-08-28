@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -79,6 +80,7 @@ enum class BrainOwnedTextEntryMode {
     None,
     ManualCtaf,
     DiversionAirport,
+    MetarAirportLookup,
 };
 
 enum class BrainOwnedAccessoryOperationStatus {
@@ -108,6 +110,8 @@ struct BrainOwnedAccessoryHistoryEntryInput {
     std::string stableKey;
     std::string title;
     std::string body;
+    bool chronological = false;
+    std::int64_t chronologyKey = 0;
 };
 
 struct BrainOwnedAccessoryHistoryEntry {
@@ -115,6 +119,8 @@ struct BrainOwnedAccessoryHistoryEntry {
     std::string title;
     std::string body;
     std::uint64_t acceptedSequence = 0;
+    bool chronological = false;
+    std::int64_t chronologyKey = 0;
     std::array<std::uint8_t, 32> sourceContentDigest{};
     std::size_t retainedBytes = 0;
     bool contentLimited = false;
@@ -146,6 +152,8 @@ struct BrainOwnedAccessoryRuntimeState {
     std::array<std::shared_ptr<const BrainOwnedAccessoryPreparationSnapshot>, 3>
         cachedPreparationSnapshots;
     std::array<std::uint64_t, 3> cachedPreparationHistoryGenerations{};
+    std::array<std::uint64_t, 3> cachedPreparationContentGenerations{};
+    std::uint64_t cachedPresentationContentGeneration = 0;
     std::uint64_t nextPresentationSnapshotIdentity = 1;
 };
 
@@ -195,6 +203,17 @@ struct BrainOwnedAccessoryOrbPresentation {
     bool neutral = true;
     bool selected = false;
     std::string selectedIndicator;
+    std::string airportIcao;
+    std::string categoryText;
+    std::string stateText;
+    enum class Tone {
+        Neutral,
+        Green,
+        Blue,
+        Red,
+        Magenta,
+        Gray,
+    } tone = Tone::Neutral;
 };
 
 struct BrainOwnedAccessoryPresentationSnapshot {
@@ -209,6 +228,7 @@ struct BrainOwnedAccessoryPresentationSnapshot {
     std::uint64_t selectionGeneration = 0;
     std::uint64_t historyGeneration = 0;
     std::uint64_t layoutGeneration = 0;
+    std::uint64_t contentGeneration = 0;
     std::uint64_t snapshotIdentity = 0;
     std::string callsignIdentity;
 };
@@ -224,6 +244,7 @@ struct BrainOwnedAccessoryPresentationHandle {
     std::uint64_t selectionGeneration = 0;
     std::uint64_t historyGeneration = 0;
     std::uint64_t layoutGeneration = 0;
+    std::uint64_t contentGeneration = 0;
 };
 
 struct BrainOwnedAccessoryPreparationSnapshot {
@@ -232,12 +253,213 @@ struct BrainOwnedAccessoryPreparationSnapshot {
     BrainOwnedAccessoryDrawerId drawer = BrainOwnedAccessoryDrawerId::None;
     std::vector<BrainOwnedAccessoryHistoryEntry> entries;
     std::uint64_t historyGeneration = 0;
+    std::uint64_t contentGeneration = 0;
     std::uint64_t snapshotIdentity = 0;
 };
 
 struct BrainOwnedAccessoryPreparationHandle {
     std::shared_ptr<const BrainOwnedAccessoryPreparationSnapshot> snapshot;
     std::uint64_t historyGeneration = 0;
+    std::uint64_t contentGeneration = 0;
+};
+
+enum class BrainMetarRequestPurpose {
+    PrimaryTarget,
+    PilotLookup,
+    PrimaryRefresh,
+};
+
+enum class BrainMetarWorkerStatus {
+    None,
+    Pending,
+    Success,
+    Cancelled,
+    InvalidRequest,
+    TransportFailure,
+    HttpFailure,
+    PayloadRejected,
+    JsonRejected,
+    WrongStation,
+};
+
+enum class BrainMetarFlightCategory {
+    Unknown,
+    Vfr,
+    Mvfr,
+    Ifr,
+    Lifr,
+};
+
+enum class BrainMetarSourceHealth {
+    Unknown,
+    Pending,
+    Healthy,
+    Failed,
+};
+
+enum class BrainMetarVisibleState {
+    Unknown,
+    Pending,
+    Fresh,
+    Cached,
+    Stale,
+    Unavailable,
+};
+
+enum class BrainMetarTransientPresentation {
+    None,
+    LookupPending,
+    LookupSpotlight,
+    LookupFailure,
+};
+
+struct BrainMetarWorkerRequest {
+    std::string airportIcao;
+    std::uint64_t requestId = 0;
+    BrainMetarRequestPurpose purpose = BrainMetarRequestPurpose::PrimaryRefresh;
+    std::uint64_t primaryGeneration = 0;
+    std::uint64_t lookupGeneration = 0;
+    long long dispatchedMonotonicMs = 0;
+};
+
+struct BrainMetarWorkerFact {
+    BrainMetarWorkerStatus status = BrainMetarWorkerStatus::None;
+    BrainMetarWorkerRequest request;
+    std::string stationIcao;
+    std::string rawMetar;
+    int httpStatus = 0;
+    long long completedMonotonicMs = 0;
+    long long networkElapsedUs = 0;
+    std::size_t payloadBytes = 0;
+    std::string diagnostic;
+    std::string source = "VATSIM_METAR";
+};
+
+struct BrainMetarWorkerShutdownSnapshot {
+    long long lastShutdownLatencyMs = 0;
+    bool running = false;
+    bool handlesClosed = true;
+    bool callbacksClosed = true;
+};
+
+class BrainMetarWorker {
+public:
+    virtual ~BrainMetarWorker() = default;
+    virtual bool Start(const BrainMetarWorkerRequest& request) = 0;
+    virtual bool TryHarvest(BrainMetarWorkerFact* fact) = 0;
+    virtual bool IsRunning() const = 0;
+    virtual void CancelAndJoin() = 0;
+    virtual BrainMetarWorkerShutdownSnapshot ShutdownSnapshot() const = 0;
+};
+
+struct BrainMetarParsedObservation {
+    bool valid = false;
+    std::string stationIcao;
+    std::string rawMetar;
+    bool speci = false;
+    std::int64_t observationUnixSeconds = 0;
+    int observationDay = 0;
+    int observationHour = 0;
+    int observationMinute = 0;
+    bool visibilityKnown = false;
+    double visibilitySm = 0.0;
+    bool ceilingKnown = false;
+    bool noCeilingProven = false;
+    int ceilingFeet = 0;
+    BrainMetarFlightCategory category = BrainMetarFlightCategory::Unknown;
+    std::string diagnostic;
+};
+
+struct BrainOwnedMetarRuntimeState {
+    bool initialized = false;
+    bool dispatchSuspendedForDisconnect = false;
+    BrainOwnedOperatingMode lastOperatingMode = BrainOwnedOperatingMode::IFR;
+    WorkflowStage lastWorkflowStage = WorkflowStage::None;
+    bool targetContextInitialized = false;
+    std::string targetContextKey;
+    bool primaryLatchedFromVfr = false;
+    std::string primaryAirportIcao;
+    std::uint64_t primaryGeneration = 0;
+    BrainMetarParsedObservation primaryObservation;
+    std::uint64_t primaryContentFingerprint = 0;
+    BrainMetarSourceHealth sourceHealth = BrainMetarSourceHealth::Unknown;
+    BrainMetarVisibleState visibleState = BrainMetarVisibleState::Unknown;
+    int consecutiveFailures = 0;
+    long long lastSuccessMonotonicMs = 0;
+    long long lastFailureMonotonicMs = 0;
+    long long nextPrimaryEligibleMonotonicMs = 0;
+    long long freshUntilMonotonicMs = 0;
+    long long nextVisibleAgeBucketMonotonicMs = 0;
+    int visibleFetchAgeMinutes = 0;
+    std::uint64_t nextRequestId = 1;
+    std::optional<BrainMetarWorkerRequest> activeRequest;
+    std::optional<BrainMetarWorkerFact> deferredDisconnectedFact;
+    std::string pendingLookupIcao;
+    std::uint64_t lookupGeneration = 0;
+    bool lookupAwaitingDispatch = false;
+    bool lookupInvalidated = false;
+    BrainMetarParsedObservation lookupObservation;
+    std::uint64_t lookupContentFingerprint = 0;
+    bool lookupTimedOut = false;
+    BrainMetarTransientPresentation transientPresentation =
+        BrainMetarTransientPresentation::None;
+    long long transientDeadlineMonotonicMs = 0;
+    std::uint64_t lookupPresentationSelectionGeneration = 0;
+    bool lookupPresentationOwnershipValid = false;
+    std::uint64_t contentGeneration = 0;
+    std::uint64_t sourceHealthGeneration = 0;
+    std::uint64_t freshnessGeneration = 0;
+    std::uint64_t presentationGeneration = 0;
+    std::uint64_t parseCount = 0;
+    std::uint64_t fingerprintCount = 0;
+    std::uint64_t historyMutationCount = 0;
+    std::uint64_t requestDispatchCount = 0;
+    std::uint64_t completionAcceptedCount = 0;
+    std::uint64_t completionRejectedCount = 0;
+    long long lastAcceptedNetworkElapsedUs = 0;
+    long long lastSimulatorThreadCycleUs = 0;
+    long long maximumSimulatorThreadCycleUs = 0;
+};
+
+struct BrainOwnedTextEntryFact {
+    BrainOwnedTextEntryMode mode = BrainOwnedTextEntryMode::None;
+    std::string text;
+    long long monotonicMs = 0;
+};
+
+struct BrainOwnedTextEntryDecision {
+    bool accepted = false;
+    bool presentationChanged = false;
+    std::string normalizedText;
+    std::string reason;
+};
+
+struct BrainOwnedAsyncWorkerBindings {
+    BrainMetarWorker* metar = nullptr;
+};
+
+struct BrainOwnedAsyncFactCycleInput {
+    bool pluginEnabled = true;
+    bool xpilotConnected = false;
+    WorkflowStage workflowStage = WorkflowStage::None;
+    BrainOwnedOperatingMode operatingMode = BrainOwnedOperatingMode::IFR;
+    workflow::FlightContext flightContext;
+    FlightPlanSnapshot flightPlan;
+    long long monotonicMs = 0;
+    std::int64_t utcUnixSeconds = 0;
+};
+
+struct BrainOwnedAsyncFactCycleOutput {
+    bool requestDispatched = false;
+    bool completionAccepted = false;
+    bool completionRejected = false;
+    bool presentationChanged = false;
+    bool contentChanged = false;
+    bool sourceHealthChanged = false;
+    bool freshnessChanged = false;
+    long long acceptedNetworkElapsedUs = 0;
+    long long simulatorThreadElapsedUs = 0;
+    std::string reason;
 };
 
 struct BrainOwnedCandidateCompletion {
@@ -351,6 +573,7 @@ public:
 struct BrainOwnedRuntimeState {
     BrainOwnedOperatingModeState operatingMode;
     BrainOwnedAccessoryRuntimeState accessory;
+    BrainOwnedMetarRuntimeState metar;
     bool hasRoutePolygonSnapshot = false;
     RouteSectorSnapshot routePolygonSnapshot;
     std::uint64_t routePolygonHash = 0;
@@ -1608,6 +1831,20 @@ void CommitBrainOwnedManualQuerySnapshot(
 void ExpireBrainOwnedManualQuery(
     BrainOwnedRuntimeState* state,
     long long nowSeconds);
+
+BrainOwnedTextEntryDecision CommitBrainOwnedTextEntryFact(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedTextEntryFact& fact);
+
+BrainOwnedAsyncFactCycleOutput RunBrainOwnedAsyncFactCycle(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAsyncFactCycleInput& input,
+    const BrainOwnedAsyncWorkerBindings& workers);
+
+BrainMetarWorkerShutdownSnapshot ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAsyncWorkerBindings& workers,
+    bool clearAcceptedState);
 
 void ResetBrainOwnedControllerMessageState(BrainOwnedRuntimeState* state);
 

@@ -19,11 +19,13 @@ Live module set:
 - `ctaf_lookup`
 - `diversion_context`
 - `flight_plan`
+- `metar`
 - `network_plan_link`
 - `overlay`
 - `pilot_identity`
 - `radio_state`
 - `route_sector`
+- `runtime_workers`
 - `settings_store`
 - `transceiver_resolver`
 - `vatsim_data_feed`
@@ -40,3 +42,9 @@ These old board collectors are compiled only when
 historical regression scenarios while the live plugin runs the Engineer 3
 brain-owned path: radio board facts, route polygon facts, controller relevance
 facts, brain publisher, then UI render.
+
+The Step 4 `metar` module is a removable, single-request VATSIM HTTPS fact
+producer. `runtime_workers` is the generic host binding used by the plugin; it
+keeps the concrete METAR client and feature-specific network mechanics out of
+the plugin shell. Targeting, cadence, acceptance, parsing, and presentation
+remain brain-owned.

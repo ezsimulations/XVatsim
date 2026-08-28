@@ -1,4 +1,5 @@
 #include "XVatsim/brain/BrainOwnedRuntime.h"
+#include "XVatsim/brain/BrainMetarRuntime.h"
 
 #include "XVatsim/brain/BrainOwnedWorkerTypes.h"
 
@@ -4188,6 +4189,7 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     }
     const auto operatingMode = state->operatingMode;
     const auto accessory = state->accessory;
+    const auto metar = state->metar;
     const auto flightContext = state->flightContext;
     const auto displayOverrideMode = state->displayOverrideMode;
     const auto pendingTextEntryMode = state->pendingTextEntryMode;
@@ -4198,6 +4200,7 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     *state = {};
     state->operatingMode = operatingMode;
     state->accessory = accessory;
+    state->metar = metar;
     state->flightContext = flightContext;
     state->displayOverrideMode = displayOverrideMode;
     state->pendingTextEntryMode = pendingTextEntryMode;
@@ -6692,6 +6695,121 @@ const char* AccessoryEmptyStateText(BrainOwnedAccessoryDrawerId drawer) {
     }
 }
 
+BrainOwnedAccessoryHistoryEntry MetarDisplayEntry(
+    std::string key,
+    std::string title,
+    std::string body) {
+    BrainOwnedAccessoryHistoryEntry entry;
+    entry.stableKey = std::move(key);
+    entry.title = std::move(title);
+    entry.body = std::move(body);
+    entry.retainedBytes =
+        entry.stableKey.size() + entry.title.size() + entry.body.size();
+    return entry;
+}
+
+std::vector<BrainOwnedAccessoryHistoryEntry> ProjectBrainOwnedMetarDrawerPresentation(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedAccessoryHistory& history) {
+    if (!state.metar.initialized) return history.entries;
+    std::vector<BrainOwnedAccessoryHistoryEntry> entries;
+    entries.reserve(history.entries.size() + 2);
+    const auto& metar = state.metar;
+    std::string title;
+    std::string body;
+    switch (metar.transientPresentation) {
+        case BrainMetarTransientPresentation::LookupPending:
+            title = "FETCHING METAR — " + metar.pendingLookupIcao;
+            body = "PILOT REQUEST";
+            break;
+        case BrainMetarTransientPresentation::LookupSpotlight:
+            title = "METAR LOOKUP — " + metar.lookupObservation.stationIcao;
+            body = std::string(BrainMetarCategoryToken(
+                       metar.lookupObservation.category)) +
+                " · PILOT REQUEST\n" + metar.lookupObservation.rawMetar +
+                "\nReturning to primary airport " +
+                (metar.primaryAirportIcao.empty()
+                     ? std::string("UNAVAILABLE")
+                     : metar.primaryAirportIcao) + "…";
+            break;
+        case BrainMetarTransientPresentation::LookupFailure:
+            title = std::string(metar.lookupTimedOut
+                                    ? "METAR LOOKUP TIMED OUT — "
+                                    : "METAR LOOKUP FAILED — ") +
+                metar.pendingLookupIcao;
+            body = "PILOT REQUEST\nReturning to primary airport " +
+                (metar.primaryAirportIcao.empty()
+                     ? std::string("UNAVAILABLE")
+                     : metar.primaryAirportIcao) + "…";
+            break;
+        case BrainMetarTransientPresentation::None:
+        default:
+            if (metar.primaryAirportIcao.empty()) {
+                title = "METAR — PRIMARY UNAVAILABLE";
+                body = "UNKNOWN · UNAVAILABLE";
+            } else {
+                title = "METAR — " + metar.primaryAirportIcao + " · PRIMARY";
+                const auto category =
+                    metar.visibleState == BrainMetarVisibleState::Stale ||
+                            metar.visibleState == BrainMetarVisibleState::Unavailable
+                        ? BrainMetarFlightCategory::Unknown
+                        : metar.primaryObservation.category;
+                body = BrainMetarCategoryToken(category);
+                const auto* visible = BrainMetarVisibleStateToken(
+                    metar.visibleState);
+                if (visible[0] != '\0') body += std::string(" · ") + visible;
+                if (metar.primaryObservation.valid) {
+                    std::ostringstream observed;
+                    observed << " · observed " << std::setfill('0')
+                             << std::setw(2)
+                             << metar.primaryObservation.observationHour
+                             << std::setw(2)
+                             << metar.primaryObservation.observationMinute << 'Z';
+                    observed << " · updated "
+                             << metar.visibleFetchAgeMinutes << "m ago";
+                    body += observed.str() + "\n" +
+                        metar.primaryObservation.rawMetar;
+                }
+            }
+            break;
+    }
+    entries.push_back(MetarDisplayEntry(
+        "__METAR_PRIMARY_PRESENTATION__", std::move(title), std::move(body)));
+    if (!history.entries.empty()) {
+        entries.push_back(MetarDisplayEntry(
+            "__METAR_RECENT_HEADER__", "Recent METARs", ""));
+        entries.insert(entries.end(), history.entries.begin(), history.entries.end());
+    }
+    return entries;
+}
+
+void ProjectBrainOwnedMetarOrbPresentation(
+    const BrainOwnedRuntimeState& state,
+    BrainOwnedAccessoryOrbPresentation* orb) {
+    if (orb == nullptr || !state.metar.initialized) return;
+    const auto& metar = state.metar;
+    orb->airportIcao = metar.primaryAirportIcao;
+    auto category = metar.primaryObservation.category;
+    if (metar.visibleState == BrainMetarVisibleState::Stale ||
+        metar.visibleState == BrainMetarVisibleState::Unavailable ||
+        metar.primaryAirportIcao.empty()) {
+        category = BrainMetarFlightCategory::Unknown;
+    }
+    orb->categoryText = BrainMetarCategoryToken(category);
+    orb->stateText = BrainMetarVisibleStateToken(metar.visibleState);
+    orb->selectedIndicator = orb->selected ? "OPEN" : "";
+    using Tone = BrainOwnedAccessoryOrbPresentation::Tone;
+    switch (category) {
+        case BrainMetarFlightCategory::Vfr: orb->tone = Tone::Green; break;
+        case BrainMetarFlightCategory::Mvfr: orb->tone = Tone::Blue; break;
+        case BrainMetarFlightCategory::Ifr: orb->tone = Tone::Red; break;
+        case BrainMetarFlightCategory::Lifr: orb->tone = Tone::Magenta; break;
+        case BrainMetarFlightCategory::Unknown:
+        default: orb->tone = Tone::Gray; break;
+    }
+    orb->neutral = category == BrainMetarFlightCategory::Unknown;
+}
+
 BrainOwnedAccessoryBoundaryDecision CloseAccessoryPreservingHistory(
     BrainOwnedRuntimeState* state) {
     BrainOwnedAccessoryBoundaryDecision decision;
@@ -6800,12 +6918,27 @@ BrainOwnedAccessoryHistoryDecision AcceptBrainOwnedAccessoryHistoryEntry(
     entry.title = title;
     entry.body = body;
     entry.acceptedSequence = history.nextAcceptedSequence++;
+    entry.chronological = input.chronological;
+    entry.chronologyKey = input.chronologyKey;
     entry.sourceContentDigest = sourceContentDigest;
     entry.contentLimited = contentLimited;
     entry.retainedBytes =
         entry.stableKey.size() + entry.title.size() + entry.body.size();
     history.retainedBytes += entry.retainedBytes;
-    history.entries.insert(history.entries.begin(), entry);
+    if (entry.chronological) {
+        const auto insertion = std::find_if(
+            history.entries.begin(), history.entries.end(),
+            [&](const BrainOwnedAccessoryHistoryEntry& candidate) {
+                if (!candidate.chronological) return true;
+                if (candidate.chronologyKey != entry.chronologyKey) {
+                    return candidate.chronologyKey < entry.chronologyKey;
+                }
+                return candidate.acceptedSequence < entry.acceptedSequence;
+            });
+        history.entries.insert(insertion, entry);
+    } else {
+        history.entries.insert(history.entries.begin(), entry);
+    }
 
     while (history.entries.size() > kAccessoryHistoryEntryLimit ||
            history.retainedBytes > kAccessoryHistoryByteLimit) {
@@ -6882,11 +7015,14 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
         &activeIndex);
     const std::uint64_t historyGeneration =
         drawerOpen ? accessory.histories[activeIndex].generation : 0;
+    const std::uint64_t contentGeneration =
+        state->metar.initialized ? state->metar.presentationGeneration : 0;
     const bool cacheMatches =
         accessory.cachedPresentationSnapshot != nullptr &&
         accessory.cachedPresentationSelectionGeneration ==
             accessory.selectionGeneration &&
         accessory.cachedPresentationLayoutGeneration == layoutGeneration &&
+        accessory.cachedPresentationContentGeneration == contentGeneration &&
         (!drawerOpen ||
          accessory.cachedPresentationHistoryGeneration == historyGeneration);
     if (cacheMatches) {
@@ -6895,6 +7031,7 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
         handle.historyGeneration =
             accessory.cachedPresentationHistoryGeneration;
         handle.layoutGeneration = layoutGeneration;
+        handle.contentGeneration = contentGeneration;
         return handle;
     }
 
@@ -6904,6 +7041,7 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
     snapshot->selectionGeneration = accessory.selectionGeneration;
     snapshot->historyGeneration = historyGeneration;
     snapshot->layoutGeneration = layoutGeneration;
+    snapshot->contentGeneration = contentGeneration;
     snapshot->snapshotIdentity = accessory.nextPresentationSnapshotIdentity++;
     snapshot->callsignIdentity = accessory.callsignIdentity;
 
@@ -6920,6 +7058,9 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
         if (orb.selected) {
             orb.selectedIndicator = "OPEN";
         }
+        if (drawer == BrainOwnedAccessoryDrawerId::Metar) {
+            ProjectBrainOwnedMetarOrbPresentation(*state, &orb);
+        }
         snapshot->orbs.push_back(std::move(orb));
     }
 
@@ -6927,7 +7068,10 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
         const auto& history = accessory.histories[activeIndex];
         snapshot->drawerTitle = AccessoryDrawerLabel(accessory.activeDrawer);
         snapshot->emptyStateText = AccessoryEmptyStateText(accessory.activeDrawer);
-        snapshot->entries = history.entries;
+        snapshot->entries = accessory.activeDrawer ==
+                BrainOwnedAccessoryDrawerId::Metar
+            ? ProjectBrainOwnedMetarDrawerPresentation(*state, history)
+            : history.entries;
         if (counters != nullptr) {
             counters->historyVisits = history.entries.size();
             counters->entriesCopied = history.entries.size();
@@ -6941,11 +7085,13 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
     accessory.cachedPresentationSelectionGeneration = accessory.selectionGeneration;
     accessory.cachedPresentationHistoryGeneration = historyGeneration;
     accessory.cachedPresentationLayoutGeneration = layoutGeneration;
+    accessory.cachedPresentationContentGeneration = contentGeneration;
 
     handle.snapshot = std::move(snapshot);
     handle.selectionGeneration = accessory.selectionGeneration;
     handle.historyGeneration = historyGeneration;
     handle.layoutGeneration = layoutGeneration;
+    handle.contentGeneration = contentGeneration;
     return handle;
 }
 
@@ -6963,21 +7109,47 @@ BrainOwnedAccessoryPreparationHandle ProjectBrainOwnedAccessoryPreparation(
     }
 
     const auto& history = state->accessory.histories[historyIndex];
+    const bool hiddenMetar =
+        state->metar.initialized &&
+        drawer == BrainOwnedAccessoryDrawerId::Metar &&
+        state->accessory.activeDrawer != BrainOwnedAccessoryDrawerId::Metar;
+    if (hiddenMetar &&
+        state->accessory.cachedPreparationSnapshots[historyIndex] != nullptr) {
+        handle.snapshot =
+            state->accessory.cachedPreparationSnapshots[historyIndex];
+        handle.historyGeneration =
+            state->accessory.cachedPreparationHistoryGenerations[historyIndex];
+        handle.contentGeneration =
+            state->accessory.cachedPreparationContentGenerations[historyIndex];
+        return handle;
+    }
+    const std::uint64_t contentGeneration = hiddenMetar &&
+            state->accessory.cachedPreparationSnapshots[historyIndex] != nullptr
+        ? state->accessory.cachedPreparationContentGenerations[historyIndex]
+        : drawer == BrainOwnedAccessoryDrawerId::Metar
+            ? state->metar.presentationGeneration
+            : 0;
     if (state->accessory.cachedPreparationSnapshots[historyIndex] != nullptr &&
         state->accessory.cachedPreparationHistoryGenerations[historyIndex] ==
-            history.generation) {
+            history.generation &&
+        state->accessory.cachedPreparationContentGenerations[historyIndex] ==
+            contentGeneration) {
         handle.snapshot =
             state->accessory.cachedPreparationSnapshots[historyIndex];
         handle.historyGeneration = history.generation;
+        handle.contentGeneration = contentGeneration;
         return handle;
     }
     auto snapshot = std::make_shared<BrainOwnedAccessoryPreparationSnapshot>();
     snapshot->status = BrainOwnedAccessoryOperationStatus::Available;
     snapshot->drawer = drawer;
     snapshot->historyGeneration = history.generation;
+    snapshot->contentGeneration = contentGeneration;
     snapshot->snapshotIdentity =
         state->accessory.nextPresentationSnapshotIdentity++;
-    snapshot->entries = history.entries;
+    snapshot->entries = drawer == BrainOwnedAccessoryDrawerId::Metar
+        ? ProjectBrainOwnedMetarDrawerPresentation(*state, history)
+        : history.entries;
     if (counters != nullptr) {
         counters->historyVisits = history.entries.size();
         counters->entriesCopied = history.entries.size();
@@ -6986,8 +7158,11 @@ BrainOwnedAccessoryPreparationHandle ProjectBrainOwnedAccessoryPreparation(
     state->accessory.cachedPreparationSnapshots[historyIndex] = snapshot;
     state->accessory.cachedPreparationHistoryGenerations[historyIndex] =
         history.generation;
+    state->accessory.cachedPreparationContentGenerations[historyIndex] =
+        contentGeneration;
     handle.snapshot = std::move(snapshot);
     handle.historyGeneration = history.generation;
+    handle.contentGeneration = contentGeneration;
     return handle;
 }
 

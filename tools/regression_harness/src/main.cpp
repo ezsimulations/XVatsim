@@ -1,3 +1,11 @@
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -23,6 +31,7 @@
 
 #include "XVatsim/brain/BrainOrchestrator.h"
 #include "XVatsim/brain/BrainDisplayIntent.h"
+#include "XVatsim/brain/BrainMetarRuntime.h"
 #include "XVatsim/brain/BrainOwnedRuntime.h"
 #include "XVatsim/brain/BrainOwnedWorkerTypes.h"
 #include "XVatsim/brain/BrainTypes.h"
@@ -43,6 +52,7 @@
 #include "XVatsim/modules/departure/DepartureModule.h"
 #include "XVatsim/modules/enroute/EnrouteModule.h"
 #include "XVatsim/modules/overlay/OverlayAccessoryCore.h"
+#include "XVatsim/modules/metar/VatsimMetarClient.h"
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
 #include "XVatsim/modules/settings_store/SettingsStore.h"
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
@@ -430,9 +440,14 @@ struct Step3ScenarioInput {
     std::vector<std::string> expectations;
 };
 
+struct Step4ScenarioInput {
+    std::string probe;
+};
+
 struct ScenarioData {
     std::string name;
     Step3ScenarioInput step3;
+    Step4ScenarioInput step4;
     OperatingModeScenarioInput operatingMode;
     OperatingModeScenarioExpectations operatingModeExpectations;
     double nowSeconds = 0.0;
@@ -4187,6 +4202,10 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "step3.action") {
         scenario->step3.actions.push_back(value);
+        return true;
+    }
+    if (key == "step4.probe") {
+        scenario->step4.probe = value;
         return true;
     }
     if (key == "expect.step3") {
@@ -11950,6 +11969,7 @@ bool ExecuteStep3Action(
             source[index]=handle.snapshot;
             keys[index].drawer=drawers[index];
             keys[index].historyGeneration=handle.historyGeneration;
+            keys[index].contentGeneration=handle.contentGeneration;
             keys[index].layoutGeneration=1;
             keys[index].typographyGeneration=context->Typography(1.0f)->generation;
             keys[index].scaleThousandths=1000;
@@ -12339,6 +12359,7 @@ bool ExecuteStep3Action(
         AccessoryPreparationRequest clearedRequest;
         clearedRequest.key=oldKey;
         clearedRequest.key.historyGeneration=clearedHandle.historyGeneration;
+        clearedRequest.key.contentGeneration=clearedHandle.contentGeneration;
         clearedRequest.snapshot=clearedHandle.snapshot; clearedRequest.layout=layout;
         submitEventually(&worker,clearedRequest);
         const bool resetRejectedOld=worker.TryTakeReady(oldKey,nullptr)==nullptr;
@@ -15224,6 +15245,985 @@ int RunStep3ContractProbe(const ScenarioData& scenario) {
     return 0;
 }
 
+class Step4FakeWorker final : public xvatsim::brain::BrainMetarWorker {
+public:
+    bool Start(const xvatsim::brain::BrainMetarWorkerRequest& request) override {
+        if (running || !startAllowed) return false;
+        requests.push_back(request);
+        running = true;
+        return true;
+    }
+
+    bool TryHarvest(xvatsim::brain::BrainMetarWorkerFact* fact) override {
+        if (fact == nullptr || !ready.has_value()) return false;
+        *fact = *ready;
+        ready.reset();
+        running = false;
+        return true;
+    }
+
+    bool IsRunning() const override { return running; }
+
+    void CancelAndJoin() override {
+        running = false;
+        ready.reset();
+        ++cancelCount;
+    }
+
+    xvatsim::brain::BrainMetarWorkerShutdownSnapshot ShutdownSnapshot()
+        const override {
+        xvatsim::brain::BrainMetarWorkerShutdownSnapshot snapshot;
+        snapshot.running = running;
+        snapshot.handlesClosed = !running;
+        snapshot.callbacksClosed = !running;
+        return snapshot;
+    }
+
+    void Complete(
+        xvatsim::brain::BrainMetarWorkerStatus status,
+        std::string station = {},
+        std::string raw = {}) {
+        if (requests.empty()) return;
+        CompleteRequest(requests.back(), status, std::move(station), std::move(raw));
+    }
+
+    void CompleteRequest(
+        const xvatsim::brain::BrainMetarWorkerRequest& request,
+        xvatsim::brain::BrainMetarWorkerStatus status,
+        std::string station = {},
+        std::string raw = {}) {
+        xvatsim::brain::BrainMetarWorkerFact fact;
+        fact.request = request;
+        fact.status = status;
+        fact.stationIcao = station.empty() ? request.airportIcao : std::move(station);
+        fact.rawMetar = std::move(raw);
+        fact.httpStatus = status == xvatsim::brain::BrainMetarWorkerStatus::Success
+            ? 200 : 0;
+        fact.payloadBytes = fact.rawMetar.size();
+        fact.networkElapsedUs = 2'500'000;
+        fact.diagnostic = status == xvatsim::brain::BrainMetarWorkerStatus::Success
+            ? "fixture-success" : "fixture-failure";
+        ready = std::move(fact);
+        running = false;
+    }
+
+    bool startAllowed = true;
+    bool running = false;
+    int cancelCount = 0;
+    std::vector<xvatsim::brain::BrainMetarWorkerRequest> requests;
+    std::optional<xvatsim::brain::BrainMetarWorkerFact> ready;
+};
+
+#if defined(_WIN32)
+class Step4StalledLoopbackPeer {
+public:
+    Step4StalledLoopbackPeer() {
+        WSADATA data{};
+        if (WSAStartup(MAKEWORD(2, 2), &data) != 0) return;
+        winsockStarted_ = true;
+        listener_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (listener_ == INVALID_SOCKET) return;
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = 0;
+        if (bind(listener_, reinterpret_cast<const sockaddr*>(&address),
+                 sizeof(address)) == SOCKET_ERROR ||
+            listen(listener_, 1) == SOCKET_ERROR) {
+            return;
+        }
+        int addressSize = sizeof(address);
+        if (getsockname(listener_, reinterpret_cast<sockaddr*>(&address),
+                        &addressSize) == SOCKET_ERROR) {
+            return;
+        }
+        port_ = ntohs(address.sin_port);
+        thread_ = std::thread([this]() {
+            const auto client = accept(listener_, nullptr, nullptr);
+            if (client == INVALID_SOCKET) return;
+            char request[2048]{};
+            if (recv(client, request, sizeof(request), 0) > 0) {
+                accepted_.store(true, std::memory_order_release);
+                while (!stop_.load(std::memory_order_acquire)) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
+            shutdown(client, SD_BOTH);
+            closesocket(client);
+        });
+    }
+
+    ~Step4StalledLoopbackPeer() {
+        stop_.store(true, std::memory_order_release);
+        if (listener_ != INVALID_SOCKET) {
+            closesocket(listener_);
+            listener_ = INVALID_SOCKET;
+        }
+        if (thread_.joinable()) thread_.join();
+        if (winsockStarted_) WSACleanup();
+    }
+
+    bool Ready() const { return port_ != 0 && thread_.joinable(); }
+    bool Accepted() const {
+        return accepted_.load(std::memory_order_acquire);
+    }
+    unsigned short Port() const { return port_; }
+
+private:
+    bool winsockStarted_ = false;
+    SOCKET listener_ = INVALID_SOCKET;
+    unsigned short port_ = 0;
+    std::atomic<bool> accepted_{false};
+    std::atomic<bool> stop_{false};
+    std::thread thread_;
+};
+#endif
+
+struct Step4Fixture {
+    xvatsim::brain::BrainOwnedRuntimeState state;
+    Step4FakeWorker worker;
+    xvatsim::brain::BrainOwnedAsyncFactCycleInput input;
+
+    Step4Fixture() {
+        xvatsim::brain::EnableBrainOwnedAccessoryRuntime(&state);
+        input.pluginEnabled = true;
+        input.xpilotConnected = true;
+        input.workflowStage = WorkflowStage::Departure;
+        input.operatingMode = xvatsim::brain::BrainOwnedOperatingMode::IFR;
+        input.flightContext.active = true;
+        input.flightContext.callsign = "N123XV";
+        input.flightContext.departureIcao = "KDFW";
+        input.flightContext.destinationIcao = "KSAN";
+        input.monotonicMs = 1'000;
+        input.utcUnixSeconds = 1'787'860'800;
+    }
+
+    xvatsim::brain::BrainOwnedAsyncFactCycleOutput Cycle(long long advanceMs = 0) {
+        input.monotonicMs += advanceMs;
+        xvatsim::brain::BrainOwnedAsyncWorkerBindings bindings;
+        bindings.metar = &worker;
+        return xvatsim::brain::RunBrainOwnedAsyncFactCycle(
+            &state, input, bindings);
+    }
+
+    xvatsim::brain::BrainOwnedAsyncFactCycleOutput AcceptPrimary(
+        const std::string& raw = "KDFW 271951Z 18010KT 10SM FEW050") {
+        if (worker.requests.empty() || !worker.running) Cycle();
+        worker.Complete(
+            xvatsim::brain::BrainMetarWorkerStatus::Success,
+            worker.requests.back().airportIcao,
+            raw);
+        return Cycle(1);
+    }
+
+    xvatsim::brain::BrainOwnedTextEntryDecision SubmitLookup(
+        const std::string& icao,
+        long long advanceMs = 1) {
+        input.monotonicMs += advanceMs;
+        xvatsim::brain::BrainOwnedTextEntryFact fact;
+        fact.mode = xvatsim::brain::BrainOwnedTextEntryMode::MetarAirportLookup;
+        fact.text = icao;
+        fact.monotonicMs = input.monotonicMs;
+        return xvatsim::brain::CommitBrainOwnedTextEntryFact(&state, fact);
+    }
+
+    xvatsim::brain::BrainOwnedAsyncFactCycleOutput AcceptLookup(
+        const std::string& raw = "KABQ 271953Z 18012KT 4SM BKN020") {
+        Cycle();
+        worker.Complete(
+            xvatsim::brain::BrainMetarWorkerStatus::Success,
+            worker.requests.back().airportIcao,
+            raw);
+        return Cycle(1);
+    }
+};
+
+const xvatsim::brain::BrainOwnedAccessoryOrbPresentation* Step4MetarOrb(
+    const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& handle) {
+    if (!handle.snapshot) return nullptr;
+    for (const auto& orb : handle.snapshot->orbs) {
+        if (orb.drawer == xvatsim::brain::BrainOwnedAccessoryDrawerId::Metar) {
+            return &orb;
+        }
+    }
+    return nullptr;
+}
+
+bool Step4HasTitle(
+    xvatsim::brain::BrainOwnedRuntimeState* state,
+    const std::string& token) {
+    const auto handle = xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+        state, 1, nullptr);
+    if (!handle.snapshot) return false;
+    return std::any_of(
+        handle.snapshot->entries.begin(), handle.snapshot->entries.end(),
+        [&](const auto& entry) {
+            return entry.title.find(token) != std::string::npos;
+        });
+}
+
+void Step4SelectDrawer(
+    xvatsim::brain::BrainOwnedRuntimeState* state,
+    xvatsim::brain::BrainOwnedAccessoryDrawerId drawer,
+    std::uint64_t sequence = 1) {
+    xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+    request.drawer = drawer;
+    request.requestSequence = sequence;
+    (void)xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+        state, request);
+}
+
+void Step4Require(
+    bool condition,
+    const std::string& message,
+    std::vector<std::string>* failures) {
+    if (!condition && failures != nullptr) failures->push_back(message);
+}
+
+bool Step4FileContains(
+    const std::filesystem::path& path,
+    const std::string& token) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return false;
+    const std::string content{
+        std::istreambuf_iterator<char>(input),
+        std::istreambuf_iterator<char>()};
+    return content.find(token) != std::string::npos;
+}
+
+int RunStep4ContractProbe(const ScenarioData& scenario) {
+    using namespace xvatsim::brain;
+    using xvatsim::modules::metar::BuildVatsimMetarRequestPath;
+    using xvatsim::modules::metar::ExtractVatsimMetarJson;
+    const auto& probe = scenario.step4.probe;
+    std::vector<std::string> failures;
+    auto require = [&](bool condition, const std::string& message) {
+        Step4Require(condition, message, &failures);
+    };
+    const std::string primaryVfr = "KDFW 271951Z 18010KT 10SM FEW050";
+    const std::string primaryIfr = "KSAN 271952Z 24009KT 2SM BKN008";
+    const std::string lookupMvfr = "KABQ 271953Z 18012KT 4SM BKN020";
+
+    if (probe == "ifr_departure_primary_only" ||
+        probe == "ifr_departure_no_arrival_prefetch") {
+        Step4Fixture f;
+        f.Cycle();
+        require(f.worker.requests.size() == 1, "one departure request expected");
+        require(f.worker.requests[0].airportIcao == "KDFW", "departure must be KDFW");
+        require(f.worker.requests[0].purpose == BrainMetarRequestPurpose::PrimaryTarget,
+                "first request must be primary target");
+        f.AcceptPrimary(primaryVfr);
+        f.Cycle(59'000);
+        require(f.worker.requests.size() == 1, "arrival must not be prefetched");
+    } else if (probe == "departure_enroute_primary_switch" ||
+               probe == "ifr_arrival_primary_stable") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.input.workflowStage = WorkflowStage::Enroute;
+        f.Cycle(1);
+        require(f.state.metar.primaryAirportIcao == "KSAN", "enroute target must be arrival");
+        require(f.worker.requests.back().airportIcao == "KSAN", "arrival request expected");
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KSAN", primaryIfr);
+        f.Cycle(1);
+        const auto count = f.worker.requests.size();
+        f.input.workflowStage = WorkflowStage::Arrival;
+        f.Cycle(1);
+        require(f.state.metar.primaryAirportIcao == "KSAN", "arrival target must remain KSAN");
+        require(f.worker.requests.size() == count, "arrival transition must not duplicate request");
+    } else if (probe == "vfr_departure_primary" ||
+               probe == "vfr_brain_committed_departure_source") {
+        Step4Fixture f;
+        f.input.operatingMode = BrainOwnedOperatingMode::VFR;
+        f.input.flightContext = {};
+        f.input.flightPlan.available = true;
+        f.input.flightPlan.departureIcao = "KAPA";
+        f.input.flightPlan.departureSource = AirportSource::CurrentLocation;
+        f.input.flightPlan.hasDepartureCoordinates = true;
+        f.input.flightPlan.departureLatDeg = 39.57;
+        f.input.flightPlan.departureLonDeg = -104.85;
+        f.Cycle();
+        require(f.state.metar.primaryAirportIcao == "KAPA", "committed VFR departure expected");
+        require(f.state.metar.primaryLatchedFromVfr, "VFR primary must latch");
+        f.input.flightPlan.departureIcao = "KBJC";
+        f.input.flightPlan.departureLatDeg = 39.91;
+        f.input.flightPlan.departureLonDeg = -105.12;
+        f.Cycle(1);
+        require(f.state.metar.primaryAirportIcao == "KAPA", "VFR target must not follow aircraft");
+    } else if (probe == "vfr_no_nearby_scan" ||
+               probe == "vfr_missing_departure_unknown") {
+        Step4Fixture f;
+        f.input.operatingMode = BrainOwnedOperatingMode::VFR;
+        f.input.flightContext = {};
+        f.input.flightPlan = {};
+        f.Cycle();
+        require(f.state.metar.primaryAirportIcao.empty(), "unproved VFR target must be empty");
+        require(f.worker.requests.empty(), "no VFR scanning request permitted");
+        require(f.state.metar.visibleState == BrainMetarVisibleState::Unknown ||
+                    f.state.metar.visibleState == BrainMetarVisibleState::Unavailable,
+                "VFR missing departure must be unknown/unavailable");
+    } else if (probe == "lookup_preserves_primary" ||
+               probe == "lookup_orb_primary_authority") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("kabq");
+        f.AcceptLookup(lookupMvfr);
+        require(f.state.metar.primaryAirportIcao == "KDFW", "lookup must preserve primary");
+        const auto presentation = ProjectBrainOwnedAccessoryPresentation(&f.state, 1, nullptr);
+        const auto* orb = Step4MetarOrb(presentation);
+        require(orb && orb->airportIcao == "KDFW" && orb->categoryText == "VFR",
+                "ORB must remain primary authority");
+    } else if (probe == "lookup_spotlight_activation" ||
+               probe == "lookup_pending_success_to_spotlight") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        require(f.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::LookupSpotlight,
+                "lookup success must spotlight");
+        require(Step4HasTitle(&f.state, "METAR LOOKUP — KABQ"),
+                "spotlight title missing");
+    } else if (probe == "lookup_spotlight_expiry_no_duplicate") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        const auto before = f.state.accessory.histories[0].entries.size();
+        f.Cycle(8'000);
+        require(f.state.metar.transientPresentation == BrainMetarTransientPresentation::None,
+                "spotlight must expire");
+        require(f.state.accessory.histories[0].entries.size() == before,
+                "spotlight expiry must not duplicate history");
+    } else if (probe == "primary_update_preempts_spotlight" ||
+               probe == "primary_state_change_preempts_spotlight") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        f.state.metar.nextPrimaryEligibleMonotonicMs = f.input.monotonicMs;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW",
+                          "SPECI KDFW 271954Z 18012KT 1/2SM VV003");
+        f.Cycle(1);
+        require(f.state.metar.transientPresentation == BrainMetarTransientPresentation::None,
+                "new primary observation must preempt spotlight");
+        require(f.state.metar.primaryObservation.category == BrainMetarFlightCategory::Lifr,
+                "updated primary must publish");
+
+        Step4Fixture target;
+        target.AcceptPrimary(primaryVfr);
+        target.SubmitLookup("KABQ");
+        target.AcceptLookup(lookupMvfr);
+        target.input.workflowStage = WorkflowStage::Enroute;
+        target.Cycle(1);
+        require(target.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::None,
+                "target change must preempt spotlight");
+
+        Step4Fixture stale;
+        stale.AcceptPrimary(primaryVfr);
+        stale.SubmitLookup("KABQ");
+        stale.AcceptLookup(lookupMvfr);
+        stale.Cycle(stale.state.metar.freshUntilMonotonicMs -
+                    stale.input.monotonicMs);
+        require(stale.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::None,
+                "stale transition must preempt spotlight");
+    } else if (probe == "lookup_truthful_newest_history") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        const auto& entries = f.state.accessory.histories[0].entries;
+        require(entries.size() == 2, "two truthful history entries expected");
+        require(entries[0].title.find("KABQ") != std::string::npos,
+                "newest observation must be first");
+        require(entries[1].title.find("KDFW") != std::string::npos,
+                "old primary must remain second");
+    } else if (probe == "lookup_no_periodic_refresh") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        f.Cycle(60'000);
+        require(f.worker.requests.back().airportIcao == "KDFW",
+                "only primary may refresh");
+        require(std::count_if(f.worker.requests.begin(), f.worker.requests.end(),
+                    [](const auto& request) { return request.airportIcao == "KABQ"; }) == 1,
+                "lookup airport must be one-shot");
+    } else if (probe == "lookup_replacement_invalidates_pending") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.Cycle();
+        const auto old = f.worker.requests.back();
+        f.SubmitLookup("KPHX");
+        f.worker.CompleteRequest(old, BrainMetarWorkerStatus::Success, "KABQ", lookupMvfr);
+        const auto rejected = f.Cycle(1);
+        require(rejected.completionRejected, "older lookup completion must reject");
+        require(f.worker.requests.back().airportIcao == "KPHX",
+                "newest lookup must dispatch next");
+    } else if (probe == "target_switch_rejects_stale_completion") {
+        Step4Fixture f;
+        f.Cycle();
+        const auto departureRequest = f.worker.requests.back();
+        f.input.workflowStage = WorkflowStage::Enroute;
+        f.Cycle(1);
+        f.worker.CompleteRequest(departureRequest, BrainMetarWorkerStatus::Success,
+                                 "KDFW", primaryVfr);
+        const auto rejected = f.Cycle(1);
+        require(rejected.completionRejected, "obsolete departure completion must reject");
+        require(f.state.metar.primaryAirportIcao == "KSAN", "arrival target must survive");
+    } else if (probe == "strict_icao_validation") {
+        std::string normalized;
+        require(NormalizeStrictMetarIcao(" kjfk ", &normalized) && normalized == "KJFK",
+                "valid ICAO normalization failed");
+        for (const auto& invalid : {"", "ALL", "all", "K*", "KJFK,KLAX",
+                                    "../K", "KJ/F", "KJFKX", " K J "}) {
+            require(!NormalizeStrictMetarIcao(invalid, &normalized),
+                    std::string("invalid ICAO accepted: ") + invalid);
+        }
+    } else if (probe == "official_vatsim_url_only") {
+        require(BuildVatsimMetarRequestPath("KJFK") == L"/KJFK?format=json",
+                "official request path mismatch");
+        require(BuildVatsimMetarRequestPath("../K").empty(),
+                "unsafe request path accepted");
+        require(Step4FileContains("modules/metar/src/VatsimMetarClient.cpp",
+                                  "metar.vatsim.net"), "official host missing");
+        require(!Step4FileContains("modules/metar/src/VatsimMetarClient.cpp", "noaa"),
+                "alternate source present");
+    } else if (probe == "vatsim_json_extraction") {
+        const auto result = ExtractVatsimMetarJson(
+            "KJFK", R"([{"id":"KJFK","metar":" KJFK 271951Z 18010KT 10SM FEW050 "}])");
+        require(result.accepted && result.stationIcao == "KJFK",
+                "valid JSON must extract matching station");
+        require(result.rawMetar == "KJFK 271951Z 18010KT 10SM FEW050",
+                "raw METAR trim mismatch");
+    } else if (probe == "transport_response_rejections") {
+        require(!ExtractVatsimMetarJson("KJFK", "").accepted, "empty payload accepted");
+        require(!ExtractVatsimMetarJson("KJFK", "{").accepted, "malformed JSON accepted");
+        require(!ExtractVatsimMetarJson(
+                    "KJFK", R"([{"id":"KLAX","metar":"KLAX 271951Z 10SM SKC"}])").accepted,
+                "wrong station accepted");
+        require(!ExtractVatsimMetarJson("KJFK", std::string(65'537, 'x')).accepted,
+                "oversized payload accepted");
+        require(!ExtractVatsimMetarJson("KJFK", "[]").accepted,
+                "empty response accepted");
+        Step4Fixture f;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KLAX",
+                          "KLAX 271951Z 18010KT 10SM SKC");
+        f.Cycle(1);
+        require(!f.state.metar.primaryObservation.valid &&
+                    f.state.metar.sourceHealth == BrainMetarSourceHealth::Failed,
+                "brain accepted mismatched success fact");
+    } else if (probe == "metar_speci_parsing" ||
+               probe == "vatsim_raw_optional_prefixes") {
+        const auto metar = ParseBrainOwnedMetarReport(
+            "KDFW", "METAR KDFW 271951Z 18010KT 10SM FEW050", 1'787'860'800);
+        const auto speci = ParseBrainOwnedMetarReport(
+            "KDFW", "SPECI KDFW 271952Z 18010KT 2SM BKN008", 1'787'860'800);
+        const auto bare = ParseBrainOwnedMetarReport(
+            "KDFW", "KDFW 271953Z 18010KT 4SM SCT020", 1'787'860'800);
+        const auto corrected = ParseBrainOwnedMetarReport(
+            "KDFW", "METAR COR KDFW 271954Z 18010KT 10SM SKC", 1'787'860'800);
+        require(metar.valid && !metar.speci, "METAR parsing failed");
+        require(speci.valid && speci.speci, "SPECI parsing failed");
+        require(bare.valid && corrected.valid, "optional prefix/station parsing failed");
+    } else if (probe == "observation_time_month_boundary") {
+        const auto septemberReference = static_cast<std::int64_t>(1'788'220'920);
+        const auto august = ParseBrainOwnedMetarReport(
+            "KJFK", "KJFK 312359Z 18010KT 10SM SKC", septemberReference);
+        require(august.valid, "previous-month observation must resolve");
+        require(septemberReference - august.observationUnixSeconds < 300,
+                "month-boundary observation age incorrect");
+        const auto future = ParseBrainOwnedMetarReport(
+            "KJFK", "KJFK 020100Z 18010KT 10SM SKC", septemberReference);
+        require(!future.valid, "implausibly future observation accepted");
+    } else if (probe == "category_threshold_boundaries") {
+        struct Case { const char* weather; BrainMetarFlightCategory category; };
+        const Case cases[]{
+            {"10SM BKN031", BrainMetarFlightCategory::Vfr},
+            {"5SM BKN030", BrainMetarFlightCategory::Mvfr},
+            {"3SM BKN010", BrainMetarFlightCategory::Mvfr},
+            {"2SM BKN009", BrainMetarFlightCategory::Ifr},
+            {"1SM BKN005", BrainMetarFlightCategory::Ifr},
+            {"M1/4SM VV004", BrainMetarFlightCategory::Lifr}};
+        for (const auto& item : cases) {
+            const auto parsed = ParseBrainOwnedMetarReport(
+                "KDFW", std::string("KDFW 271951Z 18010KT ") + item.weather,
+                1'787'860'800);
+            require(parsed.valid && parsed.category == item.category,
+                    std::string("threshold mismatch: ") + item.weather);
+        }
+    } else if (probe == "visibility_formats") {
+        for (const auto& weather : {"10SM SKC", "1 1/2SM BKN020", ".5SM VV004",
+                                    "1600 BKN020", "9999 NSC", "CAVOK"}) {
+            const auto parsed = ParseBrainOwnedMetarReport(
+                "KDFW", std::string("KDFW 271951Z 18010KT ") + weather,
+                1'787'860'800);
+            require(parsed.valid && parsed.visibilityKnown,
+                    std::string("visibility not parsed: ") + weather);
+        }
+        const auto rvr = ParseBrainOwnedMetarReport(
+            "KDFW", "KDFW 271951Z 18010KT R18/0600FT BKN008", 1'787'860'800);
+        require(rvr.valid && !rvr.visibilityKnown,
+                "RVR must not become prevailing visibility");
+    } else if (probe == "ceiling_rules") {
+        const auto few = ParseBrainOwnedMetarReport(
+            "KDFW", "KDFW 271951Z 18010KT 10SM FEW005 SCT009", 1'787'860'800);
+        const auto broken = ParseBrainOwnedMetarReport(
+            "KDFW", "KDFW 271951Z 18010KT 10SM FEW002 BKN008 OVC020", 1'787'860'800);
+        const auto vv = ParseBrainOwnedMetarReport(
+            "KDFW", "KDFW 271951Z 18010KT 1SM VV004", 1'787'860'800);
+        require(few.noCeilingProven && few.category == BrainMetarFlightCategory::Vfr,
+                "FEW/SCT must not form ceiling");
+        require(broken.ceilingFeet == 800 && broken.category == BrainMetarFlightCategory::Ifr,
+                "lowest BKN/OVC ceiling incorrect");
+        require(vv.ceilingFeet == 400 && vv.category == BrainMetarFlightCategory::Lifr,
+                "vertical visibility ceiling incorrect");
+    } else if (probe == "ambiguous_weather_unknown") {
+        for (const auto& raw : {"KDFW 271951Z 18010KT 10SM",
+                                "KDFW 271951Z 18010KT BKN///",
+                                "KDFW 271951Z 18010KT 10SM BKN///",
+                                "KDFW 271951Z RMK 1/4SM VV001"}) {
+            const auto parsed = ParseBrainOwnedMetarReport("KDFW", raw, 1'787'860'800);
+            require(!parsed.valid || parsed.category == BrainMetarFlightCategory::Unknown,
+                    std::string("ambiguous report classified: ") + raw);
+        }
+    } else if (probe == "changed_content_history_once") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        const auto hiddenBefore = ProjectBrainOwnedAccessoryPreparation(
+            &f.state, BrainOwnedAccessoryDrawerId::Metar, nullptr);
+        f.state.metar.nextPrimaryEligibleMonotonicMs = f.input.monotonicMs;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW",
+                          "SPECI KDFW 271954Z 18010KT 4SM BKN020");
+        const auto changedOutput = f.Cycle(1);
+        require(changedOutput.acceptedNetworkElapsedUs == 2'500'000 &&
+                    changedOutput.simulatorThreadElapsedUs >= 0,
+                "network wait and simulator-thread timing were not separated");
+        require(f.state.accessory.histories[0].entries.size() == 2,
+                "changed observation must enter history once");
+        BrainOwnedAccessoryProjectionCounters hiddenCounters;
+        const auto hiddenAfter = ProjectBrainOwnedAccessoryPreparation(
+            &f.state, BrainOwnedAccessoryDrawerId::Metar, &hiddenCounters);
+        require(hiddenBefore.snapshot && hiddenAfter.snapshot &&
+                    hiddenBefore.snapshot->snapshotIdentity ==
+                        hiddenAfter.snapshot->snapshotIdentity &&
+                    hiddenCounters.snapshotBuilds == 0,
+                "hidden METAR content must not prepare or wrap");
+        Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar);
+        BrainOwnedAccessoryProjectionCounters openedCounters;
+        const auto opened = ProjectBrainOwnedAccessoryPreparation(
+            &f.state, BrainOwnedAccessoryDrawerId::Metar, &openedCounters);
+        require(opened.snapshot && hiddenAfter.snapshot &&
+                    opened.snapshot->snapshotIdentity !=
+                        hiddenAfter.snapshot->snapshotIdentity &&
+                    openedCounters.snapshotBuilds == 1,
+                "opening METAR must prepare latest changed content once");
+        std::cout << "STEP4_TIMING_SEPARATION: network_us="
+                  << changedOutput.acceptedNetworkElapsedUs
+                  << " simulator_thread_us="
+                  << changedOutput.simulatorThreadElapsedUs << "\n";
+    } else if (probe == "unchanged_content_zero_publication" ||
+               probe == "identical_content_health_only") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        const auto parseCount = f.state.metar.parseCount;
+        const auto historyCount = f.state.metar.historyMutationCount;
+        const auto contentGeneration = f.state.metar.contentGeneration;
+        const auto presentationGeneration = f.state.metar.presentationGeneration;
+        f.state.metar.sourceHealth = BrainMetarSourceHealth::Failed;
+        f.state.metar.visibleState = BrainMetarVisibleState::Cached;
+        f.state.metar.nextPrimaryEligibleMonotonicMs = f.input.monotonicMs;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+        const auto output = f.Cycle(1);
+        require(f.state.metar.parseCount == parseCount, "identical content reparsed");
+        require(f.state.metar.historyMutationCount == historyCount,
+                "identical content mutated history");
+        require(f.state.metar.contentGeneration == contentGeneration,
+                "identical content changed content generation");
+        require(f.state.metar.sourceHealth == BrainMetarSourceHealth::Healthy &&
+                    output.sourceHealthChanged,
+                "identical success must recover source health");
+        require(f.state.metar.presentationGeneration >= presentationGeneration,
+                "presentation generation regressed");
+    } else if (probe == "speci_between_clock_boundaries") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.Cycle(60'000);
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW",
+                          "SPECI KDFW 271952Z 18010KT 1/2SM VV003");
+        const auto output = f.Cycle(1);
+        require(output.contentChanged && f.state.metar.primaryObservation.speci,
+                "changed SPECI must be accepted at revalidation");
+    } else if (probe == "fresh_cache_transient_failure") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.state.metar.nextPrimaryEligibleMonotonicMs = f.input.monotonicMs;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::TransportFailure);
+        f.Cycle(1);
+        require(f.state.metar.visibleState == BrainMetarVisibleState::Cached,
+                "fresh cache must survive transient failure");
+        require(f.state.metar.primaryObservation.category == BrainMetarFlightCategory::Vfr,
+                "fresh cached category must remain usable");
+    } else if (probe == "stale_primary_gray_unknown" ||
+               probe == "freshness_monotonic_deadline") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.input.utcUnixSeconds -= 86'400;
+        f.Cycle(f.state.metar.freshUntilMonotonicMs - f.input.monotonicMs);
+        const auto presentation = ProjectBrainOwnedAccessoryPresentation(&f.state, 1, nullptr);
+        const auto* orb = Step4MetarOrb(presentation);
+        require(f.state.metar.visibleState == BrainMetarVisibleState::Stale,
+                "monotonic freshness deadline must stale");
+        require(orb && orb->categoryText == "UNKNOWN" &&
+                    orb->tone == BrainOwnedAccessoryOrbPresentation::Tone::Gray,
+                "stale ORB must be gray unknown");
+    } else if (probe == "history_isolation") {
+        Step4Fixture f;
+        BrainOwnedAccessoryHistoryEntryInput atis;
+        atis.drawer = BrainOwnedAccessoryDrawerId::Atis;
+        atis.stableKey = "ATIS|KSAN|A";
+        atis.title = "KSAN ATIS A";
+        atis.body = "ATIS BODY";
+        AcceptBrainOwnedAccessoryHistoryEntry(&f.state, atis);
+        BrainOwnedAccessoryHistoryEntryInput pdc = atis;
+        pdc.drawer = BrainOwnedAccessoryDrawerId::Pdc;
+        pdc.stableKey = "PDC|KSAN|1";
+        AcceptBrainOwnedAccessoryHistoryEntry(&f.state, pdc);
+        f.AcceptPrimary(primaryVfr);
+        require(f.state.accessory.histories[0].entries.size() == 1 &&
+                    f.state.accessory.histories[1].entries.size() == 1 &&
+                    f.state.accessory.histories[2].entries.size() == 1,
+                "METAR/ATIS/PDC histories must remain isolated");
+    } else if (probe == "lifecycle_boundaries") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        const auto before = f.state.accessory.histories[0].entries.size();
+        BrainOwnedAsyncWorkerBindings bindings;
+        bindings.metar = &f.worker;
+        ApplyBrainOwnedAsyncWorkerLifecycleBoundary(&f.state, bindings, false);
+        ResetBrainOwnedRuntimeCachePreservingFlightContext(&f.state);
+        require(f.state.accessory.histories[0].entries.size() == before &&
+                    f.state.metar.primaryObservation.valid,
+                "disable must preserve accepted cache/history");
+        ApplyBrainOwnedAsyncWorkerLifecycleBoundary(&f.state, bindings, true);
+        ResetBrainOwnedAccessoryForSessionReset(&f.state);
+        require(!f.state.metar.primaryObservation.valid &&
+                    f.state.accessory.histories[0].entries.empty(),
+                "hard boundary must clear METAR state/history");
+    } else if (probe == "worker_prompt_cancel_join") {
+        long long maximumCancellationMs = 0;
+        for (int phase = 0; phase < 5; ++phase) {
+            std::atomic<bool> entered{false};
+            xvatsim::modules::metar::VatsimMetarClient client(
+                [&](const BrainMetarWorkerRequest& request, const auto& cancelled) {
+                    entered.store(true, std::memory_order_release);
+                    while (!cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    BrainMetarWorkerFact fact;
+                    fact.request = request;
+                    fact.status = BrainMetarWorkerStatus::Cancelled;
+                    fact.diagnostic = "cancelled-fixture-phase-" + std::to_string(phase);
+                    return fact;
+                });
+            BrainMetarWorkerRequest request;
+            request.airportIcao = "KDFW";
+            request.requestId = static_cast<std::uint64_t>(phase + 1);
+            require(client.Start(request), "cancellation fixture failed to start");
+            const auto waitStart = std::chrono::steady_clock::now();
+            while (!entered.load(std::memory_order_acquire) &&
+                   std::chrono::steady_clock::now() - waitStart <
+                       std::chrono::milliseconds(100)) {
+                std::this_thread::yield();
+            }
+            const auto started = std::chrono::steady_clock::now();
+            client.CancelAndJoin();
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started).count();
+            maximumCancellationMs = std::max(maximumCancellationMs, elapsed);
+            const auto shutdown = client.ShutdownSnapshot();
+            require(elapsed <= 500 && !shutdown.running && shutdown.handlesClosed &&
+                        shutdown.callbacksClosed,
+                    "worker cancellation exceeded bound or leaked state");
+        }
+#if defined(_WIN32)
+        Step4StalledLoopbackPeer peer;
+        require(peer.Ready(), "stalled loopback peer failed to start");
+        xvatsim::modules::metar::VatsimMetarClient::ProofEndpoint endpoint;
+        endpoint.host = L"127.0.0.1";
+        endpoint.port = peer.Port();
+        endpoint.secure = false;
+        xvatsim::modules::metar::VatsimMetarClient loopbackClient(endpoint);
+        BrainMetarWorkerRequest loopbackRequest;
+        loopbackRequest.airportIcao = "KDFW";
+        loopbackRequest.requestId = 100;
+        require(loopbackClient.Start(loopbackRequest),
+                "loopback WinHTTP request failed to start");
+        const auto acceptDeadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!peer.Accepted() &&
+               std::chrono::steady_clock::now() < acceptDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(peer.Accepted(),
+                "loopback peer did not accept the WinHTTP request");
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        const auto loopbackStarted = std::chrono::steady_clock::now();
+        loopbackClient.CancelAndJoin();
+        const auto loopbackCancellationMs =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - loopbackStarted).count();
+        maximumCancellationMs = std::max(
+            maximumCancellationMs, loopbackCancellationMs);
+        const auto loopbackShutdown = loopbackClient.ShutdownSnapshot();
+        require(loopbackCancellationMs <= 500 &&
+                    !loopbackShutdown.running &&
+                    loopbackShutdown.handlesClosed &&
+                    loopbackShutdown.callbacksClosed,
+                "real WinHTTP loopback cancellation leaked or exceeded bound");
+        std::cout << "STEP4_LOOPBACK_SHUTDOWN: accepted=true max_ms="
+                  << loopbackCancellationMs << " limit_ms=500\n";
+#endif
+        std::cout << "STEP4_WORKER_SHUTDOWN: phases=5 max_ms="
+                  << maximumCancellationMs << " limit_ms=500\n";
+    } else if (probe == "warm_unchanged_zero_work") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.input.monotonicMs += 1;
+        const auto before = f.state.metar;
+        const auto presentation = ProjectBrainOwnedAccessoryPresentation(
+            &f.state, 1, nullptr);
+        xvatsim::modules::overlay::AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 100;
+        layoutInput.windowTop = 900;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = false;
+        const auto layout = xvatsim::modules::overlay::ResolveAccessoryLayout(
+            layoutInput);
+        xvatsim::modules::overlay::AccessoryPresentationState presenter;
+        xvatsim::modules::overlay::AccessoryPresentationUpdateInput update;
+        update.presentation = presentation;
+        update.layout = layout;
+        update.mainCardProductionSignature = "step4-warm-main-card";
+        update.measurementContext =
+            xvatsim::modules::overlay::InitializeAccessoryTextMeasurement();
+        require(update.measurementContext != nullptr,
+                "warm proof measurement context unavailable");
+        (void)xvatsim::modules::overlay::UpdateAccessoryPresentation(
+            &presenter, update);
+        BrainOwnedAccessoryProjectionCounters recurringProjection;
+        const auto brainStarted = std::chrono::steady_clock::now();
+        for (int index = 0; index < 100'000; ++index) {
+            f.Cycle();
+            BrainOwnedAccessoryProjectionCounters counters;
+            (void)ProjectBrainOwnedAccessoryPresentation(&f.state, 1, &counters);
+            recurringProjection.historyVisits += counters.historyVisits;
+            recurringProjection.entriesCopied += counters.entriesCopied;
+            recurringProjection.snapshotBuilds += counters.snapshotBuilds;
+        }
+        const auto brainElapsedUs =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - brainStarted).count();
+        const auto accessoryStarted = std::chrono::steady_clock::now();
+        const auto warm =
+            xvatsim::modules::overlay::RunUnchangedAccessoryPresentationUpdates(
+                &presenter, update, 100'000);
+        const auto accessoryElapsedUs =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - accessoryStarted).count();
+        require(f.state.metar.parseCount == before.parseCount &&
+                    f.state.metar.fingerprintCount == before.fingerprintCount &&
+                    f.state.metar.historyMutationCount == before.historyMutationCount &&
+                    f.state.metar.contentGeneration == before.contentGeneration &&
+                    f.state.metar.presentationGeneration == before.presentationGeneration,
+                "warm unchanged cycles performed recurring content work");
+        require(recurringProjection.historyVisits == 0 &&
+                    recurringProjection.entriesCopied == 0 &&
+                    recurringProjection.snapshotBuilds == 0,
+                "warm unchanged cycles rebuilt brain presentation");
+        require(warm.iterations == 100'000 &&
+                    warm.delta.historyVisits == 0 &&
+                    warm.delta.entryCopies == 0 &&
+                    warm.delta.wrapVisits == 0 &&
+                    warm.delta.mainCardRasterRequests == 0 &&
+                    warm.delta.railRasterRequests == 0 &&
+                    warm.delta.drawerRasterRequests == 0 &&
+                    warm.delta.uploadRequests == 0 &&
+                    warm.delta.snapshotPublications == 0,
+                "warm unchanged cycles performed recurring accessory work");
+        std::cout << "STEP4_WARM_IDLE: cycles=100000 brain_us="
+                  << brainElapsedUs << " accessory_us=" << accessoryElapsedUs
+                  << " parse_delta=0 fingerprint_delta=0 history_delta=0"
+                  << " wraps_delta=0 rasters_delta=0 uploads_delta=0\n";
+        xvatsim::modules::overlay::ShutdownAccessoryTextMeasurement(
+            update.measurementContext);
+    } else if (probe == "normal_binary_source_isolation") {
+        require(!Step4FileContains("plugin/src/XVatsimPlugin.cpp", "VatsimMetarClient"),
+                "plugin directly names concrete METAR client");
+        require(!Step4FileContains("plugin/src/XVatsimPlugin.cpp", "metar.vatsim.net"),
+                "plugin contains METAR endpoint policy");
+        require(!Step4FileContains("modules/metar/src/VatsimMetarClient.cpp", "NOAA") &&
+                    !Step4FileContains("modules/metar/src/VatsimMetarClient.cpp", "aviationweather"),
+                "alternate weather source found");
+        require(!Step4FileContains("plugin/CMakeLists.txt", "STEP4_METAR_FIXTURE"),
+                "normal plugin includes Step 4 fixtures");
+    } else if (probe == "request_priority_and_backoff") {
+        Step4Fixture f;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::TransportFailure);
+        f.Cycle(1);
+        const auto firstEligible = f.state.metar.nextPrimaryEligibleMonotonicMs;
+        require(firstEligible - f.input.monotonicMs == 120'000,
+                "first backoff must be 120 seconds");
+        f.Cycle(119'999);
+        require(f.worker.requests.size() == 1, "request dispatched before backoff");
+        f.Cycle(1);
+        require(f.worker.requests.size() == 2, "request missing at backoff boundary");
+        f.worker.Complete(BrainMetarWorkerStatus::TransportFailure);
+        f.Cycle(1);
+        require(f.state.metar.nextPrimaryEligibleMonotonicMs - f.input.monotonicMs == 240'000,
+                "second backoff must be 240 seconds");
+    } else if (probe == "orb_category_text_and_tone") {
+        const struct { const char* raw; const char* text;
+                       BrainOwnedAccessoryOrbPresentation::Tone tone; } cases[]{
+            {"KDFW 271951Z 18010KT 10SM SKC", "VFR", BrainOwnedAccessoryOrbPresentation::Tone::Green},
+            {"KDFW 271951Z 18010KT 4SM BKN020", "MVFR", BrainOwnedAccessoryOrbPresentation::Tone::Blue},
+            {"KDFW 271951Z 18010KT 2SM BKN008", "IFR", BrainOwnedAccessoryOrbPresentation::Tone::Red},
+            {"KDFW 271951Z 18010KT M1/4SM VV003", "LIFR", BrainOwnedAccessoryOrbPresentation::Tone::Magenta}};
+        for (const auto& item : cases) {
+            Step4Fixture f;
+            f.AcceptPrimary(item.raw);
+            const auto handle = ProjectBrainOwnedAccessoryPresentation(&f.state, 1, nullptr);
+            const auto* orb = Step4MetarOrb(handle);
+            require(orb && orb->categoryText == item.text && orb->tone == item.tone,
+                    std::string("ORB category/tone mismatch: ") + item.text);
+        }
+    } else if (probe == "pinned_primary_not_history") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar);
+        const auto stored = f.state.accessory.histories[0].entries.size();
+        const auto handle = ProjectBrainOwnedAccessoryPresentation(&f.state, 1, nullptr);
+        require(handle.snapshot && handle.snapshot->entries.size() == stored + 2,
+                "pinned primary and recent heading should be presentation-only");
+        require(f.state.accessory.histories[0].entries.size() == stored,
+                "pinned primary mutated history");
+    } else if (probe == "disconnect_inflight_completion_deferred") {
+        Step4Fixture f;
+        f.Cycle();
+        f.input.xpilotConnected = false;
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+        f.Cycle(1);
+        require(f.state.metar.deferredDisconnectedFact.has_value() &&
+                    !f.state.metar.primaryObservation.valid,
+                "disconnect completion must remain deferred and unparsed");
+        f.input.xpilotConnected = true;
+        f.Cycle(1);
+        require(f.state.metar.primaryObservation.valid,
+                "valid deferred completion must accept on reconnect");
+    } else if (probe == "disconnect_request_suppression") {
+        Step4Fixture f;
+        f.input.xpilotConnected = false;
+        for (int index = 0; index < 100; ++index) f.Cycle(1'000);
+        require(f.worker.requests.empty(), "disconnected runtime dispatched request");
+        require(f.state.accessory.activeDrawer == BrainOwnedAccessoryDrawerId::None,
+                "disconnected drawer must remain closed");
+    } else if (probe == "brain_owned_worker_dispatch_only") {
+        require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                  "RunBrainOwnedAsyncFactCycle"),
+                "generic brain cycle binding missing");
+        require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                  "AsyncFactWorkerHost"),
+                "generic worker host missing");
+        require(!Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                   "VatsimMetarClient"),
+                "plugin owns feature-specific client");
+        require(!Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                   "kBrainMetarRefresh"),
+                "plugin owns METAR cadence");
+    } else if (probe == "lookup_pending_fetching_presentation") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        const auto decision = f.SubmitLookup("KABQ");
+        require(decision.accepted &&
+                    f.state.accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Metar,
+                "valid lookup must immediately open METAR drawer");
+        require(Step4HasTitle(&f.state, "FETCHING METAR — KABQ"),
+                "pending lookup presentation missing");
+        require(f.state.metar.transientDeadlineMonotonicMs - f.input.monotonicMs == 20'000,
+                "pending deadline must be 20 seconds");
+    } else if (probe == "lookup_pending_failure_returns_primary") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::TransportFailure);
+        f.Cycle(1);
+        require(Step4HasTitle(&f.state, "METAR LOOKUP FAILED — KABQ"),
+                "bounded failure presentation missing");
+        f.Cycle(4'000);
+        require(f.state.metar.transientPresentation == BrainMetarTransientPresentation::None &&
+                    Step4HasTitle(&f.state, "METAR — KDFW"),
+                "failure must return to pinned primary");
+    } else if (probe == "lookup_manual_close_respected" ||
+               probe == "lookup_completion_no_delayed_reopen") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.Cycle();
+        Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar, 2);
+        require(f.state.accessory.activeDrawer == BrainOwnedAccessoryDrawerId::None,
+                "manual close did not close drawer");
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KABQ", lookupMvfr);
+        f.Cycle(1);
+        require(f.state.accessory.activeDrawer == BrainOwnedAccessoryDrawerId::None &&
+                    f.state.metar.transientPresentation == BrainMetarTransientPresentation::None &&
+                    f.state.metar.transientDeadlineMonotonicMs == 0,
+                "completion reopened drawer or started hidden timer");
+        f.Cycle(30'000);
+        require(f.state.accessory.activeDrawer == BrainOwnedAccessoryDrawerId::None,
+                "delayed reopen occurred");
+        require(f.state.accessory.histories[0].entries.size() == 2,
+                "valid unseen lookup must remain in history");
+    } else if (probe == "lookup_drawer_switch_respected") {
+        for (const auto drawer : {BrainOwnedAccessoryDrawerId::Atis,
+                                  BrainOwnedAccessoryDrawerId::Pdc}) {
+            Step4Fixture f;
+            f.AcceptPrimary(primaryVfr);
+            f.SubmitLookup("KABQ");
+            f.Cycle();
+            Step4SelectDrawer(&f.state, drawer, 2);
+            f.worker.Complete(BrainMetarWorkerStatus::Success, "KABQ", lookupMvfr);
+            f.Cycle(1);
+            require(f.state.accessory.activeDrawer == drawer &&
+                        f.state.metar.transientDeadlineMonotonicMs == 0,
+                    "lookup completion overrode newer drawer selection");
+        }
+    } else {
+        std::cerr << "STEP4_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                  << ": unknown probe " << probe << "\n";
+        return 2;
+    }
+
+    if (!failures.empty()) {
+        for (const auto& failure : failures) {
+            std::cerr << "STEP4_ASSERTION_FAILED: " << scenario.name
+                      << ": " << failure << "\n";
+        }
+        return 1;
+    }
+    std::cout << "Scenario passed: " << scenario.name << "\n";
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -15244,6 +16244,9 @@ int main(int argc, char** argv) {
     }
     if (!scenario.step3.actions.empty()) {
         return RunStep3ContractProbe(scenario);
+    }
+    if (!scenario.step4.probe.empty()) {
+        return RunStep4ContractProbe(scenario);
     }
 
     auto workflowState = scenario.workflowState;

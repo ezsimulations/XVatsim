@@ -40,6 +40,14 @@ simulator-thread dispatch/presentation work, X-Plane frame-cadence wait, and
 raster/upload/draw timing. A matching generation must be drawn before an action
 is recorded complete.
 
-Step 3 provides structure and explicit empty-state text only. It has no live
-METAR, VATSIM ATIS, PDC, or private-message source.
+Step 4 renders the brain-approved primary METAR ICAO, category text and tone,
+pending/cached/stale/unavailable state, pinned primary section, chronological
+history, and bounded lookup pending/spotlight/failure presentations. Color is
+never the only category signal. Hidden changes do not prepare or rasterize the
+drawer; the current content is prepared once when selected.
+
+The overlay does not select airports, validate lookups, schedule requests,
+parse weather, classify categories, decide freshness, reorder history, or own
+spotlight deadlines. VATSIM ATIS, PDC, and private-message sources remain
+unconnected.
 

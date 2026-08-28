@@ -1056,6 +1056,9 @@ RasterImage RenderAccessoryRailImage(
     Font indicatorFont(
         L"Segoe UI", std::max(1.0f, 6.5f * layout.scale),
         FontStyleBold, UnitPixel);
+    Font metarDetailFont(
+        L"Segoe UI", std::max(1.0f, 6.2f * layout.scale),
+        FontStyleBold, UnitPixel);
     const Color neutralFill(226, 39, 50, 62);
     const Color neutralBorder(224, 122, 146, 164);
     const Color selectedFill(238, 48, 67, 82);
@@ -1074,15 +1077,52 @@ RasterImage RenderAccessoryRailImage(
         const RectF circle(left + 1.0f, top + 1.0f,
                            std::max(1.0f, diameter - 2.0f),
                            std::max(1.0f, diameter - 2.0f));
-        SolidBrush fill(presentation.selected ? selectedFill : neutralFill);
+        Color toneFill = neutralFill;
+        Color toneBorder = neutralBorder;
+        using Tone = brain::BrainOwnedAccessoryOrbPresentation::Tone;
+        switch (presentation.tone) {
+            case Tone::Green:
+                toneFill = Color(235, 35, 112, 67);
+                toneBorder = Color(255, 95, 224, 132);
+                break;
+            case Tone::Blue:
+                toneFill = Color(235, 37, 83, 148);
+                toneBorder = Color(255, 91, 163, 255);
+                break;
+            case Tone::Red:
+                toneFill = Color(235, 142, 43, 50);
+                toneBorder = Color(255, 255, 103, 111);
+                break;
+            case Tone::Magenta:
+                toneFill = Color(235, 122, 42, 139);
+                toneBorder = Color(255, 235, 105, 255);
+                break;
+            case Tone::Gray:
+                toneFill = Color(226, 55, 61, 68);
+                toneBorder = Color(236, 145, 153, 160);
+                break;
+            case Tone::Neutral:
+            default:
+                break;
+        }
+        if (presentation.tone == Tone::Neutral && presentation.selected) {
+            toneFill = selectedFill;
+            toneBorder = selectedBorder;
+        }
+        SolidBrush fill(toneFill);
         Pen border(
-            presentation.selected ? selectedBorder : neutralBorder,
+            presentation.selected ? selectedBorder : toneBorder,
             presentation.selected ? std::max(2.0f, 2.0f * layout.scale) : 1.0f);
         graphics.FillEllipse(&fill, circle);
         graphics.DrawEllipse(&border, circle);
 
-        const auto labelHeight = std::max(10.0f, 15.0f * layout.scale);
-        const auto labelTop = top + (presentation.selected ? diameter * 0.25f : diameter * 0.35f);
+        const bool detailedMetar =
+            presentation.drawer == brain::BrainOwnedAccessoryDrawerId::Metar &&
+            (!presentation.airportIcao.empty() ||
+             !presentation.categoryText.empty());
+        const auto labelHeight = std::max(8.0f, 11.0f * layout.scale);
+        const auto labelTop = top + (detailedMetar ? diameter * 0.08f :
+            (presentation.selected ? diameter * 0.25f : diameter * 0.35f));
         DrawAccessoryText(
             &graphics,
             RectF(left, labelTop, diameter, labelHeight),
@@ -1090,7 +1130,29 @@ RasterImage RenderAccessoryRailImage(
             &labelFont,
             labelColor,
             StringAlignmentCenter);
-        if (presentation.selected && !presentation.selectedIndicator.empty()) {
+        if (detailedMetar) {
+            DrawAccessoryText(
+                &graphics,
+                RectF(left, top + diameter * 0.28f, diameter,
+                      std::max(7.0f, 9.0f * layout.scale)),
+                presentation.airportIcao.empty() ? "----" :
+                    presentation.airportIcao,
+                &metarDetailFont, labelColor, StringAlignmentCenter);
+            DrawAccessoryText(
+                &graphics,
+                RectF(left, top + diameter * 0.48f, diameter,
+                      std::max(7.0f, 9.0f * layout.scale)),
+                presentation.categoryText,
+                &metarDetailFont, labelColor, StringAlignmentCenter);
+            if (!presentation.stateText.empty()) {
+                DrawAccessoryText(
+                    &graphics,
+                    RectF(left, top + diameter * 0.68f, diameter,
+                          std::max(6.0f, 8.0f * layout.scale)),
+                    presentation.stateText,
+                    &indicatorFont, indicatorColor, StringAlignmentCenter);
+            }
+        } else if (presentation.selected && !presentation.selectedIndicator.empty()) {
             DrawAccessoryText(
                 &graphics,
                 RectF(left, top + diameter * 0.56f, diameter,
@@ -1419,10 +1481,12 @@ void OverlayWindow::Destroy() {
 
 AccessoryPreparationKey OverlayWindow::BuildAccessoryPreparationKey(
     brain::BrainOwnedAccessoryDrawerId drawer,
-    std::uint64_t historyGeneration) const {
+    std::uint64_t historyGeneration,
+    std::uint64_t contentGeneration) const {
     AccessoryPreparationKey key;
     key.drawer = drawer;
     key.historyGeneration = historyGeneration;
+    key.contentGeneration = contentGeneration;
     key.layoutGeneration = accessoryLayoutGeneration_;
     key.typographyGeneration = accessoryTypography_.generation;
     key.scaleThousandths = static_cast<int>(std::lround(scale_ * 1000.0f));
@@ -1483,7 +1547,8 @@ void OverlayWindow::QueueAccessoryPreparation(
     if (workerState != AccessoryPreparationWorkerState::Starting &&
         workerState != AccessoryPreparationWorkerState::Ready) return;
     const auto key = BuildAccessoryPreparationKey(
-        preparation.snapshot->drawer, preparation.historyGeneration);
+        preparation.snapshot->drawer, preparation.historyGeneration,
+        preparation.contentGeneration);
     const auto drawerIndex = preparation.snapshot->drawer ==
             brain::BrainOwnedAccessoryDrawerId::Metar ? 0U :
         preparation.snapshot->drawer == brain::BrainOwnedAccessoryDrawerId::Atis
@@ -1542,11 +1607,13 @@ bool OverlayWindow::PublishReadyAccessoryPreparation() {
     if (accessoryPresentation_.selectionGeneration ==
             pending.selectionGeneration &&
         accessoryPresentation_.historyGeneration == pending.historyGeneration &&
+        accessoryPresentation_.contentGeneration == pending.contentGeneration &&
         accessoryPresentation_.layoutGeneration == pending.layoutGeneration) {
         return false;
     }
     const auto key = BuildAccessoryPreparationKey(
-        pending.snapshot->activeDrawer, pending.historyGeneration);
+        pending.snapshot->activeDrawer, pending.historyGeneration,
+        pending.contentGeneration);
     std::uint64_t publicationUs = 0;
     const auto ready = accessoryPreparationWorker_.TryTakeReady(
         key, &publicationUs);
@@ -1651,11 +1718,14 @@ void OverlayWindow::UpdateAccessory(
              presentation.selectionGeneration ||
          accessoryPresentation_.historyGeneration !=
              presentation.historyGeneration ||
+         accessoryPresentation_.contentGeneration !=
+             presentation.contentGeneration ||
          accessoryPresentation_.layoutGeneration !=
              presentation.layoutGeneration);
     if (needsPreparedTransition) {
         const auto key = BuildAccessoryPreparationKey(
-            presentation.snapshot->activeDrawer, presentation.historyGeneration);
+            presentation.snapshot->activeDrawer, presentation.historyGeneration,
+            presentation.contentGeneration);
         std::uint64_t publicationUs = 0;
         const auto ready = accessoryPreparationWorker_.TryTakeReady(
             key, &publicationUs);
@@ -1733,6 +1803,10 @@ void OverlayWindow::UpdateAccessory(
         accessoryUpdateInput_.presentation.snapshot == nullptr ||
         accessoryUpdateInput_.presentation.historyGeneration !=
             presentation.historyGeneration;
+    const bool contentChanged =
+        accessoryUpdateInput_.presentation.snapshot == nullptr ||
+        accessoryUpdateInput_.presentation.contentGeneration !=
+            presentation.contentGeneration;
     const bool presentationInputsChanged =
         accessoryUpdateInput_.presentation.snapshot == nullptr ||
         accessoryUpdateInput_.presentation.snapshot.get() !=
@@ -1741,6 +1815,8 @@ void OverlayWindow::UpdateAccessory(
             presentation.selectionGeneration ||
         accessoryUpdateInput_.presentation.historyGeneration !=
             presentation.historyGeneration ||
+        accessoryUpdateInput_.presentation.contentGeneration !=
+            presentation.contentGeneration ||
         accessoryUpdateInput_.presentation.layoutGeneration !=
             presentation.layoutGeneration;
     if (presentationInputsChanged) {
@@ -1786,11 +1862,14 @@ void OverlayWindow::UpdateAccessory(
         acceptedActionStages != nullptr;
     if (drawerOpen) {
         const auto key = BuildAccessoryPreparationKey(
-            presentation.snapshot->activeDrawer, presentation.historyGeneration);
+            presentation.snapshot->activeDrawer, presentation.historyGeneration,
+            presentation.contentGeneration);
         if (accessoryPresentation_.selectionGeneration ==
                 presentation.selectionGeneration &&
             accessoryPresentation_.historyGeneration ==
                 presentation.historyGeneration &&
+            accessoryPresentation_.contentGeneration ==
+                presentation.contentGeneration &&
             accessoryPresentation_.layoutGeneration ==
                 presentation.layoutGeneration) {
             accessoryUpdateInput_.preparedPlan =
@@ -1884,7 +1963,9 @@ bool OverlayWindow::BindAccessoryInputDispatch(
         (accessoryPresentation_.selectionGeneration !=
              accessoryUpdateInput_.presentation.selectionGeneration ||
          accessoryPresentation_.historyGeneration !=
-             accessoryUpdateInput_.presentation.historyGeneration);
+             accessoryUpdateInput_.presentation.historyGeneration ||
+         accessoryPresentation_.contentGeneration !=
+             accessoryUpdateInput_.presentation.contentGeneration);
     if (presentationPending) {
         accessoryDeferredBindingPending_ = true;
         accessoryDeferredBindingFact_ = fact;

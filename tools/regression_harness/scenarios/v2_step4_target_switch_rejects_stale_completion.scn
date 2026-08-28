@@ -1,0 +1,2 @@
+name=v2_step4_target_switch_rejects_stale_completion
+step4.probe=target_switch_rejects_stale_completion

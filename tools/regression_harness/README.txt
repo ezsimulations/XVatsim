@@ -118,6 +118,20 @@ Operating-mode expectations:
 - expect.operating_mode_save_successes=<nonnegative integer>
 - expect.operating_mode_request_source=pilot-menu|none
 - expect.operating_mode_request_reason=explicit-selection|already-active|none
+
+V2 Step 4 METAR contract replay
+--------------------------------
+The 53 files named v2_step4_*.scn use:
+
+  step4.probe=<locked probe name>
+
+They exercise production brain policy and production parser/presentation code
+with a proof-only isolated transport binding. No Step 4 scenario performs a
+network request. Coverage includes target ownership, lookup interaction,
+VATSIM-only URL and response rules, parsing and category boundaries, freshness,
+history, lifecycle, cooperative shutdown, 100,000-cycle unchanged-idle work,
+and normal-binary source/fixture isolation. The approved complete saved-scenario
+count is 547.
 - expect.operating_mode_state_unchanged=true|false
 - expect.operating_mode_reset_preserved=true|false
 - expect.operating_mode_no_automatic_vfr=true|false

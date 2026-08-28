@@ -1,0 +1,2 @@
+name=v2_step4_lookup_replacement_invalidates_pending
+step4.probe=lookup_replacement_invalidates_pending

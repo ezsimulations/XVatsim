@@ -625,6 +625,7 @@ struct AccessoryPreparationKey {
     brain::BrainOwnedAccessoryDrawerId drawer =
         brain::BrainOwnedAccessoryDrawerId::None;
     std::uint64_t historyGeneration = 0;
+    std::uint64_t contentGeneration = 0;
     std::uint64_t layoutGeneration = 0;
     std::uint64_t typographyGeneration = 0;
     int scaleThousandths = 1000;
@@ -794,6 +795,7 @@ struct AccessoryPresentationState {
     std::uint64_t activeSnapshotIdentity = 0;
     std::uint64_t selectionGeneration = 0;
     std::uint64_t historyGeneration = 0;
+    std::uint64_t contentGeneration = 0;
     std::uint64_t layoutGeneration = 0;
     std::string railRenderSignature;
     std::string drawerRenderSignature;

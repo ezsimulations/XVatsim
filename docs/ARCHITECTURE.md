@@ -64,6 +64,21 @@ Responsibilities:
 - own presentation-only drawer scrolling, shared window geometry, hit testing,
   raster resources, texture-local signatures, and rendering
 
+### Asynchronous Fact Workers
+
+The plugin binds generic worker hosts and forwards bounded clock, workflow,
+flight-context, connectivity, text-entry, and lifecycle facts. The brain decides
+if and when a request exists. A removable source module executes that one
+request and returns immutable facts. Feature scheduling loops and policy do not
+belong in `XVatsimPlugin.cpp`.
+
+For Step 4, the production METAR module requests only one normalized airport
+from `https://metar.vatsim.net/:icao?format=json`. The brain owns automatic
+primary targeting, pilot lookup, priority, cadence, failure backoff, parsing,
+classification, freshness, cache, history, transient presentation, and stale
+completion rejection. Network wait is measured separately from simulator-thread
+acceptance work.
+
 ## V2 Step 3 Accessory Shell
 
 The existing XPLM overlay window contains one visible accessory drawer surface
@@ -73,6 +88,9 @@ switching it does not combine the histories or transfer their contents. Step 3
 histories exist only in process memory. Step 3 has no live METAR, ATIS, PDC, or
 private-message source; its normal production drawers show explicit empty-state
 text until later roadmap steps connect those sources.
+
+Step 4 connects only the METAR drawer to the official public VATSIM METAR API.
+ATIS and PDC/private-message remain isolated, unconnected Step 3 foundations.
 
 The overlay reports a bounded click fact. The plugin consumes that fact exactly
 once and asks the brain for the selection decision. The brain owns opening,

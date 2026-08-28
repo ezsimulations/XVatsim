@@ -1,0 +1,2 @@
+name=v2_step4_lookup_pending_failure_returns_primary
+step4.probe=lookup_pending_failure_returns_primary

@@ -44,6 +44,20 @@ reviewed engineering step. The count must not be changed independently or merely
 to obtain a passing result. An approved filename or content change must also
 change the recorded aggregate scenario-set fingerprint.
 
+## V2 Step 4 offline proof
+
+Step 4 uses two fresh Release configurations: a proof configuration containing
+the 547-scenario harness and deterministic visual tool, and a fixture-off normal
+plugin configuration. The normal `.xpl` must contain the official VATSIM METAR
+host contract and must not contain proof transport markers, synthetic reports,
+or alternate weather providers.
+
+The Step 4 evidence is written only to new paths under `outputs`: the offline
+summary, Windows proof, receipt, and `v2_step_04_metar_visual_evidence`. Existing
+evidence is not cleaned or rewritten. This gate is offline: deployment,
+X-Plane/xPilot startup, live VATSIM traffic, and controlled live proof require a
+separate approval.
+
 ## Final Release Gate
 
 Run this only after the live battle-test gate is complete and the repo hygiene

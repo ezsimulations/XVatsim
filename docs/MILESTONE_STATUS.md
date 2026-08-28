@@ -13,12 +13,14 @@ its subject must be `docs: prepare V2 Step 4 session handoff`, and its scope
 must be exactly the three handoff documentation files. Its final SHA cannot be
 embedded in those same committed bytes and must be resolved from Git.
 
-The next roadmap item is Step 4 - METAR, which has not begun and requires a new
-Director brief, Codex Contract Gate, and Darron approval before implementation.
+Step 4 - VATSIM METAR has an approved Contract Gate and an implemented offline
+candidate awaiting Director review. Deployment, X-Plane/xPilot startup, live
+VATSIM traffic, and controlled live proof remain separately gated and were not
+performed.
 
-The current regression baseline is 494 saved scenarios. The canonical
+The candidate regression baseline is 547 saved scenarios. The canonical
 release-gate fingerprint is
-`16AA355061096CC9EBB87A1E437422FEABB8B45CDF41D7057FF9853802BF8BCB`.
+`780ABD3A26E0E6C96ADBB3261BB6C3960B21D658F4613C21754BBDD516DF8902`.
 
 The repository has zero tracked or staged changes at this handoff. There are
 116 intentionally preserved untracked evidence files under `outputs/`; they
@@ -107,6 +109,29 @@ Preparation wait is asynchronous and is kept separate from simulator-thread
 work and X-Plane frame cadence. The maximum fixture-ON preparation wait was
 2,227,032 microseconds, and the fixture-OFF cold wait was 256,838 microseconds.
 Neither produced a visible UI failure or recurring idle work.
+
+## Step 4 - VATSIM METAR Candidate
+
+- Status: offline implementation and proof complete; Director acceptance and
+  controlled live proof pending.
+- Added one removable asynchronous source restricted to the official VATSIM
+  single-airport METAR endpoint.
+- The brain owns the primary airport, lookup, request priority, cadence,
+  freshness, parsing, category, cache, history, spotlight, lifecycle, and final
+  presentation. The plugin uses the generic asynchronous worker-binding seam.
+- Added 53 focused scenarios; focused result is 53/53 and complete saved
+  regression is 547/547.
+- Fresh Windows Release proof and fixture-off normal plugin builds passed.
+- Fourteen production-raster visual cases reproduced with zero PNG hash
+  differences; main-card production signatures were identical in every case.
+- The 100,000-cycle warm-idle proof recorded zero parsing, fingerprinting,
+  history, wrapping, rasterization, or upload deltas.
+- Five cooperative cancellation phases completed within the 500-millisecond
+  limit and left no running worker or open callback/handle state.
+- Normal-binary inspection retained the official VATSIM source marker and found
+  no Step 4 proof transport, synthetic report, NOAA, or Aviation Weather marker.
+- Evidence is under `outputs/v2_step_04_*`; the 116 pre-existing untracked
+  evidence files remain excluded and preserved.
 
 The accepted one-time flight-plan construction spike is established V1
 behavior for initial flight context, frequency ordering, route resolution, and

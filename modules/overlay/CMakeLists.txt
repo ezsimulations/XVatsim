@@ -21,7 +21,7 @@ if(WIN32)
     target_link_libraries(XVatsimOverlayAccessoryCore PUBLIC gdiplus)
 endif()
 
-if(XVATSIM_BUILD_STEP3_VISUAL_PROOF AND WIN32)
+if((XVATSIM_BUILD_STEP3_VISUAL_PROOF OR XVATSIM_BUILD_STEP4_METAR_VISUAL_PROOF) AND WIN32)
     add_library(XVatsimOverlayVisualProofRaster STATIC
         src/OverlayWindow.cpp
     )

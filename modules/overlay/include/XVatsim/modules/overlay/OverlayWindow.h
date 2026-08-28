@@ -156,7 +156,8 @@ private:
     bool PublishReadyAccessoryPreparation();
     AccessoryPreparationKey BuildAccessoryPreparationKey(
         brain::BrainOwnedAccessoryDrawerId drawer,
-        std::uint64_t historyGeneration) const;
+        std::uint64_t historyGeneration,
+        std::uint64_t contentGeneration) const;
 
     XPLMWindowID window_ = nullptr;
     brain::OverlayViewModel viewModel_{};

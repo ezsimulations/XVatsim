@@ -34,6 +34,7 @@
 #include "XVatsim/modules/pilot_identity/PilotIdentityResolver.h"
 #include "XVatsim/modules/radio_state/RadioStateSampler.h"
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
+#include "XVatsim/modules/runtime_workers/AsyncFactWorkerHost.h"
 #include "XVatsim/modules/settings_store/SettingsStore.h"
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
 #include "XVatsim/modules/transceiver_resolver/TransceiverResolver.h"
@@ -111,6 +112,7 @@ constexpr intptr_t kRecoverCurrentFlightMenuItemRef = 19;
 constexpr intptr_t kCheckForUpdatesMenuItemRef = 20;
 constexpr intptr_t kIfrModeMenuItemRef = 21;
 constexpr intptr_t kVfrModeMenuItemRef = 22;
+constexpr intptr_t kSelectMetarAirportMenuItemRef = 23;
 constexpr double kArrivalWakeDistanceNm = 200.0;
 constexpr float kDepartureReleaseHoldSeconds = 180.0f;
 constexpr float kEnrouteInitialDisplaySeconds = 180.0f;
@@ -237,6 +239,7 @@ xvatsim::modules::overlay::OverlayWindow gOverlayWindow;
 xvatsim::modules::pilot_identity::PilotIdentityResolver gPilotIdentityResolver;
 xvatsim::modules::radio_state::RadioStateSampler gRadioStateSampler;
 xvatsim::modules::route_sector::RouteSectorResolver gRouteSectorResolver;
+xvatsim::modules::runtime_workers::AsyncFactWorkerHost gAsyncFactWorkerHost;
 xvatsim::modules::settings_store::SettingsStore gSettingsStore;
 xvatsim::modules::terminal_authority::TerminalAuthorityResolver
     gTerminalAuthorityResolver;
@@ -307,11 +310,36 @@ long long CurrentTickSeconds() {
             .count());
 }
 
+long long CurrentTickMilliseconds() {
+    return static_cast<long long>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+}
+
 long long CurrentUnixSeconds() {
     return static_cast<long long>(
         std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch())
             .count());
+}
+
+xvatsim::brain::BrainOwnedAsyncFactCycleOutput RunBoundAsyncFactCycle(
+    bool xpilotConnected,
+    xvatsim::brain::WorkflowStage workflowStage) {
+    xvatsim::brain::BrainOwnedAsyncFactCycleInput input;
+    input.pluginEnabled = gPluginRuntimeEnabled;
+    input.xpilotConnected = xpilotConnected;
+    input.workflowStage = workflowStage;
+    input.operatingMode = gBrainOwnedRuntimeState.operatingMode.mode;
+    input.flightContext = gBrainOwnedRuntimeState.flightContext;
+    input.flightPlan = gBrainOwnedRuntimeState.flightPlanSnapshot;
+    input.monotonicMs = CurrentTickMilliseconds();
+    input.utcUnixSeconds = CurrentUnixSeconds();
+    return xvatsim::brain::RunBrainOwnedAsyncFactCycle(
+        &gBrainOwnedRuntimeState,
+        input,
+        gAsyncFactWorkerHost.Bindings());
 }
 
 long long ElapsedMicrosecondsSince(std::chrono::steady_clock::time_point start) {
@@ -971,6 +999,10 @@ void UpdateFlightContextIfNeeded(
         &gBrainOwnedRuntimeState,
         output.flightContext);
     if (output.shouldResetFlightScopedState) {
+        xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+            &gBrainOwnedRuntimeState,
+            gAsyncFactWorkerHost.Bindings(),
+            true);
         DiscardPendingAccessoryClickFacts();
         xvatsim::brain::ResetBrainOwnedAccessoryForConfirmedNewFlight(
             &gBrainOwnedRuntimeState);
@@ -2542,6 +2574,10 @@ void DiscardPendingAccessoryClickFacts() {
 }
 
 void ResetSessionState() {
+    xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+        &gBrainOwnedRuntimeState,
+        gAsyncFactWorkerHost.Bindings(),
+        true);
     DiscardPendingAccessoryClickFacts();
     xvatsim::brain::ResetBrainOwnedAccessoryForSessionReset(
         &gBrainOwnedRuntimeState);
@@ -2559,6 +2595,10 @@ void ApplyAircraftRuntimeBoundaryDecision(
         ResetPluginRuntimeState(false, false, true);
     }
     if (decision.shouldResetSessionRuntimeCaches) {
+        xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+            &gBrainOwnedRuntimeState,
+            gAsyncFactWorkerHost.Bindings(),
+            true);
         DiscardPendingAccessoryClickFacts();
         xvatsim::brain::ResetBrainOwnedAccessoryForConfirmedColdDark(
             &gBrainOwnedRuntimeState);
@@ -2597,6 +2637,9 @@ void ResetFlightScopedStateForSessionBoundary(
 }
 
 void PreserveFlightStateForNetworkDisconnect() {
+    (void)RunBoundAsyncFactCycle(
+        false,
+        gBrainOwnedRuntimeState.lastWorkflowStage);
     DiscardPendingAccessoryClickFacts();
     xvatsim::brain::CloseBrainOwnedAccessoryForTemporaryXPilotDisconnect(
         &gBrainOwnedRuntimeState);
@@ -2652,6 +2695,10 @@ SessionBoundaryResult HandleXPilotSessionBoundary(
             pilotIdentitySnapshot.normalizedCallsign.empty()
                 ? xPilotSessionSnapshot.callsign
                 : pilotIdentitySnapshot.normalizedCallsign);
+        xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+            &gBrainOwnedRuntimeState,
+            gAsyncFactWorkerHost.Bindings(),
+            true);
         DiscardPendingAccessoryClickFacts();
         xvatsim::brain::ResetBrainOwnedAccessoryForCallsignChange(
             &gBrainOwnedRuntimeState,
@@ -2679,6 +2726,17 @@ void BeginManualCtafEntry() {
         xvatsim::brain::BrainOwnedTextEntryMode::ManualCtaf);
     ShowTransientStatusLine("CTAF enter ICAO and press Enter");
     gOverlayWindow.BeginTextEntry(".ctaf ");
+    RefreshOverlayFromBrain();
+}
+
+void BeginMetarAirportLookupEntry() {
+    DiscardPendingTextEntryState();
+    xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
+    xvatsim::brain::SetBrainOwnedPendingTextEntryMode(
+        &gBrainOwnedRuntimeState,
+        xvatsim::brain::BrainOwnedTextEntryMode::MetarAirportLookup);
+    ShowTransientStatusLine("METAR enter four-character ICAO and press Enter");
+    gOverlayWindow.BeginTextEntry("");
     RefreshOverlayFromBrain();
 }
 
@@ -3823,6 +3881,22 @@ void RefreshManualQueryState() {
         return;
     }
 
+    if (pendingMode ==
+        xvatsim::brain::BrainOwnedTextEntryMode::MetarAirportLookup) {
+        xvatsim::brain::BrainOwnedTextEntryFact fact;
+        fact.mode = pendingMode;
+        fact.text = submittedCommand;
+        fact.monotonicMs = CurrentTickMilliseconds();
+        const auto decision = xvatsim::brain::CommitBrainOwnedTextEntryFact(
+            &gBrainOwnedRuntimeState,
+            fact);
+        ShowTransientStatusLine(
+            decision.accepted
+                ? "METAR lookup accepted for " + decision.normalizedText
+                : "METAR lookup rejected: enter one four-character ICAO");
+        return;
+    }
+
     if (pendingMode == xvatsim::brain::BrainOwnedTextEntryMode::ManualCtaf &&
         submittedCommand.find(".ctaf") != 0 &&
         submittedCommand.find("ctaf") != 0) {
@@ -4022,6 +4096,9 @@ void PluginMenuHandler(void* inMenuRef, void* inItemRef) {
         case kManualCtafMenuItemRef:
             BeginManualCtafEntry();
             break;
+        case kSelectMetarAirportMenuItemRef:
+            BeginMetarAirportLookupEntry();
+            break;
         case kDisplayOpenMenuItemRef:
             ForceDisplayOpen();
             break;
@@ -4131,6 +4208,11 @@ void RegisterPluginMenu() {
         gPluginMenu,
         "Manual CTAF Lookup",
         reinterpret_cast<void*>(kManualCtafMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        u8"Select METAR Airport\u2026",
+        reinterpret_cast<void*>(kSelectMetarAirportMenuItemRef),
         1);
     XPLMAppendMenuItem(
         gPluginMenu,
@@ -4603,6 +4685,24 @@ void RefreshOverlayFromBrainEngineer3() {
         diagnostics.stage = WorkflowStageToken(workflowStage);
         diagnostics.stageReason = workflowDecision.reason;
     }
+    const auto asyncFactOutput = RunBoundAsyncFactCycle(
+        xPilotSessionSnapshot.connected,
+        workflowStage);
+    if (asyncFactOutput.requestDispatched ||
+        asyncFactOutput.completionAccepted ||
+        asyncFactOutput.completionRejected ||
+        asyncFactOutput.presentationChanged) {
+        RecordDiagnosticJob(
+            "AsyncFactCycle",
+            asyncFactOutput.reason,
+            0,
+            "brain-owned",
+            asyncFactOutput.presentationChanged
+                ? "visible-state-changed"
+                : "fact-state-changed",
+            {},
+            diagnostics.route);
+    }
     const auto enrouteInitialHoldActive =
         UpdateEnrouteInitialDisplayHold(workflowStage);
 
@@ -4941,6 +5041,10 @@ PLUGIN_API void XPluginStop() {
     LogAccessoryPerformanceSnapshot("plugin-stop");
     xvatsim::brain::StopBrainOwnedAccessoryRuntime(
         &gBrainOwnedRuntimeState);
+    xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+        &gBrainOwnedRuntimeState,
+        gAsyncFactWorkerHost.Bindings(),
+        true);
     ResetPluginRuntimeState(true, true);
     gOverlayWindow.Destroy();
     gOverlayWindow.SetAccessoryInputDispatchCallback(nullptr, nullptr);
@@ -4975,6 +5079,10 @@ PLUGIN_API void XPluginDisable() {
     LogAccessoryPerformanceSnapshot("plugin-disable");
     xvatsim::brain::DisableBrainOwnedAccessoryRuntime(
         &gBrainOwnedRuntimeState);
+    xvatsim::brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+        &gBrainOwnedRuntimeState,
+        gAsyncFactWorkerHost.Bindings(),
+        false);
     ResetPluginRuntimeState(true, true, true);
     xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
         &gBrainOwnedRuntimeState,

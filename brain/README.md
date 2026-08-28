@@ -26,7 +26,22 @@ work. The below-normal preparation worker never reads mutable brain state and
 never owns a parallel history or makes a selection, retention, or eviction
 decision.
 
-Step 3 history is process-memory only. Nothing is persisted to settings or disk,
-and Step 3 does not connect a live METAR, ATIS, PDC, or private-message source.
-Future sources must submit bounded facts through the brain's existing history
-acceptance contract rather than writing directly to presentation state.
+History is process-memory only. Nothing is persisted to settings or disk.
+
+## V2 Step 4 METAR ownership
+
+The brain owns the sole automatic primary airport, strict pilot-lookup
+acceptance, request identity and priority, refresh and backoff eligibility,
+completion rejection, parsing, category classification, observation freshness,
+source health, cache, chronological history, spotlight deadlines, lifecycle,
+and ORB/drawer presentation. `RunBrainOwnedAsyncFactCycle` is the generic
+brain-owned dispatch seam; the plugin supplies only bounded facts and worker
+bindings.
+
+Content, source health, freshness, and presentation generations remain
+separate. Unchanged raw content is not reparsed or republished. A successful
+unchanged response may update source health, and only an actually visible state
+change advances presentation work.
+
+ATIS and PDC/private-message remain unconnected placeholders. They retain their
+accepted Step 3 histories and are not synchronized or refactored by Step 4.
