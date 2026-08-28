@@ -1,0 +1,2 @@
+name=v2_step4_accessory_liveness_bounded_action_diagnostics
+step4.probe=accessory_bounded_diagnostics

@@ -47,6 +47,12 @@ const VisualSpec kVisuals[]{
     {"12_lookup_failure.png", "lookup-failure"},
     {"13_primary_preempts_spotlight.png", "preempted"},
     {"14_main_card_zero_difference.png", "main-card"},
+    {"17_second_kabq_spotlight.png", "lookup-spotlight"},
+    {"18_returned_kdfw_primary.png", "vfr"},
+    {"19_atis_owns_spotlight_expiry.png", "atis-ownership"},
+    {"20_pdc_owns_spotlight_expiry.png", "pdc-ownership"},
+    {"21_metar_closed_no_delayed_reopen.png", "metar-closed"},
+    {"22_normal_scale_cockpit_orb_crop.png", "orb-crop"},
 };
 
 constexpr std::uint64_t kAcceptedMainCardSignature =
@@ -295,9 +301,17 @@ brain::BrainOwnedRuntimeState BuildState(const std::string& variant) {
     }
     state.metar.presentationGeneration = 1;
     brain::BrainOwnedAccessorySelectionRequest request;
-    request.drawer = brain::BrainOwnedAccessoryDrawerId::Metar;
+    request.drawer = variant == "atis-ownership"
+        ? brain::BrainOwnedAccessoryDrawerId::Atis
+        : variant == "pdc-ownership"
+            ? brain::BrainOwnedAccessoryDrawerId::Pdc
+            : brain::BrainOwnedAccessoryDrawerId::Metar;
     request.requestSequence = 1;
     (void)brain::RequestBrainOwnedAccessoryDrawerSelection(&state, request);
+    if (variant == "metar-closed") {
+        request.requestSequence = 2;
+        (void)brain::RequestBrainOwnedAccessoryDrawerSelection(&state, request);
+    }
     return state;
 }
 
@@ -372,7 +386,7 @@ RenderResult Render(
     layoutInput.windowTop = 940;
     layoutInput.scale = 1.0f;
     layoutInput.cardAnimationProgress = 1.0f;
-    layoutInput.drawerOpen = true;
+    layoutInput.drawerOpen = false;
     layoutInput.typography = &typography;
     const auto layout = overlay::ResolveAccessoryLayout(layoutInput);
 
@@ -382,26 +396,30 @@ RenderResult Render(
     result.projectionUs = ElapsedUs(started);
     if (!presentation.snapshot) throw std::runtime_error("presentation unavailable");
 
+    layoutInput.drawerOpen = presentation.snapshot->activeDrawer !=
+        brain::BrainOwnedAccessoryDrawerId::None;
+    const auto resolvedLayout = overlay::ResolveAccessoryLayout(layoutInput);
+
     auto prepared = std::make_shared<overlay::AccessoryPreparedDrawerPlan>();
-    prepared->key.drawer = brain::BrainOwnedAccessoryDrawerId::Metar;
+    prepared->key.drawer = presentation.snapshot->activeDrawer;
     prepared->key.historyGeneration = presentation.historyGeneration;
     prepared->key.contentGeneration = presentation.contentGeneration;
     prepared->key.layoutGeneration = generation;
     prepared->key.typographyGeneration = typography.generation;
     prepared->key.scaleThousandths = 1000;
     prepared->key.contentWidth = std::max(
-        1, layout.drawerBounds.right - layout.drawerBounds.left -
-            2 * layout.drawerContentInset);
-    prepared->key.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+        1, resolvedLayout.drawerBounds.right - resolvedLayout.drawerBounds.left -
+            2 * resolvedLayout.drawerContentInset);
+    prepared->key.visibleLineCapacity = resolvedLayout.drawerVisibleLineCapacity;
     started = std::chrono::steady_clock::now();
     prepared->layout = overlay::BuildAccessoryHistoryLayout(
-        measurement, *presentation.snapshot, layout);
+        measurement, *presentation.snapshot, resolvedLayout);
     result.wrapUs = ElapsedUs(started);
 
     overlay::AccessoryPresentationState presenter;
     overlay::AccessoryPresentationUpdateInput update;
     update.presentation = presentation;
-    update.layout = layout;
+    update.layout = resolvedLayout;
     update.mainCardProductionSignature = std::to_string(result.mainCardSignature);
     update.measurementContext = measurement;
     update.preparedPlan = prepared;
@@ -412,26 +430,26 @@ RenderResult Render(
     started = std::chrono::steady_clock::now();
     const auto card = overlay::RenderProductionMainCardForOfflineProof(mainCard, 0);
     const auto rail = overlay::RenderProductionAccessoryRailForOfflineProof(
-        layout, *presentation.snapshot);
+        resolvedLayout, *presentation.snapshot);
     const auto drawer = overlay::RenderProductionAccessoryDrawerForOfflineProof(
-        layout, presenter);
+        resolvedLayout, presenter);
     result.rasterUs = ElapsedUs(started);
 
-    const auto& bounds = layout.resolvedBounds;
+    const auto& bounds = resolvedLayout.resolvedBounds;
     result.composite = Canvas(bounds.right - bounds.left, bounds.top - bounds.bottom);
     const auto scaledCard = ScaleNearest(
         card,
-        layout.mainCardBounds.right - layout.mainCardBounds.left,
-        layout.mainCardBounds.top - layout.mainCardBounds.bottom);
+        resolvedLayout.mainCardBounds.right - resolvedLayout.mainCardBounds.left,
+        resolvedLayout.mainCardBounds.top - resolvedLayout.mainCardBounds.bottom);
     Blit(&result.composite, scaledCard,
-         layout.mainCardBounds.left - bounds.left,
-         bounds.top - layout.mainCardBounds.top);
+         resolvedLayout.mainCardBounds.left - bounds.left,
+         bounds.top - resolvedLayout.mainCardBounds.top);
     Blit(&result.composite, rail,
-         layout.railBounds.left - bounds.left,
-         bounds.top - layout.railBounds.top);
+         resolvedLayout.railBounds.left - bounds.left,
+         bounds.top - resolvedLayout.railBounds.top);
     Blit(&result.composite, drawer,
-         layout.drawerBounds.left - bounds.left,
-         bounds.top - layout.drawerBounds.top);
+         resolvedLayout.drawerBounds.left - bounds.left,
+         bounds.top - resolvedLayout.drawerBounds.top);
     return result;
 }
 
@@ -463,6 +481,50 @@ overlay::OfflineRasterImage RenderMinimalOrbStateMatrix(
             layout, *presentation.snapshot));
     }
     const int gap = 12;
+    int width = gap;
+    int height = 0;
+    for (const auto& rail : rails) {
+        width += rail.width + gap;
+        height = std::max(height, rail.height + 2 * gap);
+    }
+    auto matrix = Canvas(width, height);
+    int left = gap;
+    for (const auto& rail : rails) {
+        Blit(&matrix, rail, left, gap);
+        left += rail.width + gap;
+    }
+    return matrix;
+}
+
+overlay::OfflineRasterImage RenderTwoLineOrbScaleMatrix(
+    overlay::AccessoryTextMeasurementContext* measurement,
+    std::uint64_t* generation,
+    bool* exactStringsValid) {
+    const float scales[]{0.85f, 1.0f, 1.35f};
+    std::vector<overlay::OfflineRasterImage> rails;
+    for (const auto scale : scales) {
+        auto state = BuildState("vfr");
+        const auto currentGeneration = (*generation)++;
+        *exactStringsValid = *exactStringsValid &&
+            ValidateExactOrbStrings(&state, "vfr", currentGeneration);
+        const auto typography = overlay::PrepareAccessoryTypography(
+            measurement, scale);
+        overlay::AccessoryLayoutInput input;
+        input.screenWidth = 1920;
+        input.screenHeight = 1080;
+        input.windowLeft = 120;
+        input.windowTop = 940;
+        input.scale = scale;
+        input.cardAnimationProgress = 1.0f;
+        input.drawerOpen = false;
+        input.typography = &typography;
+        const auto layout = overlay::ResolveAccessoryLayout(input);
+        const auto presentation = brain::ProjectBrainOwnedAccessoryPresentation(
+            &state, currentGeneration, nullptr);
+        rails.push_back(overlay::RenderProductionAccessoryRailForOfflineProof(
+            layout, *presentation.snapshot));
+    }
+    constexpr int gap = 12;
     int width = gap;
     int height = 0;
     for (const auto& rail : rails) {
@@ -533,6 +595,15 @@ int main(int argc, char** argv) {
     }
     performance << "15_minimal_orb_state_matrix.png,0,0,0,0,"
                 << baselineMainCardSignature << '\n';
+    const auto scaleMatrix = RenderTwoLineOrbScaleMatrix(
+        measurement, &generation, &exactStringsValid);
+    if (!SavePng(
+            outputDirectory / "16_two_line_orb_scale_matrix.png",
+            scaleMatrix)) {
+        failed = true;
+    }
+    performance << "16_two_line_orb_scale_matrix.png,0,0,0,0,"
+                << baselineMainCardSignature << '\n';
     failed = failed || !exactStringsValid;
     overlay::ShutdownAccessoryTextMeasurement(measurement);
     Gdiplus::GdiplusShutdown(token);
@@ -548,6 +619,8 @@ int main(int argc, char** argv) {
     }
     sums << Sha256(outputDirectory / "15_minimal_orb_state_matrix.png")
          << "  15_minimal_orb_state_matrix.png\n";
+    sums << Sha256(outputDirectory / "16_two_line_orb_scale_matrix.png")
+         << "  16_two_line_orb_scale_matrix.png\n";
     sums << Sha256(outputDirectory / "performance.csv")
          << "  performance.csv\n";
     {
@@ -558,7 +631,7 @@ int main(int argc, char** argv) {
         std::cerr << "Step 4 visual proof failed\n";
         return 1;
     }
-    std::cout << "Step 4 corrective visual proof wrote 15 deterministic images"
+    std::cout << "Step 4 accessory-liveness visual proof wrote 22 deterministic images"
               << " with exact ORB strings and unchanged main-card signature\n";
     return 0;
 }

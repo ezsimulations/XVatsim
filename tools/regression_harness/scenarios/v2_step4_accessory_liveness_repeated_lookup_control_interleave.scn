@@ -1,0 +1,2 @@
+name=v2_step4_accessory_liveness_repeated_lookup_control_interleave
+step4.probe=accessory_second_identical_lookup

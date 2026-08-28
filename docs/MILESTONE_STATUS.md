@@ -13,15 +13,17 @@ its subject must be `docs: prepare V2 Step 4 session handoff`, and its scope
 must be exactly the three handoff documentation files. Its final SHA cannot be
 embedded in those same committed bytes and must be resolved from Git.
 
-Step 4 - VATSIM METAR has completed its corrective offline implementation and
-proof after the first controlled-live attempt exposed a WinHTTP callback
-registration defect. Deployment, X-Plane/xPilot startup, live VATSIM traffic,
-and controlled live reproof remain separately gated and were not performed by
-the correction.
+Step 4 - VATSIM METAR has completed a second corrective offline implementation
+and proof. The first correction fixed WinHTTP send completion and was live
+proven. The second corrected accessory-rail liveness after a content-only render
+generation superseded an accepted click's exact generation, and enlarged the
+minimal successful METAR ORB text. Deployment, X-Plane/xPilot startup, live
+VATSIM traffic, and controlled live reproof remain separately gated and were
+not performed by the accessory correction.
 
-The corrected regression baseline is 561 saved scenarios. The canonical
+The corrected regression baseline is 590 saved scenarios. The canonical
 release-gate fingerprint is
-`6AB913C1C0658A0CDE93A84D369267DDFDCD7FDE27797BF097FDB70DD574EF94`.
+`765008264996DBE603FFB6B30D9CD0000B3CA59FA37BBA8C1D62D16CFD47E498`.
 
 The corrective gate began from zero tracked or staged changes. Two protected
 untracked evidence sets remain outside the corrective commits: the original
@@ -114,7 +116,7 @@ work and X-Plane frame cadence. The maximum fixture-ON preparation wait was
 2,227,032 microseconds, and the fixture-OFF cold wait was 256,838 microseconds.
 Neither produced a visible UI failure or recurring idle work.
 
-## Step 4 - VATSIM METAR Corrected Candidate
+## Step 4 - VATSIM METAR Accessory-Liveness Corrected Candidate
 
 - Status: corrected and offline-proven; controlled live reproof is not
   authorized.
@@ -123,16 +125,22 @@ Neither produced a visible UI failure or recurring idle work.
 - The brain owns the primary airport, lookup, request priority, cadence,
   freshness, parsing, category, cache, history, spotlight, lifecycle, and final
   presentation. The plugin uses the generic asynchronous worker-binding seam.
-- Added 14 corrective scenarios; focused result is 67/67 and complete saved
-  regression is 561/561.
+- Added 29 accessory-liveness/readability scenarios; Step 3 is 31/31, complete
+  Step 4 is 96/96, and complete saved regression is 590/590.
 - Corrected WinHTTP send completion registration and proved a complete local
   loopback send/receive/HTTP/JSON/harvest/brain-parse lifecycle.
 - Added bounded dispatch, terminal-worker, and brain-disposition diagnostics,
   including cleanup-only lifecycle drain rejection.
 - Reduced the METAR ORB to neutral `METAR` or exact ICAO/category lines; all
-  detailed state remains in the drawer.
+  detailed state remains in the drawer. Successful lines now use Segoe UI Bold
+  at 10.0 design pixels multiplied by effective layout scale.
+- Corrected accessory input completion so a compatible newer render generation
+  completes the accepted action, while wrong drawers cannot falsely complete
+  it and newer selections explicitly supersede it.
+- Failed deferred binding and lifecycle close/disable/stop now release and clear
+  all queued, deferred, in-flight, and performance-action state.
 - Fresh Windows Release proof and fixture-off normal plugin builds passed.
-- Fifteen production-raster visual cases reproduced with zero PNG hash
+- Twenty-two production-raster visual cases reproduced with zero PNG hash
   differences; main-card production signatures were identical in every case.
 - The 100,000-cycle warm-idle proof recorded zero parsing, fingerprinting,
   history, wrapping, rasterization, or upload deltas.

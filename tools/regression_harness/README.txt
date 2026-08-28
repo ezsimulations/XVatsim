@@ -996,3 +996,22 @@ sample truth, and fan-out. Scroll-only raster work is reported as
 history content. Up to eight retained violations must be serialized at the
 disable/stop aggregate boundary, together with retained, serialized, and
 dropped counts.
+
+Step 4 accessory-liveness corrective proof
+-------------------------------------------
+
+The 29 `v2_step4_accessory_liveness_*` scenarios reproduce and correct the
+second-live freeze. The red proof binds one accepted METAR selection to render
+generation 1 and delivers the same selected drawer at render generation 2;
+the unmodified dispatcher rejects the forever-unreachable exact generation and
+remains in flight. Corrected proof classifies that draw as compatible render
+supersession, completes the matching performance action, and releases the next
+queued click.
+
+The set also proves wrong-drawer rejection, newer-selection cancellation,
+failed deferred-bind release, lifecycle deferred-state clearing, 1,000
+interleaved compatible completions, repeated identical lookup spotlight and
+expiry without parse/history mutation, ATIS/PDC/close ownership, zero delayed
+METAR reopen, and Segoe UI Bold 10.0-design-pixel METAR ORB text at 0.85, 1.0,
+and 1.35 scale. Together with the existing Step 3 and Step 4 suites, the saved
+baseline is 590 scenarios.

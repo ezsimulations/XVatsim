@@ -3061,6 +3061,8 @@ void LogAccessoryPerformanceSnapshot(const char* boundary) {
     };
     std::ostringstream line;
     const auto preparation = gOverlayWindow.GetAccessoryPreparationCounters();
+    const auto integration = gOverlayWindow.GetAccessoryIntegrationCounters();
+    const auto& dispatch = integration.dispatch;
     line << "event=step3-accessory-performance"
          << " boundary=" << (boundary == nullptr ? "unknown" : boundary)
          << " epoch=" << snapshot.epoch
@@ -3152,6 +3154,31 @@ void LogAccessoryPerformanceSnapshot(const char* boundary) {
          << " preparationProhibitedAccesses="
          << preparation.prohibitedAccessCount
          << " preparationRunningThreads=" << preparation.runningWorkerThreads;
+    line << " accessoryClicksProduced=" << integration.clickFactsProduced
+         << " accessoryClicksDropped=" << integration.clickFactsDropped
+         << " accessoryClicksConsumed=" << integration.clickFactsConsumed
+         << " accessoryClicksDiscarded=" << integration.clickFactsDiscarded
+         << " accessoryClicksPending=" << integration.clickFactsPending
+         << " accessoryClickMaximumQueueDepth="
+         << integration.maximumClickQueueDepth
+         << " accessoryRequestsBegun=" << dispatch.requestsBegun
+         << " accessoryBlockedWhileInFlight="
+         << dispatch.blockedWhileInFlight
+         << " accessoryPresentationsBound=" << dispatch.presentationsBound
+         << " accessoryExactMatchCompletions="
+         << dispatch.exactMatchCompletions
+         << " accessorySupersededGenerationCompletions="
+         << dispatch.supersededGenerationCompletions
+         << " accessoryExplicitCancellations="
+         << dispatch.explicitCancellations
+         << " accessorySelectionSupersededCancellations="
+         << dispatch.selectionSupersededCancellations
+         << " accessoryMismatchedDrawAttempts="
+         << dispatch.mismatchedDrawAttempts
+         << " accessoryMaximumInFlightUs="
+         << dispatch.maximumInFlightMicroseconds
+         << " accessoryFinalInFlight="
+         << (dispatch.inFlight ? "true" : "false");
     for (std::size_t index = 0;
          index < static_cast<std::size_t>(
              xvatsim::modules::overlay::AccessoryPerformanceCategory::Count);

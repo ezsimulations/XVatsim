@@ -37,8 +37,19 @@ not rasterize or upload a drawer.
 
 Timing reports distinguish asynchronous worker preparation wait from synchronous
 simulator-thread dispatch/presentation work, X-Plane frame-cadence wait, and
-raster/upload/draw timing. A matching generation must be drawn before an action
-is recorded complete.
+raster/upload/draw timing. An action completes on an exact draw or on a newer
+render generation that preserves the brain-approved selection and drawer. A
+newer selection explicitly supersedes the older action; a wrong drawer or older
+generation cannot complete it. Every terminal disposition releases the bounded
+dispatcher immediately.
+
+Lifecycle close, disable, and stop paths clear deferred generation binding,
+discard queued facts, cancel any in-flight action, and discard its performance
+record. A failed deferred bind also cancels the matching action instead of
+leaving it stranded. Bounded aggregate diagnostics report queue production,
+consumption, discards, maximum depth, exact and compatible completions,
+supersession/cancellation, mismatches, maximum in-flight duration, and final
+queue/in-flight state without per-frame busy logging.
 
 Step 4 renders exactly one neutral `METAR` line when there is no usable primary
 observation. A usable fresh or still-fresh cached primary renders exactly two
@@ -49,6 +60,10 @@ primary content, chronological history, and bounded lookup
 pending/spotlight/failure presentations remain in the drawer. Hidden changes
 do not prepare or rasterize the drawer; current content is prepared once when
 selected.
+
+Successful METAR ICAO/category lines use Segoe UI Bold at 10.0 design pixels
+times effective layout scale. Production-raster proof covers 0.85, 1.0, and
+1.35 scale without clipping or border contact.
 
 The overlay does not select airports, validate lookups, schedule requests,
 parse weather, classify categories, decide freshness, reorder history, or own

@@ -11834,6 +11834,8 @@ void ObserveStep3DispatchSnapshot(
         std::to_string(snapshot.expectedSelectionGeneration);
     (*observed)[prefix+".expected_render_generation"]=
         std::to_string(snapshot.expectedRenderGeneration);
+    (*observed)[prefix+".expected_drawer"]=
+        Step3Drawer(snapshot.expectedDrawer);
     (*observed)[prefix+".notifications"]=
         std::to_string(snapshot.dispatchNotifications);
     (*observed)[prefix+".begin_attempts"]=
@@ -11846,10 +11848,20 @@ void ObserveStep3DispatchSnapshot(
         std::to_string(snapshot.presentationsBound);
     (*observed)[prefix+".completed_count"]=
         std::to_string(snapshot.matchingDrawCompletions);
+    (*observed)[prefix+".exact_completed"]=
+        std::to_string(snapshot.exactMatchCompletions);
+    (*observed)[prefix+".superseded_completed"]=
+        std::to_string(snapshot.supersededGenerationCompletions);
+    (*observed)[prefix+".explicit_cancellations"]=
+        std::to_string(snapshot.explicitCancellations);
+    (*observed)[prefix+".selection_superseded_cancellations"]=
+        std::to_string(snapshot.selectionSupersededCancellations);
     (*observed)[prefix+".mismatched_draws"]=
         std::to_string(snapshot.mismatchedDrawAttempts);
     (*observed)[prefix+".invalidated_in_flight"]=
         std::to_string(snapshot.invalidatedInFlight);
+    (*observed)[prefix+".maximum_in_flight_us"]=
+        std::to_string(snapshot.maximumInFlightMicroseconds);
 }
 
 bool Step3PresenterTitleMarkerVisible(
@@ -13158,7 +13170,8 @@ bool ExecuteStep3Action(
             dispatcher->second.Snapshot(),prefix,&context->observed);
         return true;
     }
-    if (parts[0] == "dispatch-draw" && parts.size() == 8) {
+    if (parts[0] == "dispatch-draw" &&
+        (parts.size() == 8 || parts.size() == 9)) {
         int completed=0;
         if(!parseInt(parts[4],&completed)) return fail("invalid dispatch draw time");
         auto dispatcher=context->inputDispatchers.find(parts[1]);
@@ -13180,8 +13193,17 @@ bool ExecuteStep3Action(
             try { renderGeneration=std::stoull(parts[6]); }
             catch(...) { return fail("invalid draw render generation"); }
         }
+        auto selectedDrawer = presenter->second.activeSnapshot == nullptr
+                ? xvatsim::brain::BrainOwnedAccessoryDrawerId::None
+                : presenter->second.activeSnapshot->activeDrawer;
+        const auto& prefix = parts.size() == 9 ? parts[8] : parts[7];
+        if(parts.size() == 9) {
+            selectedDrawer = Step3DrawerFromToken(parts[7]);
+        }
         const auto completion=dispatcher->second.CompleteMatchingDraw(
-            selectionGeneration,renderGeneration);
+            selectedDrawer,
+            selectionGeneration,renderGeneration,
+            static_cast<std::uint64_t>(completed));
         const auto matchingPerformanceAction=
             collector->second->HasMatchingPendingAction(
                 selectionGeneration,renderGeneration,0);
@@ -13195,9 +13217,15 @@ bool ExecuteStep3Action(
         if(completion.completed && queue.PendingCount()>0) {
             dispatcher->second.RecordDispatchNotification();
         }
-        const auto& prefix=parts[7];
         context->observed[prefix+".completed"]=
             Step3Bool(completion.completed);
+        context->observed[prefix+".terminal"]=
+            Step3Bool(completion.terminal);
+        context->observed[prefix+".cancelled"]=
+            Step3Bool(completion.cancelled);
+        context->observed[prefix+".disposition"]=
+            xvatsim::modules::overlay::AccessoryInputDispatchDispositionToken(
+                completion.disposition);
         context->observed[prefix+".sequence"]=
             std::to_string(completion.fact.requestSequence);
         context->observed[prefix+".action"]=Step3Action(completion.action);
@@ -16476,6 +16504,9 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         f.AcceptPrimary(primaryVfr);
         f.input.monotonicMs += 1;
         const auto before = f.state.metar;
+        xvatsim::modules::overlay::AccessoryInputDispatchCoordinator
+            idleDispatcher;
+        const auto idleDispatchBefore = idleDispatcher.Snapshot();
         const auto presentation = ProjectBrainOwnedAccessoryPresentation(
             &f.state, 1, nullptr);
         xvatsim::modules::overlay::AccessoryLayoutInput layoutInput;
@@ -16526,6 +16557,7 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         const auto accessoryElapsedUs =
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - accessoryStarted).count();
+        const auto idleDispatchAfter = idleDispatcher.Snapshot();
         require(f.state.metar.parseCount == before.parseCount &&
                     f.state.metar.fingerprintCount == before.fingerprintCount &&
                     f.state.metar.historyMutationCount == before.historyMutationCount &&
@@ -16547,11 +16579,24 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     warm.delta.uploadRequests == 0 &&
                     warm.delta.snapshotPublications == 0,
                 "warm unchanged cycles performed recurring accessory work");
+        require(!idleDispatchAfter.inFlight &&
+                    idleDispatchAfter.dispatchNotifications ==
+                        idleDispatchBefore.dispatchNotifications &&
+                    idleDispatchAfter.beginAttempts ==
+                        idleDispatchBefore.beginAttempts &&
+                    idleDispatchAfter.requestsBegun ==
+                        idleDispatchBefore.requestsBegun &&
+                    idleDispatchAfter.matchingDrawCompletions ==
+                        idleDispatchBefore.matchingDrawCompletions &&
+                    idleDispatchAfter.mismatchedDrawAttempts ==
+                        idleDispatchBefore.mismatchedDrawAttempts,
+                "warm unchanged cycles performed recurring input dispatch");
         std::cout << "STEP4_WARM_IDLE: cycles=100000 brain_us="
                   << brainElapsedUs << " accessory_us=" << accessoryElapsedUs
                   << " parse_delta=0 fingerprint_delta=0 history_delta=0"
                   << " wraps_delta=0 rasters_delta=0 uploads_delta=0"
-                  << " terminal_diagnostics_delta=0 publications_delta=0\n";
+                  << " input_dispatch_delta=0 terminal_diagnostics_delta=0"
+                  << " publications_delta=0\n";
         xvatsim::modules::overlay::ShutdownAccessoryTextMeasurement(
             update.measurementContext);
     } else if (probe == "normal_binary_source_isolation") {
@@ -16701,6 +16746,178 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                         f.state.metar.transientDeadlineMonotonicMs == 0,
                     "lookup completion overrode newer drawer selection");
         }
+    } else if (probe == "accessory_second_identical_lookup") {
+        Step4Fixture f;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        f.Cycle(8'000);
+        require(f.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::None,
+                "first spotlight did not expire");
+        const auto parseBefore = f.state.metar.parseCount;
+        const auto historyBefore = f.state.metar.historyMutationCount;
+        const auto historySizeBefore =
+            f.state.accessory.histories[0].entries.size();
+        const auto presentationBefore = f.state.metar.presentationGeneration;
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        require(f.state.metar.parseCount == parseBefore,
+                "identical second lookup reparsed content");
+        require(f.state.metar.historyMutationCount == historyBefore &&
+                    f.state.accessory.histories[0].entries.size() ==
+                        historySizeBefore,
+                "identical second lookup mutated history");
+        require(f.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::LookupSpotlight,
+                "identical second lookup did not activate spotlight");
+        require(f.state.metar.presentationGeneration > presentationBefore,
+                "identical second lookup did not publish visible spotlight");
+        const auto spotlightGeneration = f.state.metar.presentationGeneration;
+        f.Cycle(7'999);
+        require(f.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::LookupSpotlight,
+                "second spotlight expired early");
+        f.Cycle(1);
+        require(f.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::None,
+                "second spotlight did not expire at eight seconds");
+        require(f.state.metar.presentationGeneration ==
+                    spotlightGeneration + 1,
+                "spotlight return did not publish exactly once");
+        require(Step4HasTitle(&f.state, "METAR — KDFW"),
+                "second spotlight did not return to pinned primary");
+        require(f.state.metar.parseCount == parseBefore &&
+                    f.state.metar.historyMutationCount == historyBefore,
+                "spotlight expiry performed content work");
+    } else if (probe == "accessory_spotlight_manual_ownership") {
+        for (const auto drawer : {BrainOwnedAccessoryDrawerId::Atis,
+                                  BrainOwnedAccessoryDrawerId::Pdc,
+                                  BrainOwnedAccessoryDrawerId::None}) {
+            Step4Fixture f;
+            f.AcceptPrimary(primaryVfr);
+            f.SubmitLookup("KABQ");
+            f.AcceptLookup(lookupMvfr);
+            Step4SelectDrawer(
+                &f.state,
+                drawer == BrainOwnedAccessoryDrawerId::None
+                    ? BrainOwnedAccessoryDrawerId::Metar : drawer,
+                9);
+            f.Cycle(8'500);
+            require(f.state.accessory.activeDrawer == drawer,
+                    "spotlight expiry overrode pilot drawer ownership");
+            require(f.state.metar.transientPresentation ==
+                        BrainMetarTransientPresentation::None &&
+                        f.state.metar.transientDeadlineMonotonicMs == 0,
+                    "manual ownership left a delayed spotlight timer");
+            requireSuccessfulMetarOrb(
+                &f.state, "KDFW", "VFR",
+                BrainOwnedAccessoryOrbPresentation::Tone::Green);
+        }
+    } else if (probe == "accessory_orb_typography") {
+        using namespace xvatsim::modules::overlay;
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr, "GDI text measurement unavailable");
+        if (measurement != nullptr) {
+            for (const float scale : {0.85f, 1.0f, 1.35f}) {
+                for (const std::string& text :
+                     {"KDFW", "VFR", "MVFR", "IFR", "LIFR"}) {
+                    AccessoryTextMeasurementInput input;
+                    input.text = text;
+                    input.role = AccessoryFontRole::MetarOrbDetail;
+                    input.scale = scale;
+                    const auto measured = MeasureAccessoryText(measurement, input);
+                    require(measured.status ==
+                                BrainOwnedAccessoryOperationStatus::Available,
+                            "METAR ORB detail measurement unavailable");
+                    require(measured.fontFamily == "Segoe UI" &&
+                                measured.bold &&
+                                std::fabs(measured.fontPixelSize -
+                                          (10.0f * scale)) < 0.01f,
+                            "METAR ORB detail font is not Segoe UI Bold 10px");
+                    require(measured.measuredWidth <=
+                                static_cast<int>(std::lround(48.0f * scale)) &&
+                                measured.measuredHeight <=
+                                static_cast<int>(std::lround(15.0f * scale)),
+                            "METAR ORB detail text clips authorized bounds");
+                }
+            }
+            ShutdownAccessoryTextMeasurement(measurement);
+        }
+        Step4Fixture f;
+        f.Cycle();
+        requireNeutralMetarOrb(&f.state);
+        f.AcceptPrimary(primaryVfr);
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+    } else if (probe == "accessory_dispatch_stress") {
+        using namespace xvatsim::modules::overlay;
+        AccessoryClickFactQueue queue;
+        AccessoryInputDispatchCoordinator dispatcher;
+        std::uint64_t now = 1;
+        for (int index = 0; index < 1'000; ++index) {
+            const auto drawer = index % 3 == 0
+                ? BrainOwnedAccessoryDrawerId::Metar
+                : index % 3 == 1 ? BrainOwnedAccessoryDrawerId::Atis
+                                 : BrainOwnedAccessoryDrawerId::Pdc;
+            AccessoryClickFact produced;
+            require(queue.Produce(drawer, now++, &produced),
+                    "stress queue dropped a valid click");
+            dispatcher.RecordDispatchNotification();
+            AccessoryClickFact consumed;
+            require(dispatcher.TryBegin(&queue, &consumed),
+                    "stress dispatcher did not begin click");
+            require(dispatcher.BindPresentation(
+                        consumed.requestSequence,
+                        BrainOwnedAccessoryDrawerAction::Opened,
+                        static_cast<std::uint64_t>(index + 1),
+                        static_cast<std::uint64_t>(index + 1)),
+                    "stress dispatcher did not bind action");
+            const auto completion = dispatcher.CompleteMatchingDraw(
+                drawer, static_cast<std::uint64_t>(index + 1),
+                static_cast<std::uint64_t>(index + 2), now++);
+            require(completion.completed && completion.terminal &&
+                        completion.disposition ==
+                            AccessoryInputDispatchDisposition::
+                                CompatibleRenderSuperseded,
+                    "compatible stress draw did not terminate action");
+        }
+        const auto snapshot = dispatcher.Snapshot();
+        require(!snapshot.inFlight && queue.PendingCount() == 0,
+                "stress left input queued or in flight");
+        require(snapshot.requestsBegun == 1'000 &&
+                    snapshot.matchingDrawCompletions == 1'000 &&
+                    snapshot.supersededGenerationCompletions == 1'000 &&
+                    snapshot.mismatchedDrawAttempts == 0,
+                "stress terminal accounting mismatch");
+        require(snapshot.maximumInFlightMicroseconds <= 500'000,
+                "stress action exceeded 500-millisecond liveness limit");
+        std::cout << "STEP4_ACCESSORY_STRESS: actions=1000"
+                  << " superseded=1000 queued=0 in_flight=false"
+                  << " max_in_flight_us="
+                  << snapshot.maximumInFlightMicroseconds
+                  << " limit_us=500000\n";
+    } else if (probe == "accessory_deferred_binding_boundaries") {
+        require(Step4FileContains("modules/overlay/src/OverlayWindow.cpp",
+                                  "ClearDeferredAccessoryInputBinding(true);"),
+                "lifecycle stop does not cancel deferred binding");
+        require(Step4FileContains("modules/overlay/src/OverlayWindow.cpp",
+                                  "ClearDeferredAccessoryInputBinding(false);"),
+                "deferred binding is not cleared before bind/discard");
+        require(Step4FileContains("modules/overlay/src/OverlayWindow.cpp",
+                                  "CancelAccessoryInputDispatch(fact.requestSequence);"),
+                "failed deferred binding does not release dispatcher");
+        require(Step4FileContains("modules/overlay/src/OverlayWindow.cpp",
+                                  "NotifyNextAccessoryInputIfPending();"),
+                "failed deferred binding does not wake the next queued click");
+    } else if (probe == "accessory_bounded_diagnostics") {
+        require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                  "supersededGenerationCompletions"),
+                "accessory supersession summary missing");
+        require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                  "maximumInFlightMicroseconds"),
+                "accessory liveness maximum missing");
     } else {
         std::cerr << "STEP4_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
                   << ": unknown probe " << probe << "\n";

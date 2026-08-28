@@ -22,6 +22,10 @@ using OverlayAccessoryPreparationFailureCallback = void (*)(
 struct OverlayAccessoryIntegrationCounters {
     std::uint64_t clickFactsProduced = 0;
     std::uint64_t clickFactsDropped = 0;
+    std::uint64_t clickFactsConsumed = 0;
+    std::uint64_t clickFactsDiscarded = 0;
+    std::uint64_t clickFactsPending = 0;
+    std::uint64_t maximumClickQueueDepth = 0;
     std::uint64_t railRasterizations = 0;
     std::uint64_t drawerRasterizations = 0;
     std::uint64_t railTextureUploads = 0;
@@ -154,6 +158,8 @@ private:
     void PublishFirstAccessoryPerformanceWarningIfNeeded();
     void RetryPendingAccessoryPreparations();
     bool PublishReadyAccessoryPreparation();
+    void ClearDeferredAccessoryInputBinding(bool cancelInFlight);
+    void NotifyNextAccessoryInputIfPending();
     AccessoryPreparationKey BuildAccessoryPreparationKey(
         brain::BrainOwnedAccessoryDrawerId drawer,
         std::uint64_t historyGeneration,

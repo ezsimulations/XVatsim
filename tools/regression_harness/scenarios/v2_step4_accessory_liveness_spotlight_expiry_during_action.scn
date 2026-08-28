@@ -1,0 +1,2 @@
+name=v2_step4_accessory_liveness_spotlight_expiry_during_action
+step4.probe=accessory_dispatch_stress

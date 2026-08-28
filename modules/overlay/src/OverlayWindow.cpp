@@ -1057,7 +1057,7 @@ RasterImage RenderAccessoryRailImage(
         L"Segoe UI", std::max(1.0f, 6.5f * layout.scale),
         FontStyleBold, UnitPixel);
     Font metarDetailFont(
-        L"Segoe UI", std::max(1.0f, 6.2f * layout.scale),
+        L"Segoe UI", std::max(1.0f, 10.0f * layout.scale),
         FontStyleBold, UnitPixel);
     const Color neutralFill(226, 39, 50, 62);
     const Color neutralBorder(224, 122, 146, 164);
@@ -1124,14 +1124,16 @@ RasterImage RenderAccessoryRailImage(
         if (detailedMetar) {
             DrawAccessoryText(
                 &graphics,
-                RectF(left, top + diameter * 0.27f, diameter,
-                      std::max(7.0f, 9.0f * layout.scale)),
+                RectF(left + 2.0f * layout.scale, top + diameter * 0.20f,
+                      diameter - 4.0f * layout.scale,
+                      std::max(10.0f, 13.0f * layout.scale)),
                 presentation.airportIcao,
                 &metarDetailFont, labelColor, StringAlignmentCenter);
             DrawAccessoryText(
                 &graphics,
-                RectF(left, top + diameter * 0.53f, diameter,
-                      std::max(7.0f, 9.0f * layout.scale)),
+                RectF(left + 2.0f * layout.scale, top + diameter * 0.52f,
+                      diameter - 4.0f * layout.scale,
+                      std::max(10.0f, 13.0f * layout.scale)),
                 presentation.categoryText,
                 &metarDetailFont, labelColor, StringAlignmentCenter);
         } else {
@@ -1514,12 +1516,34 @@ void OverlayWindow::StartAccessoryPreparation() {
 }
 
 void OverlayWindow::StopAccessoryPreparation() {
+    ClearDeferredAccessoryInputBinding(true);
     accessoryPreparationWorker_.Stop();
     accessoryPreparationFailureDiagnosticEmitted_ = false;
     accessoryPreparationRequested_.fill(false);
     accessoryPendingPreparationRequests_ = {};
     accessoryUpdateInput_.preparedPlan.reset();
     accessoryPreparationWaitStartedMicroseconds_ = 0;
+}
+
+void OverlayWindow::ClearDeferredAccessoryInputBinding(bool cancelInFlight) {
+    if (accessoryDeferredBindingPending_ && cancelInFlight) {
+        CancelAccessoryInputDispatch(
+            accessoryDeferredBindingFact_.requestSequence);
+    }
+    accessoryDeferredBindingPending_ = false;
+    accessoryDeferredBindingFact_ = {};
+    accessoryDeferredBindingAction_ =
+        brain::BrainOwnedAccessoryDrawerAction::None;
+    accessoryPreparationWaitStartedMicroseconds_ = 0;
+}
+
+void OverlayWindow::NotifyNextAccessoryInputIfPending() {
+    if (accessoryClickQueue_.PendingCount() == 0 ||
+        accessoryInputDispatchCallback_ == nullptr) {
+        return;
+    }
+    accessoryInputDispatcher_.RecordDispatchNotification();
+    accessoryInputDispatchCallback_(accessoryInputDispatchRefcon_);
 }
 
 void OverlayWindow::SetAccessoryPreparationFailureCallback(
@@ -1589,13 +1613,8 @@ bool OverlayWindow::PublishReadyAccessoryPreparation() {
             accessoryPreparationWorker_.State(),
             accessoryDeferredBindingPending_);
     if (preparationAvailability.cancelPendingAction) {
-        CancelAccessoryInputDispatch(
-            accessoryDeferredBindingFact_.requestSequence);
-        accessoryDeferredBindingPending_ = false;
-        accessoryDeferredBindingFact_ = {};
-        accessoryDeferredBindingAction_ =
-            brain::BrainOwnedAccessoryDrawerAction::None;
-        accessoryPreparationWaitStartedMicroseconds_ = 0;
+        ClearDeferredAccessoryInputBinding(true);
+        NotifyNextAccessoryInputIfPending();
         accessoryUpdateInput_.preparedPlan.reset();
         return false;
     }
@@ -1639,11 +1658,11 @@ bool OverlayWindow::PublishReadyAccessoryPreparation() {
     if (accessoryDeferredBindingPending_) {
         const auto fact = accessoryDeferredBindingFact_;
         const auto action = accessoryDeferredBindingAction_;
-        accessoryDeferredBindingPending_ = false;
-        accessoryDeferredBindingFact_ = {};
-        accessoryDeferredBindingAction_ =
-            brain::BrainOwnedAccessoryDrawerAction::None;
-        BindAccessoryInputDispatch(fact, action);
+        ClearDeferredAccessoryInputBinding(false);
+        if (!BindAccessoryInputDispatch(fact, action)) {
+            CancelAccessoryInputDispatch(fact.requestSequence);
+            NotifyNextAccessoryInputIfPending();
+        }
     }
     return true;
 }
@@ -2007,11 +2026,14 @@ bool OverlayWindow::BindAccessoryInputDispatch(
 
 bool OverlayWindow::CancelAccessoryInputDispatch(
     std::uint64_t requestSequence) {
-    return accessoryInputDispatcher_.CancelInFlight(requestSequence);
+    return accessoryInputDispatcher_.CancelInFlight(
+        requestSequence, AccessoryWallClockMicroseconds());
 }
 
 std::size_t OverlayWindow::DiscardPendingAccessoryClickFacts() {
-    accessoryInputDispatcher_.InvalidateInFlight();
+    ClearDeferredAccessoryInputBinding(false);
+    accessoryInputDispatcher_.InvalidateInFlight(
+        AccessoryWallClockMicroseconds());
     if (accessoryPerformance_ != nullptr) {
         accessoryPerformance_->DiscardPendingActions();
     }
@@ -2031,6 +2053,12 @@ std::uint64_t OverlayWindow::GetAccessoryLayoutGeneration() const {
 OverlayAccessoryIntegrationCounters
 OverlayWindow::GetAccessoryIntegrationCounters() const {
     auto counters = accessoryIntegrationCounters_;
+    counters.clickFactsProduced = accessoryClickQueue_.ProducedCount();
+    counters.clickFactsDropped = accessoryClickQueue_.DroppedCount();
+    counters.clickFactsConsumed = accessoryClickQueue_.ConsumedCount();
+    counters.clickFactsDiscarded = accessoryClickQueue_.DiscardedCount();
+    counters.clickFactsPending = accessoryClickQueue_.PendingCount();
+    counters.maximumClickQueueDepth = accessoryClickQueue_.MaximumDepth();
     counters.accessoryRenderGeneration = accessoryRenderGeneration_;
     counters.dispatch = accessoryInputDispatcher_.Snapshot();
     if (accessoryPerformance_ != nullptr) {
@@ -2218,6 +2246,7 @@ bool OverlayWindow::ConsumeScaleChanged(float* outScale) {
 }
 
 void OverlayWindow::Hide() {
+    DiscardPendingAccessoryClickFacts();
     StopAccessoryPreparation();
     ResetOverlayUpdateTiming();
     const auto totalStarted = OverlayClock::now();
@@ -2673,10 +2702,14 @@ void OverlayWindow::Draw() {
     }
     const auto completedDispatch =
         accessoryInputDispatcher_.CompleteMatchingDraw(
+            accessoryPresentation_.activeSnapshot == nullptr
+                ? brain::BrainOwnedAccessoryDrawerId::None
+                : accessoryPresentation_.activeSnapshot->activeDrawer,
             accessoryPresentation_.selectionGeneration,
-            accessoryRenderGeneration_);
+            accessoryRenderGeneration_,
+            accessoryDrawCompleted);
     PublishFirstAccessoryPerformanceWarningIfNeeded();
-    if (completedDispatch.completed &&
+    if (completedDispatch.terminal &&
         accessoryClickQueue_.PendingCount() > 0 &&
         accessoryInputDispatchCallback_ != nullptr) {
         accessoryInputDispatcher_.RecordDispatchNotification();

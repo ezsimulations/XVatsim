@@ -25,6 +25,7 @@ struct AccessoryTextMeasurementContext {
         std::unique_ptr<Gdiplus::Font> drawerBodyFont;
         std::unique_ptr<Gdiplus::Font> drawerEntryTitleFont;
         std::unique_ptr<Gdiplus::Font> orbLabelFont;
+        std::unique_ptr<Gdiplus::Font> metarOrbDetailFont;
         std::unique_ptr<Gdiplus::Font> orbOpenIndicatorFont;
         AccessoryTypographyMetrics typography;
         bool typographyPrepared = false;
@@ -167,6 +168,8 @@ AccessoryFontSpecification FontSpecification(AccessoryFontRole role) {
             return {L"Segoe UI", 11.5f, Gdiplus::FontStyleBold, true};
         case AccessoryFontRole::OrbLabel:
             return {L"Segoe UI", 8.0f, Gdiplus::FontStyleBold, true};
+        case AccessoryFontRole::MetarOrbDetail:
+            return {L"Segoe UI", 10.0f, Gdiplus::FontStyleBold, true};
         case AccessoryFontRole::OrbOpenIndicator:
             return {L"Segoe UI", 6.5f, Gdiplus::FontStyleBold, true};
         case AccessoryFontRole::DrawerBody:
@@ -207,9 +210,11 @@ AccessoryTextMeasurementContext::ScaleCache* EnsureScaleCache(
     cache.drawerBodyFont = makeFont(AccessoryFontRole::DrawerBody);
     cache.drawerEntryTitleFont = makeFont(AccessoryFontRole::DrawerEntryTitle);
     cache.orbLabelFont = makeFont(AccessoryFontRole::OrbLabel);
+    cache.metarOrbDetailFont = makeFont(AccessoryFontRole::MetarOrbDetail);
     cache.orbOpenIndicatorFont = makeFont(AccessoryFontRole::OrbOpenIndicator);
     if (cache.drawerBodyFont == nullptr ||
         cache.drawerEntryTitleFont == nullptr || cache.orbLabelFont == nullptr ||
+        cache.metarOrbDetailFont == nullptr ||
         cache.orbOpenIndicatorFont == nullptr) {
         return nullptr;
     }
@@ -225,6 +230,8 @@ Gdiplus::Font* CachedFont(
             return cache->drawerEntryTitleFont.get();
         case AccessoryFontRole::OrbLabel:
             return cache->orbLabelFont.get();
+        case AccessoryFontRole::MetarOrbDetail:
+            return cache->metarOrbDetailFont.get();
         case AccessoryFontRole::OrbOpenIndicator:
             return cache->orbOpenIndicatorFont.get();
         case AccessoryFontRole::DrawerBody:
@@ -1959,6 +1966,7 @@ bool AccessoryClickFactQueue::Produce(
     const auto tail = (head_ + size_) % kCapacity;
     facts_[tail] = fact;
     ++size_;
+    maximumDepth_ = std::max(maximumDepth_, size_);
     ++producedCount_;
     if (outFact != nullptr) {
         *outFact = fact;
@@ -1975,6 +1983,7 @@ bool AccessoryClickFactQueue::Consume(AccessoryClickFact* outFact) {
     }
     head_ = (head_ + 1) % kCapacity;
     --size_;
+    ++consumedCount_;
     return true;
 }
 
@@ -1990,7 +1999,9 @@ std::size_t AccessoryClickFactQueue::PendingCount() const { return size_; }
 std::uint64_t AccessoryClickFactQueue::NextSequence() const { return nextSequence_; }
 std::uint64_t AccessoryClickFactQueue::ProducedCount() const { return producedCount_; }
 std::uint64_t AccessoryClickFactQueue::DroppedCount() const { return droppedCount_; }
+std::uint64_t AccessoryClickFactQueue::ConsumedCount() const { return consumedCount_; }
 std::uint64_t AccessoryClickFactQueue::DiscardedCount() const { return discardedCount_; }
+std::size_t AccessoryClickFactQueue::MaximumDepth() const { return maximumDepth_; }
 
 void AccessoryInputDispatchCoordinator::RecordDispatchNotification() {
     ++snapshot_.dispatchNotifications;
@@ -2039,65 +2050,112 @@ bool AccessoryInputDispatchCoordinator::BindPresentation(
     snapshot_.presentationBound = true;
     snapshot_.expectedSelectionGeneration = selectionGeneration;
     snapshot_.expectedRenderGeneration = renderGeneration;
+    snapshot_.expectedDrawer = action ==
+            brain::BrainOwnedAccessoryDrawerAction::Closed
+        ? brain::BrainOwnedAccessoryDrawerId::None
+        : inFlightFact_.drawer;
     ++snapshot_.presentationsBound;
     return true;
 }
 
+const char* AccessoryInputDispatchDispositionToken(
+    AccessoryInputDispatchDisposition disposition) {
+    switch (disposition) {
+        case AccessoryInputDispatchDisposition::ExactMatch:
+            return "EXACT_MATCH";
+        case AccessoryInputDispatchDisposition::CompatibleRenderSuperseded:
+            return "COMPATIBLE_RENDER_SUPERSEDED";
+        case AccessoryInputDispatchDisposition::SelectionSuperseded:
+            return "SELECTION_SUPERSEDED";
+        case AccessoryInputDispatchDisposition::ExplicitCancellation:
+            return "EXPLICIT_CANCELLATION";
+        case AccessoryInputDispatchDisposition::None:
+        default:
+            return "NONE";
+    }
+}
+
+void AccessoryInputDispatchCoordinator::ReleaseInFlight(
+    std::uint64_t completedMicroseconds) {
+    if (completedMicroseconds >= inFlightFact_.startedMicroseconds) {
+        snapshot_.maximumInFlightMicroseconds = std::max(
+            snapshot_.maximumInFlightMicroseconds,
+            completedMicroseconds - inFlightFact_.startedMicroseconds);
+    }
+    snapshot_.inFlight = false;
+    snapshot_.presentationBound = false;
+    snapshot_.inFlightRequestSequence = 0;
+    snapshot_.expectedSelectionGeneration = 0;
+    snapshot_.expectedRenderGeneration = 0;
+    snapshot_.expectedDrawer = brain::BrainOwnedAccessoryDrawerId::None;
+    inFlightFact_ = {};
+    inFlightAction_ = brain::BrainOwnedAccessoryDrawerAction::None;
+}
+
 AccessoryInputDispatchCompletion
 AccessoryInputDispatchCoordinator::CompleteMatchingDraw(
+    brain::BrainOwnedAccessoryDrawerId selectedDrawer,
     std::uint64_t selectionGeneration,
-    std::uint64_t renderGeneration) {
+    std::uint64_t renderGeneration,
+    std::uint64_t completedMicroseconds) {
     AccessoryInputDispatchCompletion result;
     if (!snapshot_.inFlight || !snapshot_.presentationBound) {
         return result;
     }
+    if (selectionGeneration > snapshot_.expectedSelectionGeneration) {
+        result.terminal = true;
+        result.cancelled = true;
+        result.disposition =
+            AccessoryInputDispatchDisposition::SelectionSuperseded;
+        result.fact = inFlightFact_;
+        result.action = inFlightAction_;
+        ++snapshot_.selectionSupersededCancellations;
+        ReleaseInFlight(completedMicroseconds);
+        return result;
+    }
     if (selectionGeneration != snapshot_.expectedSelectionGeneration ||
-        renderGeneration != snapshot_.expectedRenderGeneration) {
+        selectedDrawer != snapshot_.expectedDrawer ||
+        renderGeneration < snapshot_.expectedRenderGeneration) {
         ++snapshot_.mismatchedDrawAttempts;
         return result;
     }
+    result.terminal = true;
     result.completed = true;
     result.fact = inFlightFact_;
     result.action = inFlightAction_;
+    result.disposition = renderGeneration == snapshot_.expectedRenderGeneration
+        ? AccessoryInputDispatchDisposition::ExactMatch
+        : AccessoryInputDispatchDisposition::CompatibleRenderSuperseded;
     ++snapshot_.matchingDrawCompletions;
-    snapshot_.inFlight = false;
-    snapshot_.presentationBound = false;
-    snapshot_.inFlightRequestSequence = 0;
-    snapshot_.expectedSelectionGeneration = 0;
-    snapshot_.expectedRenderGeneration = 0;
-    inFlightFact_ = {};
-    inFlightAction_ = brain::BrainOwnedAccessoryDrawerAction::None;
+    if (result.disposition == AccessoryInputDispatchDisposition::ExactMatch) {
+        ++snapshot_.exactMatchCompletions;
+    } else {
+        ++snapshot_.supersededGenerationCompletions;
+    }
+    ReleaseInFlight(completedMicroseconds);
     return result;
 }
 
 bool AccessoryInputDispatchCoordinator::CancelInFlight(
-    std::uint64_t requestSequence) {
+    std::uint64_t requestSequence,
+    std::uint64_t completedMicroseconds) {
     if (!snapshot_.inFlight ||
         requestSequence != inFlightFact_.requestSequence) {
         return false;
     }
-    snapshot_.inFlight = false;
-    snapshot_.presentationBound = false;
-    snapshot_.inFlightRequestSequence = 0;
-    snapshot_.expectedSelectionGeneration = 0;
-    snapshot_.expectedRenderGeneration = 0;
-    inFlightFact_ = {};
-    inFlightAction_ = brain::BrainOwnedAccessoryDrawerAction::None;
+    ++snapshot_.explicitCancellations;
+    ReleaseInFlight(completedMicroseconds);
     return true;
 }
 
-bool AccessoryInputDispatchCoordinator::InvalidateInFlight() {
+bool AccessoryInputDispatchCoordinator::InvalidateInFlight(
+    std::uint64_t completedMicroseconds) {
     if (!snapshot_.inFlight) {
         return false;
     }
     ++snapshot_.invalidatedInFlight;
-    snapshot_.inFlight = false;
-    snapshot_.presentationBound = false;
-    snapshot_.inFlightRequestSequence = 0;
-    snapshot_.expectedSelectionGeneration = 0;
-    snapshot_.expectedRenderGeneration = 0;
-    inFlightFact_ = {};
-    inFlightAction_ = brain::BrainOwnedAccessoryDrawerAction::None;
+    ++snapshot_.explicitCancellations;
+    ReleaseInFlight(completedMicroseconds);
     return true;
 }
 
@@ -2426,7 +2484,7 @@ std::size_t AccessoryPerformanceCollector::CompletePendingActions(
             (action.expectedSelectionGeneration == 0 &&
              action.expectedRenderGeneration == 0) ||
             (action.expectedSelectionGeneration == completedSelectionGeneration &&
-             action.expectedRenderGeneration == completedRenderGeneration);
+             completedRenderGeneration >= action.expectedRenderGeneration);
         const bool ordinalMatches = action.expectedDrawOrdinal == 0 ||
             matchingDrawOrdinal >= action.expectedDrawOrdinal;
         matches[index] = completedMicroseconds >= action.startedMicroseconds &&
@@ -2611,7 +2669,7 @@ bool AccessoryPerformanceCollector::HasMatchingPendingAction(
             (action.expectedSelectionGeneration == 0 &&
              action.expectedRenderGeneration == 0) ||
             (action.expectedSelectionGeneration == selectionGeneration &&
-             action.expectedRenderGeneration == renderGeneration);
+             renderGeneration >= action.expectedRenderGeneration);
         const bool ordinalMatches = action.expectedDrawOrdinal == 0 ||
             drawOrdinal >= action.expectedDrawOrdinal;
         if (generationMatches && ordinalMatches) {

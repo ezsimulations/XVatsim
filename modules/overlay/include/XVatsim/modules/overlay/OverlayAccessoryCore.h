@@ -18,6 +18,7 @@ enum class AccessoryFontRole {
     DrawerBody,
     DrawerEntryTitle,
     OrbLabel,
+    MetarOrbDetail,
     OrbOpenIndicator,
 };
 
@@ -219,7 +220,9 @@ public:
     std::uint64_t NextSequence() const;
     std::uint64_t ProducedCount() const;
     std::uint64_t DroppedCount() const;
+    std::uint64_t ConsumedCount() const;
     std::uint64_t DiscardedCount() const;
+    std::size_t MaximumDepth() const;
 
 private:
     std::array<AccessoryClickFact, kCapacity> facts_{};
@@ -228,7 +231,9 @@ private:
     std::uint64_t nextSequence_ = 1;
     std::uint64_t producedCount_ = 0;
     std::uint64_t droppedCount_ = 0;
+    std::uint64_t consumedCount_ = 0;
     std::uint64_t discardedCount_ = 0;
+    std::size_t maximumDepth_ = 0;
 };
 
 struct AccessoryInputDispatchSnapshot {
@@ -237,18 +242,40 @@ struct AccessoryInputDispatchSnapshot {
     std::uint64_t inFlightRequestSequence = 0;
     std::uint64_t expectedSelectionGeneration = 0;
     std::uint64_t expectedRenderGeneration = 0;
+    brain::BrainOwnedAccessoryDrawerId expectedDrawer =
+        brain::BrainOwnedAccessoryDrawerId::None;
     std::uint64_t dispatchNotifications = 0;
     std::uint64_t beginAttempts = 0;
     std::uint64_t requestsBegun = 0;
     std::uint64_t blockedWhileInFlight = 0;
     std::uint64_t presentationsBound = 0;
     std::uint64_t matchingDrawCompletions = 0;
+    std::uint64_t exactMatchCompletions = 0;
+    std::uint64_t supersededGenerationCompletions = 0;
+    std::uint64_t explicitCancellations = 0;
+    std::uint64_t selectionSupersededCancellations = 0;
     std::uint64_t mismatchedDrawAttempts = 0;
     std::uint64_t invalidatedInFlight = 0;
+    std::uint64_t maximumInFlightMicroseconds = 0;
 };
 
+enum class AccessoryInputDispatchDisposition {
+    None,
+    ExactMatch,
+    CompatibleRenderSuperseded,
+    SelectionSuperseded,
+    ExplicitCancellation,
+};
+
+const char* AccessoryInputDispatchDispositionToken(
+    AccessoryInputDispatchDisposition disposition);
+
 struct AccessoryInputDispatchCompletion {
+    bool terminal = false;
     bool completed = false;
+    bool cancelled = false;
+    AccessoryInputDispatchDisposition disposition =
+        AccessoryInputDispatchDisposition::None;
     AccessoryClickFact fact;
     brain::BrainOwnedAccessoryDrawerAction action =
         brain::BrainOwnedAccessoryDrawerAction::None;
@@ -266,13 +293,18 @@ public:
         std::uint64_t selectionGeneration,
         std::uint64_t renderGeneration);
     AccessoryInputDispatchCompletion CompleteMatchingDraw(
+        brain::BrainOwnedAccessoryDrawerId selectedDrawer,
         std::uint64_t selectionGeneration,
-        std::uint64_t renderGeneration);
-    bool CancelInFlight(std::uint64_t requestSequence);
-    bool InvalidateInFlight();
+        std::uint64_t renderGeneration,
+        std::uint64_t completedMicroseconds = 0);
+    bool CancelInFlight(
+        std::uint64_t requestSequence,
+        std::uint64_t completedMicroseconds = 0);
+    bool InvalidateInFlight(std::uint64_t completedMicroseconds = 0);
     AccessoryInputDispatchSnapshot Snapshot() const;
 
 private:
+    void ReleaseInFlight(std::uint64_t completedMicroseconds);
     AccessoryInputDispatchSnapshot snapshot_{};
     AccessoryClickFact inFlightFact_{};
     brain::BrainOwnedAccessoryDrawerAction inFlightAction_ =
