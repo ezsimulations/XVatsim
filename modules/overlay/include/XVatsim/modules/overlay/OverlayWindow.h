@@ -14,7 +14,9 @@
 namespace xvatsim::modules::overlay {
 
 using OverlayAccessoryClickFact = AccessoryClickFact;
-using OverlayAccessoryInputDispatchCallback = void (*)(void* refcon);
+using OverlayAccessoryInputWakeCallback = void (*)(
+    std::uint64_t notificationSequence,
+    void* refcon);
 using OverlayAccessoryPreparationFailureCallback = void (*)(
     AccessoryPreparationWorkerFailure failure,
     void* refcon);
@@ -34,8 +36,10 @@ struct OverlayAccessoryIntegrationCounters {
     std::uint64_t drawerDraws = 0;
     std::uint64_t unchangedUpdates = 0;
     std::uint64_t accessoryRenderGeneration = 0;
-    AccessoryInputDispatchSnapshot dispatch;
     AccessoryPerformanceSnapshot performance;
+    std::uint64_t clickNotificationSequence = 0;
+    std::uint64_t clickWakeRequests = 0;
+    std::uint64_t clickCallbackExitMarks = 0;
 };
 
 class OverlayWindow {
@@ -54,13 +58,16 @@ public:
     void StartAccessoryPreparation();
     void StopAccessoryPreparation();
     AccessoryPreparationWorkerCounters GetAccessoryPreparationCounters() const;
-    void SetAccessoryInputDispatchCallback(
-        OverlayAccessoryInputDispatchCallback callback,
+    void SetAccessoryInputWakeCallback(
+        OverlayAccessoryInputWakeCallback callback,
         void* refcon);
     void SetAccessoryPreparationFailureCallback(
         OverlayAccessoryPreparationFailureCallback callback,
         void* refcon);
     bool BeginAccessoryInputDispatch(OverlayAccessoryClickFact* outFact);
+    bool HasPendingAccessoryClickFacts() const;
+    bool HasPendingAccessoryWork() const;
+    std::uint64_t GetAccessoryInputNotificationSequence() const;
     std::size_t DiscardPendingAccessoryClickFacts();
     bool ConsumeAccessoryPerformancePublication(
         AccessoryPerformanceSnapshot* outSnapshot);
@@ -150,7 +157,9 @@ private:
         AccessoryActionDrawTimingInput* actionDrawTiming = nullptr);
     void MarkAccessoryRailTextureDirty(AccessoryRasterReason reason);
     void MarkAccessoryDrawerTextureDirty(AccessoryRasterReason reason);
-    void QueueAccessoryClick(brain::BrainOwnedAccessoryDrawerId drawer);
+    void QueueAccessoryClick(
+        brain::BrainOwnedAccessoryDrawerId drawer,
+        std::uint64_t mouseCallbackEnteredMicroseconds);
     void RecordAccessoryPerformance(
         AccessoryPerformanceCategory category,
         std::uint64_t elapsedMicroseconds);
@@ -220,6 +229,9 @@ private:
     AccessoryPublicationFactQueue accessoryPublicationFacts_{};
     std::uint64_t accessoryIssuedCommandIdentity_ = 0;
     std::uint64_t accessoryIssuedLifecycleEpoch_ = 0;
+    std::uint64_t accessoryIssuedOriginatingClickSequence_ = 0;
+    std::uint64_t accessoryIssuedClickAcceptedMicroseconds_ = 0;
+    std::uint64_t accessoryIssuedMouseCallbackExitedMicroseconds_ = 0;
     bool accessoryIssuedCommandTerminal_ = true;
     std::uint64_t accessoryAwaitingFirstFrameCommandIdentity_ = 0;
     std::uint64_t accessoryCommandCommitStartedMicroseconds_ = 0;
@@ -245,9 +257,10 @@ private:
     std::uint64_t accessoryDrawCallbackOrdinal_ = 0;
     std::uint64_t accessoryLastDrawCallbackEnteredMicroseconds_ = 0;
     AccessoryClickFactQueue accessoryClickQueue_{};
-    AccessoryInputDispatchCoordinator accessoryInputDispatcher_{};
-    OverlayAccessoryInputDispatchCallback accessoryInputDispatchCallback_ = nullptr;
-    void* accessoryInputDispatchRefcon_ = nullptr;
+    OverlayAccessoryInputWakeCallback accessoryInputWakeCallback_ = nullptr;
+    void* accessoryInputWakeRefcon_ = nullptr;
+    std::uint64_t accessoryClickWakeRequests_ = 0;
+    std::uint64_t accessoryClickCallbackExitMarks_ = 0;
     std::unique_ptr<AccessoryPerformanceCollector> accessoryPerformance_;
     std::uint64_t accessoryPerformanceEpoch_ = 1;
     OverlayAccessoryIntegrationCounters accessoryIntegrationCounters_{};

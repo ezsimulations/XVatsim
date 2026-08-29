@@ -103,3 +103,23 @@ facts are never overwritten or coalesced. The brain consumes their product
 meaning. A missed frame can never prevent the next click from reaching the
 brain.
 
+## Brain-cycle accessory input dispatch
+
+The X-Plane mouse-down callback is capture-only. It mechanically hit-tests the
+committed rail, enqueues one immutable drawer fact with callback and notification
+identities, requests next-cycle service from the already registered flight
+loop, and returns. It never calls the brain or changes presentation/window
+state.
+
+The plugin drains the bounded FIFO on the normal brain cycle, at no more than
+eight facts per cycle. Brain selection is the sole open/close/switch authority.
+The temporary next-cycle cadence remains active only while bounded click,
+preparation, command, or publication facts are pending, then returns to 0.25
+seconds. This wake is mechanical and introduces no worker, scheduler, timer, or
+idle polling loop.
+
+Production accounting follows the real brain-cycle path. It correlates every
+consumed click with its captured drawer, brain decision, immutable command, and
+terminal publication fact. The older render-bound dispatcher is isolated test
+support only and has no production behavioral or reporting authority.
+

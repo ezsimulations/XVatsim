@@ -1403,6 +1403,8 @@ void OverlayWindow::Create() {
     windowVisible_ = false;
     overlayEnabled_ = false;
     accessoryIntegrationCounters_ = {};
+    accessoryClickWakeRequests_ = 0;
+    accessoryClickCallbackExitMarks_ = 0;
     accessoryPerformance_ = std::make_unique<AccessoryPerformanceCollector>();
     accessoryPerformance_->ResetForNewProcess(accessoryPerformanceEpoch_++);
     animationProgress_ = 0.0f;
@@ -1469,12 +1471,14 @@ void OverlayWindow::Destroy() {
     accessoryPresentation_ = {};
     accessoryUpdateInput_ = {};
     accessoryPresentationHandle_ = {};
+    accessoryIssuedOriginatingClickSequence_ = 0;
+    accessoryIssuedClickAcceptedMicroseconds_ = 0;
+    accessoryIssuedMouseCallbackExitedMicroseconds_ = 0;
     accessoryLayout_ = {};
     accessoryDrawerOpen_ = false;
     accessoryAnchorState_ = {};
     dragMoved_ = false;
     accessoryClickQueue_ = {};
-    accessoryInputDispatcher_ = {};
     accessoryPerformance_.reset();
     accessoryDrawCallbackOrdinal_ = 0;
     accessoryLastDrawCallbackEnteredMicroseconds_ = 0;
@@ -1644,6 +1648,12 @@ void OverlayWindow::UpdateAccessory(
             brain::BrainOwnedAccessoryPublicationFact superseded;
             superseded.commandIdentity = accessoryIssuedCommandIdentity_;
             superseded.lifecycleEpoch = accessoryIssuedLifecycleEpoch_;
+            superseded.originatingClickSequence =
+                accessoryIssuedOriginatingClickSequence_;
+            superseded.originatingClickAcceptedMicroseconds =
+                accessoryIssuedClickAcceptedMicroseconds_;
+            superseded.originatingMouseCallbackExitedMicroseconds =
+                accessoryIssuedMouseCallbackExitedMicroseconds_;
             superseded.appliedCommandIdentity =
                 accessoryPresentation_.commandIdentity;
             superseded.disposition =
@@ -1664,10 +1674,21 @@ void OverlayWindow::UpdateAccessory(
             superseded.commandElapsedMicroseconds =
                 AccessoryWallClockMicroseconds() -
                 accessoryCommandCommitStartedMicroseconds_;
+            if (accessoryIssuedClickAcceptedMicroseconds_ != 0) {
+                superseded.clickToTerminalMicroseconds =
+                    AccessoryWallClockMicroseconds() -
+                    accessoryIssuedClickAcceptedMicroseconds_;
+            }
             QueueAccessoryPublicationFact(superseded);
         }
         accessoryIssuedCommandIdentity_ = presentation.commandIdentity;
         accessoryIssuedLifecycleEpoch_ = presentation.lifecycleEpoch;
+        accessoryIssuedOriginatingClickSequence_ =
+            presentation.originatingClickSequence;
+        accessoryIssuedClickAcceptedMicroseconds_ =
+            presentation.originatingClickAcceptedMicroseconds;
+        accessoryIssuedMouseCallbackExitedMicroseconds_ =
+            presentation.originatingMouseCallbackExitedMicroseconds;
         accessoryIssuedCommandTerminal_ = false;
         accessoryAwaitingFirstFrameCommandIdentity_ = 0;
         accessoryCommandCommitStartedMicroseconds_ =
@@ -1681,6 +1702,12 @@ void OverlayWindow::UpdateAccessory(
             brain::BrainOwnedAccessoryPublicationFact failed;
             failed.commandIdentity = accessoryIssuedCommandIdentity_;
             failed.lifecycleEpoch = accessoryIssuedLifecycleEpoch_;
+            failed.originatingClickSequence =
+                accessoryIssuedOriginatingClickSequence_;
+            failed.originatingClickAcceptedMicroseconds =
+                accessoryIssuedClickAcceptedMicroseconds_;
+            failed.originatingMouseCallbackExitedMicroseconds =
+                accessoryIssuedMouseCallbackExitedMicroseconds_;
             failed.appliedCommandIdentity = accessoryPresentation_.commandIdentity;
             failed.disposition =
                 brain::BrainOwnedAccessoryPublicationDisposition::
@@ -1692,6 +1719,11 @@ void OverlayWindow::UpdateAccessory(
             failed.commandElapsedMicroseconds =
                 AccessoryWallClockMicroseconds() -
                 accessoryCommandCommitStartedMicroseconds_;
+            if (accessoryIssuedClickAcceptedMicroseconds_ != 0) {
+                failed.clickToTerminalMicroseconds =
+                    AccessoryWallClockMicroseconds() -
+                    accessoryIssuedClickAcceptedMicroseconds_;
+            }
             if (QueueAccessoryPublicationFact(failed)) {
                 accessoryIssuedCommandTerminal_ = true;
             }
@@ -1711,6 +1743,12 @@ void OverlayWindow::UpdateAccessory(
             brain::BrainOwnedAccessoryPublicationFact failed;
             failed.commandIdentity = accessoryIssuedCommandIdentity_;
             failed.lifecycleEpoch = accessoryIssuedLifecycleEpoch_;
+            failed.originatingClickSequence =
+                accessoryIssuedOriginatingClickSequence_;
+            failed.originatingClickAcceptedMicroseconds =
+                accessoryIssuedClickAcceptedMicroseconds_;
+            failed.originatingMouseCallbackExitedMicroseconds =
+                accessoryIssuedMouseCallbackExitedMicroseconds_;
             failed.appliedCommandIdentity = accessoryPresentation_.commandIdentity;
             failed.disposition =
                 brain::BrainOwnedAccessoryPublicationDisposition::
@@ -1721,6 +1759,11 @@ void OverlayWindow::UpdateAccessory(
             failed.commandElapsedMicroseconds =
                 AccessoryWallClockMicroseconds() -
                 accessoryCommandCommitStartedMicroseconds_;
+            if (accessoryIssuedClickAcceptedMicroseconds_ != 0) {
+                failed.clickToTerminalMicroseconds =
+                    AccessoryWallClockMicroseconds() -
+                    accessoryIssuedClickAcceptedMicroseconds_;
+            }
             if (QueueAccessoryPublicationFact(failed)) {
                 accessoryIssuedCommandTerminal_ = true;
             }
@@ -1933,6 +1976,12 @@ void OverlayWindow::UpdateAccessory(
             brain::BrainOwnedAccessoryPublicationFact failed;
             failed.commandIdentity = accessoryIssuedCommandIdentity_;
             failed.lifecycleEpoch = accessoryIssuedLifecycleEpoch_;
+            failed.originatingClickSequence =
+                accessoryIssuedOriginatingClickSequence_;
+            failed.originatingClickAcceptedMicroseconds =
+                accessoryIssuedClickAcceptedMicroseconds_;
+            failed.originatingMouseCallbackExitedMicroseconds =
+                accessoryIssuedMouseCallbackExitedMicroseconds_;
             failed.appliedCommandIdentity = accessoryPresentation_.commandIdentity;
             failed.disposition =
                 brain::BrainOwnedAccessoryPublicationDisposition::
@@ -1944,6 +1993,11 @@ void OverlayWindow::UpdateAccessory(
             failed.commandElapsedMicroseconds =
                 AccessoryWallClockMicroseconds() -
                 accessoryCommandCommitStartedMicroseconds_;
+            if (accessoryIssuedClickAcceptedMicroseconds_ != 0) {
+                failed.clickToTerminalMicroseconds =
+                    AccessoryWallClockMicroseconds() -
+                    accessoryIssuedClickAcceptedMicroseconds_;
+            }
             if (QueueAccessoryPublicationFact(failed)) {
                 accessoryIssuedCommandTerminal_ = true;
             }
@@ -1982,6 +2036,12 @@ void OverlayWindow::UpdateAccessory(
             brain::BrainOwnedAccessoryPublicationFact committed;
             committed.commandIdentity = presentation.commandIdentity;
             committed.lifecycleEpoch = presentation.lifecycleEpoch;
+            committed.originatingClickSequence =
+                accessoryIssuedOriginatingClickSequence_;
+            committed.originatingClickAcceptedMicroseconds =
+                accessoryIssuedClickAcceptedMicroseconds_;
+            committed.originatingMouseCallbackExitedMicroseconds =
+                accessoryIssuedMouseCallbackExitedMicroseconds_;
             committed.appliedCommandIdentity = presentation.commandIdentity;
             committed.disposition =
                 brain::BrainOwnedAccessoryPublicationDisposition::Committed;
@@ -2000,6 +2060,11 @@ void OverlayWindow::UpdateAccessory(
             committed.commandElapsedMicroseconds =
                 accessoryCommandCommittedMicroseconds_ -
                 accessoryCommandCommitStartedMicroseconds_;
+            if (accessoryIssuedClickAcceptedMicroseconds_ != 0) {
+                committed.clickToTerminalMicroseconds =
+                    accessoryCommandCommittedMicroseconds_ -
+                    accessoryIssuedClickAcceptedMicroseconds_;
+            }
             if (QueueAccessoryPublicationFact(committed)) {
                 accessoryIssuedCommandTerminal_ = true;
             }
@@ -2027,11 +2092,11 @@ void OverlayWindow::UpdateAccessory(
     }
 }
 
-void OverlayWindow::SetAccessoryInputDispatchCallback(
-    OverlayAccessoryInputDispatchCallback callback,
+void OverlayWindow::SetAccessoryInputWakeCallback(
+    OverlayAccessoryInputWakeCallback callback,
     void* refcon) {
-    accessoryInputDispatchCallback_ = callback;
-    accessoryInputDispatchRefcon_ = refcon;
+    accessoryInputWakeCallback_ = callback;
+    accessoryInputWakeRefcon_ = refcon;
 }
 
 bool OverlayWindow::BeginAccessoryInputDispatch(
@@ -2041,6 +2106,21 @@ bool OverlayWindow::BeginAccessoryInputDispatch(
         outFact->dispatchStartedMicroseconds = AccessoryWallClockMicroseconds();
     }
     return began;
+}
+
+bool OverlayWindow::HasPendingAccessoryClickFacts() const {
+    return accessoryClickQueue_.PendingCount() != 0;
+}
+
+bool OverlayWindow::HasPendingAccessoryWork() const {
+    return accessoryClickQueue_.PendingCount() != 0 ||
+        accessoryPublicationFacts_.PendingCount() != 0 ||
+        (accessoryIssuedCommandIdentity_ != 0 &&
+         !accessoryIssuedCommandTerminal_);
+}
+
+std::uint64_t OverlayWindow::GetAccessoryInputNotificationSequence() const {
+    return accessoryClickQueue_.NotificationSequence();
 }
 
 std::size_t OverlayWindow::DiscardPendingAccessoryClickFacts() {
@@ -2080,6 +2160,11 @@ void OverlayWindow::CancelUndeliveredAccessoryCommandForLifecycle() {
     brain::BrainOwnedAccessoryPublicationFact fact;
     fact.commandIdentity = accessoryIssuedCommandIdentity_;
     fact.lifecycleEpoch = accessoryIssuedLifecycleEpoch_;
+    fact.originatingClickSequence = accessoryIssuedOriginatingClickSequence_;
+    fact.originatingClickAcceptedMicroseconds =
+        accessoryIssuedClickAcceptedMicroseconds_;
+    fact.originatingMouseCallbackExitedMicroseconds =
+        accessoryIssuedMouseCallbackExitedMicroseconds_;
     fact.appliedCommandIdentity = accessoryPresentation_.commandIdentity;
     fact.disposition =
         brain::BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
@@ -2092,6 +2177,11 @@ void OverlayWindow::CancelUndeliveredAccessoryCommandForLifecycle() {
     fact.commandElapsedMicroseconds =
         now >= accessoryCommandCommitStartedMicroseconds_
         ? now - accessoryCommandCommitStartedMicroseconds_ : 0;
+    if (accessoryIssuedClickAcceptedMicroseconds_ != 0 &&
+        now >= accessoryIssuedClickAcceptedMicroseconds_) {
+        fact.clickToTerminalMicroseconds =
+            now - accessoryIssuedClickAcceptedMicroseconds_;
+    }
     if (QueueAccessoryPublicationFact(fact)) {
         accessoryIssuedCommandTerminal_ = true;
         accessoryAwaitingFirstFrameCommandIdentity_ = 0;
@@ -2112,7 +2202,10 @@ OverlayWindow::GetAccessoryIntegrationCounters() const {
     counters.clickFactsPending = accessoryClickQueue_.PendingCount();
     counters.maximumClickQueueDepth = accessoryClickQueue_.MaximumDepth();
     counters.accessoryRenderGeneration = accessoryRenderGeneration_;
-    counters.dispatch = accessoryInputDispatcher_.Snapshot();
+    counters.clickNotificationSequence =
+        accessoryClickQueue_.NotificationSequence();
+    counters.clickWakeRequests = accessoryClickWakeRequests_;
+    counters.clickCallbackExitMarks = accessoryClickCallbackExitMarks_;
     if (accessoryPerformance_ != nullptr) {
         counters.performance = accessoryPerformance_->Snapshot();
     }
@@ -2357,11 +2450,13 @@ int OverlayWindow::HandleMouseClickCallback(
     }
 
     if (mouse == xplm_MouseDown) {
+        const auto mouseCallbackEnteredMicroseconds =
+            AccessoryWallClockMicroseconds();
         const auto accessoryHit = HitTestAccessoryOrb(
             self->accessoryLayout_, x, y);
         if (accessoryHit.handled) {
-            XPLMBringWindowToFront(windowId);
-            self->QueueAccessoryClick(accessoryHit.drawer);
+            self->QueueAccessoryClick(
+                accessoryHit.drawer, mouseCallbackEnteredMicroseconds);
             return 1;
         }
         if (!self->IsInOverlayRegion(x, y) &&
@@ -2733,6 +2828,12 @@ void OverlayWindow::Draw() {
         failed.commandIdentity =
             accessoryAwaitingFirstFrameCommandIdentity_;
         failed.lifecycleEpoch = accessoryIssuedLifecycleEpoch_;
+        failed.originatingClickSequence =
+            accessoryIssuedOriginatingClickSequence_;
+        failed.originatingClickAcceptedMicroseconds =
+            accessoryIssuedClickAcceptedMicroseconds_;
+        failed.originatingMouseCallbackExitedMicroseconds =
+            accessoryIssuedMouseCallbackExitedMicroseconds_;
         failed.appliedCommandIdentity = accessoryPresentation_.commandIdentity;
         failed.disposition =
             brain::BrainOwnedAccessoryPublicationDisposition::PublicationFailed;
@@ -2745,6 +2846,11 @@ void OverlayWindow::Draw() {
         failed.mechanicalFailureReason = "accessory-texture-unavailable";
         failed.commandElapsedMicroseconds =
             accessoryDrawCompleted - accessoryCommandCommitStartedMicroseconds_;
+        if (accessoryIssuedClickAcceptedMicroseconds_ != 0) {
+            failed.clickToTerminalMicroseconds =
+                accessoryDrawCompleted -
+                accessoryIssuedClickAcceptedMicroseconds_;
+        }
         if (QueueAccessoryPublicationFact(failed)) {
             accessoryIssuedCommandTerminal_ = true;
             accessoryAwaitingFirstFrameCommandIdentity_ = 0;
@@ -2762,6 +2868,12 @@ void OverlayWindow::Draw() {
         displayed.commandIdentity =
             accessoryAwaitingFirstFrameCommandIdentity_;
         displayed.lifecycleEpoch = accessoryIssuedLifecycleEpoch_;
+        displayed.originatingClickSequence =
+            accessoryIssuedOriginatingClickSequence_;
+        displayed.originatingClickAcceptedMicroseconds =
+            accessoryIssuedClickAcceptedMicroseconds_;
+        displayed.originatingMouseCallbackExitedMicroseconds =
+            accessoryIssuedMouseCallbackExitedMicroseconds_;
         displayed.appliedCommandIdentity =
             accessoryPresentation_.commandIdentity;
         displayed.disposition =
@@ -2783,6 +2895,11 @@ void OverlayWindow::Draw() {
             accessoryCommitOperationStartedMicroseconds_;
         displayed.commandElapsedMicroseconds =
             accessoryDrawCompleted - accessoryCommandCommitStartedMicroseconds_;
+        if (accessoryIssuedClickAcceptedMicroseconds_ != 0) {
+            displayed.clickToTerminalMicroseconds =
+                accessoryDrawCompleted -
+                accessoryIssuedClickAcceptedMicroseconds_;
+        }
         if (QueueAccessoryPublicationFact(displayed)) {
             accessoryIssuedCommandTerminal_ = true;
             accessoryAwaitingFirstFrameCommandIdentity_ = 0;
@@ -3147,19 +3264,28 @@ bool OverlayWindow::IsInAccessoryVisibleRegion(int x, int y) const {
 }
 
 void OverlayWindow::QueueAccessoryClick(
-    brain::BrainOwnedAccessoryDrawerId drawer) {
+    brain::BrainOwnedAccessoryDrawerId drawer,
+    std::uint64_t mouseCallbackEnteredMicroseconds) {
     if (drawer == brain::BrainOwnedAccessoryDrawerId::None) {
         return;
     }
+    AccessoryClickFact fact;
     const auto produced = accessoryClickQueue_.Produce(
-        drawer, AccessoryWallClockMicroseconds(), nullptr);
+        drawer, mouseCallbackEnteredMicroseconds, &fact);
     accessoryIntegrationCounters_.clickFactsProduced =
         accessoryClickQueue_.ProducedCount();
     accessoryIntegrationCounters_.clickFactsDropped =
         accessoryClickQueue_.DroppedCount();
-    if (produced && accessoryInputDispatchCallback_ != nullptr) {
-        accessoryInputDispatcher_.RecordDispatchNotification();
-        accessoryInputDispatchCallback_(accessoryInputDispatchRefcon_);
+    if (produced) {
+        if (accessoryInputWakeCallback_ != nullptr) {
+            ++accessoryClickWakeRequests_;
+            accessoryInputWakeCallback_(
+                fact.notificationSequence, accessoryInputWakeRefcon_);
+        }
+        if (accessoryClickQueue_.MarkMouseCallbackExited(
+                fact.requestSequence, AccessoryWallClockMicroseconds())) {
+            ++accessoryClickCallbackExitMarks_;
+        }
     }
 }
 

@@ -6846,6 +6846,9 @@ BrainOwnedAccessoryBoundaryDecision ClearAccessorySessionHistory(
         history.nextAcceptedSequence = 1;
     }
     state->accessory.lastConsumedClickSequence = 0;
+    state->accessory.pendingPresentationClickSequence = 0;
+    state->accessory.pendingPresentationClickAcceptedMicroseconds = 0;
+    state->accessory.pendingPresentationMouseCallbackExitedMicroseconds = 0;
     ++state->accessory.lifecycleEpoch;
     if (state->accessory.lifecycleEpoch == 0) {
         state->accessory.lifecycleEpoch = 1;
@@ -6968,6 +6971,12 @@ BrainOwnedAccessorySelectionDecision RequestBrainOwnedAccessoryDrawerSelection(
         return decision;
     }
     decision.status = BrainOwnedAccessoryOperationStatus::Available;
+    decision.requestSequence = request.requestSequence;
+    decision.clickAcceptedMicroseconds = request.clickAcceptedMicroseconds;
+    decision.mouseCallbackEnteredMicroseconds =
+        request.mouseCallbackEnteredMicroseconds;
+    decision.mouseCallbackExitedMicroseconds =
+        request.mouseCallbackExitedMicroseconds;
     decision.previousDrawer = state->accessory.activeDrawer;
     decision.activeDrawer = state->accessory.activeDrawer;
     decision.selectionGeneration = state->accessory.selectionGeneration;
@@ -6984,6 +6993,11 @@ BrainOwnedAccessorySelectionDecision RequestBrainOwnedAccessoryDrawerSelection(
     }
 
     state->accessory.lastConsumedClickSequence = request.requestSequence;
+    state->accessory.pendingPresentationClickSequence = request.requestSequence;
+    state->accessory.pendingPresentationClickAcceptedMicroseconds =
+        request.clickAcceptedMicroseconds;
+    state->accessory.pendingPresentationMouseCallbackExitedMicroseconds =
+        request.mouseCallbackExitedMicroseconds;
     if (state->accessory.activeDrawer == request.drawer) {
         state->accessory.activeDrawer = BrainOwnedAccessoryDrawerId::None;
         decision.action = BrainOwnedAccessoryDrawerAction::Closed;
@@ -7046,6 +7060,14 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
             accessory.cachedPresentationSnapshot->railPresentationRevision;
         handle.drawerContentRevision =
             accessory.cachedPresentationSnapshot->drawerContentRevision;
+        handle.originatingClickSequence =
+            accessory.cachedPresentationSnapshot->originatingClickSequence;
+        handle.originatingClickAcceptedMicroseconds =
+            accessory.cachedPresentationSnapshot->
+                originatingClickAcceptedMicroseconds;
+        handle.originatingMouseCallbackExitedMicroseconds =
+            accessory.cachedPresentationSnapshot->
+                originatingMouseCallbackExitedMicroseconds;
         return handle;
     }
 
@@ -7060,6 +7082,12 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
     snapshot->commandIdentity = accessory.nextPresentationCommandIdentity++;
     snapshot->lifecycleEpoch = accessory.lifecycleEpoch;
     snapshot->callsignIdentity = accessory.callsignIdentity;
+    snapshot->originatingClickSequence =
+        accessory.pendingPresentationClickSequence;
+    snapshot->originatingClickAcceptedMicroseconds =
+        accessory.pendingPresentationClickAcceptedMicroseconds;
+    snapshot->originatingMouseCallbackExitedMicroseconds =
+        accessory.pendingPresentationMouseCallbackExitedMicroseconds;
     for (std::size_t index = 0; index < accessory.histories.size(); ++index) {
         snapshot->drawerHistoryGenerations[index] =
             accessory.histories[index].generation;
@@ -7171,6 +7199,14 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
     handle.lifecycleEpoch = handle.snapshot->lifecycleEpoch;
     handle.railPresentationRevision = handle.snapshot->railPresentationRevision;
     handle.drawerContentRevision = handle.snapshot->drawerContentRevision;
+    handle.originatingClickSequence = handle.snapshot->originatingClickSequence;
+    handle.originatingClickAcceptedMicroseconds =
+        handle.snapshot->originatingClickAcceptedMicroseconds;
+    handle.originatingMouseCallbackExitedMicroseconds =
+        handle.snapshot->originatingMouseCallbackExitedMicroseconds;
+    accessory.pendingPresentationClickSequence = 0;
+    accessory.pendingPresentationClickAcceptedMicroseconds = 0;
+    accessory.pendingPresentationMouseCallbackExitedMicroseconds = 0;
     return handle;
 }
 
@@ -7311,6 +7347,9 @@ BrainOwnedAccessoryBoundaryDecision DisableBrainOwnedAccessoryRuntime(
         }
         state->accessory.cachedPresentationSnapshot.reset();
         state->accessory.cachedPreparationSnapshots = {};
+        state->accessory.pendingPresentationClickSequence = 0;
+        state->accessory.pendingPresentationClickAcceptedMicroseconds = 0;
+        state->accessory.pendingPresentationMouseCallbackExitedMicroseconds = 0;
     }
     return decision;
 }

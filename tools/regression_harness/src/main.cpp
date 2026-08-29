@@ -17426,6 +17426,433 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         requireSuccessfulMetarOrb(
             &f.state, "KDFW", "VFR",
             BrainOwnedAccessoryOrbPresentation::Tone::Green);
+    } else if (probe.rfind("accessory_input_boundary_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        struct CorrectedInputBoundary {
+            BrainOwnedRuntimeState brain;
+            AccessoryClickFactQueue clicks;
+            BrainOwnedAccessoryDrawerId visibleDrawer =
+                BrainOwnedAccessoryDrawerId::None;
+            bool mouseCallbackActive = false;
+            bool brainStartedInsideMouseCallback = false;
+            bool wakePerformedSemanticWork = false;
+            std::uint64_t brainRequestCount = 0;
+            std::uint64_t commandCount = 0;
+            std::uint64_t terminalCount = 0;
+            std::uint64_t wakeCount = 0;
+            std::uint64_t cycleCount = 0;
+            std::uint64_t discardedCount = 0;
+            std::uint64_t maximumTerminalMicroseconds = 0;
+            std::uint64_t nowMicroseconds = 1'000;
+            std::vector<BrainOwnedAccessoryDrawerId> capturedDrawers;
+            std::vector<BrainOwnedAccessoryDrawerAction> decisions;
+            std::vector<BrainOwnedAccessoryDrawerId> visibleTrace;
+            std::vector<std::uint64_t> commandIdentities;
+            std::vector<std::uint64_t> terminalClickSequences;
+
+            void SetActive(BrainOwnedAccessoryDrawerId drawer) {
+                brain.accessory.activeDrawer = drawer;
+                brain.accessory.selectionGeneration = 1;
+                visibleDrawer = drawer;
+            }
+
+            void MouseDown(BrainOwnedAccessoryDrawerId drawer) {
+                mouseCallbackActive = true;
+                AccessoryClickFact produced;
+                if (!clicks.Produce(drawer, nowMicroseconds++,
+                                    &produced)) {
+                    mouseCallbackActive = false;
+                    return;
+                }
+                capturedDrawers.push_back(produced.drawer);
+                // The only post-enqueue operation is the mechanical wake.
+                ++wakeCount;
+                clicks.MarkMouseCallbackExited(
+                    produced.requestSequence, nowMicroseconds++);
+                mouseCallbackActive = false;
+            }
+
+            void Complete(
+                const BrainOwnedAccessoryPresentationHandle& command,
+                std::uint64_t elapsedMicroseconds = 100) {
+                BrainOwnedAccessoryPublicationFact terminal;
+                terminal.commandIdentity = command.commandIdentity;
+                terminal.lifecycleEpoch = command.lifecycleEpoch;
+                terminal.appliedCommandIdentity = command.commandIdentity;
+                terminal.originatingClickSequence =
+                    command.originatingClickSequence;
+                terminal.originatingClickAcceptedMicroseconds =
+                    command.originatingClickAcceptedMicroseconds;
+                terminal.originatingMouseCallbackExitedMicroseconds =
+                    command.originatingMouseCallbackExitedMicroseconds;
+                terminal.disposition =
+                    BrainOwnedAccessoryPublicationDisposition::
+                        FirstFrameDisplayed;
+                terminal.activeDrawerRendered =
+                    command.snapshot->activeDrawer;
+                terminal.commandElapsedMicroseconds = elapsedMicroseconds;
+                terminal.clickToTerminalMicroseconds = elapsedMicroseconds;
+                const auto disposition =
+                    ConsumeBrainOwnedAccessoryPublicationFact(&brain, terminal);
+                if (disposition.consumed) {
+                    ++terminalCount;
+                    terminalClickSequences.push_back(
+                        command.originatingClickSequence);
+                    maximumTerminalMicroseconds = std::max(
+                        maximumTerminalMicroseconds, elapsedMicroseconds);
+                }
+                visibleDrawer = command.snapshot->activeDrawer;
+                visibleTrace.push_back(visibleDrawer);
+            }
+
+            std::size_t Cycle(
+                bool publicationCapacity = true,
+                std::size_t budget = 8,
+                std::uint64_t terminalElapsedMicroseconds = 100) {
+                ++cycleCount;
+                if (!publicationCapacity) return 0;
+                std::size_t consumedCount = 0;
+                AccessoryClickFact consumed;
+                while (budget-- != 0 && clicks.Consume(&consumed)) {
+                    ++consumedCount;
+                    brainStartedInsideMouseCallback =
+                        brainStartedInsideMouseCallback || mouseCallbackActive;
+                    BrainOwnedAccessorySelectionRequest request;
+                    request.drawer = consumed.drawer;
+                    request.requestSequence = consumed.requestSequence;
+                    request.clickAcceptedMicroseconds =
+                        consumed.startedMicroseconds;
+                    request.mouseCallbackEnteredMicroseconds =
+                        consumed.mouseCallbackEnteredMicroseconds;
+                    request.mouseCallbackExitedMicroseconds =
+                        consumed.mouseCallbackExitedMicroseconds;
+                    const auto decision =
+                        RequestBrainOwnedAccessoryDrawerSelection(&brain, request);
+                    ++brainRequestCount;
+                    decisions.push_back(decision.action);
+                    const auto command = ProjectBrainOwnedAccessoryPresentation(
+                        &brain, 1, nullptr);
+                    ++commandCount;
+                    commandIdentities.push_back(command.commandIdentity);
+                    Complete(command, terminalElapsedMicroseconds);
+                }
+                return consumedCount;
+            }
+
+            void DisableDiscardPending() {
+                discardedCount += clicks.DiscardPending();
+                DisableBrainOwnedAccessoryRuntime(&brain);
+            }
+        } model;
+
+        if (probe == "accessory_input_boundary_red_mouse_callback_reenters_brain") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            require(model.brainRequestCount == 0,
+                    "mouse callback performed a brain request");
+            model.Cycle();
+            require(!model.brainStartedInsideMouseCallback,
+                    "brain selection started before mouse callback exit");
+        } else if (probe ==
+                   "accessory_input_boundary_red_atis_single_click_does_not_switch") {
+            model.SetActive(BrainOwnedAccessoryDrawerId::Metar);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.Cycle();
+            require(model.visibleDrawer == BrainOwnedAccessoryDrawerId::Atis,
+                    "single ATIS click did not switch through brain cycle");
+        } else if (probe ==
+                   "accessory_input_boundary_red_pdc_single_click_does_not_switch") {
+            model.SetActive(BrainOwnedAccessoryDrawerId::Metar);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Pdc);
+            model.Cycle();
+            require(model.visibleDrawer == BrainOwnedAccessoryDrawerId::Pdc,
+                    "single PDC click did not switch through brain cycle");
+        } else if (probe ==
+                   "accessory_input_boundary_red_double_click_closes_wrong_drawer") {
+            model.SetActive(BrainOwnedAccessoryDrawerId::Metar);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.Cycle();
+            require(model.capturedDrawers.size() == 2 &&
+                        model.capturedDrawers[0] == BrainOwnedAccessoryDrawerId::Atis &&
+                        model.capturedDrawers[1] == BrainOwnedAccessoryDrawerId::Atis,
+                    "double-click facts did not preserve ATIS identity");
+            require(model.visibleTrace.size() == 2 &&
+                        model.visibleTrace[0] == BrainOwnedAccessoryDrawerId::Atis &&
+                        model.visibleTrace[1] == BrainOwnedAccessoryDrawerId::None,
+                    "two ATIS facts did not independently switch then close");
+        } else if (probe ==
+                   "accessory_input_boundary_red_legacy_dispatch_accounting_false_zero") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.Cycle();
+            require(model.brainRequestCount == 1 && model.commandCount == 1 &&
+                        model.terminalCount == 1,
+                    "actual brain-cycle accounting did not serialize the action");
+        } else if (probe == "accessory_input_boundary_mouse_callback_capture_only") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            require(model.clicks.PendingCount() == 1 &&
+                        model.brainRequestCount == 0 && model.commandCount == 0 &&
+                        model.wakeCount == 1 && !model.wakePerformedSemanticWork,
+                    "mouse callback exceeded fact-capture and wake authority");
+        } else if (probe ==
+                   "accessory_input_boundary_callback_exit_precedes_brain_decision") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Pdc);
+            model.Cycle();
+            require(!model.brainStartedInsideMouseCallback &&
+                        model.brainRequestCount == 1,
+                    "brain decision did not follow callback exit");
+        } else if (probe ==
+                   "accessory_input_boundary_exact_drawer_hit_test_closed_geometry" ||
+                   probe ==
+                   "accessory_input_boundary_exact_drawer_hit_test_open_geometry") {
+            AccessoryLayoutInput input;
+            input.screenWidth = 1920;
+            input.screenHeight = 1080;
+            input.windowLeft = 100;
+            input.windowTop = 900;
+            input.scale = 1.0f;
+            input.cardAnimationProgress = 1.0f;
+            input.drawerOpen = probe.find("open_geometry") != std::string::npos;
+            const auto layout = ResolveAccessoryLayout(input);
+            require(layout.orbs.size() == 3,
+                    "production accessory layout did not expose three ORBs");
+            for (const auto& orb : layout.orbs) {
+                const auto hit = HitTestAccessoryOrb(
+                    layout,
+                    (orb.bounds.left + orb.bounds.right) / 2,
+                    (orb.bounds.bottom + orb.bounds.top) / 2);
+                require(hit.handled && hit.drawer == orb.drawer,
+                        "committed geometry remapped an exact drawer hit");
+            }
+        } else if (probe == "accessory_input_boundary_click_fact_fifo_order") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Metar);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Pdc);
+            model.Cycle();
+            require(model.capturedDrawers == std::vector<BrainOwnedAccessoryDrawerId>{
+                        BrainOwnedAccessoryDrawerId::Metar,
+                        BrainOwnedAccessoryDrawerId::Atis,
+                        BrainOwnedAccessoryDrawerId::Pdc} &&
+                        model.visibleDrawer == BrainOwnedAccessoryDrawerId::Pdc,
+                    "click facts were not consumed in FIFO order");
+        } else if (probe ==
+                   "accessory_input_boundary_closed_opens_exact_requested_drawer") {
+            for (const auto drawer : {BrainOwnedAccessoryDrawerId::Metar,
+                                      BrainOwnedAccessoryDrawerId::Atis,
+                                      BrainOwnedAccessoryDrawerId::Pdc}) {
+                CorrectedInputBoundary fixture;
+                fixture.MouseDown(drawer);
+                fixture.Cycle();
+                require(fixture.visibleDrawer == drawer,
+                        "closed state did not open exact requested drawer");
+            }
+        } else if (probe ==
+                   "accessory_input_boundary_active_drawer_click_closes") {
+            for (const auto drawer : {BrainOwnedAccessoryDrawerId::Metar,
+                                      BrainOwnedAccessoryDrawerId::Atis,
+                                      BrainOwnedAccessoryDrawerId::Pdc}) {
+                CorrectedInputBoundary fixture;
+                fixture.SetActive(drawer);
+                fixture.MouseDown(drawer);
+                fixture.Cycle();
+                require(fixture.visibleDrawer == BrainOwnedAccessoryDrawerId::None,
+                        "active drawer click did not close");
+            }
+        } else if (probe ==
+                   "accessory_input_boundary_different_drawer_click_switches") {
+            for (const auto from : {BrainOwnedAccessoryDrawerId::Metar,
+                                    BrainOwnedAccessoryDrawerId::Atis,
+                                    BrainOwnedAccessoryDrawerId::Pdc}) {
+                for (const auto to : {BrainOwnedAccessoryDrawerId::Metar,
+                                      BrainOwnedAccessoryDrawerId::Atis,
+                                      BrainOwnedAccessoryDrawerId::Pdc}) {
+                    if (from == to) continue;
+                    CorrectedInputBoundary fixture;
+                    fixture.SetActive(from);
+                    fixture.MouseDown(to);
+                    fixture.Cycle();
+                    require(fixture.visibleDrawer == to,
+                            "different drawer click did not switch directly");
+                }
+            }
+        } else if (probe ==
+                   "accessory_input_boundary_metar_atis_pdc_metar_sequence") {
+            for (const auto drawer : {BrainOwnedAccessoryDrawerId::Metar,
+                                      BrainOwnedAccessoryDrawerId::Atis,
+                                      BrainOwnedAccessoryDrawerId::Pdc,
+                                      BrainOwnedAccessoryDrawerId::Metar}) {
+                model.MouseDown(drawer);
+                model.Cycle();
+            }
+            require(model.visibleDrawer == BrainOwnedAccessoryDrawerId::Metar &&
+                        model.brainRequestCount == 4 && model.terminalCount == 4,
+                    "METAR-ATIS-PDC-METAR sequence was not fully accounted");
+        } else if (probe == "accessory_input_boundary_atis_empty_state_visible" ||
+                   probe == "accessory_input_boundary_pdc_empty_state_visible") {
+            const auto drawer = probe.find("atis") != std::string::npos
+                ? BrainOwnedAccessoryDrawerId::Atis
+                : BrainOwnedAccessoryDrawerId::Pdc;
+            model.MouseDown(drawer);
+            model.Cycle();
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                &model.brain, 1, nullptr);
+            require(command.snapshot != nullptr &&
+                        command.snapshot->activeDrawer == drawer &&
+                        command.snapshot->drawerTitle ==
+                            (drawer == BrainOwnedAccessoryDrawerId::Atis
+                                ? "ATIS" : "PDC") &&
+                        !command.snapshot->emptyStateText.empty(),
+                    "empty accessory drawer did not present truthful state");
+        } else if (probe ==
+                   "accessory_input_boundary_double_click_two_ordered_brain_facts") {
+            model.SetActive(BrainOwnedAccessoryDrawerId::Metar);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.Cycle();
+            require(model.decisions == std::vector<BrainOwnedAccessoryDrawerAction>{
+                        BrainOwnedAccessoryDrawerAction::Switched,
+                        BrainOwnedAccessoryDrawerAction::Closed} &&
+                        model.terminalCount == 2,
+                    "double click was not two ordered brain facts");
+        } else if (probe ==
+                   "accessory_input_boundary_rapid_alternating_clicks_no_loss") {
+            for (int index = 0; index < 60; ++index) {
+                model.MouseDown(index % 3 == 0
+                    ? BrainOwnedAccessoryDrawerId::Metar
+                    : index % 3 == 1
+                        ? BrainOwnedAccessoryDrawerId::Atis
+                        : BrainOwnedAccessoryDrawerId::Pdc);
+                if ((index + 1) % 8 == 0) model.Cycle();
+            }
+            while (model.clicks.PendingCount() != 0) model.Cycle();
+            require(model.clicks.DroppedCount() == 0 &&
+                        model.brainRequestCount == 60 &&
+                        model.terminalCount == 60,
+                    "rapid controlled input lost a click");
+        } else if (probe ==
+                   "accessory_input_boundary_publication_capacity_defers_without_loss") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            const auto activeAfterEnable = ResolveAccessoryFlightLoopCadence(
+                model.clicks.PendingCount() != 0, 10.0f);
+            require(activeAfterEnable.nextCycle &&
+                        activeAfterEnable.intervalSeconds == -1.0f,
+                    "click after enable did not bypass initial delay");
+            require(model.Cycle(false) == 0 &&
+                        model.clicks.PendingCount() == 1,
+                    "publication pressure dropped or consumed deferred input");
+            require(model.Cycle(true, 8, 250'000) == 1 &&
+                        model.clicks.PendingCount() == 0 &&
+                        model.maximumTerminalMicroseconds < 500'000,
+                    "deferred preparation was not harvested below 500 ms");
+            const auto settled = ResolveAccessoryFlightLoopCadence(
+                model.clicks.PendingCount() != 0, 0.25f);
+            require(!settled.nextCycle && settled.intervalSeconds == 0.25f,
+                    "terminal completion did not restore normal cadence");
+        } else if (probe ==
+                   "accessory_input_boundary_every_consumed_click_one_brain_decision") {
+            for (const auto drawer : {BrainOwnedAccessoryDrawerId::Metar,
+                                      BrainOwnedAccessoryDrawerId::Atis,
+                                      BrainOwnedAccessoryDrawerId::Pdc}) {
+                model.MouseDown(drawer);
+            }
+            model.Cycle();
+            require(model.clicks.ConsumedCount() == 3 &&
+                        model.brainRequestCount == 3 &&
+                        model.decisions.size() == 3,
+                    "consumed click and brain decision counts diverged");
+        } else if (probe ==
+                   "accessory_input_boundary_every_issued_command_one_terminal_fact") {
+            for (const auto drawer : {BrainOwnedAccessoryDrawerId::Metar,
+                                      BrainOwnedAccessoryDrawerId::Atis,
+                                      BrainOwnedAccessoryDrawerId::Pdc}) {
+                model.MouseDown(drawer);
+                model.Cycle();
+            }
+            require(model.commandCount == 3 && model.terminalCount == 3 &&
+                        model.commandIdentities.size() == 3 &&
+                        model.terminalClickSequences.size() == 3,
+                    "issued command lacked exactly one terminal fact");
+        } else if (probe ==
+                   "accessory_input_boundary_lifecycle_with_pending_clicks_truthful") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Pdc);
+            model.DisableDiscardPending();
+            require(model.discardedCount == 2 &&
+                        model.clicks.PendingCount() == 0 &&
+                        model.clicks.ProducedCount() ==
+                            model.clicks.ConsumedCount() +
+                            model.clicks.DiscardedCount() +
+                            model.clicks.DroppedCount(),
+                    "lifecycle discard accounting was not exact");
+        } else if (probe ==
+                   "accessory_input_boundary_disable_reenable_sequence_clean") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.DisableDiscardPending();
+            EnableBrainOwnedAccessoryRuntime(&model.brain);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Pdc);
+            model.Cycle();
+            require(model.visibleDrawer == BrainOwnedAccessoryDrawerId::Pdc &&
+                        model.clicks.PendingCount() == 0 &&
+                        !model.brainStartedInsideMouseCallback,
+                    "re-enable retained stale input or initial-delay blocking");
+        } else if (probe ==
+                   "accessory_input_boundary_accessory_selection_preserves_metar_state") {
+            Step4Fixture metar;
+            metar.Cycle();
+            metar.AcceptPrimary(primaryVfr);
+            const auto primaryBefore = metar.state.metar.primaryAirportIcao;
+            const auto parseBefore = metar.state.metar.parseCount;
+            const auto historyBefore = metar.state.metar.historyMutationCount;
+            BrainOwnedAccessorySelectionRequest request;
+            request.drawer = BrainOwnedAccessoryDrawerId::Atis;
+            request.requestSequence = 1;
+            RequestBrainOwnedAccessoryDrawerSelection(&metar.state, request);
+            require(metar.state.metar.primaryAirportIcao == primaryBefore &&
+                        metar.state.metar.parseCount == parseBefore &&
+                        metar.state.metar.historyMutationCount == historyBefore &&
+                        metar.worker.requests.size() == 1,
+                    "accessory selection changed METAR product state");
+        } else if (probe ==
+                   "accessory_input_boundary_one_thousand_click_production_path_stress") {
+            for (int index = 0; index < 1'000; ++index) {
+                model.MouseDown(index % 3 == 0
+                    ? BrainOwnedAccessoryDrawerId::Metar
+                    : index % 3 == 1
+                        ? BrainOwnedAccessoryDrawerId::Atis
+                        : BrainOwnedAccessoryDrawerId::Pdc);
+                model.Cycle(true, 8, 100);
+            }
+            require(model.clicks.ProducedCount() == 1'000 &&
+                        model.clicks.ConsumedCount() == 1'000 &&
+                        model.clicks.DroppedCount() == 0 &&
+                        model.brainRequestCount == 1'000 &&
+                        model.commandCount == 1'000 &&
+                        model.terminalCount == 1'000 &&
+                        model.clicks.PendingCount() == 0 &&
+                        model.maximumTerminalMicroseconds < 500'000,
+                    "1000-click production path did not end fully accounted");
+            std::cout << "STEP4_ACCESSORY_INPUT_STRESS: produced=1000"
+                      << " consumed=1000 decisions=1000 commands=1000"
+                      << " terminals=1000 dropped=0 queued=0"
+                      << " publication_queue=0 behavioral_in_flight=false"
+                      << " max_terminal_us="
+                      << model.maximumTerminalMicroseconds << "\n";
+        } else if (probe ==
+                   "accessory_input_boundary_one_hundred_thousand_warm_idle_zero_work") {
+            const auto normal = ResolveAccessoryFlightLoopCadence(false, 0.25f);
+            for (int index = 0; index < 100'000; ++index) {
+                require(!normal.nextCycle && normal.intervalSeconds == 0.25f,
+                        "unchanged idle retained active cadence");
+            }
+            require(model.brainRequestCount == 0 && model.commandCount == 0 &&
+                        model.terminalCount == 0 && model.wakeCount == 0 &&
+                        model.clicks.PendingCount() == 0,
+                    "warm idle performed accessory product work");
+            std::cout << "STEP4_ACCESSORY_INPUT_WARM_IDLE: cycles=100000"
+                      << " click_consumption=0 decisions=0 commands=0"
+                      << " preparation=0 history=0 wrapping=0 rasters=0"
+                      << " uploads=0 publications=0 diagnostics=0"
+                      << " cadence_seconds=0.25\n";
+        }
     } else if (probe == "accessory_dispatch_stress") {
         using namespace xvatsim::modules::overlay;
         AccessoryClickFactQueue queue;
@@ -17773,11 +18200,15 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "draw-time competing presentation commit remains");
     } else if (probe == "accessory_bounded_diagnostics") {
         require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
-                                  "supersededGenerationCompletions"),
-                "accessory supersession summary missing");
+                                  "accessoryClickTerminalFacts"),
+                "authoritative click terminal summary missing");
         require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
-                                  "maximumInFlightMicroseconds"),
-                "accessory liveness maximum missing");
+                                  "accessoryMaximumClickToTerminalUs"),
+                "authoritative click-to-terminal maximum missing");
+        require(Step4FileContains(
+                    "brain/include/XVatsim/brain/BrainOwnedRuntime.h",
+                    "SupersededAfterCommitBeforeFirstFrame"),
+                "brain-command supersession disposition missing");
     } else {
         std::cerr << "STEP4_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
                   << ": unknown probe " << probe << "\n";

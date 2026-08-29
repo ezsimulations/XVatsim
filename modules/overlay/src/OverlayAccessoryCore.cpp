@@ -2065,6 +2065,16 @@ AccessoryPresentationWarmResult RunUnchangedAccessoryPresentationUpdates(
     return result;
 }
 
+AccessoryFlightLoopCadenceDecision ResolveAccessoryFlightLoopCadence(
+    bool boundedAccessoryWorkPending,
+    float normalIntervalSeconds) {
+    AccessoryFlightLoopCadenceDecision decision;
+    decision.nextCycle = boundedAccessoryWorkPending;
+    decision.intervalSeconds = boundedAccessoryWorkPending
+        ? -1.0f : normalIntervalSeconds;
+    return decision;
+}
+
 bool AccessoryClickFactQueue::Produce(
     brain::BrainOwnedAccessoryDrawerId drawer,
     std::uint64_t startedMicroseconds,
@@ -2079,7 +2089,9 @@ bool AccessoryClickFactQueue::Produce(
     AccessoryClickFact fact;
     fact.drawer = drawer;
     fact.requestSequence = nextSequence_++;
+    fact.notificationSequence = ++notificationSequence_;
     fact.startedMicroseconds = startedMicroseconds;
+    fact.mouseCallbackEnteredMicroseconds = startedMicroseconds;
     const auto tail = (head_ + size_) % kCapacity;
     facts_[tail] = fact;
     ++size_;
@@ -2104,6 +2116,18 @@ bool AccessoryClickFactQueue::Consume(AccessoryClickFact* outFact) {
     return true;
 }
 
+bool AccessoryClickFactQueue::MarkMouseCallbackExited(
+    std::uint64_t requestSequence,
+    std::uint64_t exitedMicroseconds) {
+    for (std::size_t offset = 0; offset < size_; ++offset) {
+        const auto index = (head_ + offset) % kCapacity;
+        if (facts_[index].requestSequence != requestSequence) continue;
+        facts_[index].mouseCallbackExitedMicroseconds = exitedMicroseconds;
+        return true;
+    }
+    return false;
+}
+
 std::size_t AccessoryClickFactQueue::DiscardPending() {
     const auto discarded = size_;
     discardedCount_ += discarded;
@@ -2119,6 +2143,9 @@ std::uint64_t AccessoryClickFactQueue::DroppedCount() const { return droppedCoun
 std::uint64_t AccessoryClickFactQueue::ConsumedCount() const { return consumedCount_; }
 std::uint64_t AccessoryClickFactQueue::DiscardedCount() const { return discardedCount_; }
 std::size_t AccessoryClickFactQueue::MaximumDepth() const { return maximumDepth_; }
+std::uint64_t AccessoryClickFactQueue::NotificationSequence() const {
+    return notificationSequence_;
+}
 
 void AccessoryInputDispatchCoordinator::RecordDispatchNotification() {
     ++snapshot_.dispatchNotifications;

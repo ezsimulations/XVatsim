@@ -201,20 +201,35 @@ struct AccessoryClickFact {
     brain::BrainOwnedAccessoryDrawerId drawer =
         brain::BrainOwnedAccessoryDrawerId::None;
     std::uint64_t requestSequence = 0;
+    std::uint64_t notificationSequence = 0;
     std::uint64_t startedMicroseconds = 0;
+    std::uint64_t mouseCallbackEnteredMicroseconds = 0;
+    std::uint64_t mouseCallbackExitedMicroseconds = 0;
     std::uint64_t dispatchStartedMicroseconds = 0;
     std::array<std::uint64_t, 5> dispatchStageWallMicroseconds{};
 };
 
+struct AccessoryFlightLoopCadenceDecision {
+    bool nextCycle = false;
+    float intervalSeconds = 0.25f;
+};
+
+AccessoryFlightLoopCadenceDecision ResolveAccessoryFlightLoopCadence(
+    bool boundedAccessoryWorkPending,
+    float normalIntervalSeconds = 0.25f);
+
 class AccessoryClickFactQueue {
 public:
-    static constexpr std::size_t kCapacity = 8;
+    static constexpr std::size_t kCapacity = 64;
 
     bool Produce(
         brain::BrainOwnedAccessoryDrawerId drawer,
         std::uint64_t startedMicroseconds,
         AccessoryClickFact* outFact = nullptr);
     bool Consume(AccessoryClickFact* outFact);
+    bool MarkMouseCallbackExited(
+        std::uint64_t requestSequence,
+        std::uint64_t exitedMicroseconds);
     std::size_t DiscardPending();
     std::size_t PendingCount() const;
     std::uint64_t NextSequence() const;
@@ -223,12 +238,14 @@ public:
     std::uint64_t ConsumedCount() const;
     std::uint64_t DiscardedCount() const;
     std::size_t MaximumDepth() const;
+    std::uint64_t NotificationSequence() const;
 
 private:
     std::array<AccessoryClickFact, kCapacity> facts_{};
     std::size_t head_ = 0;
     std::size_t size_ = 0;
     std::uint64_t nextSequence_ = 1;
+    std::uint64_t notificationSequence_ = 0;
     std::uint64_t producedCount_ = 0;
     std::uint64_t droppedCount_ = 0;
     std::uint64_t consumedCount_ = 0;

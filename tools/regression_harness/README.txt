@@ -1047,3 +1047,18 @@ manual drawer ownership, Enroute KSAN, 1,000 fully accounted actions, and
 
 The saved baseline is 674 scenarios with canonical fingerprint
 `EE5B15EAE725EBA23AEA1CE9F9FEB82D0D93578C0A18EBA6129AE8B898E645C3`.
+
+Step 4 accessory input boundary proof
+-------------------------------------
+
+The 26 `v2_step4_accessory_input_boundary_*` scenarios preserve five failing
+pre-correction reproductions and exercise the corrected production-like mouse
+callback, bounded FIFO, brain-cycle selection, immutable command, mechanical
+publication, and terminal-accounting path. They cover all twelve drawer
+transitions, truthful ATIS/PDC empty states, two-click FIFO semantics, bounded
+capacity deferral, lifecycle discard/re-enable, click-after-enable and
+post-cycle wake timing, preparation-ready wake timing, 1,000 fully accounted
+clicks, and 100,000 unchanged zero-work cycles.
+
+The saved baseline is 700 scenarios with canonical fingerprint
+`C1367F24170283074D7D7371EFD4EDD1C687D7903F959CC3FA19FE3D807AAE8B`.

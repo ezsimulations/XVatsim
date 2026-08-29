@@ -13,7 +13,7 @@ its subject must be `docs: prepare V2 Step 4 session handoff`, and its scope
 must be exactly the three handoff documentation files. Its final SHA cannot be
 embedded in those same committed bytes and must be resolved from Git.
 
-Step 4 - VATSIM METAR has completed a fourth corrective offline implementation
+Step 4 - VATSIM METAR has completed a fifth corrective offline implementation
 and proof. The first correction fixed WinHTTP send completion and was live
 proven. The second corrected accessory-rail liveness and enlarged the minimal
 METAR ORB. The third makes an accepted primary METAR invalidate and publish the
@@ -21,13 +21,16 @@ rail automatically from rendered-field differences, and restores exact timing
 ownership across deferred preparation and generation binding. The fourth
 restores brain-exclusive semantic authority, exact hidden preparation identity,
 one overlay commit coordinator, nonblocking input, and truthful terminal
-publication facts. Deployment,
+publication facts. The fifth moves accessory click consumption out of the
+X-Plane mouse callback and into the next safe brain/plugin cycle, preserving
+FIFO drawer identity, single-click ATIS/PDC switching, bounded next-cycle wake,
+and authoritative click-to-terminal accounting. Deployment,
 X-Plane/xPilot startup, live VATSIM traffic, and controlled live reproof remain
 separately gated and were not performed by this correction.
 
-The corrected regression baseline is 674 saved scenarios. The canonical
+The corrected regression baseline is 700 saved scenarios. The canonical
 release-gate fingerprint is
-`EE5B15EAE725EBA23AEA1CE9F9FEB82D0D93578C0A18EBA6129AE8B898E645C3`.
+`C1367F24170283074D7D7371EFD4EDD1C687D7903F959CC3FA19FE3D807AAE8B`.
 
 The corrective gate began from zero tracked or staged changes. Two protected
 untracked evidence sets remain outside the corrective commits: the original

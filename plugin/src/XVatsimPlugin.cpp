@@ -86,6 +86,10 @@ constexpr char kRecoverCurrentFlightCommandDesc[] =
     "Recover XVatsim workflow state for the current flight.";
 constexpr float kUpdateIntervalSeconds = 0.25f;
 constexpr float kInitialFlightLoopDelaySeconds = 10.0f;
+constexpr float kAccessoryActiveFlightLoopInterval = -1.0f;
+constexpr std::size_t kAccessoryInputFactsPerCycle = 8;
+constexpr std::uint64_t kAccessorySynchronousBudgetMicroseconds = 16'700;
+constexpr std::uint64_t kAccessoryTerminalBudgetMicroseconds = 500'000;
 constexpr long long kManualQueryVisibleSeconds = 20;
 constexpr double kCruiseGateToleranceFt = 1000.0;
 constexpr double kCruiseGateStableVsFpm = 800.0;
@@ -229,6 +233,26 @@ struct PluginDiagnosticsState {
     RefreshDiagnosticsFrame frame;
 };
 
+struct AccessoryInputRuntimeAccounting {
+    std::uint64_t wakeRequests = 0;
+    std::uint64_t wakeNotificationSequence = 0;
+    std::uint64_t brainCycles = 0;
+    std::uint64_t factsConsumed = 0;
+    std::uint64_t brainDecisions = 0;
+    std::uint64_t commandsIssued = 0;
+    std::uint64_t terminalFacts = 0;
+    std::uint64_t clickTerminalFacts = 0;
+    std::uint64_t lifecycleDiscards = 0;
+    std::uint64_t callbackOrderFailures = 0;
+    std::uint64_t synchronousBudgetFailures = 0;
+    std::uint64_t livenessFailures = 0;
+    std::uint64_t activeCadenceReturns = 0;
+    std::uint64_t normalCadenceReturns = 0;
+    std::uint64_t maximumSynchronousMicroseconds = 0;
+    std::uint64_t maximumClickToTerminalMicroseconds = 0;
+    std::uint64_t lastObservedNotificationSequence = 0;
+};
+
 xvatsim::modules::aircraft_state::AircraftStateSampler gAircraftStateSampler;
 xvatsim::modules::ctaf_lookup::CtafLookupService gCtafLookupService;
 xvatsim::modules::controller_feed::ControllerFeedClient gControllerFeedClient;
@@ -268,6 +292,7 @@ xvatsim::plugin::step3_live_proof::Step3LiveProofFixtureSession
     gStep3LiveProofFixtureSession;
 #endif
 PluginDiagnosticsState gDiagnosticsState;
+AccessoryInputRuntimeAccounting gAccessoryInputAccounting;
 xvatsim::brain::BrainOwnedAccessoryProjectionCounters
     gAccessoryProjectionCounters;
 std::optional<xvatsim::core::preflight::PreflightRouteCache> gPreflightRouteCacheCandidate;
@@ -291,10 +316,14 @@ void LogMetarLifecycleDiagnostics(
     const xvatsim::brain::BrainMetarWorkerShutdownSnapshot& snapshot);
 xvatsim::brain::BrainMetarWorkerShutdownSnapshot
 ApplyBoundAsyncWorkerLifecycleBoundary(bool clearAcceptedState);
-void SynchronizeAccessoryPresentation(
+xvatsim::brain::BrainOwnedAccessoryPresentationHandle
+SynchronizeAccessoryPresentation(
     xvatsim::modules::overlay::AccessoryDispatchStageWallTimings*
         acceptedActionStages = nullptr);
-void DispatchPendingAccessoryInput(void* refcon);
+void RequestAccessoryFlightLoopWake(
+    std::uint64_t notificationSequence,
+    void* refcon);
+bool ServicePendingAccessoryInput();
 void DrainAccessoryPublicationFacts();
 void DiscardPendingAccessoryClickFacts();
 void LogRadioBoardCandidateDiffTrace(
@@ -310,6 +339,11 @@ std::string SummarizeRouteAuthorityPlan(
     const xvatsim::brain::RouteAuthorityPlan& plan);
 void ApplyPreflightRouteCacheForPlanIfNeeded(
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot);
+float FlightLoopCallback(
+    float elapsedSinceLastCall,
+    float elapsedTimeSinceLastFlightLoop,
+    int counter,
+    void* refcon);
 
 long long CurrentTickSeconds() {
     return static_cast<long long>(
@@ -2754,7 +2788,8 @@ void ResetPresentationStateForColdDark() {
 }
 
 void DiscardPendingAccessoryClickFacts() {
-    gOverlayWindow.DiscardPendingAccessoryClickFacts();
+    gAccessoryInputAccounting.lifecycleDiscards +=
+        gOverlayWindow.DiscardPendingAccessoryClickFacts();
 }
 
 void ResetSessionState() {
@@ -2981,41 +3016,126 @@ ToBrainOperatingModeLoadStatus(
     }
 }
 
-void DispatchPendingAccessoryInput(void* refcon) {
+void RequestAccessoryFlightLoopWake(
+    std::uint64_t notificationSequence,
+    void* refcon) {
     (void)refcon;
-    if (!gPluginRuntimeEnabled) {
-        return;
-    }
-    xvatsim::modules::overlay::OverlayAccessoryClickFact fact;
+    ++gAccessoryInputAccounting.wakeRequests;
+    gAccessoryInputAccounting.wakeNotificationSequence =
+        notificationSequence;
+    if (!gPluginRuntimeEnabled || !gFlightLoopRegistered) return;
+    XPLMSetFlightLoopCallbackInterval(
+        FlightLoopCallback,
+        kAccessoryActiveFlightLoopInterval,
+        1,
+        nullptr);
+}
+
+bool ServicePendingAccessoryInput() {
+    if (!gPluginRuntimeEnabled) return false;
+    bool performedWork = false;
+    bool consumedClick = false;
+    ++gAccessoryInputAccounting.brainCycles;
     DrainAccessoryPublicationFacts();
-    while (gOverlayWindow.CanAcceptAccessoryPresentationCommand() &&
+
+    xvatsim::modules::overlay::OverlayAccessoryClickFact fact;
+    std::size_t cycleBudget = kAccessoryInputFactsPerCycle;
+    while (cycleBudget != 0 &&
+           gOverlayWindow.CanAcceptAccessoryPresentationCommand() &&
            gOverlayWindow.BeginAccessoryInputDispatch(&fact)) {
+        --cycleBudget;
+        consumedClick = true;
+        performedWork = true;
+        ++gAccessoryInputAccounting.factsConsumed;
+
         xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
         request.drawer = fact.drawer;
         request.requestSequence = fact.requestSequence;
+        request.clickAcceptedMicroseconds = fact.startedMicroseconds;
+        request.mouseCallbackEnteredMicroseconds =
+            fact.mouseCallbackEnteredMicroseconds;
+        request.mouseCallbackExitedMicroseconds =
+            fact.mouseCallbackExitedMicroseconds;
         const auto brainDecisionStarted =
             xvatsim::modules::overlay::OverlayWindow::
                 AccessoryWallClockMicroseconds();
+        if (fact.mouseCallbackExitedMicroseconds == 0 ||
+            brainDecisionStarted < fact.mouseCallbackExitedMicroseconds) {
+            ++gAccessoryInputAccounting.callbackOrderFailures;
+        }
         const auto decision =
             xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
                 &gBrainOwnedRuntimeState, request);
+        const auto brainDecisionCompleted =
+            xvatsim::modules::overlay::OverlayWindow::
+                AccessoryWallClockMicroseconds();
+        ++gAccessoryInputAccounting.brainDecisions;
         fact.dispatchStageWallMicroseconds[static_cast<std::size_t>(
             xvatsim::modules::overlay::AccessoryDispatchStage::BrainDecision)] =
-                xvatsim::modules::overlay::OverlayWindow::
-                    AccessoryWallClockMicroseconds() - brainDecisionStarted;
+                brainDecisionCompleted - brainDecisionStarted;
         xvatsim::modules::overlay::AccessoryDispatchStageWallTimings stages;
         stages.elapsedMicroseconds = fact.dispatchStageWallMicroseconds;
-        SynchronizeAccessoryPresentation(&stages);
-        (void)decision;
+        const auto presentation = SynchronizeAccessoryPresentation(&stages);
+        if (presentation.commandIdentity != 0) {
+            ++gAccessoryInputAccounting.commandsIssued;
+        }
+        const auto synchronousCompleted =
+            xvatsim::modules::overlay::OverlayWindow::
+                AccessoryWallClockMicroseconds();
+        const auto synchronousUs = synchronousCompleted - brainDecisionStarted;
+        gAccessoryInputAccounting.maximumSynchronousMicroseconds = std::max(
+            gAccessoryInputAccounting.maximumSynchronousMicroseconds,
+            synchronousUs);
+        if (synchronousUs > kAccessorySynchronousBudgetMicroseconds) {
+            ++gAccessoryInputAccounting.synchronousBudgetFailures;
+        }
+
+        std::ostringstream line;
+        line << "event=accessory-input-decision"
+             << " clickSequence=" << fact.requestSequence
+             << " notificationSequence=" << fact.notificationSequence
+             << " mouseCallbackEntered="
+             << fact.mouseCallbackEnteredMicroseconds
+             << " mouseCallbackExited="
+             << fact.mouseCallbackExitedMicroseconds
+             << " brainCycle=" << gAccessoryInputAccounting.brainCycles
+             << " brainDecisionStarted=" << brainDecisionStarted
+             << " brainDecisionCompleted=" << brainDecisionCompleted
+             << " capturedDrawer=" << static_cast<int>(fact.drawer)
+             << " decisionAction=" << static_cast<int>(decision.action)
+             << " previousDrawer="
+             << static_cast<int>(decision.previousDrawer)
+             << " resultingDrawer="
+             << static_cast<int>(decision.activeDrawer)
+             << " selectionGeneration=" << decision.selectionGeneration
+             << " presentationCommandIdentity="
+             << presentation.commandIdentity
+             << " synchronousUs=" << synchronousUs;
+        AppendDiagnosticsLogLine(line.str());
+        DrainAccessoryPublicationFacts();
     }
+
+    // A previously issued command may be waiting only for its mechanical
+    // preparation result or first-frame terminal fact. Revisit that exact
+    // brain command on the active next-cycle cadence without consuming or
+    // inventing another input fact.
+    if (!consumedClick && gOverlayWindow.HasPendingAccessoryWork()) {
+        (void)SynchronizeAccessoryPresentation();
+        DrainAccessoryPublicationFacts();
+        performedWork = true;
+    }
+    gAccessoryInputAccounting.lastObservedNotificationSequence =
+        gOverlayWindow.GetAccessoryInputNotificationSequence();
+    return performedWork;
 }
 
-void SynchronizeAccessoryPresentation(
+xvatsim::brain::BrainOwnedAccessoryPresentationHandle
+SynchronizeAccessoryPresentation(
     xvatsim::modules::overlay::AccessoryDispatchStageWallTimings*
         acceptedActionStages) {
     DrainAccessoryPublicationFacts();
     if (!gOverlayWindow.CanAcceptAccessoryPresentationCommand()) {
-        return;
+        return {};
     }
     const auto projectionStarted = acceptedActionStages != nullptr
         ? xvatsim::modules::overlay::OverlayWindow::
@@ -3044,13 +3164,43 @@ void SynchronizeAccessoryPresentation(
     }
     gOverlayWindow.UpdateAccessory(presentation, acceptedActionStages);
     DrainAccessoryPublicationFacts();
+    return presentation;
 }
 
 void DrainAccessoryPublicationFacts() {
     xvatsim::brain::BrainOwnedAccessoryPublicationFact fact;
     while (gOverlayWindow.ConsumeAccessoryPublicationFact(&fact)) {
-        xvatsim::brain::ConsumeBrainOwnedAccessoryPublicationFact(
+        const auto decision =
+            xvatsim::brain::ConsumeBrainOwnedAccessoryPublicationFact(
             &gBrainOwnedRuntimeState, fact);
+        ++gAccessoryInputAccounting.terminalFacts;
+        if (fact.originatingClickSequence != 0) {
+            ++gAccessoryInputAccounting.clickTerminalFacts;
+            gAccessoryInputAccounting.maximumClickToTerminalMicroseconds =
+                std::max(
+                    gAccessoryInputAccounting.
+                        maximumClickToTerminalMicroseconds,
+                    fact.clickToTerminalMicroseconds);
+            if (fact.clickToTerminalMicroseconds >
+                kAccessoryTerminalBudgetMicroseconds) {
+                ++gAccessoryInputAccounting.livenessFailures;
+            }
+        }
+        std::ostringstream line;
+        line << "event=accessory-publication-terminal"
+             << " clickSequence=" << fact.originatingClickSequence
+             << " commandIdentity=" << fact.commandIdentity
+             << " lifecycleEpoch=" << fact.lifecycleEpoch
+             << " disposition=" << static_cast<int>(fact.disposition)
+             << " failureStage=" << static_cast<int>(fact.failureStage)
+             << " appliedCommandIdentity=" << fact.appliedCommandIdentity
+             << " activeDrawer="
+             << static_cast<int>(fact.activeDrawerRendered)
+             << " commandElapsedUs=" << fact.commandElapsedMicroseconds
+             << " clickToTerminalUs=" << fact.clickToTerminalMicroseconds
+             << " brainConsumed=" << (decision.consumed ? "true" : "false")
+             << " reason=" << SanitizeLogText(decision.reason, 96);
+        AppendDiagnosticsLogLine(line.str());
     }
 }
 
@@ -3077,7 +3227,6 @@ void LogAccessoryPerformanceSnapshot(const char* boundary) {
     std::ostringstream line;
     const auto preparation = gOverlayWindow.GetAccessoryPreparationCounters();
     const auto integration = gOverlayWindow.GetAccessoryIntegrationCounters();
-    const auto& dispatch = integration.dispatch;
     line << "event=step3-accessory-performance"
          << " boundary=" << (boundary == nullptr ? "unknown" : boundary)
          << " epoch=" << snapshot.epoch
@@ -3178,24 +3327,47 @@ void LogAccessoryPerformanceSnapshot(const char* boundary) {
          << " accessoryClicksPending=" << integration.clickFactsPending
          << " accessoryClickMaximumQueueDepth="
          << integration.maximumClickQueueDepth
-         << " accessoryRequestsBegun=" << dispatch.requestsBegun
-         << " accessoryBlockedWhileInFlight="
-         << dispatch.blockedWhileInFlight
-         << " accessoryPresentationsBound=" << dispatch.presentationsBound
-         << " accessoryExactMatchCompletions="
-         << dispatch.exactMatchCompletions
-         << " accessorySupersededGenerationCompletions="
-         << dispatch.supersededGenerationCompletions
-         << " accessoryExplicitCancellations="
-         << dispatch.explicitCancellations
-         << " accessorySelectionSupersededCancellations="
-         << dispatch.selectionSupersededCancellations
-         << " accessoryMismatchedDrawAttempts="
-         << dispatch.mismatchedDrawAttempts
-         << " accessoryMaximumInFlightUs="
-         << dispatch.maximumInFlightMicroseconds
-         << " accessoryFinalInFlight="
-         << (dispatch.inFlight ? "true" : "false");
+         << " accessoryNotificationSequence="
+         << integration.clickNotificationSequence
+         << " accessoryWakeRequests=" << integration.clickWakeRequests
+         << " accessoryCallbackExitMarks="
+         << integration.clickCallbackExitMarks
+         << " accessoryBrainCycles="
+         << gAccessoryInputAccounting.brainCycles
+         << " accessoryBrainFactsConsumed="
+         << gAccessoryInputAccounting.factsConsumed
+         << " accessoryBrainDecisions="
+         << gAccessoryInputAccounting.brainDecisions
+         << " accessoryCommandsIssued="
+         << gAccessoryInputAccounting.commandsIssued
+         << " accessoryTerminalFacts="
+         << gAccessoryInputAccounting.terminalFacts
+         << " accessoryClickTerminalFacts="
+         << gAccessoryInputAccounting.clickTerminalFacts
+         << " accessoryLifecycleDiscards="
+         << gAccessoryInputAccounting.lifecycleDiscards
+         << " accessoryCallbackOrderFailures="
+         << gAccessoryInputAccounting.callbackOrderFailures
+         << " accessorySynchronousBudgetFailures="
+         << gAccessoryInputAccounting.synchronousBudgetFailures
+         << " accessoryLivenessFailures="
+         << gAccessoryInputAccounting.livenessFailures
+         << " accessoryMaximumSynchronousUs="
+         << gAccessoryInputAccounting.maximumSynchronousMicroseconds
+         << " accessoryMaximumClickToTerminalUs="
+         << gAccessoryInputAccounting.maximumClickToTerminalMicroseconds
+         << " accessoryActiveCadenceReturns="
+         << gAccessoryInputAccounting.activeCadenceReturns
+         << " accessoryNormalCadenceReturns="
+         << gAccessoryInputAccounting.normalCadenceReturns
+         << " accessoryAccountingExact="
+         << (integration.clickFactsProduced ==
+                    integration.clickFactsConsumed +
+                    integration.clickFactsPending +
+                    integration.clickFactsDiscarded +
+                    integration.clickFactsDropped
+                ? "true" : "false")
+         << " accessoryBehavioralInFlight=false";
     for (std::size_t index = 0;
          index < static_cast<std::size_t>(
              xvatsim::modules::overlay::AccessoryPerformanceCategory::Count);
@@ -5106,6 +5278,17 @@ float FlightLoopCallback(
     (void)counter;
     (void)refcon;
 
+    const bool accessoryPendingAtEntry =
+        gOverlayWindow.HasPendingAccessoryWork() ||
+        gOverlayWindow.GetAccessoryInputNotificationSequence() !=
+            gAccessoryInputAccounting.lastObservedNotificationSequence;
+    if (accessoryPendingAtEntry) {
+        (void)ServicePendingAccessoryInput();
+        ++gAccessoryInputAccounting.activeCadenceReturns;
+        return xvatsim::modules::overlay::ResolveAccessoryFlightLoopCadence(
+            true, kUpdateIntervalSeconds).intervalSeconds;
+    }
+
     const auto refreshStarted = std::chrono::steady_clock::now();
     RefreshOverlayFromBrain();
     const auto refreshElapsedUs = ElapsedMicrosecondsSince(refreshStarted);
@@ -5123,7 +5306,14 @@ float FlightLoopCallback(
             XPLMDebugString(stream.str().c_str());
         }
     }
-    return kUpdateIntervalSeconds;
+    if (gOverlayWindow.HasPendingAccessoryWork()) {
+        ++gAccessoryInputAccounting.activeCadenceReturns;
+        return xvatsim::modules::overlay::ResolveAccessoryFlightLoopCadence(
+            true, kUpdateIntervalSeconds).intervalSeconds;
+    }
+    ++gAccessoryInputAccounting.normalCadenceReturns;
+    return xvatsim::modules::overlay::ResolveAccessoryFlightLoopCadence(
+        false, kUpdateIntervalSeconds).intervalSeconds;
 }
 
 void RegisterFlightLoop(float initialDelaySeconds = kUpdateIntervalSeconds) {
@@ -5167,8 +5357,8 @@ void LogAccessoryPreparationStartupFailure(
 
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     gPluginRuntimeEnabled = false;
-    gOverlayWindow.SetAccessoryInputDispatchCallback(
-        DispatchPendingAccessoryInput, nullptr);
+    gOverlayWindow.SetAccessoryInputWakeCallback(
+        RequestAccessoryFlightLoopWake, nullptr);
     gOverlayWindow.SetAccessoryPreparationFailureCallback(
         LogAccessoryPreparationStartupFailure, nullptr);
     XPLMEnableFeature("XPLM_USE_NATIVE_PATHS", 1);
@@ -5262,7 +5452,7 @@ PLUGIN_API void XPluginStop() {
     (void)ApplyBoundAsyncWorkerLifecycleBoundary(true);
     ResetPluginRuntimeState(true, true);
     gOverlayWindow.Destroy();
-    gOverlayWindow.SetAccessoryInputDispatchCallback(nullptr, nullptr);
+    gOverlayWindow.SetAccessoryInputWakeCallback(nullptr, nullptr);
     UnregisterPluginMenu();
     UnregisterPluginCommands();
     XPLMDebugString("[XVatsim] Plugin stopped.\n");

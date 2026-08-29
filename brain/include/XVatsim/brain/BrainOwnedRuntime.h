@@ -141,6 +141,9 @@ struct BrainOwnedAccessoryRuntimeState {
     std::uint64_t selectionGeneration = 0;
     std::uint64_t scrollResetGeneration = 0;
     std::uint64_t lastConsumedClickSequence = 0;
+    std::uint64_t pendingPresentationClickSequence = 0;
+    std::uint64_t pendingPresentationClickAcceptedMicroseconds = 0;
+    std::uint64_t pendingPresentationMouseCallbackExitedMicroseconds = 0;
     std::string callsignIdentity;
     std::uint64_t callsignIdentityGeneration = 0;
     std::uint64_t historyClearGeneration = 0;
@@ -179,6 +182,9 @@ struct BrainOwnedAccessoryHistoryDecision {
 struct BrainOwnedAccessorySelectionRequest {
     BrainOwnedAccessoryDrawerId drawer = BrainOwnedAccessoryDrawerId::None;
     std::uint64_t requestSequence = 0;
+    std::uint64_t clickAcceptedMicroseconds = 0;
+    std::uint64_t mouseCallbackEnteredMicroseconds = 0;
+    std::uint64_t mouseCallbackExitedMicroseconds = 0;
 };
 
 struct BrainOwnedAccessorySelectionDecision {
@@ -192,6 +198,10 @@ struct BrainOwnedAccessorySelectionDecision {
         BrainOwnedAccessoryDrawerId::None;
     std::uint64_t selectionGeneration = 0;
     std::uint64_t scrollResetGeneration = 0;
+    std::uint64_t requestSequence = 0;
+    std::uint64_t clickAcceptedMicroseconds = 0;
+    std::uint64_t mouseCallbackEnteredMicroseconds = 0;
+    std::uint64_t mouseCallbackExitedMicroseconds = 0;
 };
 
 struct BrainOwnedAccessoryBoundaryDecision {
@@ -244,6 +254,9 @@ struct BrainOwnedAccessoryPresentationSnapshot {
     std::uint64_t lifecycleEpoch = 0;
     std::uint64_t railPresentationRevision = 0;
     std::uint64_t drawerContentRevision = 0;
+    std::uint64_t originatingClickSequence = 0;
+    std::uint64_t originatingClickAcceptedMicroseconds = 0;
+    std::uint64_t originatingMouseCallbackExitedMicroseconds = 0;
     std::array<std::uint64_t, 3> drawerHistoryGenerations{};
     std::string callsignIdentity;
 };
@@ -264,6 +277,9 @@ struct BrainOwnedAccessoryPresentationHandle {
     std::uint64_t lifecycleEpoch = 0;
     std::uint64_t railPresentationRevision = 0;
     std::uint64_t drawerContentRevision = 0;
+    std::uint64_t originatingClickSequence = 0;
+    std::uint64_t originatingClickAcceptedMicroseconds = 0;
+    std::uint64_t originatingMouseCallbackExitedMicroseconds = 0;
 };
 
 struct BrainOwnedAccessoryPreparationSnapshot {
@@ -311,6 +327,9 @@ struct BrainOwnedAccessoryPublicationFact {
     std::uint64_t commandIdentity = 0;
     std::uint64_t lifecycleEpoch = 0;
     std::uint64_t appliedCommandIdentity = 0;
+    std::uint64_t originatingClickSequence = 0;
+    std::uint64_t originatingClickAcceptedMicroseconds = 0;
+    std::uint64_t originatingMouseCallbackExitedMicroseconds = 0;
     BrainOwnedAccessoryPublicationDisposition disposition =
         BrainOwnedAccessoryPublicationDisposition::PublicationFailed;
     BrainOwnedAccessoryPublicationFailureStage failureStage =
@@ -323,6 +342,7 @@ struct BrainOwnedAccessoryPublicationFact {
     std::uint64_t commitElapsedMicroseconds = 0;
     std::uint64_t firstFrameElapsedMicroseconds = 0;
     std::uint64_t commandElapsedMicroseconds = 0;
+    std::uint64_t clickToTerminalMicroseconds = 0;
     std::string mechanicalFailureReason;
 };
 

@@ -64,6 +64,16 @@ const VisualSpec kVisuals[]{
     {"31_identical_primary_zero_rail_difference.png", "vfr"},
     {"32_actual_rail_before_pixel_comparison.png", "unknown"},
     {"33_actual_rail_after_pixel_comparison.png", "vfr"},
+    {"34_metar_active_populated_kdfw.png", "vfr"},
+    {"35_atis_active_truthful_empty.png", "atis-ownership"},
+    {"36_pdc_active_truthful_empty.png", "pdc-ownership"},
+    {"37_metar_to_atis_result.png", "atis-ownership"},
+    {"38_atis_to_pdc_result.png", "pdc-ownership"},
+    {"39_pdc_to_metar_result.png", "vfr"},
+    {"40_active_drawer_close_result.png", "metar-closed"},
+    {"41_double_atis_final_closed.png", "metar-closed"},
+    {"42_rapid_alternating_final_metar.png", "vfr"},
+    {"43_reenable_clean_metar_state.png", "vfr"},
 };
 
 constexpr std::uint64_t kAcceptedMainCardSignature =
@@ -815,7 +825,7 @@ int main(int argc, char** argv) {
         std::cerr << "Step 4 visual proof failed\n";
         return 1;
     }
-    std::cout << "Step 4 ORB-publication visual proof wrote 33 deterministic images"
+    std::cout << "Step 4 accessory-input visual proof wrote 43 deterministic images"
               << " with exact ORB strings, transition counts, and unchanged main-card signature\n";
     return 0;
 }
