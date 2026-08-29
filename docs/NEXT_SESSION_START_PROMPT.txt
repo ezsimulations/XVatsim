@@ -3,36 +3,46 @@ Continue XVatsim V2 using the repository as the authoritative shared memory.
 Repository:
 C:\Users\DARRON\OneDrive\Documents\XVatsim-V2
 
-Locked starting state:
+PROJECT ROLES AND AUTHORITY
+
+- Darron is Product Owner and final approval authority.
+- ChatGPT is Project Director and develops Contract Gates with Darron.
+- Codex is the Engineering Agent and operates only within an approved Contract
+  Gate.
+- No implementation, deployment, application startup, live request, or
+  controlled-live proof may occur without Darron's explicit approval.
+
+LOCKED STARTING STATE
+
 - Branch: v2-development
-- Accepted Step 3 product/receipt closeout commit:
-  0c4ac545c1e484d5029e465e9eb99aa49fd19b08
-- Current HEAD is the handoff documentation commit; resolve its SHA locally.
-- Current HEAD subject: docs: prepare V2 Step 4 session handoff
-- Current HEAD parent: 0c4ac545c1e484d5029e465e9eb99aa49fd19b08
-- Current HEAD scope: exactly docs/NEXT_SESSION_HANDOFF.md,
-  docs/NEXT_SESSION_START_PROMPT.txt, and docs/MILESTONE_STATUS.md
-- V2 Steps 1, 2, and 3 are accepted and complete.
-- Saved scenarios: 494
+- Accepted engineering/receipt HEAD before the handoff documentation commit:
+  43d5776d2991167c89772afa0b80907759390c78
+- Its implementation parent:
+  55dd147476f0da786eae4a27dde26912a6227d26
+- The documentation-only handoff commit is current HEAD. Resolve its SHA
+  locally and verify its parent is:
+  43d5776d2991167c89772afa0b80907759390c78
+- Required handoff commit subject:
+  docs: update Step 4 next-session handoff
+- Required handoff commit scope: exactly docs/NEXT_SESSION_START_PROMPT.txt,
+  docs/NEXT_SESSION_HANDOFF.md, and docs/MILESTONE_STATUS.md.
+- Tracked/staged changes after the handoff commit: 0/0.
+- Standard untracked files: 391, all beneath outputs/.
+- Non-output untracked files: 0.
+- Saved scenarios: 700.
 - Canonical scenario fingerprint:
-  16AA355061096CC9EBB87A1E437422FEABB8B45CDF41D7057FF9853802BF8BCB
-- Tracked and staged changes: zero.
-- There are 116 intentionally preserved untracked evidence files under outputs/.
-  Do not modify, move, delete, stage, commit, or clean them.
-- Preserved evidence inventory fingerprint:
-  B63A3726E4B785FD80D982AA564A63124D0F815CBFBC9A579AC4E00CF4956D51
-- X-Plane and xPilot are stopped.
-- Active and staged .xpl files: zero.
+  C1367F24170283074D7D7371EFD4EDD1C687D7903F959CC3FA19FE3D807AAE8B
+- X-Plane/xPilot processes: 0/0.
+- Active/staged .xpl files: 0/0.
+- Active win_x64 deployment: absent.
+- Protected V2 Test: 50 files and 29 directories, unchanged.
+- V1.2.3 remains closed and untouched.
 
-Working arrangement:
-- Darron is product owner and bridge.
-- ChatGPT is Director.
-- Codex is Engineer.
-- The repository is the durable shared memory.
-- Architecture rule:
-  Brain decides. Modules produce facts. UI displays brain-approved facts.
+Stop and report if any lock differs. Do not clean, stage, move, normalize,
+rewrite, or delete preserved outputs/ evidence.
 
-First inspect:
+FIRST VERIFY
+
 git status --short --branch
 git log -8 --oneline --decorate
 git rev-parse HEAD
@@ -40,55 +50,186 @@ git rev-parse HEAD^
 git show -s --format=%s HEAD
 git diff-tree --no-commit-id --name-only -r HEAD
 
-Verify the branch, current HEAD subject, parent, and exact three-file scope;
-tracked/staged changes 0; preserved evidence 116; scenarios 494; active/staged
-.xpl 0/0; and Step 4 implementation not begun.
+Verify the documentation commit's subject, parent, and exact three-file scope;
+tracked/staged changes 0/0; 391 standard untracked files all under outputs/;
+700 scenarios and the canonical fingerprint; X-Plane/xPilot 0/0;
+active/staged .xpl 0/0; absent active win_x64; V2 Test 50 files/29
+directories; and the protected evidence manifests.
 
-Then read these primary sources in order:
-1. docs/NEXT_SESSION_HANDOFF.md
-2. docs/V2_0_0_ROADMAP.md
-3. docs/V2_EXECUTION_PROTOCOL.md
-4. docs/ARCHITECTURE.md
-5. brain/README.md
-6. modules/overlay/README.md
-7. outputs/v2_step_01_windows_proof_baseline_receipt.md
-8. outputs/v2_step_02_ifr_vfr_mode_foundation_receipt.md
-9. outputs/v2_step_03_orb_rail_information_drawer_receipt.md
+READ IN THIS ORDER
 
-Additional references:
-10. docs/BRAIN_OWNED_RUNTIME_CONTRACT.md
-11. docs/MILESTONE_STATUS.md
+1. docs/NEXT_SESSION_START_PROMPT.txt
+2. docs/NEXT_SESSION_HANDOFF.md
+3. docs/MILESTONE_STATUS.md
+4. docs/V2_STEP_04_ACCESSORY_INPUT_BOUNDARY_CORRECTION_ENGINEERING_BRIEF.md
+5. outputs/v2_step_04_accessory_input_boundary_correction_receipt.md
+6. outputs/v2_step_04_accessory_input_boundary_correction_offline_proof_summary.md
+7. outputs/v2_step_04_accessory_input_boundary_controlled_live_reproof_evidence/37_final_summary.md
+8. outputs/v2_step_04_accessory_input_boundary_controlled_live_reproof_evidence/33_terminal_publication_ledger.tsv
+9. outputs/v2_step_04_accessory_input_boundary_controlled_live_reproof_evidence/34_phase_table.tsv
+10. outputs/v2_step_04_accessory_input_boundary_controlled_live_reproof_evidence/36_rollback_receipt.md
+11. modules/overlay/src/OverlayWindow.cpp and brain/src/BrainOwnedRuntime.cpp at
+    the current command timing, awaiting-first-frame, terminal publication, and
+    liveness paths.
 
-Accepted Step 3 closeout:
-- Implementation/evidence commit:
-  219aa594adccb02143d02ea2f725761d85a6fe5f
-- Receipt commit:
-  0c4ac545c1e484d5029e465e9eb99aa49fd19b08
-- Receipt SHA-256:
-  4EEFEA63980736A74B1621A8005AF3383299946C14CC4658FA41F156CBEF84A9
+If a referenced filename differs, locate the corresponding existing artifact
+without renaming or rewriting evidence.
 
-The next roadmap item is Step 4 - METAR. Step 4 has not begun, and this prompt
-does not authorize implementation. Darron will identify whether the next task is
-Director planning or Codex engineering. The Director must issue a bounded brief;
-Codex must inspect without editing and present a Contract Gate; Darron must
-explicitly approve that gate before any Step 4 implementation, build,
-deployment, live test, or commit.
+CURRENT STEP 4 STATUS
 
-Director next action: verify this state, review Step 4 METAR product decisions,
-prepare a bounded Step 4 engineering brief, and withhold implementation
-authorization until Darron approves the reviewed Contract Gate.
+- Steps 1-3 are accepted and complete.
+- Step 4 implementation continues.
+- Latest implementation/evidence commit:
+  55dd147476f0da786eae4a27dde26912a6227d26
+- Latest receipt-only commit:
+  43d5776d2991167c89772afa0b80907759390c78
+- Step 4 is offline-proven through 700 scenarios but is not controlled-live-
+  proven.
+- Corrective scenarios: 26/26.
+- Step 3 focused: 31/31.
+- Step 4 focused: 206/206.
+- Complete regression: 700/700.
+- 1,000-click stress: zero drops, all commands terminally accounted, maximum
+  offline action time 100 microseconds.
+- Warm idle: 100,000 cycles with zero recurring work.
+- Worker cancellation maximum: 17 ms.
+- Real WinHTTP loopback: passed in 17 ms.
+- Visual proof: 43 PNGs with zero repeat-render differences.
 
-Engineer next action: verify this state; after receiving the Director brief,
-perform only a read-only METAR/source/architecture audit and present an exact
-Step 4 Contract Gate. Do not edit, build, deploy, test live, or commit Step 4
-work before Darron's explicit approval.
+Latest offline-proven fixture-off binary:
+build/v2-step4-accessory-input-boundary-release-normal/dist/XVatsim/win_x64/XVatsim.xpl
 
-Step 3 controlled rollback passed. The plugin root, preferences, and logs were
-restored to their verified pretest state. Active/staged .xpl is 0/0; V2 Test
-and the Step 3 backup remain preserved; V1 was untouched.
+- Size: 2,293,248 bytes.
+- SHA-256:
+  694D1B70E40ACEB8F033D6985D3517CB20A76E3981D2165FDCABED4E90950CD3
+- authority_source_registry.json SHA-256:
+  3676CA43E5AFB8A5E443FDE6D04616918029E004E17EFAA022695D91E23DB60B
+- ui_transition.mp3 SHA-256:
+  C7BBE97DAD356C68FDFE40F9E8C1CF4EADEBCCD125463214F963F66356F8D9F1
 
-V1.2.3 remains the closed Windows/X-Plane 12/xPilot public baseline and must not
-be reopened by V2 work. V2 remains Windows-only; Mac and Linux are deferred.
+This binary remains the latest offline-proven binary. It is not authorized for
+production deployment.
 
-Do not infer authority from previous sessions. Stop and report if the locked
-repository, evidence, scenario, or external rollback state differs.
+GOVERNING PRODUCT AND ARCHITECTURE CONTRACT
+
+The Brain is the sole product and semantic decision-maker.
+
+- Modules and workers perform bounded mechanical work commanded by the Brain
+  and return facts to it.
+- Workers do not make product decisions, communicate with one another, or wake
+  one another.
+- The Brain owns targeting, acceptance, classification consequences, primary
+  and lookup state, history, drawer ownership, publication intent, freshness,
+  refresh eligibility, and lifecycle behavior.
+- The Brain waits only asynchronously for facts and never blocks the simulator
+  or draw thread.
+- The overlay performs mechanical layout, preparation, rendering, and
+  publication without reinterpreting Brain state.
+- The mouse callback captures a bounded mechanical input fact, requests safe
+  next-cycle service, and returns. It does not call the Brain, decide behavior,
+  prepare, render, or alter geometry.
+- FIFO input facts are consumed by the Brain on a safe simulator cycle.
+- There is no render-dependent input lock or competing semantic completion
+  path.
+
+METAR remains VATSIM-only. IFR Departure automatically tracks only departure;
+IFR Enroute automatically tracks only arrival; VFR retains departure as its
+automatic primary. An explicit lookup temporarily owns the drawer but never
+the primary ORB. The drawer returns to pinned primary after the bounded
+spotlight, truthful newest-first history remains, and the ORB is neutral METAR
+or exact ICAO/category with the approved category color.
+
+LATEST CONTROLLED-LIVE RESULT
+
+STEP 4 ACCESSORY INPUT BOUNDARY CONTROLLED-LIVE REPROOF FAILED — ROLLBACK COMPLETED
+
+- Mandatory stop occurred in Phase A before xPilot started.
+- Initial neutral presentation command identity: 1.
+- Reported terminal elapsed time: 62,906,600 microseconds.
+- Contract limit: 500,000 microseconds.
+- xPilot was never started and no VATSIM request occurred.
+- KDFW, KABQ, and KSAN live phases did not occur.
+- The latest accessory input correction was not exercised live.
+- Shutdown and manifest-driven rollback passed.
+
+Latest evidence root:
+outputs/v2_step_04_accessory_input_boundary_controlled_live_reproof_evidence
+
+- Physical files: 34.
+- Manifest rows: 33.
+- Manifest SHA-256:
+  01D7B8CFB45411237182A7192E6F1923ED396AB4FF59BAEF5BD8ECCBAF440BCA
+
+Latest backup root:
+outputs/v2_step_04_accessory_input_boundary_controlled_live_reproof_backup
+
+- Physical files: 14.
+- Manifest SHA-256:
+  6BFAB3DE6CDA4184B67B16BBCCF8B9DCD99ECF140F3F872CEB60F67FCD4B545E
+
+Preserve both roots byte-for-byte.
+
+DIAGNOSED FAILURE AND NEXT ENGINEERING DIRECTION
+
+The 62.9066 seconds was not 62 seconds of CPU work, accessory-input latency,
+network delay, or simulator-thread stall. Command 1 had no pilot click. It was
+the initial neutral presentation command, issued while the overlay was hidden
+or not yet eligible to produce a visible frame. Its wall timer included that
+intentionally hidden interval.
+
+Current OverlayWindow timing begins when a command is first observed and may
+leave it awaiting first frame. A later synchronization of the same command can
+encounter zero new raster work and report Committed without correctly resolving
+the earlier awaiting-first-frame state. BrainOwnedRuntime then applies the
+blanket 500 ms liveness limit to the accumulated command wall duration.
+
+The next correction must distinguish hidden commitment from visible
+publication:
+
+- Hidden/no-visible-frame commands must terminally report a named result such
+  as CommittedHidden or CommittedNoVisibleFrameRequired.
+- Visible eligibility-to-first-frame must have its own timer.
+- Click-to-terminal remains strictly below 500 ms.
+- Repeating the same awaiting command must not downgrade, duplicate, or
+  contradict its terminal result.
+- Later visibility starts a separate visibility-request-to-first-frame
+  measurement; it must not reuse the hidden command issue timestamp.
+- Diagnostics must separately report issue-to-commit,
+  visible-eligibility-to-first-frame, click-to-terminal, and intentionally
+  hidden duration.
+- Do not loosen the input limit or add polling, blocking waits, a second
+  semantic owner, or worker-to-worker communication.
+
+EXACT NEXT ACTION
+
+Begin in analysis and Contract Gate preparation mode:
+
+1. Verify the documentation commit parent and all repository locks.
+2. Read this handoff and the latest correction/live evidence.
+3. Perform a narrow read-only source audit of hidden commitment, visible
+   eligibility, first-frame terminal publication, and Brain liveness timing.
+4. Prepare a corrective Contract Gate for Darron and ChatGPT Director review.
+5. Do not implement until Darron explicitly approves that gate.
+6. The first approved gate may authorize implementation and offline proof only.
+7. Any later controlled-live reproof requires a separate gate and explicit
+   approval.
+
+KABQ lookup and KSAN Enroute behavior have not been re-exercised after the
+latest architectural corrections. Arrival remains:
+OUT OF SCOPE — UNCHANGED AND OFFLINE-PROVEN
+
+RESTORED EXTERNAL STATE
+
+- X-Plane/xPilot processes: 0/0.
+- Active/staged .xpl: 0/0.
+- Active win_x64: absent.
+- V2 Test: 50 files and 29 directories, unchanged.
+- XVatsim.prf SHA-256:
+  830ABE79983B244D6280EBBA62A99E54601A6927C928B7332B0F2FA0CCCDF006
+- X-Plane Log.txt SHA-256:
+  6E049A3B0BF02A141EB4D44F44A501EA2D6B5C1788CB9EC805740196AB16E65F
+- Active XVatsim content outside V2 Test consists only of the logs directory
+  and four restored historical diagnostic logs.
+
+Production deployment is not authorized. V1.2.3 remains untouched. Do not
+infer authority from previous sessions.
