@@ -18,11 +18,17 @@ function(configure_xvatsim_metar_target target_name)
     )
 endfunction()
 
-add_library(XVatsimMetar STATIC src/VatsimMetarClient.cpp)
+add_library(XVatsimMetar STATIC
+    src/VatsimMetarClient.cpp
+    src/VatsimMetarDecoder.cpp
+)
 configure_xvatsim_metar_target(XVatsimMetar)
 
 if (XVATSIM_BUILD_REGRESSION_HARNESS)
-    add_library(XVatsimMetarProof STATIC src/VatsimMetarClient.cpp)
+    add_library(XVatsimMetarProof STATIC
+        src/VatsimMetarClient.cpp
+        src/VatsimMetarDecoder.cpp
+    )
     configure_xvatsim_metar_target(XVatsimMetarProof)
     target_compile_definitions(XVatsimMetarProof PUBLIC
         XVATSIM_METAR_PROOF_FIXTURES=1

@@ -37,19 +37,15 @@ not rasterize or upload a drawer.
 
 Timing reports distinguish asynchronous worker preparation wait from synchronous
 simulator-thread dispatch/presentation work, X-Plane frame-cadence wait, and
-raster/upload/draw timing. An action completes on an exact draw or on a newer
-render generation that preserves the brain-approved selection and drawer. A
-newer selection explicitly supersedes the older action; a wrong drawer or older
-generation cannot complete it. Every terminal disposition releases the bounded
-dispatcher immediately.
+raster/upload/draw timing. Pilot input is delivered directly to the brain and
+never waits for a render acknowledgement. Rendering acknowledgement is bounded
+telemetry only.
 
-Lifecycle close, disable, and stop paths clear deferred generation binding,
-discard queued facts, cancel any in-flight action, and discard its performance
-record. A failed deferred bind also cancels the matching action instead of
-leaving it stranded. Bounded aggregate diagnostics report queue production,
-consumption, discards, maximum depth, exact and compatible completions,
-supersession/cancellation, mismatches, maximum in-flight duration, and final
-queue/in-flight state without per-frame busy logging.
+Lifecycle close, disable, and stop paths discard queued input facts, cancel
+pending preparation, and terminally classify every undelivered command with
+its full elapsed time. Bounded aggregate diagnostics report input queue counts,
+publication outcomes, cancellations, maximum elapsed time, and final queue and
+publication state without per-frame busy logging.
 
 Step 4 renders exactly one neutral `METAR` line when there is no usable primary
 observation. A usable fresh or still-fresh cached primary renders exactly two
@@ -58,8 +54,9 @@ selected state is border-only; `OPEN`, freshness, pending, unavailable, stale,
 and lookup text never appear inside the ORB. Detailed state, raw text, pinned
 primary content, chronological history, and bounded lookup
 pending/spotlight/failure presentations remain in the drawer. Hidden changes
-do not prepare or rasterize the drawer; current content is prepared once when
-selected.
+invalidate older command identities and revisions without rasterizing or
+uploading the closed drawer; current content is prepared once for the exact
+brain command when selected.
 
 Successful METAR ICAO/category lines use Segoe UI Bold at 10.0 design pixels
 times effective layout scale. Production-raster proof covers 0.85, 1.0, and
@@ -84,4 +81,25 @@ CPU, publication handoff, ready collection, ready-to-bind delay, simulator-threa
 dispatch, frame cadence, and draw work. It reports lost or overlapping time
 instead of assigning asynchronous waits to the synchronous 16.7-millisecond
 budget. The 500-millisecond end-to-end liveness limit remains independent.
+
+## Brain-exclusive command publication
+
+The brain is the sole semantic authority for selection, drawer ownership,
+METAR state, and presentation revisions. The overlay consumes one immutable
+brain command and performs only preparation, geometry, commit, raster, upload,
+and draw mechanics.
+
+`OverlayWindow::UpdateAccessory` is the single production commit coordinator.
+Preparation completion is signaled by an event sequence and consumed only by
+that normal update path. The draw callback never commits presentation state.
+Exact command/lifecycle/revision checks reject obsolete prepared output without
+choosing a fallback.
+
+Every accepted command receives one bounded terminal mechanical fact:
+committed without pixel work, first frame displayed, superseded before commit,
+superseded after commit before display, exact-stage publication failure, or
+lifecycle cancellation. Terminal capacity is reserved before command issue;
+facts are never overwritten or coalesced. The brain consumes their product
+meaning. A missed frame can never prevent the next click from reaching the
+brain.
 

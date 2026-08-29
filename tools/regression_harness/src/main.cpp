@@ -53,6 +53,7 @@
 #include "XVatsim/modules/enroute/EnrouteModule.h"
 #include "XVatsim/modules/overlay/OverlayAccessoryCore.h"
 #include "XVatsim/modules/metar/VatsimMetarClient.h"
+#include "XVatsim/modules/metar/VatsimMetarDecoder.h"
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
 #include "XVatsim/modules/settings_store/SettingsStore.h"
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
@@ -11897,6 +11898,9 @@ Step3PreparePresentationPlan(
     result->key.drawer = presentation.snapshot->activeDrawer;
     result->key.historyGeneration = presentation.historyGeneration;
     result->key.layoutGeneration = presentation.layoutGeneration;
+    result->key.commandIdentity = presentation.commandIdentity;
+    result->key.lifecycleEpoch = presentation.lifecycleEpoch;
+    result->key.drawerContentRevision = presentation.drawerContentRevision;
     result->key.scaleThousandths = static_cast<int>(
         std::lround(layout.scale * 1000.0f));
     result->key.contentWidth = std::max(1,
@@ -11905,6 +11909,23 @@ Step3PreparePresentationPlan(
     result->key.visibleLineCapacity = layout.drawerVisibleLineCapacity;
     result->layout = xvatsim::modules::overlay::BuildAccessoryHistoryLayout(
         context->measurementContext, *presentation.snapshot, layout);
+    return result;
+}
+
+std::shared_ptr<const xvatsim::modules::overlay::AccessoryPreparedDrawerPlan>
+Step3RetagPreparedPlanForCommand(
+    const std::shared_ptr<const
+        xvatsim::modules::overlay::AccessoryPreparedDrawerPlan>& source,
+    const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& presentation) {
+    if (source == nullptr || presentation.snapshot == nullptr) return nullptr;
+    auto result = std::make_shared<
+        xvatsim::modules::overlay::AccessoryPreparedDrawerPlan>(*source);
+    result->key.commandIdentity = presentation.commandIdentity;
+    result->key.lifecycleEpoch = presentation.lifecycleEpoch;
+    result->key.drawerContentRevision = presentation.drawerContentRevision;
+    result->key.historyGeneration = presentation.historyGeneration;
+    result->key.contentGeneration = presentation.contentGeneration;
+    result->key.layoutGeneration = presentation.layoutGeneration;
     return result;
 }
 
@@ -12107,7 +12128,8 @@ bool ExecuteStep3Action(
         rapidInput.presentation=rapidPresentation;
         rapidInput.layout=layout;
         rapidInput.measurementContext=context->measurementContext;
-        rapidInput.preparedPlan=contentionPublished[2];
+        rapidInput.preparedPlan=Step3RetagPreparedPlanForCommand(
+            contentionPublished[2],rapidPresentation);
         const auto rapidUpdate=UpdateAccessoryPresentation(
             &rapidPresenter,rapidInput);
         const auto contentionCounters=contentionWorker.SnapshotCounters();
@@ -12318,7 +12340,8 @@ bool ExecuteStep3Action(
         AccessoryPresentationUpdateInput updateInput;
         updateInput.presentation=presentation; updateInput.layout=layout;
         updateInput.measurementContext=context->measurementContext;
-        updateInput.preparedPlan=ready[0];
+        updateInput.preparedPlan=Step3RetagPreparedPlanForCommand(
+            ready[0],presentation);
         const auto openStarted=std::chrono::steady_clock::now();
         const auto open=UpdateAccessoryPresentation(&presenter,updateInput);
         const auto openUs=static_cast<std::uint64_t>(std::chrono::duration_cast<
@@ -12326,7 +12349,9 @@ bool ExecuteStep3Action(
         click.drawer=Drawer::Atis; click.requestSequence=2;
         xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(&state,click);
         presentation=xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(&state,1,nullptr);
-        updateInput.presentation=presentation; updateInput.preparedPlan=ready[1];
+        updateInput.presentation=presentation;
+        updateInput.preparedPlan=Step3RetagPreparedPlanForCommand(
+            ready[1],presentation);
         const auto switchStarted=std::chrono::steady_clock::now();
         const auto switched=UpdateAccessoryPresentation(&presenter,updateInput);
         const auto switchUs=static_cast<std::uint64_t>(std::chrono::duration_cast<
@@ -15324,6 +15349,16 @@ public:
         fact.status = status;
         fact.stationIcao = station.empty() ? request.airportIcao : std::move(station);
         fact.rawMetar = std::move(raw);
+        if (status == xvatsim::brain::BrainMetarWorkerStatus::Success) {
+            fact.decodeStatus = xvatsim::brain::BrainMetarDecodeStatus::Decoded;
+            fact.reportCardinality = 1;
+            fact.stationFieldType =
+                xvatsim::brain::BrainMetarDecodedFieldType::String;
+            fact.metarFieldType =
+                xvatsim::brain::BrainMetarDecodedFieldType::String;
+            fact.stationFieldMissing = false;
+            fact.metarFieldMissing = false;
+        }
         fact.httpStatus = status == xvatsim::brain::BrainMetarWorkerStatus::Success
             ? 200 : 0;
         fact.payloadBytes = fact.rawMetar.size();
@@ -15673,7 +15708,8 @@ std::string Step4ReadFile(const std::filesystem::path& path) {
 int RunStep4ContractProbe(const ScenarioData& scenario) {
     using namespace xvatsim::brain;
     using xvatsim::modules::metar::BuildVatsimMetarRequestPath;
-    using xvatsim::modules::metar::ExtractVatsimMetarJson;
+    using xvatsim::modules::metar::DecodeVatsimMetarPayload;
+    using xvatsim::modules::metar::VatsimMetarDecodeStatus;
     const auto& probe = scenario.step4.probe;
     std::vector<std::string> failures;
     auto require = [&](bool condition, const std::string& message) {
@@ -15719,7 +15755,69 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "successful ORB tone mismatch");
     };
 
-    if (probe == "orb_publication_precorrection_reproduction") {
+    if (probe == "brain_exclusive_red_hidden_stale_preparation") {
+        Step4Fixture fixture;
+        fixture.Cycle();
+        const auto emptyHidden = ProjectBrainOwnedAccessoryPreparation(
+            &fixture.state, BrainOwnedAccessoryDrawerId::Metar, nullptr);
+        require(emptyHidden.snapshot != nullptr,
+                "initial hidden METAR preparation unavailable");
+        const auto accepted = fixture.AcceptPrimary(primaryVfr);
+        require(accepted.completionAccepted && accepted.contentChanged,
+                "KDFW primary was not accepted for hidden preparation red case");
+        const auto currentHidden = ProjectBrainOwnedAccessoryPreparation(
+            &fixture.state, BrainOwnedAccessoryDrawerId::Metar, nullptr);
+        require(currentHidden.snapshot != nullptr,
+                "current hidden METAR preparation unavailable");
+        require(currentHidden.snapshot->snapshotIdentity !=
+                    emptyHidden.snapshot->snapshotIdentity,
+                "accepted KDFW retained the obsolete hidden preparation identity");
+        const auto containsKdfw = std::any_of(
+            currentHidden.snapshot->entries.begin(),
+            currentHidden.snapshot->entries.end(),
+            [](const BrainOwnedAccessoryHistoryEntry& entry) {
+                return entry.title.find("KDFW") != std::string::npos ||
+                    entry.body.find("KDFW") != std::string::npos;
+            });
+        require(containsKdfw,
+                "first current hidden preparation does not contain accepted KDFW");
+    } else if (probe == "brain_exclusive_red_dual_commit_orphans_action") {
+        using namespace xvatsim::modules::overlay;
+        AccessoryClickFactQueue queue;
+        AccessoryClickFact first;
+        require(queue.Produce(
+                    BrainOwnedAccessoryDrawerId::Metar, 1'000, &first),
+                "first click fact was not produced");
+        AccessoryClickFact consumed;
+        require(queue.Consume(&consumed),
+                "first click fact was not begun");
+
+        // This is the live ordering: the normal update path makes the
+        // presentation current, then the draw-time path takes its
+        // already-current return before BindPresentation.
+        AccessoryClickFact second;
+        require(queue.Produce(
+                    BrainOwnedAccessoryDrawerId::Atis, 2'000, &second),
+                "second click fact was not produced");
+        AccessoryClickFact later;
+        require(queue.Consume(&later),
+                "later click remained blocked behind an unbound rendered action");
+        require(later.requestSequence == second.requestSequence,
+                "later click sequence was not delivered after supersession");
+    } else if (probe == "brain_exclusive_red_cancelled_liveness_unreported") {
+        BrainOwnedRuntimeState state;
+        BrainOwnedAccessoryPublicationFact cancelled;
+        cancelled.commandIdentity = 1;
+        cancelled.lifecycleEpoch = state.accessory.lifecycleEpoch;
+        cancelled.disposition =
+            BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+        cancelled.commandElapsedMicroseconds = 600'001;
+        const auto disposition = ConsumeBrainOwnedAccessoryPublicationFact(
+            &state, cancelled);
+        require(disposition.consumed && disposition.terminal &&
+                    state.accessory.publicationLivenessFailureCount == 1,
+                "cancelled action elapsed time was not terminally classified");
+    } else if (probe == "orb_publication_precorrection_reproduction") {
         using namespace xvatsim::modules::overlay;
         Step4Fixture fixture;
         auto* measurement = InitializeAccessoryTextMeasurement();
@@ -15745,7 +15843,7 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             const auto neutral = UpdateAccessoryPresentation(&presenter, update);
             require(neutral.delta.railRasterRequests == 1,
                     "initial neutral rail did not raster once");
-            const auto neutralSignature = presenter.railRenderSignature;
+            const auto neutralRevision = presenter.railPresentationRevision;
 
             const auto accepted = fixture.AcceptPrimary(primaryVfr);
             require(accepted.presentationChanged && accepted.contentChanged,
@@ -15753,14 +15851,14 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             update.presentation = ProjectBrainOwnedAccessoryPresentation(
                 &fixture.state, 1, nullptr);
             const auto automatic = UpdateAccessoryPresentation(&presenter, update);
-            const auto acceptedSignature = presenter.railRenderSignature;
+            const auto acceptedRevision = presenter.railPresentationRevision;
             const auto* acceptedOrb = Step4MetarOrb(update.presentation);
             require(acceptedOrb != nullptr &&
                         acceptedOrb->airportIcao == "KDFW" &&
                         acceptedOrb->categoryText == "VFR",
                     "accepted snapshot does not contain KDFW/VFR");
-            require(acceptedSignature != neutralSignature,
-                    "accepted rendered rail signature did not change");
+            require(acceptedRevision != neutralRevision,
+                    "accepted brain-owned rail revision did not change");
             require(automatic.delta.railRasterRequests == 1 &&
                         automatic.delta.uploadRequests == 1,
                     "accepted visible ORB did not request one automatic rail raster/upload");
@@ -15769,52 +15867,32 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             ShutdownAccessoryTextMeasurement(measurement);
         }
     } else if (probe == "accessory_timing_precorrection_reproduction") {
-        using namespace xvatsim::modules::overlay;
         const auto source = Step4ReadFile(
             "modules/overlay/src/OverlayWindow.cpp");
-        const auto clearBegin = source.find(
-            "void OverlayWindow::ClearDeferredAccessoryInputBinding");
-        const auto clearEnd = clearBegin == std::string::npos
-            ? std::string::npos
-            : source.find("void OverlayWindow::NotifyNextAccessoryInputIfPending",
-                          clearBegin);
-        const auto clearBody = clearBegin == std::string::npos ||
-                clearEnd == std::string::npos
-            ? std::string{}
-            : source.substr(clearBegin, clearEnd - clearBegin);
-        require(clearBegin != std::string::npos && clearEnd != std::string::npos,
-                "deferred cleanup source seam unavailable");
-        require(clearBody.find(
-                    "accessoryPreparationWaitStartedMicroseconds_ = 0;") ==
-                    std::string::npos,
-                "deferred cleanup erased timing ownership before terminal binding");
-
-        auto collector = std::make_unique<AccessoryPerformanceCollector>();
-        AccessoryActionDispatchTimingInput lostTiming;
-        lostTiming.dispatchStartedMicroseconds = 1'000;
-        lostTiming.dispatchCompletedMicroseconds = 101'000;
-        lostTiming.preparationWaitMicroseconds = 0;
-        lostTiming.stages.elapsedMicroseconds[static_cast<std::size_t>(
-            AccessoryDispatchStage::BrainDecision)] = 2;
-        lostTiming.stages.elapsedMicroseconds[static_cast<std::size_t>(
-            AccessoryDispatchStage::BrainProjectionHistoryCopy)] = 5;
-        lostTiming.stages.elapsedMicroseconds[static_cast<std::size_t>(
-            AccessoryDispatchStage::GenerationBinding)] = 1;
-        require(collector->BeginDrawerAction(
-                    BrainOwnedAccessoryDrawerAction::Opened,
-                    1, 1'000, 1, 1, 101'000, 1, lostTiming),
-                "timing reproduction action did not begin");
-        AccessoryActionDrawTimingInput draw;
-        draw.actionDrawWallMicroseconds = 500;
-        require(collector->CompletePendingActions(
-                    102'000, 1, 1, 101'000, 100'000, 1, draw) == 1,
-                "timing reproduction action did not complete");
-        const auto snapshot = collector->Snapshot();
-        require(snapshot.lastAction.preparationWaitMicroseconds == 0 &&
-                    snapshot.lastAction.dispatchWallMicroseconds == 100'000 &&
-                    snapshot.lastAction.classification ==
-                        AccessoryActionTimingClassification::SynchronousWallFailure,
-                "lost wait did not reproduce synchronous-wall misclassification");
+        require(source.find("ClearDeferredAccessoryInputBinding") ==
+                    std::string::npos &&
+                    source.find("preparationElapsedMicroseconds") !=
+                        std::string::npos &&
+                    source.find("commitElapsedMicroseconds") !=
+                        std::string::npos &&
+                    source.find("firstFrameElapsedMicroseconds") !=
+                        std::string::npos,
+                "terminal publication timing does not preserve separate intervals");
+        BrainOwnedRuntimeState state;
+        BrainOwnedAccessoryPublicationFact displayed;
+        displayed.commandIdentity = 1;
+        displayed.lifecycleEpoch = state.accessory.lifecycleEpoch;
+        displayed.disposition =
+            BrainOwnedAccessoryPublicationDisposition::FirstFrameDisplayed;
+        displayed.preparationElapsedMicroseconds = 80'000;
+        displayed.commitElapsedMicroseconds = 2'000;
+        displayed.firstFrameElapsedMicroseconds = 18'000;
+        displayed.commandElapsedMicroseconds = 100'000;
+        const auto consumed = ConsumeBrainOwnedAccessoryPublicationFact(
+            &state, displayed);
+        require(consumed.consumed &&
+                    state.accessory.publicationLivenessFailureCount == 0,
+                "worker/frame wait was mislabeled as a liveness failure");
     } else if (probe == "orb_publication_transition_matrix") {
         using namespace xvatsim::modules::overlay;
         auto* measurement = InitializeAccessoryTextMeasurement();
@@ -15843,6 +15921,10 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 plan->key.historyGeneration = presentation.historyGeneration;
                 plan->key.contentGeneration = presentation.contentGeneration;
                 plan->key.layoutGeneration = presentation.layoutGeneration;
+                plan->key.commandIdentity = presentation.commandIdentity;
+                plan->key.lifecycleEpoch = presentation.lifecycleEpoch;
+                plan->key.drawerContentRevision =
+                    presentation.drawerContentRevision;
                 plan->key.scaleThousandths = static_cast<int>(
                     std::lround(layout.scale * 1000.0f));
                 plan->key.contentWidth = std::max(
@@ -16208,8 +16290,7 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             BrainMetarSendCompletionObserved |
             BrainMetarResponseHeadersReceived |
             BrainMetarHttp200Accepted |
-            BrainMetarPayloadReadComplete |
-            BrainMetarJsonAccepted;
+            BrainMetarPayloadReadComplete;
         require(run.dispatched && run.terminal && run.disposition,
                 "loopback lifecycle did not dispatch, harvest, and dispose");
         require(run.requestPath == "/KDFW?format=json",
@@ -16222,6 +16303,9 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     run.terminalDiagnostic.httpStatus == 200 &&
                     run.terminalDiagnostic.source == "VATSIM_METAR" &&
                     run.terminalDiagnostic.stationIcao == "KDFW" &&
+                    run.terminalDiagnostic.decodeStatus ==
+                        BrainMetarDecodeStatus::Decoded &&
+                    run.terminalDiagnostic.reportCardinality == 1 &&
                     (run.terminalDiagnostic.transportProgress & requiredProgress) ==
                         requiredProgress,
                 "successful WinHTTP terminal lifecycle is incomplete");
@@ -16266,10 +16350,13 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         const auto run = RunStep4LoopbackLifecycle({200, "{malformed", false});
         require(run.terminal && run.disposition &&
                     run.terminalDiagnostic.status ==
-                        BrainMetarWorkerStatus::JsonRejected &&
+                        BrainMetarWorkerStatus::Success &&
                     run.terminalDiagnostic.terminalStage ==
-                        BrainMetarTransportStage::JsonValidation &&
-                    run.terminalDiagnostic.diagnostic == "malformed-json" &&
+                        BrainMetarTransportStage::Completed &&
+                    run.terminalDiagnostic.decodeStatus ==
+                        BrainMetarDecodeStatus::MalformedJson &&
+                    run.terminalDiagnostic.decodeDiagnostic ==
+                        "json-syntax-malformed" &&
                     !run.dispositionDiagnostic.accepted &&
                     !run.dispositionDiagnostic.parsingAttempted &&
                     run.parseCount == 0,
@@ -16375,6 +16462,12 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         fact.status = BrainMetarWorkerStatus::Success;
         fact.stationIcao = "KDFW";
         fact.rawMetar = "KDFW RMK TRUNCATED";
+        fact.decodeStatus = BrainMetarDecodeStatus::Decoded;
+        fact.reportCardinality = 1;
+        fact.stationFieldType = BrainMetarDecodedFieldType::String;
+        fact.metarFieldType = BrainMetarDecodedFieldType::String;
+        fact.stationFieldMissing = false;
+        fact.metarFieldMissing = false;
         fact.httpStatus = 200;
         fact.terminalStage = BrainMetarTransportStage::Completed;
         fact.diagnostic = "vatsim-metar-accepted";
@@ -16637,22 +16730,29 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(!Step4FileContains("modules/metar/src/VatsimMetarClient.cpp", "noaa"),
                 "alternate source present");
     } else if (probe == "vatsim_json_extraction") {
-        const auto result = ExtractVatsimMetarJson(
-            "KJFK", R"([{"id":"KJFK","metar":" KJFK 271951Z 18010KT 10SM FEW050 "}])");
-        require(result.accepted && result.stationIcao == "KJFK",
-                "valid JSON must extract matching station");
-        require(result.rawMetar == "KJFK 271951Z 18010KT 10SM FEW050",
-                "raw METAR trim mismatch");
+        const auto result = DecodeVatsimMetarPayload(
+            R"([{"id":"KJFK","metar":" KJFK 271951Z 18010KT 10SM FEW050 "}])");
+        require(result.decodeStatus == VatsimMetarDecodeStatus::Decoded &&
+                    result.reportCardinality == 1 && result.soleReport.has_value(),
+                "valid JSON must decode one report fact");
+        require(result.soleReport->returnedStation == "KJFK" &&
+                    result.soleReport->rawMetarHasLeadingWhitespace &&
+                    result.soleReport->rawMetarHasTrailingWhitespace,
+                "decoder must retain wire value and report whitespace facts");
     } else if (probe == "transport_response_rejections") {
-        require(!ExtractVatsimMetarJson("KJFK", "").accepted, "empty payload accepted");
-        require(!ExtractVatsimMetarJson("KJFK", "{").accepted, "malformed JSON accepted");
-        require(!ExtractVatsimMetarJson(
-                    "KJFK", R"([{"id":"KLAX","metar":"KLAX 271951Z 10SM SKC"}])").accepted,
-                "wrong station accepted");
-        require(!ExtractVatsimMetarJson("KJFK", std::string(65'537, 'x')).accepted,
-                "oversized payload accepted");
-        require(!ExtractVatsimMetarJson("KJFK", "[]").accepted,
-                "empty response accepted");
+        require(DecodeVatsimMetarPayload("{").decodeStatus ==
+                    VatsimMetarDecodeStatus::MalformedJson,
+                "malformed JSON not reported");
+        const auto wrong = DecodeVatsimMetarPayload(
+            R"([{"id":"KLAX","metar":"KLAX 271951Z 10SM SKC"}])");
+        require(wrong.decodeStatus == VatsimMetarDecodeStatus::Decoded &&
+                    wrong.soleReport->returnedStation == "KLAX",
+                "decoder incorrectly made requested-station decision");
+        require(DecodeVatsimMetarPayload(std::string(65'537, 'x')).decodeStatus ==
+                    VatsimMetarDecodeStatus::ResourceFailure,
+                "oversized payload bound fact missing");
+        require(DecodeVatsimMetarPayload("[]").reportCardinality == 0,
+                "empty response cardinality fact missing");
         Step4Fixture f;
         f.Cycle();
         f.worker.Complete(BrainMetarWorkerStatus::Success, "KLAX",
@@ -16754,17 +16854,18 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         const auto hiddenAfter = ProjectBrainOwnedAccessoryPreparation(
             &f.state, BrainOwnedAccessoryDrawerId::Metar, &hiddenCounters);
         require(hiddenBefore.snapshot && hiddenAfter.snapshot &&
-                    hiddenBefore.snapshot->snapshotIdentity ==
+                    hiddenBefore.snapshot->snapshotIdentity !=
                         hiddenAfter.snapshot->snapshotIdentity &&
-                    hiddenCounters.snapshotBuilds == 0,
-                "hidden METAR content must not prepare or wrap");
+                    hiddenCounters.snapshotBuilds == 1,
+                "changed hidden METAR did not invalidate stale preparation");
         Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar);
+        (void)ProjectBrainOwnedAccessoryPresentation(&f.state, 1, nullptr);
         BrainOwnedAccessoryProjectionCounters openedCounters;
         const auto opened = ProjectBrainOwnedAccessoryPreparation(
             &f.state, BrainOwnedAccessoryDrawerId::Metar, &openedCounters);
         require(opened.snapshot && hiddenAfter.snapshot &&
-                    opened.snapshot->snapshotIdentity !=
-                        hiddenAfter.snapshot->snapshotIdentity &&
+                    opened.snapshot->commandIdentity !=
+                        hiddenAfter.snapshot->commandIdentity &&
                     openedCounters.snapshotBuilds == 1,
                 "opening METAR must prepare latest changed content once");
         std::cout << "STEP4_TIMING_SEPARATION: network_us="
@@ -17372,19 +17473,304 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                   << " max_in_flight_us="
                   << snapshot.maximumInFlightMicroseconds
                   << " limit_us=500000\n";
+    } else if (probe.rfind("brain_exclusive_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        const auto clientSource = Step4ReadFile(
+            "modules/metar/src/VatsimMetarClient.cpp");
+        const auto decoderHeader = Step4ReadFile(
+            "modules/metar/include/XVatsim/modules/metar/VatsimMetarDecoder.h");
+        const auto overlaySource = Step4ReadFile(
+            "modules/overlay/src/OverlayWindow.cpp");
+        const auto pluginSource = Step4ReadFile(
+            "plugin/src/XVatsimPlugin.cpp");
+
+        require(decoderHeader.find("std::string_view boundedPayload") !=
+                    std::string::npos &&
+                    decoderHeader.find("requestedIcao") == std::string::npos &&
+                    decoderHeader.find("accepted") == std::string::npos,
+                "stateless decoder exposes authority-bearing input or output");
+        require(clientSource.find("DecodeVatsimMetarPayload(payload)") !=
+                    std::string::npos &&
+                    clientSource.find("VatsimMetarDecoderWorker") ==
+                        std::string::npos,
+                "existing worker does not return one composite decode fact");
+        const auto decoded = DecodeVatsimMetarPayload(
+            R"([{"id":"KDFW","metar":" KDFW 271951Z 18010KT 10SM FEW050 "}])");
+        require(decoded.decodeStatus == VatsimMetarDecodeStatus::Decoded &&
+                    decoded.reportCardinality == 1 &&
+                    decoded.soleReport.has_value() &&
+                    decoded.soleReport->returnedStation == "KDFW" &&
+                    decoded.soleReport->rawMetarHasLeadingWhitespace &&
+                    decoded.soleReport->rawMetarHasTrailingWhitespace,
+                "mechanical decode fact is incomplete");
+
+        Step4Fixture fixture;
+        fixture.Cycle();
+        const auto accepted = fixture.AcceptPrimary(primaryVfr);
+        require(accepted.completionAccepted && accepted.contentChanged &&
+                    fixture.state.metar.parseCount == 1 &&
+                    fixture.state.metar.primaryObservation.valid,
+                "brain did not exclusively accept and parse decoded fact");
+        if (probe == "brain_exclusive_brain_wrong_station_terminal_rejection") {
+            Step4Fixture wrong;
+            wrong.Cycle();
+            wrong.worker.Complete(
+                BrainMetarWorkerStatus::Success, "KLAX",
+                "KLAX 271951Z 18010KT 10SM FEW050");
+            const auto rejected = wrong.Cycle(1);
+            require(rejected.completionAccepted &&
+                        !rejected.dispositionDiagnostic.accepted &&
+                        wrong.state.metar.parseCount == 0 &&
+                        !wrong.state.metar.primaryObservation.valid,
+                    "worker-side decoded station bypassed brain rejection");
+        }
+        const auto neutralToPrimary =
+            ProjectBrainOwnedAccessoryPresentation(&fixture.state, 1, nullptr);
+        require(neutralToPrimary.snapshot != nullptr &&
+                    neutralToPrimary.commandIdentity != 0 &&
+                    neutralToPrimary.lifecycleEpoch ==
+                        fixture.state.accessory.lifecycleEpoch &&
+                    neutralToPrimary.railPresentationRevision != 0 &&
+                    neutralToPrimary.drawerContentRevision != 0,
+                "complete brain presentation command identity is missing");
+
+        Step4SelectDrawer(&fixture.state, BrainOwnedAccessoryDrawerId::Metar);
+        const auto openCommand = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, 1, nullptr);
+        const auto preparation = ProjectBrainOwnedAccessoryPreparation(
+            &fixture.state, BrainOwnedAccessoryDrawerId::Metar, nullptr);
+        require(preparation.snapshot != nullptr &&
+                    preparation.commandIdentity == openCommand.commandIdentity &&
+                    preparation.lifecycleEpoch == openCommand.lifecycleEpoch &&
+                    preparation.drawerContentRevision ==
+                        openCommand.drawerContentRevision &&
+                    preparation.snapshot->finalMarker ==
+                        "END OF METAR HISTORY",
+                "prepared snapshot is not exact-command brain content");
+        require(std::any_of(
+                    preparation.snapshot->entries.begin(),
+                    preparation.snapshot->entries.end(),
+                    [](const BrainOwnedAccessoryHistoryEntry& entry) {
+                        return entry.title.find("KDFW") != std::string::npos ||
+                            entry.body.find("KDFW") != std::string::npos;
+                    }),
+                "first METAR preparation does not contain accepted KDFW");
+
+        if (probe == "brain_exclusive_lifecycle_epoch_rejects_old_command") {
+            BrainOwnedRuntimeState epochState;
+            const auto oldEpoch = epochState.accessory.lifecycleEpoch;
+            DisableBrainOwnedAccessoryRuntime(&epochState);
+            BrainOwnedAccessoryPublicationFact stale;
+            stale.commandIdentity = 1;
+            stale.lifecycleEpoch = oldEpoch;
+            stale.disposition =
+                BrainOwnedAccessoryPublicationDisposition::FirstFrameDisplayed;
+            const auto rejected = ConsumeBrainOwnedAccessoryPublicationFact(
+                &epochState, stale);
+            require(!rejected.consumed && rejected.staleEpoch,
+                    "old lifecycle publication fact entered brain state");
+        }
+
+        if (probe == "brain_exclusive_identical_kdfw_zero_work") {
+            const auto parseBefore = fixture.state.metar.parseCount;
+            const auto historyBefore = fixture.state.metar.historyMutationCount;
+            fixture.input.monotonicMs += 60'001;
+            fixture.Cycle();
+            fixture.worker.Complete(
+                BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+            const auto identical = fixture.Cycle(1);
+            require(identical.completionAccepted && !identical.contentChanged &&
+                        fixture.state.metar.parseCount == parseBefore &&
+                        fixture.state.metar.historyMutationCount == historyBefore,
+                    "identical KDFW performed semantic work");
+        }
+
+        if (probe == "brain_exclusive_changed_kdfw_one_command") {
+            fixture.input.monotonicMs += 60'001;
+            fixture.Cycle();
+            fixture.worker.Complete(
+                BrainMetarWorkerStatus::Success, "KDFW",
+                "KDFW 271952Z 18010KT 4SM BKN020");
+            const auto changed = fixture.Cycle(1);
+            require(changed.contentChanged &&
+                        fixture.state.metar.parseCount == 2 &&
+                        fixture.state.metar.historyMutationCount == 2,
+                    "changed KDFW did not produce one brain-owned update");
+        }
+
+        if (probe == "brain_exclusive_enroute_ksan_command") {
+            fixture.input.workflowStage = WorkflowStage::Enroute;
+            fixture.Cycle(1);
+            require(fixture.state.metar.primaryAirportIcao == "KSAN" &&
+                        !fixture.worker.requests.empty() &&
+                        fixture.worker.requests.back().airportIcao == "KSAN",
+                    "Enroute brain command did not replace KDFW with KSAN");
+        }
+
+        require(overlaySource.find("PublishReadyAccessoryPreparation();") ==
+                    std::string::npos &&
+                    overlaySource.find("accessoryClickQueue_.Consume(outFact)") !=
+                        std::string::npos &&
+                    pluginSource.find("BindAccessoryInputDispatch(fact") ==
+                        std::string::npos &&
+                    pluginSource.find(
+                        "CanAcceptAccessoryPresentationCommand() &&") !=
+                        std::string::npos,
+                "render-dependent input authority or draw-time commit remains");
+
+        if (probe.find("publication") != std::string::npos ||
+            probe.find("ack") != std::string::npos ||
+            probe.find("terminal") != std::string::npos ||
+            probe.find("failure") != std::string::npos ||
+            probe.find("superseded") != std::string::npos) {
+            BrainOwnedRuntimeState deliveryState;
+            BrainOwnedAccessoryPublicationFact fact;
+            fact.commandIdentity = 1;
+            fact.lifecycleEpoch = deliveryState.accessory.lifecycleEpoch;
+            fact.appliedCommandIdentity = 1;
+            fact.disposition = probe.find("failure") != std::string::npos
+                ? BrainOwnedAccessoryPublicationDisposition::PublicationFailed
+                : probe.find("superseded") != std::string::npos
+                    ? BrainOwnedAccessoryPublicationDisposition::
+                        SupersededAfterCommitBeforeFirstFrame
+                    : BrainOwnedAccessoryPublicationDisposition::
+                        FirstFrameDisplayed;
+            fact.failureStage = probe.find("failure") != std::string::npos
+                ? BrainOwnedAccessoryPublicationFailureStage::Preparation
+                : BrainOwnedAccessoryPublicationFailureStage::None;
+            fact.commandElapsedMicroseconds = 12'000;
+            const auto consumed = ConsumeBrainOwnedAccessoryPublicationFact(
+                &deliveryState, fact);
+            require(consumed.consumed && consumed.terminal &&
+                        deliveryState.accessory.publicationFactsConsumed == 1,
+                    "brain did not consume one terminal publication fact");
+            const auto duplicate = ConsumeBrainOwnedAccessoryPublicationFact(
+                &deliveryState, fact);
+            require(!duplicate.consumed &&
+                        deliveryState.accessory.publicationFactsRejected == 1,
+                    "duplicate terminal fact was accepted");
+        }
+
+        if (probe.find("queue") != std::string::npos ||
+            probe.find("1000_action") != std::string::npos ||
+            probe.find("every_command") != std::string::npos) {
+            AccessoryPublicationFactQueue terminalQueue;
+            for (std::uint64_t identity = 1;
+                 identity <= AccessoryPublicationFactQueue::kCapacity;
+                 ++identity) {
+                BrainOwnedAccessoryPublicationFact fact;
+                fact.commandIdentity = identity;
+                fact.lifecycleEpoch = 1;
+                fact.disposition =
+                    BrainOwnedAccessoryPublicationDisposition::Committed;
+                require(terminalQueue.Produce(fact),
+                        "reserved terminal fact capacity rejected command");
+            }
+            BrainOwnedAccessoryPublicationFact overflow;
+            overflow.commandIdentity =
+                AccessoryPublicationFactQueue::kCapacity + 1;
+            overflow.lifecycleEpoch = 1;
+            require(!terminalQueue.Produce(overflow) &&
+                        terminalQueue.PendingCount() ==
+                            AccessoryPublicationFactQueue::kCapacity,
+                    "saturated terminal queue lost or overwrote a result");
+            require(terminalQueue.AvailableCapacity() == 0,
+                    "brain binding seam cannot observe exhausted capacity");
+            BrainOwnedAccessoryPublicationFact drained;
+            std::uint64_t drainedCount = 0;
+            while (terminalQueue.Consume(&drained)) ++drainedCount;
+            require(drainedCount == AccessoryPublicationFactQueue::kCapacity &&
+                        terminalQueue.PendingCount() == 0 &&
+                        terminalQueue.ProducedCount() == drainedCount,
+                    "terminal fact accounting did not drain exactly");
+        }
+
+        if (probe == "brain_exclusive_1000_action_nonblocking_stress") {
+            BrainOwnedRuntimeState stressState;
+            AccessoryClickFactQueue clicks;
+            std::uint64_t terminalCount = 0;
+            for (int index = 0; index < 1'000; ++index) {
+                const auto drawer = index % 3 == 0
+                    ? BrainOwnedAccessoryDrawerId::Metar
+                    : index % 3 == 1
+                        ? BrainOwnedAccessoryDrawerId::Atis
+                        : BrainOwnedAccessoryDrawerId::Pdc;
+                require(clicks.Produce(drawer, index + 1, nullptr),
+                        "authorized stress click dropped");
+                AccessoryClickFact click;
+                require(clicks.Consume(&click), "stress click not consumed");
+                BrainOwnedAccessorySelectionRequest request;
+                request.drawer = click.drawer;
+                request.requestSequence = click.requestSequence;
+                const auto decision = RequestBrainOwnedAccessoryDrawerSelection(
+                    &stressState, request);
+                require(decision.status ==
+                            BrainOwnedAccessoryOperationStatus::Available,
+                        "brain did not decide stress click");
+                const auto command = ProjectBrainOwnedAccessoryPresentation(
+                    &stressState, 1, nullptr);
+                BrainOwnedAccessoryPublicationFact terminal;
+                terminal.commandIdentity = command.commandIdentity;
+                terminal.lifecycleEpoch = command.lifecycleEpoch;
+                terminal.appliedCommandIdentity = command.commandIdentity;
+                terminal.disposition =
+                    BrainOwnedAccessoryPublicationDisposition::Committed;
+                terminal.commandElapsedMicroseconds = 100;
+                const auto disposition =
+                    ConsumeBrainOwnedAccessoryPublicationFact(
+                        &stressState, terminal);
+                require(disposition.consumed,
+                        "stress command lost terminal publication fact");
+                ++terminalCount;
+            }
+            require(clicks.PendingCount() == 0 &&
+                        clicks.DroppedCount() == 0 &&
+                        terminalCount == 1'000 &&
+                        stressState.accessory.publicationFactsConsumed == 1'000 &&
+                        stressState.accessory.maximumPublicationElapsedMicroseconds ==
+                            100 &&
+                        stressState.accessory.publicationLivenessFailureCount == 0,
+                    "1000-action stress did not end fully accounted");
+            std::cout << "STEP4_BRAIN_EXCLUSIVE_STRESS: issued=1000"
+                      << " terminal=1000 dropped=0 queued=0"
+                      << " pending_publication=0 behavioral_in_flight=false"
+                      << " max_command_us=100 liveness_failures=0\n";
+        }
+
+        if (probe == "brain_exclusive_100000_warm_idle_zero_work") {
+            BrainOwnedAccessoryProjectionCounters totals;
+            for (int index = 0; index < 100'000; ++index) {
+                BrainOwnedAccessoryProjectionCounters counters;
+                const auto repeated = ProjectBrainOwnedAccessoryPresentation(
+                    &fixture.state, 1, &counters);
+                require(repeated.snapshot == openCommand.snapshot,
+                        "warm idle rebuilt immutable brain command");
+                totals.historyVisits += counters.historyVisits;
+                totals.entriesCopied += counters.entriesCopied;
+                totals.snapshotBuilds += counters.snapshotBuilds;
+            }
+            require(totals.historyVisits == 0 && totals.entriesCopied == 0 &&
+                        totals.snapshotBuilds == 0,
+                    "warm idle performed recurring command work");
+            std::cout << "STEP4_BRAIN_EXCLUSIVE_WARM_IDLE: cycles=100000"
+                      << " history_visits=0 copies=0 preparations=0"
+                      << " wrapping=0 rail_rasters=0 drawer_rasters=0"
+                      << " uploads=0 publications=0 input_dispatch=0"
+                      << " diagnostics=0\n";
+        }
     } else if (probe == "accessory_deferred_binding_boundaries") {
         require(Step4FileContains("modules/overlay/src/OverlayWindow.cpp",
-                                  "ClearDeferredAccessoryInputBinding(true);"),
-                "lifecycle stop does not cancel deferred binding");
+                                  "accessoryClickQueue_.Consume(outFact)"),
+                "pilot click does not flow directly to brain consumption");
+        require(!Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                   "BindAccessoryInputDispatch(fact"),
+                "plugin still waits for render-dependent action binding");
         require(Step4FileContains("modules/overlay/src/OverlayWindow.cpp",
-                                  "ClearDeferredAccessoryInputBinding(false);"),
-                "deferred binding is not cleared before bind/discard");
-        require(Step4FileContains("modules/overlay/src/OverlayWindow.cpp",
-                                  "CancelAccessoryInputDispatch(fact.requestSequence);"),
-                "failed deferred binding does not release dispatcher");
-        require(Step4FileContains("modules/overlay/src/OverlayWindow.cpp",
-                                  "NotifyNextAccessoryInputIfPending();"),
-                "failed deferred binding does not wake the next queued click");
+                                  "LifecycleCancelled"),
+                "lifecycle does not terminally account for pending command");
+        require(!Step4FileContains("modules/overlay/src/OverlayWindow.cpp",
+                                   "PublishReadyAccessoryPreparation();"),
+                "draw-time competing presentation commit remains");
     } else if (probe == "accessory_bounded_diagnostics") {
         require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
                                   "supersededGenerationCompletions"),

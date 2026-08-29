@@ -8,18 +8,7 @@
 
 namespace xvatsim::modules::metar {
 
-struct VatsimMetarJsonResult {
-    bool accepted = false;
-    std::string stationIcao;
-    std::string rawMetar;
-    std::string reason;
-};
-
 std::wstring BuildVatsimMetarRequestPath(const std::string& normalizedIcao);
-
-VatsimMetarJsonResult ExtractVatsimMetarJson(
-    const std::string& requestedIcao,
-    const std::string& payload);
 
 class VatsimMetarClient final : public brain::BrainMetarWorker {
 public:

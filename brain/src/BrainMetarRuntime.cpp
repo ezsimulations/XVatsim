@@ -207,10 +207,7 @@ bool ResolveObservationUnix(
 
 void InvalidateAccessoryProjection(BrainOwnedRuntimeState* state) {
     if (state == nullptr) return;
-    state->accessory.cachedPresentationSnapshot.reset();
-    if (state->accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Metar) {
-        state->accessory.cachedPreparationSnapshots[0].reset();
-    }
+    state->accessory.cachedPreparationSnapshots[0].reset();
 }
 
 void TouchPresentation(BrainOwnedRuntimeState* state) {
@@ -423,6 +420,10 @@ void RecordPrimaryFailure(
 bool RequestMatchesCurrent(
     const BrainOwnedMetarRuntimeState& metar,
     const BrainMetarWorkerFact& fact) {
+    if (fact.request.commandIdentity != fact.request.requestId ||
+        fact.request.lifecycleEpoch != metar.lifecycleEpoch) {
+        return false;
+    }
     if (fact.request.purpose == BrainMetarRequestPurpose::PilotLookup) {
         return !metar.lookupInvalidated &&
             fact.request.lookupGeneration == metar.lookupGeneration &&
@@ -478,6 +479,11 @@ BrainMetarTerminalDiagnostic BuildTerminalDiagnostic(
     diagnostic.transportProgress = fact.transportProgress;
     diagnostic.httpStatus = fact.httpStatus;
     diagnostic.payloadBytes = fact.payloadBytes;
+    diagnostic.decodeStatus = fact.decodeStatus;
+    diagnostic.reportCardinality = fact.reportCardinality;
+    diagnostic.decodingElapsedMicroseconds =
+        fact.decodingElapsedMicroseconds;
+    diagnostic.decodeDiagnostic = fact.decodeDiagnostic;
     diagnostic.networkElapsedUs = fact.networkElapsedUs;
     diagnostic.completedMonotonicMs = fact.completedMonotonicMs;
     diagnostic.diagnostic = fact.diagnostic;
@@ -510,10 +516,11 @@ void FinalizeDispositionDiagnostic(
 
 void CommitBrainOwnedMetarWorkerFact(
     BrainOwnedRuntimeState* state,
-    const BrainMetarWorkerFact& fact,
+    const BrainMetarWorkerFact& receivedFact,
     const BrainOwnedAsyncFactCycleInput& input,
     BrainOwnedAsyncFactCycleOutput* output) {
     if (state == nullptr || output == nullptr) return;
+    auto fact = receivedFact;
     BeginDispositionDiagnostic(fact, output);
     if (!RequestMatchesCurrent(state->metar, fact)) {
         RejectBrainOwnedMetarWorkerFact(
@@ -522,26 +529,6 @@ void CommitBrainOwnedMetarWorkerFact(
     }
     state->metar.lastAcceptedNetworkElapsedUs = fact.networkElapsedUs;
     output->acceptedNetworkElapsedUs = fact.networkElapsedUs;
-    std::string returnedStation;
-    const bool validSuccessSource =
-        fact.status != BrainMetarWorkerStatus::Success ||
-        (fact.source == "VATSIM_METAR" &&
-         NormalizeStrictMetarIcao(fact.stationIcao, &returnedStation) &&
-         returnedStation == fact.request.airportIcao);
-    if (!validSuccessSource) {
-        if (fact.request.purpose == BrainMetarRequestPurpose::PilotLookup) {
-            HandleLookupFailure(state, input.monotonicMs,
-                                &output->presentationChanged);
-        } else {
-            RecordPrimaryFailure(state, input.monotonicMs,
-                                 &output->presentationChanged);
-            output->sourceHealthChanged = true;
-        }
-        ++state->metar.completionAcceptedCount;
-        output->completionAccepted = true;
-        output->reason = "metar-worker-source-rejected";
-        return;
-    }
     if (fact.status != BrainMetarWorkerStatus::Success) {
         if (fact.request.purpose == BrainMetarRequestPurpose::PilotLookup) {
             HandleLookupFailure(state, input.monotonicMs,
@@ -556,6 +543,39 @@ void CommitBrainOwnedMetarWorkerFact(
         output->reason = "metar-worker-failure-accepted";
         return;
     }
+    const bool decodedShapeUsable =
+        fact.source == "VATSIM_METAR" &&
+        fact.decodeStatus == BrainMetarDecodeStatus::Decoded &&
+        fact.reportCardinality == 1 &&
+        !fact.reportCardinalityLimitExceeded &&
+        fact.stationFieldType == BrainMetarDecodedFieldType::String &&
+        fact.metarFieldType == BrainMetarDecodedFieldType::String &&
+        !fact.stationFieldMissing && !fact.metarFieldMissing &&
+        !fact.stationFieldMalformed && !fact.metarFieldMalformed &&
+        !fact.stationByteLimitExceeded &&
+        !fact.rawMetarByteLimitExceeded &&
+        !fact.rawMetarContainsNul;
+    std::string returnedStation;
+    fact.rawMetar = TrimOuter(fact.rawMetar);
+    const bool brainAcceptedReport = decodedShapeUsable &&
+        NormalizeStrictMetarIcao(fact.stationIcao, &returnedStation) &&
+        returnedStation == fact.request.airportIcao &&
+        !fact.rawMetar.empty() && fact.rawMetar.size() <= 4'096;
+    if (!brainAcceptedReport) {
+        if (fact.request.purpose == BrainMetarRequestPurpose::PilotLookup) {
+            HandleLookupFailure(state, input.monotonicMs,
+                                &output->presentationChanged);
+        } else {
+            RecordPrimaryFailure(state, input.monotonicMs,
+                                 &output->presentationChanged);
+            output->sourceHealthChanged = true;
+        }
+        ++state->metar.completionAcceptedCount;
+        output->completionAccepted = true;
+        output->reason = "metar-decoded-fact-rejected-by-brain";
+        return;
+    }
+    fact.stationIcao = returnedStation;
 
     if (fact.request.purpose != BrainMetarRequestPurpose::PilotLookup) {
         ++state->metar.fingerprintCount;
@@ -747,6 +767,8 @@ BrainMetarWorkerRequest MakeRequest(
     BrainMetarWorkerRequest request;
     request.airportIcao = airport;
     request.requestId = metar->nextRequestId++;
+    request.commandIdentity = request.requestId;
+    request.lifecycleEpoch = metar->lifecycleEpoch;
     request.purpose = purpose;
     request.primaryGeneration = metar->primaryGeneration;
     request.lookupGeneration = metar->lookupGeneration;
@@ -1226,6 +1248,8 @@ BrainMetarWorkerShutdownSnapshot ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
         }
     }
     if (state != nullptr) {
+        const auto nextLifecycleEpoch = state->metar.lifecycleEpoch + 1 == 0
+            ? 1 : state->metar.lifecycleEpoch + 1;
         state->metar.activeRequest.reset();
         state->metar.deferredDisconnectedFact.reset();
         state->metar.lookupAwaitingDispatch = false;
@@ -1234,14 +1258,20 @@ BrainMetarWorkerShutdownSnapshot ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
         state->metar.transientDeadlineMonotonicMs = 0;
         state->metar.lookupPresentationOwnershipValid = false;
         state->metar.targetContextInitialized = false;
-        if (clearAcceptedState) ResetBrainOwnedMetarForHardBoundary(state);
+        if (clearAcceptedState) {
+            ResetBrainOwnedMetarForHardBoundary(state);
+        }
+        state->metar.lifecycleEpoch = nextLifecycleEpoch;
     }
     return snapshot;
 }
 
 void ResetBrainOwnedMetarForHardBoundary(BrainOwnedRuntimeState* state) {
     if (state == nullptr) return;
+    const auto nextLifecycleEpoch = state->metar.lifecycleEpoch + 1 == 0
+        ? 1 : state->metar.lifecycleEpoch + 1;
     state->metar = {};
+    state->metar.lifecycleEpoch = nextLifecycleEpoch;
     InvalidateAccessoryProjection(state);
 }
 

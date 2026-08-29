@@ -93,9 +93,11 @@ and never receives periodic refresh.
 
 Content, source health, freshness, and presentation have independent
 generations. Identical raw content does not reparse, mutate history, wrap, or
-rasterize, but a successful response may recover source health. The overlay
-renders only visible generation changes. Hidden METAR content retains the last
-prepared snapshot and is prepared once when the drawer is next opened.
+rasterize, but a successful response may recover source health. The brain
+publishes one immutable complete accessory command and owns rail and drawer
+revisions. Hidden METAR content invalidates obsolete preparations immediately;
+the closed drawer is not rasterized or uploaded, and the first opening prepares
+and displays only the exact current brain command.
 
 The accepted runtime shape is one primary target, one bounded request, one
 parsed primary observation, and at most one transient lookup. There is no

@@ -1,0 +1,10 @@
+transition,rail_rasters,uploads,drawer_rasters,rail_appearance_changed
+neutral_to_kdfw_vfr_closed,1,1,0,true
+kdfw_vfr_to_mvfr_closed,1,1,0,true
+kdfw_to_ksan_closed,1,1,0,true
+success_to_neutral_closed,1,1,0,true
+metar_open_primary_change,1,2,1,true
+atis_owns_primary_change,1,2,1,true
+pdc_owns_primary_change,1,2,1,true
+lookup_spotlight_unchanged_primary,0,1,1,false
+identical_primary_content_only,0,0,0,false

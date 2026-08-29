@@ -438,6 +438,9 @@ RenderResult Render(
     prepared->key.historyGeneration = presentation.historyGeneration;
     prepared->key.contentGeneration = presentation.contentGeneration;
     prepared->key.layoutGeneration = generation;
+    prepared->key.commandIdentity = presentation.commandIdentity;
+    prepared->key.lifecycleEpoch = presentation.lifecycleEpoch;
+    prepared->key.drawerContentRevision = presentation.drawerContentRevision;
     prepared->key.typographyGeneration = typography.generation;
     prepared->key.scaleThousandths = 1000;
     prepared->key.contentWidth = std::max(
@@ -586,6 +589,9 @@ std::shared_ptr<const overlay::AccessoryPreparedDrawerPlan> PreparePlan(
     plan->key.historyGeneration = presentation.historyGeneration;
     plan->key.contentGeneration = presentation.contentGeneration;
     plan->key.layoutGeneration = presentation.layoutGeneration;
+    plan->key.commandIdentity = presentation.commandIdentity;
+    plan->key.lifecycleEpoch = presentation.lifecycleEpoch;
+    plan->key.drawerContentRevision = presentation.drawerContentRevision;
     plan->key.scaleThousandths = 1000;
     plan->key.contentWidth = std::max(
         1, layout.drawerBounds.right - layout.drawerBounds.left -
@@ -635,6 +641,20 @@ bool ValidatePublicationTransition(
         &beforeState, (*generation)++, nullptr);
     auto after = brain::ProjectBrainOwnedAccessoryPresentation(
         &afterState, (*generation)++, nullptr);
+    auto authoritativeAfter = std::make_shared<
+        brain::BrainOwnedAccessoryPresentationSnapshot>(*after.snapshot);
+    authoritativeAfter->commandIdentity = before.commandIdentity + 1;
+    authoritativeAfter->lifecycleEpoch = before.lifecycleEpoch;
+    authoritativeAfter->railPresentationRevision =
+        before.railPresentationRevision + (expectedRail == 0 ? 0 : 1);
+    authoritativeAfter->drawerContentRevision =
+        before.drawerContentRevision + (expectedDrawer == 0 ? 0 : 1);
+    after.snapshot = std::move(authoritativeAfter);
+    after.commandIdentity = after.snapshot->commandIdentity;
+    after.lifecycleEpoch = after.snapshot->lifecycleEpoch;
+    after.railPresentationRevision =
+        after.snapshot->railPresentationRevision;
+    after.drawerContentRevision = after.snapshot->drawerContentRevision;
     after.contentGeneration = before.contentGeneration + 1;
     after.historyGeneration = before.historyGeneration + 1;
     after.layoutGeneration = before.layoutGeneration;

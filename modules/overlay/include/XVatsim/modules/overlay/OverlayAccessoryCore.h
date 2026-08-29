@@ -311,6 +311,28 @@ private:
         brain::BrainOwnedAccessoryDrawerAction::None;
 };
 
+class AccessoryPublicationFactQueue {
+public:
+    static constexpr std::size_t kCapacity = 256;
+    bool Produce(const brain::BrainOwnedAccessoryPublicationFact& fact);
+    bool Consume(brain::BrainOwnedAccessoryPublicationFact* fact);
+    std::size_t PendingCount() const;
+    std::size_t AvailableCapacity() const;
+    std::uint64_t ProducedCount() const;
+    std::uint64_t ConsumedCount() const;
+    std::uint64_t RejectedCount() const;
+
+private:
+    std::array<brain::BrainOwnedAccessoryPublicationFact, kCapacity> facts_{};
+    std::size_t head_ = 0;
+    std::size_t size_ = 0;
+    std::uint64_t lastProducedCommandIdentity_ = 0;
+    std::uint64_t lastProducedLifecycleEpoch_ = 0;
+    std::uint64_t producedCount_ = 0;
+    std::uint64_t consumedCount_ = 0;
+    std::uint64_t rejectedCount_ = 0;
+};
+
 enum class AccessoryPerformanceCategory : std::size_t {
     RailRasterization = 0,
     DrawerRasterization,
@@ -700,6 +722,9 @@ struct AccessoryPreparationKey {
     std::uint64_t historyGeneration = 0;
     std::uint64_t contentGeneration = 0;
     std::uint64_t layoutGeneration = 0;
+    std::uint64_t commandIdentity = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::uint64_t drawerContentRevision = 0;
     std::uint64_t typographyGeneration = 0;
     int scaleThousandths = 1000;
     int contentWidth = 0;
@@ -843,6 +868,7 @@ public:
     bool Running() const;
     AccessoryPreparationWorkerState State() const;
     AccessoryPreparationWorkerFailure Failure() const;
+    std::uint64_t ReadySequence() const;
     AccessoryPreparationWorkerCounters SnapshotCounters() const;
 
 private:
@@ -898,6 +924,10 @@ struct AccessoryPresentationState {
     std::uint64_t historyGeneration = 0;
     std::uint64_t contentGeneration = 0;
     std::uint64_t layoutGeneration = 0;
+    std::uint64_t commandIdentity = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::uint64_t railPresentationRevision = 0;
+    std::uint64_t drawerContentRevision = 0;
     std::string railRenderSignature;
     std::string drawerRenderSignature;
     std::string mainCardProductionSignature;

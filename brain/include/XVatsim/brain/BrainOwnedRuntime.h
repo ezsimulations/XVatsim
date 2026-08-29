@@ -136,6 +136,7 @@ struct BrainOwnedAccessoryHistory {
 struct BrainOwnedAccessoryPreparationSnapshot;
 
 struct BrainOwnedAccessoryRuntimeState {
+    std::uint64_t lifecycleEpoch = 1;
     BrainOwnedAccessoryDrawerId activeDrawer = BrainOwnedAccessoryDrawerId::None;
     std::uint64_t selectionGeneration = 0;
     std::uint64_t scrollResetGeneration = 0;
@@ -155,6 +156,14 @@ struct BrainOwnedAccessoryRuntimeState {
     std::array<std::uint64_t, 3> cachedPreparationContentGenerations{};
     std::uint64_t cachedPresentationContentGeneration = 0;
     std::uint64_t nextPresentationSnapshotIdentity = 1;
+    std::uint64_t nextPresentationCommandIdentity = 1;
+    std::uint64_t railPresentationRevision = 1;
+    std::uint64_t drawerContentRevision = 1;
+    std::uint64_t publicationFactsConsumed = 0;
+    std::uint64_t publicationFactsRejected = 0;
+    std::uint64_t publicationLivenessFailureCount = 0;
+    std::uint64_t maximumPublicationElapsedMicroseconds = 0;
+    std::uint64_t lastTerminalPresentationCommandIdentity = 0;
 };
 
 struct BrainOwnedAccessoryHistoryDecision {
@@ -225,11 +234,17 @@ struct BrainOwnedAccessoryPresentationSnapshot {
     std::vector<BrainOwnedAccessoryHistoryEntry> entries;
     std::string drawerTitle;
     std::string emptyStateText;
+    std::string drawerFinalMarker;
     std::uint64_t selectionGeneration = 0;
     std::uint64_t historyGeneration = 0;
     std::uint64_t layoutGeneration = 0;
     std::uint64_t contentGeneration = 0;
     std::uint64_t snapshotIdentity = 0;
+    std::uint64_t commandIdentity = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::uint64_t railPresentationRevision = 0;
+    std::uint64_t drawerContentRevision = 0;
+    std::array<std::uint64_t, 3> drawerHistoryGenerations{};
     std::string callsignIdentity;
 };
 
@@ -245,6 +260,10 @@ struct BrainOwnedAccessoryPresentationHandle {
     std::uint64_t historyGeneration = 0;
     std::uint64_t layoutGeneration = 0;
     std::uint64_t contentGeneration = 0;
+    std::uint64_t commandIdentity = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::uint64_t railPresentationRevision = 0;
+    std::uint64_t drawerContentRevision = 0;
 };
 
 struct BrainOwnedAccessoryPreparationSnapshot {
@@ -255,12 +274,63 @@ struct BrainOwnedAccessoryPreparationSnapshot {
     std::uint64_t historyGeneration = 0;
     std::uint64_t contentGeneration = 0;
     std::uint64_t snapshotIdentity = 0;
+    std::uint64_t commandIdentity = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::uint64_t drawerContentRevision = 0;
+    std::string finalMarker;
 };
 
 struct BrainOwnedAccessoryPreparationHandle {
     std::shared_ptr<const BrainOwnedAccessoryPreparationSnapshot> snapshot;
     std::uint64_t historyGeneration = 0;
     std::uint64_t contentGeneration = 0;
+    std::uint64_t commandIdentity = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::uint64_t drawerContentRevision = 0;
+};
+
+enum class BrainOwnedAccessoryPublicationDisposition {
+    Committed,
+    FirstFrameDisplayed,
+    SupersededBeforeCommit,
+    SupersededAfterCommitBeforeFirstFrame,
+    PublicationFailed,
+    LifecycleCancelled,
+};
+
+enum class BrainOwnedAccessoryPublicationFailureStage {
+    None,
+    Preparation,
+    Commit,
+    Rasterization,
+    TextureUpload,
+    PostCommit,
+};
+
+struct BrainOwnedAccessoryPublicationFact {
+    std::uint64_t commandIdentity = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::uint64_t appliedCommandIdentity = 0;
+    BrainOwnedAccessoryPublicationDisposition disposition =
+        BrainOwnedAccessoryPublicationDisposition::PublicationFailed;
+    BrainOwnedAccessoryPublicationFailureStage failureStage =
+        BrainOwnedAccessoryPublicationFailureStage::None;
+    std::uint64_t appliedRailRevision = 0;
+    std::uint64_t appliedDrawerRevision = 0;
+    BrainOwnedAccessoryDrawerId activeDrawerRendered =
+        BrainOwnedAccessoryDrawerId::None;
+    std::uint64_t preparationElapsedMicroseconds = 0;
+    std::uint64_t commitElapsedMicroseconds = 0;
+    std::uint64_t firstFrameElapsedMicroseconds = 0;
+    std::uint64_t commandElapsedMicroseconds = 0;
+    std::string mechanicalFailureReason;
+};
+
+struct BrainOwnedAccessoryPublicationDecision {
+    bool consumed = false;
+    bool terminal = false;
+    bool staleEpoch = false;
+    std::string reason;
 };
 
 enum class BrainMetarRequestPurpose {
@@ -321,7 +391,7 @@ enum BrainMetarTransportProgress : std::uint32_t {
     BrainMetarResponseHeadersReceived = 1U << 1,
     BrainMetarHttp200Accepted = 1U << 2,
     BrainMetarPayloadReadComplete = 1U << 3,
-    BrainMetarJsonAccepted = 1U << 4,
+    BrainMetarJsonDecoded = 1U << 4,
 };
 
 enum class BrainMetarFlightCategory {
@@ -357,6 +427,8 @@ enum class BrainMetarTransientPresentation {
 
 struct BrainMetarWorkerRequest {
     std::string airportIcao;
+    std::uint64_t commandIdentity = 0;
+    std::uint64_t lifecycleEpoch = 0;
     std::uint64_t requestId = 0;
     BrainMetarRequestPurpose purpose = BrainMetarRequestPurpose::PrimaryRefresh;
     std::uint64_t primaryGeneration = 0;
@@ -364,11 +436,48 @@ struct BrainMetarWorkerRequest {
     long long dispatchedMonotonicMs = 0;
 };
 
+enum class BrainMetarDecodeStatus {
+    NotAttempted,
+    Decoded,
+    MalformedJson,
+    RootTypeMismatch,
+    ResourceFailure,
+};
+
+enum class BrainMetarDecodedFieldType {
+    Missing,
+    String,
+    Null,
+    Boolean,
+    Number,
+    Array,
+    Object,
+};
+
 struct BrainMetarWorkerFact {
     BrainMetarWorkerStatus status = BrainMetarWorkerStatus::None;
     BrainMetarWorkerRequest request;
     std::string stationIcao;
     std::string rawMetar;
+    BrainMetarDecodeStatus decodeStatus =
+        BrainMetarDecodeStatus::NotAttempted;
+    std::size_t reportCardinality = 0;
+    bool reportCardinalityLimitExceeded = false;
+    BrainMetarDecodedFieldType stationFieldType =
+        BrainMetarDecodedFieldType::Missing;
+    BrainMetarDecodedFieldType metarFieldType =
+        BrainMetarDecodedFieldType::Missing;
+    bool stationFieldMissing = true;
+    bool metarFieldMissing = true;
+    bool stationFieldMalformed = false;
+    bool metarFieldMalformed = false;
+    bool stationByteLimitExceeded = false;
+    bool rawMetarByteLimitExceeded = false;
+    bool rawMetarContainsNul = false;
+    bool rawMetarHasLeadingWhitespace = false;
+    bool rawMetarHasTrailingWhitespace = false;
+    std::uint64_t decodingElapsedMicroseconds = 0;
+    std::string decodeDiagnostic;
     int httpStatus = 0;
     long long completedMonotonicMs = 0;
     long long networkElapsedUs = 0;
@@ -401,6 +510,11 @@ struct BrainMetarTerminalDiagnostic {
     std::uint32_t transportProgress = BrainMetarTransportProgressNone;
     int httpStatus = 0;
     std::size_t payloadBytes = 0;
+    BrainMetarDecodeStatus decodeStatus =
+        BrainMetarDecodeStatus::NotAttempted;
+    std::size_t reportCardinality = 0;
+    std::uint64_t decodingElapsedMicroseconds = 0;
+    std::string decodeDiagnostic;
     long long networkElapsedUs = 0;
     long long completedMonotonicMs = 0;
     std::string diagnostic;
@@ -463,6 +577,7 @@ struct BrainMetarParsedObservation {
 
 struct BrainOwnedMetarRuntimeState {
     bool initialized = false;
+    std::uint64_t lifecycleEpoch = 1;
     bool dispatchSuspendedForDisconnect = false;
     BrainOwnedOperatingMode lastOperatingMode = BrainOwnedOperatingMode::IFR;
     WorkflowStage lastWorkflowStage = WorkflowStage::None;
@@ -1803,6 +1918,11 @@ BrainOwnedAccessoryPreparationHandle ProjectBrainOwnedAccessoryPreparation(
     BrainOwnedRuntimeState* state,
     BrainOwnedAccessoryDrawerId drawer,
     BrainOwnedAccessoryProjectionCounters* counters);
+
+BrainOwnedAccessoryPublicationDecision
+ConsumeBrainOwnedAccessoryPublicationFact(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAccessoryPublicationFact& fact);
 
 BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForDisplayClose(
     BrainOwnedRuntimeState* state);

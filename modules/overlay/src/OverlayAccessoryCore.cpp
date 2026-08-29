@@ -683,6 +683,9 @@ bool AccessoryPreparationKey::operator==(
         historyGeneration == other.historyGeneration &&
         contentGeneration == other.contentGeneration &&
         layoutGeneration == other.layoutGeneration &&
+        commandIdentity == other.commandIdentity &&
+        lifecycleEpoch == other.lifecycleEpoch &&
+        drawerContentRevision == other.drawerContentRevision &&
         typographyGeneration == other.typographyGeneration &&
         scaleThousandths == other.scaleThousandths &&
         contentWidth == other.contentWidth &&
@@ -789,6 +792,7 @@ struct AccessoryPreparationWorker::Implementation {
     std::atomic<std::uint64_t> readinessCheckCount{0};
     std::atomic<std::uint64_t> readinessContentionCount{0};
     std::atomic<std::uint64_t> publicationCount{0};
+    std::atomic<std::uint64_t> readySequence{0};
     std::atomic<std::uint64_t> maximumPublicationMicroseconds{0};
     std::atomic<std::uint64_t> enqueueAttemptCount{0};
     std::atomic<std::uint64_t> enqueueContentionCount{0};
@@ -938,8 +942,7 @@ struct AccessoryPreparationWorker::Implementation {
             0,
             plan->layout.totalScrollableLineCount -
                 plan->layout.visibleLineCapacity);
-        plan->layout.finalMarker =
-            "END OF " + DrawerToken(request.key.drawer) + " HISTORY";
+        plan->layout.finalMarker = request.snapshot->finalMarker;
         plan->layout.finalMarkerBelongsToSelectedHistory = true;
         return plan;
     }
@@ -1043,6 +1046,7 @@ struct AccessoryPreparationWorker::Implementation {
             const_cast<AccessoryPreparedDrawerPlan*>(prepared.get())
                 ->publishedMicroseconds = AccessorySteadyMicroseconds();
             ready[index] = prepared;
+            readySequence.fetch_add(1, std::memory_order_release);
             ++counters.jobsCompleted;
             counters.maximumReadyCacheCount = std::max<std::uint64_t>(
                 counters.maximumReadyCacheCount, ReadyCount());
@@ -1243,6 +1247,10 @@ AccessoryPreparationWorkerState AccessoryPreparationWorker::State() const {
 
 AccessoryPreparationWorkerFailure AccessoryPreparationWorker::Failure() const {
     return implementation_->failure.load(std::memory_order_acquire);
+}
+
+std::uint64_t AccessoryPreparationWorker::ReadySequence() const {
+    return implementation_->readySequence.load(std::memory_order_acquire);
 }
 
 AccessoryPreparationWorkerCounters
@@ -1810,7 +1818,7 @@ AccessoryHistoryLayoutResult BuildAccessoryHistoryLayout(
         totalLineCount += static_cast<int>(
             titleLayout.lines.size() + bodyLayout.lines.size());
     }
-    result.finalMarker = "END OF " + DrawerToken(snapshot.activeDrawer) + " HISTORY";
+    result.finalMarker = snapshot.drawerFinalMarker;
     result.visibleLineCapacity = visibleLineCount;
     result.totalScrollableLineCount = totalLineCount;
     result.maximumOffset = std::max(0, totalLineCount - visibleLineCount);
@@ -1911,7 +1919,7 @@ AccessoryPresentationUpdateResult UpdateAccessoryPresentation(
     result.status = brain::BrainOwnedAccessoryOperationStatus::Available;
     const auto& snapshot = *input.presentation.snapshot;
     const bool hadSnapshot = state->activeSnapshot != nullptr;
-    result.snapshotChanged = state->activeSnapshotIdentity != snapshot.snapshotIdentity;
+    result.snapshotChanged = state->commandIdentity != snapshot.commandIdentity;
     result.selectionChanged = !hadSnapshot ||
         state->selectionGeneration != input.presentation.selectionGeneration ||
         state->activeSnapshot->activeDrawer != snapshot.activeDrawer;
@@ -1921,11 +1929,14 @@ AccessoryPresentationUpdateResult UpdateAccessoryPresentation(
         state->contentGeneration != input.presentation.contentGeneration;
     result.layoutChanged = !hadSnapshot ||
         state->layoutGeneration != input.presentation.layoutGeneration;
-    const bool anyPresentationChange = result.snapshotChanged || result.selectionChanged ||
-        result.historyChanged || contentChanged || result.layoutChanged;
-    const auto candidateRailSignature = RailSignature(snapshot, input.layout);
-    result.railAppearanceChanged = !hadSnapshot ||
-        state->railRenderSignature != candidateRailSignature;
+    const bool railRevisionChanged = !hadSnapshot ||
+        state->railPresentationRevision != snapshot.railPresentationRevision;
+    const bool drawerRevisionChanged = !hadSnapshot ||
+        state->drawerContentRevision != snapshot.drawerContentRevision;
+    const bool anyPresentationChange = result.snapshotChanged ||
+        result.selectionChanged || result.historyChanged || contentChanged ||
+        result.layoutChanged;
+    result.railAppearanceChanged = railRevisionChanged || result.layoutChanged;
     result.mainCardUnchanged = state->mainCardProductionSignature.empty() ||
         state->mainCardProductionSignature == input.mainCardProductionSignature;
     if (!anyPresentationChange &&
@@ -1935,7 +1946,8 @@ AccessoryPresentationUpdateResult UpdateAccessoryPresentation(
         result.delta.railRasterRequests = 1;
     }
     const bool drawerOpen = snapshot.activeDrawer != brain::BrainOwnedAccessoryDrawerId::None;
-    if (drawerOpen && anyPresentationChange) {
+    if (drawerOpen &&
+        (drawerRevisionChanged || result.selectionChanged || result.layoutChanged)) {
         const bool planMatches = input.preparedPlan != nullptr &&
             input.preparedPlan->key.drawer == snapshot.activeDrawer &&
             input.preparedPlan->key.historyGeneration ==
@@ -1943,7 +1955,13 @@ AccessoryPresentationUpdateResult UpdateAccessoryPresentation(
             input.preparedPlan->key.contentGeneration ==
                 input.presentation.contentGeneration &&
             input.preparedPlan->key.layoutGeneration ==
-                input.presentation.layoutGeneration;
+                input.presentation.layoutGeneration &&
+            input.preparedPlan->key.commandIdentity ==
+                input.presentation.commandIdentity &&
+            input.preparedPlan->key.lifecycleEpoch ==
+                input.presentation.lifecycleEpoch &&
+            input.preparedPlan->key.drawerContentRevision ==
+                input.presentation.drawerContentRevision;
         if (!planMatches) {
             result.preparationPending = true;
             return result;
@@ -1983,7 +2001,11 @@ AccessoryPresentationUpdateResult UpdateAccessoryPresentation(
     state->contentGeneration = input.presentation.contentGeneration;
     state->layoutGeneration = input.presentation.layoutGeneration;
     state->mainCardProductionSignature = input.mainCardProductionSignature;
-    state->railRenderSignature = candidateRailSignature;
+    state->commandIdentity = snapshot.commandIdentity;
+    state->lifecycleEpoch = snapshot.lifecycleEpoch;
+    state->railPresentationRevision = snapshot.railPresentationRevision;
+    state->drawerContentRevision = snapshot.drawerContentRevision;
+    state->railRenderSignature.clear();
     state->drawerRenderSignature = drawerOpen
         ? DrawerSignature(snapshot, input.layout, state->drawerOffset)
         : std::string{};
@@ -2257,6 +2279,55 @@ bool AccessoryInputDispatchCoordinator::InvalidateInFlight(
 AccessoryInputDispatchSnapshot
 AccessoryInputDispatchCoordinator::Snapshot() const {
     return snapshot_;
+}
+
+bool AccessoryPublicationFactQueue::Produce(
+    const brain::BrainOwnedAccessoryPublicationFact& fact) {
+    if (size_ == 0 && fact.lifecycleEpoch != 0 &&
+        fact.lifecycleEpoch != lastProducedLifecycleEpoch_) {
+        lastProducedCommandIdentity_ = 0;
+        lastProducedLifecycleEpoch_ = fact.lifecycleEpoch;
+    }
+    if (fact.commandIdentity == 0 || size_ >= kCapacity ||
+        (size_ != 0 && fact.lifecycleEpoch != lastProducedLifecycleEpoch_) ||
+        (fact.lifecycleEpoch == lastProducedLifecycleEpoch_ &&
+         fact.commandIdentity <= lastProducedCommandIdentity_)) {
+        ++rejectedCount_;
+        return false;
+    }
+    const auto tail = (head_ + size_) % kCapacity;
+    facts_[tail] = fact;
+    ++size_;
+    ++producedCount_;
+    lastProducedCommandIdentity_ = fact.commandIdentity;
+    lastProducedLifecycleEpoch_ = fact.lifecycleEpoch;
+    return true;
+}
+
+bool AccessoryPublicationFactQueue::Consume(
+    brain::BrainOwnedAccessoryPublicationFact* fact) {
+    if (fact == nullptr || size_ == 0) return false;
+    *fact = facts_[head_];
+    head_ = (head_ + 1) % kCapacity;
+    --size_;
+    ++consumedCount_;
+    return true;
+}
+
+std::size_t AccessoryPublicationFactQueue::PendingCount() const {
+    return size_;
+}
+std::size_t AccessoryPublicationFactQueue::AvailableCapacity() const {
+    return kCapacity - size_;
+}
+std::uint64_t AccessoryPublicationFactQueue::ProducedCount() const {
+    return producedCount_;
+}
+std::uint64_t AccessoryPublicationFactQueue::ConsumedCount() const {
+    return consumedCount_;
+}
+std::uint64_t AccessoryPublicationFactQueue::RejectedCount() const {
+    return rejectedCount_;
 }
 
 const char* AccessoryPerformanceCategoryToken(

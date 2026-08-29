@@ -13,18 +13,21 @@ its subject must be `docs: prepare V2 Step 4 session handoff`, and its scope
 must be exactly the three handoff documentation files. Its final SHA cannot be
 embedded in those same committed bytes and must be resolved from Git.
 
-Step 4 - VATSIM METAR has completed a third corrective offline implementation
+Step 4 - VATSIM METAR has completed a fourth corrective offline implementation
 and proof. The first correction fixed WinHTTP send completion and was live
 proven. The second corrected accessory-rail liveness and enlarged the minimal
 METAR ORB. The third makes an accepted primary METAR invalidate and publish the
 rail automatically from rendered-field differences, and restores exact timing
-ownership across deferred preparation and generation binding. Deployment,
+ownership across deferred preparation and generation binding. The fourth
+restores brain-exclusive semantic authority, exact hidden preparation identity,
+one overlay commit coordinator, nonblocking input, and truthful terminal
+publication facts. Deployment,
 X-Plane/xPilot startup, live VATSIM traffic, and controlled live reproof remain
 separately gated and were not performed by this correction.
 
-The corrected regression baseline is 630 saved scenarios. The canonical
+The corrected regression baseline is 674 saved scenarios. The canonical
 release-gate fingerprint is
-`24F3438A454DD66EF46DA334F18761F501E241884EC0E496EF2D737CBF21790C`.
+`EE5B15EAE725EBA23AEA1CE9F9FEB82D0D93578C0A18EBA6129AE8B898E645C3`.
 
 The corrective gate began from zero tracked or staged changes. Two protected
 untracked evidence sets remain outside the corrective commits: the original
@@ -117,7 +120,7 @@ work and X-Plane frame cadence. The maximum fixture-ON preparation wait was
 2,227,032 microseconds, and the fixture-OFF cold wait was 256,838 microseconds.
 Neither produced a visible UI failure or recurring idle work.
 
-## Step 4 - VATSIM METAR ORB-Publication Corrected Candidate
+## Step 4 - VATSIM METAR Brain-Exclusive Corrected Candidate
 
 - Status: corrected and offline-proven; controlled live reproof is not
   authorized.
@@ -127,8 +130,9 @@ Neither produced a visible UI failure or recurring idle work.
   freshness, parsing, category, cache, history, spotlight, lifecycle, and final
   presentation. The plugin uses the generic asynchronous worker-binding seam.
 - Added 40 ORB-publication/timing corrective scenarios after the 29 prior
-  accessory-liveness/readability scenarios; Step 3 is 31/31, complete Step 4 is
-  136/136, and complete saved regression is 630/630.
+  accessory-liveness/readability scenarios, followed by 44 brain-exclusive
+  authority scenarios; Step 3 is 31/31, complete Step 4 is 180/180, and
+  complete saved regression is 674/674.
 - Corrected WinHTTP send completion registration and proved a complete local
   loopback send/receive/HTTP/JSON/harvest/brain-parse lifecycle.
 - Added bounded dispatch, terminal-worker, and brain-disposition diagnostics,
@@ -150,6 +154,19 @@ Neither produced a visible UI failure or recurring idle work.
   16.7-millisecond synchronous violation or 500-millisecond liveness failure.
 - Changed accepted METAR content records parser/classifier elapsed time and the
   simulator flight-loop harvest path; identical content reports no parse.
+- The existing METAR worker now returns one composite transport/decode fact.
+  Its stateless payload decoder has no requested airport or acceptance output;
+  the brain alone accepts station/content and commits all METAR product state.
+- One immutable brain command carries exact command/lifecycle identity plus
+  rail and drawer revisions. Hidden KDFW acceptance invalidates an empty plan
+  without hidden raster/upload work, so the first opening is current.
+- `OverlayWindow::UpdateAccessory` is the sole production commit coordinator;
+  the draw callback renders committed state only. Pilot facts never wait for a
+  render acknowledgement.
+- Every command receives one nonblocking terminal fact for no-pixel commit,
+  exact first display, supersession, exact-stage failure, or lifecycle
+  cancellation. Capacity is reserved before issue and terminal facts cannot be
+  overwritten or coalesced.
 - Fresh Windows Release proof and fixture-off normal plugin builds passed.
 - Thirty-three production-raster visual cases reproduced with zero PNG hash
   differences; main-card production signatures were identical in every case.

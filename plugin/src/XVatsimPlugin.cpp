@@ -295,6 +295,7 @@ void SynchronizeAccessoryPresentation(
     xvatsim::modules::overlay::AccessoryDispatchStageWallTimings*
         acceptedActionStages = nullptr);
 void DispatchPendingAccessoryInput(void* refcon);
+void DrainAccessoryPublicationFacts();
 void DiscardPendingAccessoryClickFacts();
 void LogRadioBoardCandidateDiffTrace(
     xvatsim::brain::WorkflowStage workflowStage,
@@ -2986,7 +2987,9 @@ void DispatchPendingAccessoryInput(void* refcon) {
         return;
     }
     xvatsim::modules::overlay::OverlayAccessoryClickFact fact;
-    while (gOverlayWindow.BeginAccessoryInputDispatch(&fact)) {
+    DrainAccessoryPublicationFacts();
+    while (gOverlayWindow.CanAcceptAccessoryPresentationCommand() &&
+           gOverlayWindow.BeginAccessoryInputDispatch(&fact)) {
         xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
         request.drawer = fact.drawer;
         request.requestSequence = fact.requestSequence;
@@ -3003,19 +3006,17 @@ void DispatchPendingAccessoryInput(void* refcon) {
         xvatsim::modules::overlay::AccessoryDispatchStageWallTimings stages;
         stages.elapsedMicroseconds = fact.dispatchStageWallMicroseconds;
         SynchronizeAccessoryPresentation(&stages);
-        fact.dispatchStageWallMicroseconds = stages.elapsedMicroseconds;
-        const auto dispatchBound =
-            gOverlayWindow.BindAccessoryInputDispatch(fact, decision.action);
-        if (dispatchBound) {
-            return;
-        }
-        gOverlayWindow.CancelAccessoryInputDispatch(fact.requestSequence);
+        (void)decision;
     }
 }
 
 void SynchronizeAccessoryPresentation(
     xvatsim::modules::overlay::AccessoryDispatchStageWallTimings*
         acceptedActionStages) {
+    DrainAccessoryPublicationFacts();
+    if (!gOverlayWindow.CanAcceptAccessoryPresentationCommand()) {
+        return;
+    }
     const auto projectionStarted = acceptedActionStages != nullptr
         ? xvatsim::modules::overlay::OverlayWindow::
             AccessoryWallClockMicroseconds()
@@ -3025,10 +3026,10 @@ void SynchronizeAccessoryPresentation(
             &gBrainOwnedRuntimeState,
             gOverlayWindow.GetAccessoryLayoutGeneration(),
             &gAccessoryProjectionCounters);
-    for (const auto drawer : {
-             xvatsim::brain::BrainOwnedAccessoryDrawerId::Metar,
-             xvatsim::brain::BrainOwnedAccessoryDrawerId::Atis,
-             xvatsim::brain::BrainOwnedAccessoryDrawerId::Pdc}) {
+    if (presentation.snapshot != nullptr &&
+        presentation.snapshot->activeDrawer !=
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::None) {
+        const auto drawer = presentation.snapshot->activeDrawer;
         const auto preparation =
             xvatsim::brain::ProjectBrainOwnedAccessoryPreparation(
                 &gBrainOwnedRuntimeState, drawer, nullptr);
@@ -3042,6 +3043,15 @@ void SynchronizeAccessoryPresentation(
                         AccessoryWallClockMicroseconds() - projectionStarted;
     }
     gOverlayWindow.UpdateAccessory(presentation, acceptedActionStages);
+    DrainAccessoryPublicationFacts();
+}
+
+void DrainAccessoryPublicationFacts() {
+    xvatsim::brain::BrainOwnedAccessoryPublicationFact fact;
+    while (gOverlayWindow.ConsumeAccessoryPublicationFact(&fact)) {
+        xvatsim::brain::ConsumeBrainOwnedAccessoryPublicationFact(
+            &gBrainOwnedRuntimeState, fact);
+    }
 }
 
 void UpdateOverlayWindow(
@@ -5245,6 +5255,7 @@ PLUGIN_API void XPluginStop() {
     PersistOverlayGeometryIfChanged();
     DiscardPendingAccessoryClickFacts();
     gOverlayWindow.StopAccessoryPreparation();
+    DrainAccessoryPublicationFacts();
     LogAccessoryPerformanceSnapshot("plugin-stop");
     xvatsim::brain::StopBrainOwnedAccessoryRuntime(
         &gBrainOwnedRuntimeState);
@@ -5280,6 +5291,7 @@ PLUGIN_API void XPluginDisable() {
     PersistOverlayGeometryIfChanged();
     DiscardPendingAccessoryClickFacts();
     gOverlayWindow.StopAccessoryPreparation();
+    DrainAccessoryPublicationFacts();
     LogAccessoryPerformanceSnapshot("plugin-disable");
     xvatsim::brain::DisableBrainOwnedAccessoryRuntime(
         &gBrainOwnedRuntimeState);

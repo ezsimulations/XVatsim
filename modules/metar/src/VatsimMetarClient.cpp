@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cctype>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -12,11 +11,8 @@
 #include <windows.h>
 #include <winhttp.h>
 
-#include <winrt/base.h>
-#include <winrt/Windows.Data.Json.h>
-#include <winrt/Windows.Foundation.Collections.h>
-
 #include "XVatsim/brain/BrainMetarRuntime.h"
+#include "XVatsim/modules/metar/VatsimMetarDecoder.h"
 
 namespace xvatsim::modules::metar {
 
@@ -25,7 +21,6 @@ namespace {
 constexpr wchar_t kUserAgent[] = L"XVatsim/1.2.3";
 constexpr wchar_t kHost[] = L"metar.vatsim.net";
 constexpr std::size_t kMaxPayloadBytes = 65'536;
-constexpr std::size_t kMaxRawMetarBytes = 4'096;
 constexpr int kResolveTimeoutMs = 1'000;
 constexpr int kConnectTimeoutMs = 2'000;
 constexpr int kSendTimeoutMs = 2'000;
@@ -50,13 +45,6 @@ DWORD RemainingTimeoutMs(
     const auto remaining = std::max<long long>(
         0, kTotalRequestTimeoutMs - elapsed);
     return static_cast<DWORD>(std::min<long long>(phaseLimitMs, remaining));
-}
-
-std::string TrimOuter(const std::string& value) {
-    const auto begin = value.find_first_not_of(" \t\r\n");
-    if (begin == std::string::npos) return {};
-    const auto end = value.find_last_not_of(" \t\r\n");
-    return value.substr(begin, end - begin + 1);
 }
 
 struct AsyncContext {
@@ -189,6 +177,29 @@ std::uint32_t WaitError(
     return context.error.load(std::memory_order_acquire);
 }
 
+brain::BrainMetarDecodeStatus ToBrainDecodeStatus(
+    VatsimMetarDecodeStatus status) {
+    switch (status) {
+        case VatsimMetarDecodeStatus::Decoded:
+            return brain::BrainMetarDecodeStatus::Decoded;
+        case VatsimMetarDecodeStatus::MalformedJson:
+            return brain::BrainMetarDecodeStatus::MalformedJson;
+        case VatsimMetarDecodeStatus::RootTypeMismatch:
+            return brain::BrainMetarDecodeStatus::RootTypeMismatch;
+        case VatsimMetarDecodeStatus::ResourceFailure:
+            return brain::BrainMetarDecodeStatus::ResourceFailure;
+        case VatsimMetarDecodeStatus::NotAttempted:
+            break;
+    }
+    return brain::BrainMetarDecodeStatus::NotAttempted;
+}
+
+brain::BrainMetarDecodedFieldType ToBrainFieldType(
+    VatsimMetarJsonFieldType type) {
+    return static_cast<brain::BrainMetarDecodedFieldType>(
+        static_cast<int>(type));
+}
+
 }  // namespace
 
 std::wstring BuildVatsimMetarRequestPath(const std::string& normalizedIcao) {
@@ -196,61 +207,6 @@ std::wstring BuildVatsimMetarRequestPath(const std::string& normalizedIcao) {
     if (!brain::NormalizeStrictMetarIcao(normalizedIcao, &checked)) return {};
     return L"/" + std::wstring(checked.begin(), checked.end()) +
         L"?format=json";
-}
-
-VatsimMetarJsonResult ExtractVatsimMetarJson(
-    const std::string& requestedIcao,
-    const std::string& payload) {
-    VatsimMetarJsonResult result;
-    std::string normalizedRequest;
-    if (!brain::NormalizeStrictMetarIcao(requestedIcao, &normalizedRequest)) {
-        result.reason = "invalid-request-station";
-        return result;
-    }
-    if (payload.empty() || payload.size() > kMaxPayloadBytes) {
-        result.reason = "payload-size-rejected";
-        return result;
-    }
-    try {
-        winrt::init_apartment(winrt::apartment_type::multi_threaded);
-    } catch (const winrt::hresult_changed_state&) {
-    }
-    try {
-        using namespace winrt::Windows::Data::Json;
-        const auto array = JsonArray::Parse(winrt::to_hstring(payload));
-        if (array.Size() != 1) {
-            result.reason = array.Size() == 0
-                ? "station-not-found" : "multiple-stations-rejected";
-            return result;
-        }
-        const auto object = array.GetObjectAt(0);
-        if (!object.HasKey(L"id") || !object.HasKey(L"metar")) {
-            result.reason = "json-fields-missing";
-            return result;
-        }
-        const auto id = winrt::to_string(object.GetNamedString(L"id"));
-        const auto raw = TrimOuter(
-            winrt::to_string(object.GetNamedString(L"metar")));
-        std::string normalizedId;
-        if (!brain::NormalizeStrictMetarIcao(id, &normalizedId) ||
-            normalizedId != normalizedRequest) {
-            result.reason = "wrong-station";
-            return result;
-        }
-        if (raw.empty() || raw.size() > kMaxRawMetarBytes ||
-            raw.find('\0') != std::string::npos) {
-            result.reason = "raw-metar-size-rejected";
-            return result;
-        }
-        result.accepted = true;
-        result.stationIcao = normalizedId;
-        result.rawMetar = raw;
-        result.reason = "json-accepted";
-        return result;
-    } catch (...) {
-        result.reason = "malformed-json";
-        return result;
-    }
 }
 
 struct VatsimMetarClient::Implementation {
@@ -631,28 +587,39 @@ struct VatsimMetarClient::Implementation {
         }
         transportProgress |= brain::BrainMetarPayloadReadComplete;
 
-        const auto extracted = ExtractVatsimMetarJson(normalized, payload);
-        if (!extracted.accepted) {
-            auto status = extracted.reason == "wrong-station"
-                ? brain::BrainMetarWorkerStatus::WrongStation
-                : brain::BrainMetarWorkerStatus::JsonRejected;
-            const auto stage = extracted.reason == "wrong-station"
-                ? brain::BrainMetarTransportStage::StationValidation
-                : brain::BrainMetarTransportStage::JsonValidation;
-            auto fact = FailureFact(
-                request, status, extracted.reason, started, stage,
-                brain::BrainMetarWinHttpOperation::None,
-                TRUE, ERROR_SUCCESS, transportProgress);
-            fact.httpStatus = 200;
-            fact.payloadBytes = payload.size();
-            return finish(std::move(fact));
+        const auto decoded = DecodeVatsimMetarPayload(payload);
+        if (decoded.decodeStatus == VatsimMetarDecodeStatus::Decoded) {
+            transportProgress |= brain::BrainMetarJsonDecoded;
         }
-        transportProgress |= brain::BrainMetarJsonAccepted;
         brain::BrainMetarWorkerFact fact;
         fact.status = brain::BrainMetarWorkerStatus::Success;
         fact.request = request;
-        fact.stationIcao = extracted.stationIcao;
-        fact.rawMetar = extracted.rawMetar;
+        fact.decodeStatus = ToBrainDecodeStatus(decoded.decodeStatus);
+        fact.reportCardinality = decoded.reportCardinality;
+        fact.reportCardinalityLimitExceeded =
+            decoded.reportCardinalityLimitExceeded;
+        fact.decodingElapsedMicroseconds =
+            decoded.decodingElapsedMicroseconds;
+        fact.decodeDiagnostic = decoded.diagnostic;
+        if (decoded.soleReport.has_value()) {
+            const auto& fields = decoded.soleReport.value();
+            fact.stationIcao = fields.returnedStation;
+            fact.rawMetar = fields.rawMetar;
+            fact.stationFieldType = ToBrainFieldType(fields.stationFieldType);
+            fact.metarFieldType = ToBrainFieldType(fields.metarFieldType);
+            fact.stationFieldMissing = fields.stationFieldMissing;
+            fact.metarFieldMissing = fields.metarFieldMissing;
+            fact.stationFieldMalformed = fields.stationFieldMalformed;
+            fact.metarFieldMalformed = fields.metarFieldMalformed;
+            fact.stationByteLimitExceeded = fields.stationByteLimitExceeded;
+            fact.rawMetarByteLimitExceeded =
+                fields.rawMetarByteLimitExceeded;
+            fact.rawMetarContainsNul = fields.rawMetarContainsNul;
+            fact.rawMetarHasLeadingWhitespace =
+                fields.rawMetarHasLeadingWhitespace;
+            fact.rawMetarHasTrailingWhitespace =
+                fields.rawMetarHasTrailingWhitespace;
+        }
         fact.httpStatus = 200;
         fact.completedMonotonicMs = MonotonicMilliseconds();
         fact.networkElapsedUs = ElapsedMicroseconds(started);
@@ -662,7 +629,7 @@ struct VatsimMetarClient::Implementation {
             brain::BrainMetarWinHttpOperation::ReadData;
         fact.winHttpResult = TRUE;
         fact.transportProgress = transportProgress;
-        fact.diagnostic = "vatsim-metar-accepted";
+        fact.diagnostic = "vatsim-http-response-decoded";
         return finish(std::move(fact));
     }
 

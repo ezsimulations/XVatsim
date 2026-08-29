@@ -1030,3 +1030,20 @@ lifecycle cancellation, and brain-owned parse elapsed/path diagnostics.
 Together with the mandatory prior suites, the saved baseline is 630 scenarios
 with canonical fingerprint
 `24F3438A454DD66EF46DA334F18761F501E241884EC0E496EF2D737CBF21790C`.
+
+Step 4 brain-exclusive accessory authority proof
+-------------------------------------------------
+
+The 44 `v2_step4_brain_exclusive_*` scenarios preserve three red cases for the
+stale hidden preparation, competing commit paths, and cancelled-liveness
+accounting defects. Corrected production-path proof covers the stateless METAR
+decoder and one composite worker fact, brain-only acceptance, exact immutable
+presentation commands, one normal-update commit coordinator, no draw-time
+commit, event-latched preparation, nonblocking later clicks, all terminal
+publication outcomes, guaranteed terminal-fact capacity, exact lifecycle
+rejection, first populated METAR open, identical KDFW/KABQ quiet behavior,
+manual drawer ownership, Enroute KSAN, 1,000 fully accounted actions, and
+100,000 unchanged cycles.
+
+The saved baseline is 674 scenarios with canonical fingerprint
+`EE5B15EAE725EBA23AEA1CE9F9FEB82D0D93578C0A18EBA6129AE8B898E645C3`.

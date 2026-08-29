@@ -61,13 +61,12 @@ public:
         OverlayAccessoryPreparationFailureCallback callback,
         void* refcon);
     bool BeginAccessoryInputDispatch(OverlayAccessoryClickFact* outFact);
-    bool BindAccessoryInputDispatch(
-        const OverlayAccessoryClickFact& fact,
-        brain::BrainOwnedAccessoryDrawerAction action);
-    bool CancelAccessoryInputDispatch(std::uint64_t requestSequence);
     std::size_t DiscardPendingAccessoryClickFacts();
     bool ConsumeAccessoryPerformancePublication(
         AccessoryPerformanceSnapshot* outSnapshot);
+    bool ConsumeAccessoryPublicationFact(
+        brain::BrainOwnedAccessoryPublicationFact* outFact);
+    bool CanAcceptAccessoryPresentationCommand() const;
     static std::uint64_t AccessoryWallClockMicroseconds();
     std::uint64_t GetAccessoryLayoutGeneration() const;
     OverlayAccessoryIntegrationCounters GetAccessoryIntegrationCounters() const;
@@ -157,14 +156,17 @@ private:
         std::uint64_t elapsedMicroseconds);
     void PublishFirstAccessoryPerformanceWarningIfNeeded();
     void RetryPendingAccessoryPreparations();
-    bool PublishReadyAccessoryPreparation();
-    void ClearDeferredAccessoryInputBinding(bool cancelInFlight);
     void ResetAccessoryPreparationTiming();
-    void NotifyNextAccessoryInputIfPending();
+    bool QueueAccessoryPublicationFact(
+        const brain::BrainOwnedAccessoryPublicationFact& fact);
+    void CancelUndeliveredAccessoryCommandForLifecycle();
     AccessoryPreparationKey BuildAccessoryPreparationKey(
         brain::BrainOwnedAccessoryDrawerId drawer,
         std::uint64_t historyGeneration,
-        std::uint64_t contentGeneration) const;
+        std::uint64_t contentGeneration,
+        std::uint64_t commandIdentity,
+        std::uint64_t lifecycleEpoch,
+        std::uint64_t drawerContentRevision) const;
 
     XPLMWindowID window_ = nullptr;
     brain::OverlayViewModel viewModel_{};
@@ -214,10 +216,15 @@ private:
         accessoryPendingPreparationRequests_{};
     std::uint64_t accessoryPreparationWaitStartedMicroseconds_ = 0;
     std::uint64_t accessoryPreparationReadyCollectedMicroseconds_ = 0;
-    bool accessoryDeferredBindingPending_ = false;
-    OverlayAccessoryClickFact accessoryDeferredBindingFact_{};
-    brain::BrainOwnedAccessoryDrawerAction accessoryDeferredBindingAction_ =
-        brain::BrainOwnedAccessoryDrawerAction::None;
+    std::uint64_t accessoryLastConsumedPreparationReadySequence_ = 0;
+    AccessoryPublicationFactQueue accessoryPublicationFacts_{};
+    std::uint64_t accessoryIssuedCommandIdentity_ = 0;
+    std::uint64_t accessoryIssuedLifecycleEpoch_ = 0;
+    bool accessoryIssuedCommandTerminal_ = true;
+    std::uint64_t accessoryAwaitingFirstFrameCommandIdentity_ = 0;
+    std::uint64_t accessoryCommandCommitStartedMicroseconds_ = 0;
+    std::uint64_t accessoryCommitOperationStartedMicroseconds_ = 0;
+    std::uint64_t accessoryCommandCommittedMicroseconds_ = 0;
     brain::BrainOwnedAccessoryPresentationHandle accessoryPresentationHandle_{};
     std::string mainCardProductionSignature_ = "0";
     bool accessoryRailTextureDirty_ = true;
