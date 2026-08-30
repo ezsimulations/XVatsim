@@ -136,7 +136,7 @@ Closeout receipt:
 ## Accepted Fixture-Off Payload
 
 Source directory:
-`build/v2-step4-accessory-input-boundary-release-normal/dist/XVatsim/win_x64`
+`build/v2-step5-atis-implementation/dist/XVatsim/win_x64`
 
 - `XVatsim.xpl`: `2,513,920` bytes,
   `BDBBB8475CC9A9ED6BE58E3AC87FF7B59BF6D9810254C9AA767FB515FD109642`
