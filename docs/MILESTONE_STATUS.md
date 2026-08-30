@@ -1,46 +1,44 @@
 # Milestone Status
 
-Updated: 2026-08-29
+Updated: 2026-08-30
 
 ## Current Position
 
-XVatsim V2 development is on branch `v2-development`. Steps 1 through 4 are
-accepted and complete. The Director classification for Step 4 is:
+XVatsim V2 development is on branch `v2-development`. Steps 1 through 5 are
+accepted and complete. The Director classification for Step 5 is:
 
-`STEP 4 METAR ORB AND DRAWER — OFFLINE-PROVEN, CONTROLLED-LIVE ACCEPTED`
+`STEP 5 VATSIM ATIS — OFFLINE-PROVEN, FOCUSED CONTROLLED-LIVE ACCEPTED`
 
-The accepted Step 4 implementation commit is
-`f381e39c9f8f477ed7b8c1d8b913dbe836374557`. The acceptance and receipt commit
-is `c47b6a3cf71650c4474a197efde3c5406d09c872`. The authorized handoff commit
+The accepted Step 5 implementation commit is
+`598a8c993bdaad43bf5ec0fff5e230a4cb746857`. The acceptance and receipt commit
+is `aca5304b7fc2922b6a7918dcd4c027439b02e053`. The authorized handoff commit
 becomes current `HEAD`; its parent must be
-`c47b6a3cf71650c4474a197efde3c5406d09c872`, its subject must be
-`docs: advance handoff beyond Step 4`, and its scope must be exactly the three
+`aca5304b7fc2922b6a7918dcd4c027439b02e053`, its subject must be
+`docs: advance handoff beyond Step 5`, and its scope must be exactly the three
 existing handoff documents. Its final SHA must be resolved from Git because a
 commit cannot embed its own identity.
 
-The accepted regression baseline is 776 saved scenarios. The canonical
+The accepted regression baseline is 800 saved scenarios. The canonical
 fingerprint is
-`521A031E94DE1AA0CFFFCBCE94F0BC82945C4A875D09D4EE2CEB4603AF896CF5`.
-Relevant Step 4 passed `276/276`, complete regression passed `776/776`, the
-1,000-click production path had exact accounting and zero drops, both settled
-and disabled 100,000-cycle idle proofs recorded zero recurring accessory work,
-and 43 current-source production-raster PNGs repeated with zero differences.
+`609BE47845CE65F16B2478716439B9330A895BDF7AB9B06EF47D6BD51CEDAF8A`.
+Step 5 passed `24/24`, Step 3 passed `31/31`, relevant Step 4 passed `276/276`,
+and complete regression passed `800/800` twice. The 48-image current-source
+ATIS visual proof repeated with zero differences. The 1,000-click proof had
+exact accounting and zero drops, and settled/background 100,000-cycle proofs
+recorded zero product or recurring accessory work.
 
-The final Phase E host callback resumed earlier than the intended ten-second
-disabled mark, so that live interval was not literally proven. The original
-procedural-stop report remains unchanged. The Director accepted the combined
-evidence because live suspension recorded `workerRunning=0`, offline disabled
-idle passed 100,000 cycles, resume retained `flightContext=1`, `stage=ENR`,
-`callsign=ASA551`, and `primary=KSAN`, and the first no-input frame showed the
-correct green `KSAN VFR` rail before any new METAR completion. Resume-to-visible
-time was `2,641 µs`; exact accounting and rollback passed.
+All ten focused controlled-live checkpoints passed in the first approved
+roster attempt. KDEN Departure advanced from unread amber `NEW U` to its exact
+drawer and read cyan `INFO U`; natural Enroute selected KIND Combined and
+advanced from `NEW C` to `INFO C`; cached KDEN lookup displayed split Departure
+and Arrival records, retained KIND primary ownership, and restored KIND after
+eight seconds. Exact accounting, shutdown, and rollback passed.
 
-The protected pre-closeout lineage remains `59 manifests / 2,175 rows / 0
-mismatches`. The final Phase E evidence package contains 82 physical files and
-81 manifest rows; its manifest SHA-256 is
-`D8A98FF63D04938A974B64F4B20123211D805B561E504DDC771C88F833F2A8E5`.
-Its backup contains 165 physical files and 164 manifest rows with manifest
-SHA-256 `A2CC5BA499DC47AD406C8FC3B35B66C09A85CBD9A3480C1D240B28F1727B7098`.
+The protected pre-live lineage remains `68 manifests / 3,002 rows / 0
+mismatches`. The focused-live evidence manifest contains 110 rows with SHA-256
+`F322CB5A43DFA4E9AE98F55C45982EDF47E9963C8B99B5D723D4A3F87CC41275`.
+Its backup manifest contains 164 rows with SHA-256
+`A2CC5BA499DC47AD406C8FC3B35B66C09A85CBD9A3480C1D240B28F1727B7098`.
 
 X-Plane and xPilot are stopped; active/staged `.xpl` is `0/0`; active
 `win_x64` is absent; and protected `V2 Test` remains 50 files and 29
@@ -187,6 +185,42 @@ classification. Future V2 work must continue preventing recurring flight-cycle
 CPU spikes, polling, repeated parsing, unnecessary rendering, network work, or
 diagnostic spam.
 
+## Step 5 - VATSIM ATIS
+
+- Status: accepted, complete, and frozen.
+- Classification:
+  `STEP 5 VATSIM ATIS — OFFLINE-PROVEN, FOCUSED CONTROLLED-LIVE ACCEPTED`.
+- Implementation:
+  `598a8c993bdaad43bf5ec0fff5e230a4cb746857`.
+- Acceptance and receipts:
+  `aca5304b7fc2922b6a7918dcd4c027439b02e053`.
+- Rule One remains binding: the Brain makes every final ATIS semantic decision.
+  The VATSIM module mechanically decodes and bounds raw feed facts; it does not
+  interpret airport, service role, applicability, selection, availability,
+  change identity, unread state, history, ORB, or drawer ownership.
+- ATIS uses the existing shared VATSIM network-data feed and cadence. It adds no
+  second endpoint, request, scheduler, worker, cache authority, selector,
+  snapshot, queue, renderer, or fallback path.
+- Departure selects Departure ATIS with Combined fallback. The established
+  Departure-to-Enroute transition changes the primary to Arrival ATIS with
+  Combined fallback. Manual lookup uses cached feed data, never replaces the
+  primary, and restores the primary after eight seconds.
+- Meaningful ATIS revisions are Brain-owned and exclude `last_updated` alone.
+  Unread state clears only after that exact revision reaches an accepted visible
+  frame. History remains newest-first, deduplicated, and bounded.
+- Step 5 focused: `24/24`; Step 3: `31/31`; relevant Step 4: `276/276`;
+  complete regression: `800/800` twice; fingerprint
+  `609BE47845CE65F16B2478716439B9330A895BDF7AB9B06EF47D6BD51CEDAF8A`.
+- Current-source visual proof: `48/48` images twice with identical manifests and
+  zero pixel, hash, dimension, or rendering differences.
+- Focused controlled-live proof accepted KDEN Departure, natural Enroute KIND
+  Combined, exact unread/read transitions, cached split-KDEN lookup, KIND
+  primary preservation, and eight-second restoration. All ten checkpoints
+  passed in the first approved roster attempt.
+- Accepted fixture-off `XVatsim.xpl`: `2,513,920` bytes; SHA-256
+  `BDBBB8475CC9A9ED6BE58E3AC87FF7B59BF6D9810254C9AA767FB515FD109642`.
+- Production deployment and release are not authorized by Step 5 acceptance.
+
 ## Restored External State
 
 The latest manifest-driven rollback passed and restored the complete verified
@@ -207,18 +241,18 @@ pretest state.
 Latest rollback evidence:
 
 - Evidence root:
-  `outputs/v2_step_04_final_payload_phase_e_plugin_suspend_resume_controlled_live_reproof_evidence`.
-- Physical files / manifest rows: `82 / 81`.
+  `outputs/v2_step_05_vatsim_atis_focused_controlled_live_evidence`.
+- Manifest rows: `110`.
 - Evidence manifest:
-  `D8A98FF63D04938A974B64F4B20123211D805B561E504DDC771C88F833F2A8E5`.
+  `F322CB5A43DFA4E9AE98F55C45982EDF47E9963C8B99B5D723D4A3F87CC41275`.
 - Backup root:
-  `outputs/v2_step_04_final_payload_phase_e_plugin_suspend_resume_controlled_live_reproof_backup`.
-- Physical files / manifest rows: `165 / 164`.
+  `outputs/v2_step_05_vatsim_atis_focused_controlled_live_backup`.
+- Manifest rows: `164`.
 - Backup manifest:
   `A2CC5BA499DC47AD406C8FC3B35B66C09A85CBD9A3480C1D240B28F1727B7098`.
 
-The earlier `59 / 2,175 / 0` protected-manifest lineage also remains
-byte-exact. No protected evidence was rewritten for closeout.
+The `68 / 3,002 / 0` protected-manifest lineage also remains byte-exact. No
+protected evidence was rewritten for closeout.
 
 ## Working Arrangement
 
@@ -228,8 +262,7 @@ byte-exact. No protected evidence was rewritten for closeout.
   Gate.
 - The repository is the durable shared memory between tasks.
 
-The architecture contract is repository-wide, while this correction remains
-bounded to Step 3/Step 4 accessory and METAR paths:
+The architecture contract is repository-wide:
 
 `The Brain is the sole product and semantic decision-maker.`
 
@@ -242,26 +275,27 @@ Darron's explicit approval.
 
 The next project Contract Gate to prepare is:
 
-`XVatsim V2 — Step 5 VATSIM ATIS Architecture Review Contract Gate`
+`XVatsim V2 — Step 6 PDC and Private Messages Architecture Review Contract Gate`
 
 The next session begins with read-only preparation only:
 
 1. Verify the handoff commit has parent
-   `c47b6a3cf71650c4474a197efde3c5406d09c872`, subject
-   `docs: advance handoff beyond Step 4`, and exactly the three handoff files.
-2. Read the Step 4 Director acceptance, closeout receipt, final offline proof,
-   and preserved final live evidence summary.
-3. Read the Step 5 section of `docs/V2_0_0_ROADMAP.md` and audit the existing
-   VATSIM feed facts, Brain ownership, ATIS placeholder presentation, and
-   lifecycle boundaries without changing source.
-4. Prepare the Step 5 architecture-review Contract Gate for Darron and the
-   Project Director. ATIS must extend the existing VATSIM feed; it must not add
-   a second ATIS network poll.
-5. Do not implement Step 5, deploy a payload, start applications, or make a
-   live request until Darron explicitly approves the applicable gate.
+   `aca5304b7fc2922b6a7918dcd4c027439b02e053`, subject
+   `docs: advance handoff beyond Step 5`, and exactly the three handoff files.
+2. Read the Step 5 Director acceptance, closeout receipt, implementation brief,
+   offline proof receipt, and preserved focused-live final summary.
+3. Read the Step 6 section of `docs/V2_0_0_ROADMAP.md` and audit existing PDC,
+   private-message, Brain, shared accessory, and lifecycle boundaries without
+   changing source.
+4. Prepare the Step 6 architecture-review Contract Gate for Darron and the
+   Project Director. Rule One remains binding, and no parallel presentation or
+   publication architecture is permitted.
+5. Do not implement Step 6, deploy a payload, start applications, make a live
+   request, or perform release work until Darron explicitly approves the
+   applicable gate.
 
-Step 4 is frozen. Reopening it requires a separately approved corrective gate.
-Its acceptance does not grant production deployment authority.
+Step 5 is frozen. Reopening it requires a separately approved corrective gate.
+Its acceptance grants no production deployment, release, or Step 6 authority.
 
 ## V1.2.3 Patch Release
 

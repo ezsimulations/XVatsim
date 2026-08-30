@@ -1,11 +1,11 @@
 # XVatsim Next Session Handoff
 
-Updated: 2026-08-29
+Updated: 2026-08-30
 
-Status: Steps 1 through 4 are accepted and complete. Step 4 is frozen with the
+Status: Steps 1 through 5 are accepted and complete. Step 5 is frozen with the
 Director classification:
 
-`STEP 4 METAR ORB AND DRAWER — OFFLINE-PROVEN, CONTROLLED-LIVE ACCEPTED`
+`STEP 5 VATSIM ATIS — OFFLINE-PROVEN, FOCUSED CONTROLLED-LIVE ACCEPTED`
 
 ## Roles And Authority
 
@@ -14,26 +14,26 @@ Director classification:
 - Codex is the Engineering Agent and acts only under an explicitly approved
   Contract Gate.
 - The repository is the durable shared memory between tasks.
-- Step 4 acceptance does not authorize production deployment, release, or
-  Step 5 implementation.
+- Step 5 acceptance grants no production deployment, release, or Step 6
+  implementation authority.
 
 ## Authoritative Repository State
 
 ```text
 Repository: C:\Users\DARRON\OneDrive\Documents\XVatsim-V2
 Branch: v2-development
-Step 4 implementation: f381e39c9f8f477ed7b8c1d8b913dbe836374557
-Step 4 acceptance/receipts: c47b6a3cf71650c4474a197efde3c5406d09c872
-Saved scenarios: 776
-Scenario fingerprint: 521A031E94DE1AA0CFFFCBCE94F0BC82945C4A875D09D4EE2CEB4603AF896CF5
+Step 5 implementation: 598a8c993bdaad43bf5ec0fff5e230a4cb746857
+Step 5 acceptance/receipts: aca5304b7fc2922b6a7918dcd4c027439b02e053
+Saved scenarios: 800
+Scenario fingerprint: 609BE47845CE65F16B2478716439B9330A895BDF7AB9B06EF47D6BD51CEDAF8A
 ```
 
 The documentation-only handoff commit becomes current `HEAD`. Its SHA cannot
 be embedded in its own contents. The next session must resolve it locally and
 verify:
 
-- parent: `c47b6a3cf71650c4474a197efde3c5406d09c872`;
-- subject: `docs: advance handoff beyond Step 4`; and
+- parent: `aca5304b7fc2922b6a7918dcd4c027439b02e053`;
+- subject: `docs: advance handoff beyond Step 5`; and
 - scope: exactly `docs/MILESTONE_STATUS.md`,
   `docs/NEXT_SESSION_HANDOFF.md`, and
   `docs/NEXT_SESSION_START_PROMPT.txt`.
@@ -41,9 +41,10 @@ verify:
 Expected state after the handoff commit:
 
 - tracked/staged changes: `0/0`;
-- standard untracked files: `2,020`—`2,018` beneath `outputs/` and the two
-  preserved Step 4 Contract Gate documents beneath `docs/`;
-- saved scenarios: `776`;
+- standard untracked files: `2,577`;
+- saved scenarios: `800`;
+- canonical fingerprint:
+  `609BE47845CE65F16B2478716439B9330A895BDF7AB9B06EF47D6BD51CEDAF8A`;
 - X-Plane/xPilot processes: `0/0`;
 - active/staged `.xpl`: `0/0`;
 - active `win_x64`: absent; and
@@ -51,7 +52,7 @@ Expected state after the handoff commit:
 
 Do not clean, normalize, move, stage, commit, or delete preserved untracked
 evidence merely to make status output shorter. A Windows filename-length
-warning while enumerating the deeply preserved backup does not authorize a
+warning while enumerating a deeply preserved backup does not authorize a
 filesystem change.
 
 ## Accepted Milestones
@@ -60,108 +61,112 @@ filesystem change.
 - Step 2 — Explicit IFR/VFR Mode Foundation: accepted and complete.
 - Step 3 — ORB Rail and Information Drawer Foundation: accepted and complete.
 - Step 4 — METAR ORB and Drawer: accepted, complete, and frozen.
+- Step 5 — VATSIM ATIS: accepted, complete, and frozen.
 
-Step 4 commits:
+Step 5 commits:
 
 - implementation:
-  `f381e39c9f8f477ed7b8c1d8b913dbe836374557`;
+  `598a8c993bdaad43bf5ec0fff5e230a4cb746857`;
 - acceptance and receipts:
-  `c47b6a3cf71650c4474a197efde3c5406d09c872`.
+  `aca5304b7fc2922b6a7918dcd4c027439b02e053`.
 
-Step 4 proof:
+## Accepted Step 5 Offline Proof
 
+- Step 5 focused: `24/24`.
+- Step 3 focused: `31/31`.
 - Relevant Step 4: `276/276`.
-- Complete regression: `776/776`.
+- Complete regression: `800/800` twice.
 - Canonical fingerprint:
-  `521A031E94DE1AA0CFFFCBCE94F0BC82945C4A875D09D4EE2CEB4603AF896CF5`.
-- 1,000-click production path: exact terminal accounting and zero drops.
-- Settled and disabled idle: `100,000` cycles each with zero recurring
-  accessory work.
-- Current-source visual proof: `43/43` images twice with zero repeat
-  differences.
+  `609BE47845CE65F16B2478716439B9330A895BDF7AB9B06EF47D6BD51CEDAF8A`.
+- Production-path clicks / decisions / commands / terminals:
+  `1000/1000/1000/1000`, with zero pending, drops, or rejections.
+- Settled idle and non-primary background churn: `100,000` cycles/generations
+  each with zero recurring product work.
+- Current-source visual proof: `48/48` images twice with identical manifests
+  and zero pixel, hash, dimension, or rendering differences.
 
-## Accepted Step 4 Product Behavior
+## Accepted Step 5 Product Behavior
 
-- METAR weather comes only from VATSIM's approved single-airport endpoint.
-- IFR Departure automatically targets only departure; IFR Enroute targets only
-  destination; VFR retains its accepted primary behavior.
-- Manual lookups temporarily own the METAR drawer and never replace the primary
-  ORB.
-- Repeated identical lookup is accepted without reparse or duplicate history,
-  resets the visible viewport to the spotlight, expires to pinned primary, and
-  cannot steal ownership from a newer ATIS/PDC selection.
-- The accessory rail uses one Brain-owned immutable semantic snapshot, one
-  generic mechanical preparation worker, one overlay commit/render path, and
-  one publication-fact return path.
-- Hidden commitment, visible-attempt timing, click timing, and lifecycle
-  cancellation are independently and truthfully accounted.
-- Plugin Admin disable/re-enable suspends and resumes the same accepted flight;
-  Reset XVatsim Session and Recover Current Flight remain separate operations.
+- Rule One is binding: the Brain makes every final ATIS semantic decision.
+- The VATSIM module mechanically decodes and bounds the dedicated root `atis`
+  facts from the existing shared network-data feed. It does not decide ICAO,
+  service role, applicability, selection, availability, change identity,
+  unread state, history, ORB, or drawer ownership.
+- ATIS uses the existing shared VATSIM feed and cadence. There is no second ATIS
+  endpoint, request, scheduler, worker, cache authority, selector, snapshot,
+  queue, renderer, or fallback path.
+- Departure selects Departure ATIS with Combined fallback. The established
+  Enroute transition selects Arrival ATIS with Combined fallback.
+- Manual lookup uses cached feed data, never replaces the automatic primary,
+  and restores the primary after eight seconds. Split Departure and Arrival
+  records are both shown rather than guessed.
+- Meaningful changes include information code, text, frequency, callsign, or
+  service role—not `last_updated` alone.
+- Unread state clears only when the exact revision reaches an accepted visible
+  frame. History is newest-first, deduplicated, and bounded.
+- A fresh feed with no applicable ATIS is idle. A stale, failed, missing, or
+  mechanically incomplete feed is unknown and never falsely reported as
+  controller offline.
 
-Arrival remains:
+## Focused Controlled-Live Acceptance
 
-`OUT OF SCOPE — UNCHANGED AND OFFLINE-PROVEN`
+All ten atomic checkpoints passed in the first approved roster attempt:
 
-## Final Step 4 Controlled-Live Acceptance
+- KDEN Departure changed from unread amber `NEW U` to its exact drawer and read
+  cyan `INFO U`.
+- Natural Enroute selected KIND Combined, which changed from unread amber
+  `NEW C` to its exact drawer and read cyan `INFO C`.
+- Cached KDEN lookup displayed both split Departure and Arrival records,
+  retained KIND as the automatic primary, and restored the current KIND
+  Combined revision after eight seconds.
+- Clicks produced/consumed/pending/dropped were `4/4/0/0`.
+- Publication facts dequeued/accepted were `24/24`.
+- Command/attempt/combined roles were `21/22/19`.
+- Duplicate, stale, lost, mechanical, and liveness failures were all `0`.
+- Maximum callback was `46 microseconds`; click-to-terminal `33,907
+  microseconds`; visible-frame timing `15,129 microseconds`; Brain ATIS
+  evaluation `920 microseconds`.
 
-The original final Phase E procedural-stop report remains unchanged. The host
-issued the resume callback earlier than the intended ten-second mark, so that
-disabled live interval was not literally proven.
-
-The Director nevertheless accepts Step 4 without another live execution
-because:
-
-- live suspension recorded `workerRunning=0`;
-- disabled idle independently passed the 100,000-cycle offline proof;
-- resume retained `flightContext=1`, `stage=ENR`, `callsign=ASA551`, and
-  `primary=KSAN`;
-- the first no-input frame showed `KSAN VFR` with the correct green background
-  before any new METAR completion;
-- resume-to-visible time was `2,641 µs`; and
-- exact accounting, shutdown, and rollback passed.
-
-Acceptance record:
-`outputs/v2_step_04_final_payload_phase_e_director_acceptance.md`
+Director acceptance:
+`outputs/v2_step_05_vatsim_atis_director_acceptance.md`
 
 Closeout receipt:
-`outputs/v2_step_04_metar_orb_and_drawer_closeout_receipt.md`
+`outputs/v2_step_05_vatsim_atis_closeout_receipt.md`
 
 ## Accepted Fixture-Off Payload
 
 Source directory:
 `build/v2-step4-accessory-input-boundary-release-normal/dist/XVatsim/win_x64`
 
-- `XVatsim.xpl`: `2,303,488` bytes,
-  `9BA85C86347B80607CD875E2EA7F52443CF0217F6E9F29FF4B646DEF4F0D2A03`
-- `authority_source_registry.json`:
+- `XVatsim.xpl`: `2,513,920` bytes,
+  `BDBBB8475CC9A9ED6BE58E3AC87FF7B59BF6D9810254C9AA767FB515FD109642`
+- `authority_source_registry.json`: `40,340` bytes,
   `3676CA43E5AFB8A5E443FDE6D04616918029E004E17EFAA022695D91E23DB60B`
-- `ui_transition.mp3`:
+- `ui_transition.mp3`: `27,116` bytes,
   `C7BBE97DAD356C68FDFE40F9E8C1CF4EADEBCCD125463214F963F66356F8D9F1`
 
-The payload is not deployed. Its acceptance does not authorize production
-deployment or release.
+The payload is not deployed. Its acceptance grants no production deployment or
+release authority.
 
 ## Protected Evidence And Restored External State
 
-Protected pre-closeout lineage:
+Protected pre-live baseline:
 
-- manifests: `59`;
-- rows: `2,175`;
+- manifests: `68`;
+- rows: `3,002`;
 - mismatches: `0`.
 
-Final Phase E evidence:
+Focused-live evidence:
 
-- root:
-  `outputs/v2_step_04_final_payload_phase_e_plugin_suspend_resume_controlled_live_reproof_evidence`;
-- files / manifest rows: `82 / 81`;
+- root: `outputs/v2_step_05_vatsim_atis_focused_controlled_live_evidence`;
+- manifest rows: `110`;
 - manifest SHA-256:
-  `D8A98FF63D04938A974B64F4B20123211D805B561E504DDC771C88F833F2A8E5`.
+  `F322CB5A43DFA4E9AE98F55C45982EDF47E9963C8B99B5D723D4A3F87CC41275`.
 
-Final Phase E backup:
+Focused-live backup:
 
-- root:
-  `outputs/v2_step_04_final_payload_phase_e_plugin_suspend_resume_controlled_live_reproof_backup`;
-- files / manifest rows: `165 / 164`;
+- root: `outputs/v2_step_05_vatsim_atis_focused_controlled_live_backup`;
+- manifest rows: `164`;
 - manifest SHA-256:
   `A2CC5BA499DC47AD406C8FC3B35B66C09A85CBD9A3480C1D240B28F1727B7098`.
 
@@ -187,43 +192,41 @@ simulator or draw thread. The overlay mechanically prepares and renders exact
 Brain commands. Mouse callbacks capture bounded immutable facts and return;
 the Brain consumes them on a safe simulator cycle.
 
+The shared accessory architecture remains one immutable Brain snapshot, one
+generic mechanical preparation worker, one overlay commit/render coordinator,
+and one publication-fact return path.
+
 ## Next Project Contract Gate
 
-The next gate to prepare is:
+The next preparation target is:
 
-`XVatsim V2 — Step 5 VATSIM ATIS Architecture Review Contract Gate`
+`XVatsim V2 — Step 6 PDC and Private Messages Architecture Review Contract Gate`
 
-This is a preparation target, not existing implementation authority. The gate
-must begin read-only and establish at least:
+This is read-only preparation, not implementation authority. The gate must
+audit the existing private-message facts, PDC placeholder, Brain ownership,
+shared accessory snapshot, publication path, and lifecycle boundaries. It must
+preserve Rule One and may not create a second semantic owner, UI worker,
+scheduler, polling loop, snapshot, queue, renderer, or publication path.
 
-- the exact dedicated ATIS facts already available from the existing VATSIM
-  feed;
-- Brain-owned departure/destination targeting, acceptance, freshness,
-  information-letter, changed/unread, unavailable, history, and drawer
-  ownership semantics;
-- reuse of the existing accessory single-snapshot presentation and generic
-  mechanical preparation/publication path;
-- lifecycle and exact terminal-accounting behavior; and
-- a strict prohibition on a second ATIS network poll.
-
-Do not add a worker or network path merely because ATIS is a new domain. Source
-facts may be mechanically acquired, but the Brain remains the sole semantic
-owner.
+No Step 6 implementation, deployment, release, application startup, or live
+authority has been granted.
 
 ## Required Next-Session Reading Order
 
 1. `docs/NEXT_SESSION_START_PROMPT.txt`
 2. `docs/NEXT_SESSION_HANDOFF.md`
 3. `docs/MILESTONE_STATUS.md`
-4. `docs/V2_0_0_ROADMAP.md`, especially Step 5 and ATIS boundaries
-5. `outputs/v2_step_04_final_payload_phase_e_director_acceptance.md`
-6. `outputs/v2_step_04_metar_orb_and_drawer_closeout_receipt.md`
-7. `outputs/v2_step_04_plugin_suspend_resume_flight_context_preservation_offline_proof_summary.md`
-8. `outputs/v2_step_04_final_payload_phase_e_plugin_suspend_resume_controlled_live_reproof_evidence/61_final_controlled_live_reproof_summary.md`
-9. Current VATSIM feed, Brain ATIS state, accessory snapshot, and plugin binding
-   source paths identified during the read-only audit
+4. `docs/V2_0_0_ROADMAP.md`, especially Step 6 and PDC/private-message
+   boundaries
+5. `outputs/v2_step_05_vatsim_atis_director_acceptance.md`
+6. `outputs/v2_step_05_vatsim_atis_closeout_receipt.md`
+7. `docs/V2_STEP_05_VATSIM_ATIS_IMPLEMENTATION_ENGINEERING_BRIEF.md`
+8. `outputs/v2_step_05_vatsim_atis_implementation_offline_proof_receipt.md`
+9. `outputs/v2_step_05_vatsim_atis_focused_controlled_live_evidence/31_final_controlled_live_summary.md`
+10. Current PDC/private-message, Brain, accessory snapshot, overlay, and plugin
+    binding paths found during the read-only audit
 
 Stop if the handoff commit, repository state, scenario fingerprint, protected
-evidence, or external state differs. Do not implement Step 5, build, deploy,
-start applications, contact VATSIM, or alter Step 4 without a newly approved
-Contract Gate.
+evidence, or external state differs. Do not implement Step 6, build, deploy,
+start applications, contact VATSIM, perform release work, or alter frozen Step
+5 without a newly approved Contract Gate.
