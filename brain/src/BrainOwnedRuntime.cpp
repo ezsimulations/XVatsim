@@ -6811,12 +6811,62 @@ void ProjectBrainOwnedMetarOrbPresentation(
     orb->neutral = !usable;
 }
 
+std::vector<BrainOwnedAccessoryOrbPresentation>
+ProjectBrainOwnedAccessoryRailSemantics(
+    const BrainOwnedRuntimeState& state) {
+    std::vector<BrainOwnedAccessoryOrbPresentation> orbs;
+    const BrainOwnedAccessoryDrawerId drawers[]{
+        BrainOwnedAccessoryDrawerId::Metar,
+        BrainOwnedAccessoryDrawerId::Atis,
+        BrainOwnedAccessoryDrawerId::Pdc};
+    orbs.reserve(std::size(drawers));
+    for (const auto drawer : drawers) {
+        BrainOwnedAccessoryOrbPresentation orb;
+        orb.drawer = drawer;
+        orb.label = AccessoryDrawerLabel(drawer);
+        orb.selected = drawer == state.accessory.activeDrawer;
+        orb.neutral = !orb.selected;
+        if (orb.selected) {
+            orb.selectedIndicator = "OPEN";
+        }
+        if (drawer == BrainOwnedAccessoryDrawerId::Metar) {
+            ProjectBrainOwnedMetarOrbPresentation(state, &orb);
+        }
+        orbs.push_back(std::move(orb));
+    }
+    return orbs;
+}
+
+bool SameBrainOwnedAccessoryOrbSemantics(
+    const BrainOwnedAccessoryOrbPresentation& left,
+    const BrainOwnedAccessoryOrbPresentation& right) {
+    return left.drawer == right.drawer && left.label == right.label &&
+        left.neutral == right.neutral && left.selected == right.selected &&
+        left.selectedIndicator == right.selectedIndicator &&
+        left.airportIcao == right.airportIcao &&
+        left.categoryText == right.categoryText &&
+        left.stateText == right.stateText && left.tone == right.tone;
+}
+
+bool SameBrainOwnedAccessoryRailSemantics(
+    const std::vector<BrainOwnedAccessoryOrbPresentation>& left,
+    const std::vector<BrainOwnedAccessoryOrbPresentation>& right) {
+    if (left.size() != right.size()) return false;
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        if (!SameBrainOwnedAccessoryOrbSemantics(left[index], right[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 BrainOwnedAccessoryBoundaryDecision CloseAccessoryPreservingHistory(
     BrainOwnedRuntimeState* state) {
     BrainOwnedAccessoryBoundaryDecision decision;
     if (state == nullptr) {
         return decision;
     }
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
     decision.status = BrainOwnedAccessoryOperationStatus::Available;
     decision.drawerClosed =
         state->accessory.activeDrawer != BrainOwnedAccessoryDrawerId::None;
@@ -6824,6 +6874,7 @@ BrainOwnedAccessoryBoundaryDecision CloseAccessoryPreservingHistory(
         state->accessory.activeDrawer = BrainOwnedAccessoryDrawerId::None;
         ++state->accessory.selectionGeneration;
         ++state->accessory.scrollResetGeneration;
+        RecordBrainOwnedAccessorySelectionMutation(state);
     }
     decision.historyClearGeneration = state->accessory.historyClearGeneration;
     decision.previousCallsign = state->accessory.callsignIdentity;
@@ -6835,6 +6886,7 @@ BrainOwnedAccessoryBoundaryDecision CloseAccessoryPreservingHistory(
 
 BrainOwnedAccessoryBoundaryDecision ClearAccessorySessionHistory(
     BrainOwnedRuntimeState* state) {
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
     auto decision = CloseAccessoryPreservingHistory(state);
     if (state == nullptr) {
         return decision;
@@ -6845,6 +6897,13 @@ BrainOwnedAccessoryBoundaryDecision ClearAccessorySessionHistory(
         ++history.generation;
         history.nextAcceptedSequence = 1;
     }
+    const BrainOwnedAccessoryDrawerId drawers[]{
+        BrainOwnedAccessoryDrawerId::Metar,
+        BrainOwnedAccessoryDrawerId::Atis,
+        BrainOwnedAccessoryDrawerId::Pdc};
+    for (const auto drawer : drawers) {
+        RecordBrainOwnedAccessoryDrawerContentMutation(state, drawer);
+    }
     state->accessory.lastConsumedClickSequence = 0;
     state->accessory.pendingPresentationClickSequence = 0;
     state->accessory.pendingPresentationClickAcceptedMicroseconds = 0;
@@ -6854,14 +6913,101 @@ BrainOwnedAccessoryBoundaryDecision ClearAccessorySessionHistory(
         state->accessory.lifecycleEpoch = 1;
     }
     ++state->accessory.historyClearGeneration;
-    state->accessory.cachedPresentationSnapshot.reset();
-    state->accessory.cachedPreparationSnapshots = {};
+    RecordBrainOwnedAccessoryLifecycleMutation(state);
     decision.historiesCleared = true;
     decision.historyClearGeneration = state->accessory.historyClearGeneration;
     return decision;
 }
 
 }  // namespace
+
+BrainOwnedAccessoryVisibleInvalidationBatch::
+BrainOwnedAccessoryVisibleInvalidationBatch(BrainOwnedRuntimeState* state)
+    : state_(state) {
+    BeginBrainOwnedAccessoryVisibleInvalidationBatch(state_);
+}
+
+BrainOwnedAccessoryVisibleInvalidationBatch::
+~BrainOwnedAccessoryVisibleInvalidationBatch() {
+    EndBrainOwnedAccessoryVisibleInvalidationBatch(state_);
+}
+
+void BeginBrainOwnedAccessoryVisibleInvalidationBatch(
+    BrainOwnedRuntimeState* state) {
+    if (state == nullptr) return;
+    ++state->accessory.visibleInvalidationBatchDepth;
+}
+
+void RecordBrainOwnedAccessoryDrawerContentMutation(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedAccessoryDrawerId drawer) {
+    if (state == nullptr) return;
+    const bool isolated =
+        state->accessory.visibleInvalidationBatchDepth == 0;
+    if (isolated) BeginBrainOwnedAccessoryVisibleInvalidationBatch(state);
+    std::size_t index = 0;
+    if (AccessoryDrawerIndex(drawer, &index)) {
+        state->accessory.pendingDrawerContentInvalidations[index] = true;
+    }
+    if (isolated) EndBrainOwnedAccessoryVisibleInvalidationBatch(state);
+}
+
+void RecordBrainOwnedAccessorySelectionMutation(
+    BrainOwnedRuntimeState* state) {
+    if (state == nullptr) return;
+    const bool isolated =
+        state->accessory.visibleInvalidationBatchDepth == 0;
+    if (isolated) BeginBrainOwnedAccessoryVisibleInvalidationBatch(state);
+    state->accessory.pendingSelectionInvalidation = true;
+    if (isolated) EndBrainOwnedAccessoryVisibleInvalidationBatch(state);
+}
+
+void RecordBrainOwnedAccessoryLifecycleMutation(
+    BrainOwnedRuntimeState* state) {
+    if (state == nullptr) return;
+    const bool isolated =
+        state->accessory.visibleInvalidationBatchDepth == 0;
+    if (isolated) BeginBrainOwnedAccessoryVisibleInvalidationBatch(state);
+    state->accessory.pendingLifecycleInvalidation = true;
+    if (isolated) EndBrainOwnedAccessoryVisibleInvalidationBatch(state);
+}
+
+void EndBrainOwnedAccessoryVisibleInvalidationBatch(
+    BrainOwnedRuntimeState* state) {
+    if (state == nullptr ||
+        state->accessory.visibleInvalidationBatchDepth == 0) return;
+    auto& accessory = state->accessory;
+    --accessory.visibleInvalidationBatchDepth;
+    if (accessory.visibleInvalidationBatchDepth != 0) return;
+
+    std::size_t activeIndex = 0;
+    const bool activeDrawerValid = AccessoryDrawerIndex(
+        accessory.activeDrawer, &activeIndex);
+    bool activeDrawerContentChanged = false;
+    for (std::size_t index = 0;
+         index < accessory.pendingDrawerContentInvalidations.size(); ++index) {
+        if (!accessory.pendingDrawerContentInvalidations[index]) continue;
+        ++accessory.drawerContentRevisions[index];
+        activeDrawerContentChanged = activeDrawerContentChanged ||
+            (activeDrawerValid && activeIndex == index);
+    }
+
+    const auto currentRail = ProjectBrainOwnedAccessoryRailSemantics(*state);
+    const bool railChanged = accessory.cachedPresentationSnapshot != nullptr &&
+        !SameBrainOwnedAccessoryRailSemantics(
+            accessory.cachedPresentationSnapshot->orbs, currentRail);
+    const bool visiblePresentationChanged =
+        accessory.pendingSelectionInvalidation ||
+        accessory.pendingLifecycleInvalidation ||
+        activeDrawerContentChanged || railChanged;
+
+    accessory.pendingDrawerContentInvalidations.fill(false);
+    accessory.pendingSelectionInvalidation = false;
+    accessory.pendingLifecycleInvalidation = false;
+    if (visiblePresentationChanged) {
+        ++accessory.semanticPresentationGeneration;
+    }
+}
 
 BrainOwnedAccessoryHistoryDecision AcceptBrainOwnedAccessoryHistoryEntry(
     BrainOwnedRuntimeState* state,
@@ -6955,6 +7101,7 @@ BrainOwnedAccessoryHistoryDecision AcceptBrainOwnedAccessoryHistoryEntry(
         history.entries.pop_back();
     }
     ++history.generation;
+    RecordBrainOwnedAccessoryDrawerContentMutation(state, input.drawer);
 
     decision.accepted = true;
     decision.contentLimited = contentLimited;
@@ -6970,6 +7117,7 @@ BrainOwnedAccessorySelectionDecision RequestBrainOwnedAccessoryDrawerSelection(
     if (state == nullptr) {
         return decision;
     }
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
     decision.status = BrainOwnedAccessoryOperationStatus::Available;
     decision.requestSequence = request.requestSequence;
     decision.clickAcceptedMicroseconds = request.clickAcceptedMicroseconds;
@@ -7010,6 +7158,7 @@ BrainOwnedAccessorySelectionDecision RequestBrainOwnedAccessoryDrawerSelection(
     }
     ++state->accessory.selectionGeneration;
     ++state->accessory.scrollResetGeneration;
+    RecordBrainOwnedAccessorySelectionMutation(state);
     decision.activeDrawer = state->accessory.activeDrawer;
     decision.selectionGeneration = state->accessory.selectionGeneration;
     decision.scrollResetGeneration = state->accessory.scrollResetGeneration;
@@ -7018,7 +7167,6 @@ BrainOwnedAccessorySelectionDecision RequestBrainOwnedAccessoryDrawerSelection(
 
 BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
     BrainOwnedRuntimeState* state,
-    std::uint64_t layoutGeneration,
     BrainOwnedAccessoryProjectionCounters* counters) {
     if (counters != nullptr) {
         *counters = {};
@@ -7033,41 +7181,20 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
     const bool drawerOpen = AccessoryDrawerIndex(
         accessory.activeDrawer,
         &activeIndex);
-    const std::uint64_t historyGeneration =
-        drawerOpen ? accessory.histories[activeIndex].generation : 0;
+    const std::uint64_t historyGeneration = drawerOpen
+        ? accessory.histories[activeIndex].generation
+        : 0;
     const std::uint64_t contentGeneration =
-        state->metar.initialized ? state->metar.presentationGeneration : 0;
+        accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Metar &&
+            state->metar.initialized
+        ? state->metar.presentationGeneration
+        : 0;
     const bool cacheMatches =
         accessory.cachedPresentationSnapshot != nullptr &&
-        accessory.cachedPresentationSelectionGeneration ==
-            accessory.selectionGeneration &&
-        accessory.cachedPresentationLayoutGeneration == layoutGeneration &&
-        accessory.cachedPresentationContentGeneration == contentGeneration &&
-        (!drawerOpen ||
-         accessory.cachedPresentationHistoryGeneration == historyGeneration);
+        accessory.cachedSemanticPresentationGeneration ==
+            accessory.semanticPresentationGeneration;
     if (cacheMatches) {
         handle.snapshot = accessory.cachedPresentationSnapshot;
-        handle.selectionGeneration = accessory.selectionGeneration;
-        handle.historyGeneration =
-            accessory.cachedPresentationHistoryGeneration;
-        handle.layoutGeneration = layoutGeneration;
-        handle.contentGeneration = contentGeneration;
-        handle.commandIdentity =
-            accessory.cachedPresentationSnapshot->commandIdentity;
-        handle.lifecycleEpoch =
-            accessory.cachedPresentationSnapshot->lifecycleEpoch;
-        handle.railPresentationRevision =
-            accessory.cachedPresentationSnapshot->railPresentationRevision;
-        handle.drawerContentRevision =
-            accessory.cachedPresentationSnapshot->drawerContentRevision;
-        handle.originatingClickSequence =
-            accessory.cachedPresentationSnapshot->originatingClickSequence;
-        handle.originatingClickAcceptedMicroseconds =
-            accessory.cachedPresentationSnapshot->
-                originatingClickAcceptedMicroseconds;
-        handle.originatingMouseCallbackExitedMicroseconds =
-            accessory.cachedPresentationSnapshot->
-                originatingMouseCallbackExitedMicroseconds;
         return handle;
     }
 
@@ -7076,7 +7203,6 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
     snapshot->activeDrawer = accessory.activeDrawer;
     snapshot->selectionGeneration = accessory.selectionGeneration;
     snapshot->historyGeneration = historyGeneration;
-    snapshot->layoutGeneration = layoutGeneration;
     snapshot->contentGeneration = contentGeneration;
     snapshot->snapshotIdentity = accessory.nextPresentationSnapshotIdentity++;
     snapshot->commandIdentity = accessory.nextPresentationCommandIdentity++;
@@ -7093,29 +7219,13 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
             accessory.histories[index].generation;
     }
 
-    const BrainOwnedAccessoryDrawerId drawers[]{
-        BrainOwnedAccessoryDrawerId::Metar,
-        BrainOwnedAccessoryDrawerId::Atis,
-        BrainOwnedAccessoryDrawerId::Pdc};
-    for (const auto drawer : drawers) {
-        BrainOwnedAccessoryOrbPresentation orb;
-        orb.drawer = drawer;
-        orb.label = AccessoryDrawerLabel(drawer);
-        orb.selected = drawer == accessory.activeDrawer;
-        orb.neutral = !orb.selected;
-        if (orb.selected) {
-            orb.selectedIndicator = "OPEN";
-        }
-        if (drawer == BrainOwnedAccessoryDrawerId::Metar) {
-            ProjectBrainOwnedMetarOrbPresentation(*state, &orb);
-        }
-        snapshot->orbs.push_back(std::move(orb));
-    }
+    snapshot->orbs = ProjectBrainOwnedAccessoryRailSemantics(*state);
 
     if (drawerOpen) {
         const auto& history = accessory.histories[activeIndex];
         snapshot->drawerTitle = AccessoryDrawerLabel(accessory.activeDrawer);
         snapshot->emptyStateText = AccessoryEmptyStateText(accessory.activeDrawer);
+        snapshot->drawerStateText = snapshot->emptyStateText;
         snapshot->drawerFinalMarker = std::string("END OF ") +
             AccessoryDrawerLabel(accessory.activeDrawer) + " HISTORY";
         snapshot->entries = accessory.activeDrawer ==
@@ -7126,167 +7236,48 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
             counters->historyVisits = history.entries.size();
             counters->entriesCopied = history.entries.size();
         }
+        snapshot->drawerState = snapshot->entries.empty()
+            ? BrainOwnedAccessoryDrawerState::Empty
+            : BrainOwnedAccessoryDrawerState::Ready;
+        if (snapshot->drawerState == BrainOwnedAccessoryDrawerState::Ready) {
+            snapshot->drawerStateText.clear();
+        }
     }
     const auto prior = accessory.cachedPresentationSnapshot;
-    const auto sameOrb = [](const BrainOwnedAccessoryOrbPresentation& left,
-                            const BrainOwnedAccessoryOrbPresentation& right) {
-        return left.drawer == right.drawer && left.label == right.label &&
-            left.neutral == right.neutral && left.selected == right.selected &&
-            left.selectedIndicator == right.selectedIndicator &&
-            left.airportIcao == right.airportIcao &&
-            left.categoryText == right.categoryText &&
-            left.stateText == right.stateText && left.tone == right.tone;
-    };
     bool railChanged = prior == nullptr || prior->orbs.size() != snapshot->orbs.size();
     if (!railChanged) {
         for (std::size_t index = 0; index < snapshot->orbs.size(); ++index) {
-            if (!sameOrb(prior->orbs[index], snapshot->orbs[index])) {
+            if (!SameBrainOwnedAccessoryOrbSemantics(
+                    prior->orbs[index], snapshot->orbs[index])) {
                 railChanged = true;
                 break;
             }
         }
     }
-    const auto sameEntry = [](const BrainOwnedAccessoryHistoryEntry& left,
-                              const BrainOwnedAccessoryHistoryEntry& right) {
-        return left.stableKey == right.stableKey &&
-            left.title == right.title && left.body == right.body &&
-            left.acceptedSequence == right.acceptedSequence &&
-            left.chronological == right.chronological &&
-            left.chronologyKey == right.chronologyKey &&
-            left.sourceContentDigest == right.sourceContentDigest &&
-            left.retainedBytes == right.retainedBytes &&
-            left.contentLimited == right.contentLimited;
-    };
-    bool entriesChanged = prior == nullptr ||
-        prior->entries.size() != snapshot->entries.size();
-    if (!entriesChanged) {
-        for (std::size_t index = 0; index < snapshot->entries.size(); ++index) {
-            if (!sameEntry(prior->entries[index], snapshot->entries[index])) {
-                entriesChanged = true;
-                break;
-            }
-        }
-    }
-    const bool drawerChanged = prior == nullptr ||
-        prior->activeDrawer != snapshot->activeDrawer ||
-        prior->drawerTitle != snapshot->drawerTitle ||
-        prior->emptyStateText != snapshot->emptyStateText ||
-        prior->drawerFinalMarker != snapshot->drawerFinalMarker ||
-        prior->contentGeneration != snapshot->contentGeneration ||
-        prior->drawerHistoryGenerations !=
-            snapshot->drawerHistoryGenerations ||
-        entriesChanged;
     if (railChanged) ++accessory.railPresentationRevision;
-    if (drawerChanged) ++accessory.drawerContentRevision;
     snapshot->railPresentationRevision = accessory.railPresentationRevision;
-    snapshot->drawerContentRevision = accessory.drawerContentRevision;
+    snapshot->selectedDrawerContentRevision = drawerOpen
+        ? accessory.drawerContentRevisions[activeIndex]
+        : 0;
+    snapshot->scrollResetGeneration = accessory.scrollResetGeneration;
     if (counters != nullptr) {
         counters->snapshotBuilds = 1;
     }
 
     accessory.cachedPresentationSnapshot = snapshot;
-    accessory.cachedPresentationSelectionGeneration = accessory.selectionGeneration;
-    accessory.cachedPresentationHistoryGeneration = historyGeneration;
-    accessory.cachedPresentationLayoutGeneration = layoutGeneration;
-    accessory.cachedPresentationContentGeneration = contentGeneration;
+    accessory.cachedSemanticPresentationGeneration =
+        accessory.semanticPresentationGeneration;
 
     handle.snapshot = std::move(snapshot);
-    handle.selectionGeneration = accessory.selectionGeneration;
-    handle.historyGeneration = historyGeneration;
-    handle.layoutGeneration = layoutGeneration;
-    handle.contentGeneration = contentGeneration;
-    handle.commandIdentity = handle.snapshot->commandIdentity;
-    handle.lifecycleEpoch = handle.snapshot->lifecycleEpoch;
-    handle.railPresentationRevision = handle.snapshot->railPresentationRevision;
-    handle.drawerContentRevision = handle.snapshot->drawerContentRevision;
-    handle.originatingClickSequence = handle.snapshot->originatingClickSequence;
-    handle.originatingClickAcceptedMicroseconds =
-        handle.snapshot->originatingClickAcceptedMicroseconds;
-    handle.originatingMouseCallbackExitedMicroseconds =
-        handle.snapshot->originatingMouseCallbackExitedMicroseconds;
     accessory.pendingPresentationClickSequence = 0;
     accessory.pendingPresentationClickAcceptedMicroseconds = 0;
     accessory.pendingPresentationMouseCallbackExitedMicroseconds = 0;
     return handle;
 }
 
-BrainOwnedAccessoryPreparationHandle ProjectBrainOwnedAccessoryPreparation(
-    BrainOwnedRuntimeState* state,
-    BrainOwnedAccessoryDrawerId drawer,
-    BrainOwnedAccessoryProjectionCounters* counters) {
-    if (counters != nullptr) {
-        *counters = {};
-    }
-    BrainOwnedAccessoryPreparationHandle handle;
-    std::size_t historyIndex = 0;
-    if (state == nullptr || !AccessoryDrawerIndex(drawer, &historyIndex)) {
-        return handle;
-    }
-
-    const auto& history = state->accessory.histories[historyIndex];
-    const std::uint64_t contentGeneration =
-        drawer == BrainOwnedAccessoryDrawerId::Metar
-            ? state->metar.presentationGeneration
-            : 0;
-    if (state->accessory.cachedPreparationSnapshots[historyIndex] != nullptr &&
-        state->accessory.cachedPreparationHistoryGenerations[historyIndex] ==
-            history.generation &&
-        state->accessory.cachedPreparationContentGenerations[historyIndex] ==
-            contentGeneration &&
-        state->accessory.cachedPresentationSnapshot != nullptr &&
-        state->accessory.cachedPreparationSnapshots[historyIndex]
-                ->commandIdentity ==
-            state->accessory.cachedPresentationSnapshot->commandIdentity &&
-        state->accessory.cachedPreparationSnapshots[historyIndex]
-                ->lifecycleEpoch == state->accessory.lifecycleEpoch &&
-        state->accessory.cachedPreparationSnapshots[historyIndex]
-                ->drawerContentRevision ==
-            state->accessory.drawerContentRevision) {
-        handle.snapshot =
-            state->accessory.cachedPreparationSnapshots[historyIndex];
-        handle.historyGeneration = history.generation;
-        handle.contentGeneration = contentGeneration;
-        handle.commandIdentity = handle.snapshot->commandIdentity;
-        handle.lifecycleEpoch = handle.snapshot->lifecycleEpoch;
-        handle.drawerContentRevision = handle.snapshot->drawerContentRevision;
-        return handle;
-    }
-    auto snapshot = std::make_shared<BrainOwnedAccessoryPreparationSnapshot>();
-    snapshot->status = BrainOwnedAccessoryOperationStatus::Available;
-    snapshot->drawer = drawer;
-    snapshot->historyGeneration = history.generation;
-    snapshot->contentGeneration = contentGeneration;
-    snapshot->snapshotIdentity =
-        state->accessory.nextPresentationSnapshotIdentity++;
-    snapshot->commandIdentity =
-        state->accessory.cachedPresentationSnapshot != nullptr
-            ? state->accessory.cachedPresentationSnapshot->commandIdentity
-            : 0;
-    snapshot->lifecycleEpoch = state->accessory.lifecycleEpoch;
-    snapshot->drawerContentRevision =
-        state->accessory.drawerContentRevision;
-    snapshot->finalMarker = std::string("END OF ") +
-        AccessoryDrawerLabel(drawer) + " HISTORY";
-    snapshot->entries = drawer == BrainOwnedAccessoryDrawerId::Metar
-        ? ProjectBrainOwnedMetarDrawerPresentation(*state, history)
-        : history.entries;
-    if (counters != nullptr) {
-        counters->historyVisits = history.entries.size();
-        counters->entriesCopied = history.entries.size();
-        counters->snapshotBuilds = 1;
-    }
-    state->accessory.cachedPreparationSnapshots[historyIndex] = snapshot;
-    state->accessory.cachedPreparationHistoryGenerations[historyIndex] =
-        history.generation;
-    state->accessory.cachedPreparationContentGenerations[historyIndex] =
-        contentGeneration;
-    handle.snapshot = std::move(snapshot);
-    handle.historyGeneration = history.generation;
-    handle.contentGeneration = contentGeneration;
-    handle.commandIdentity = handle.snapshot->commandIdentity;
-    handle.lifecycleEpoch = handle.snapshot->lifecycleEpoch;
-    handle.drawerContentRevision = handle.snapshot->drawerContentRevision;
-    return handle;
+std::uint64_t BrainOwnedAccessorySemanticPresentationGeneration(
+    const BrainOwnedRuntimeState& state) {
+    return state.accessory.semanticPresentationGeneration;
 }
 
 BrainOwnedAccessoryPublicationDecision
@@ -7304,24 +7295,79 @@ ConsumeBrainOwnedAccessoryPublicationFact(
         decision.reason = "publication-fact-stale-epoch";
         return decision;
     }
-    if (fact.commandIdentity <=
-        state->accessory.lastTerminalPresentationCommandIdentity) {
+    if (state->accessory.publicationOrderingLifecycleEpoch !=
+        fact.lifecycleEpoch) {
+        state->accessory.publicationOrderingLifecycleEpoch =
+            fact.lifecycleEpoch;
+        state->accessory.lastTerminalPresentationCommandIdentity = 0;
+        state->accessory.lastVisiblePublicationAttemptIdentity = 0;
+    }
+    const bool commandRole = fact.commandTerminal;
+    const bool attemptRole = fact.visiblePublicationAttemptIdentity != 0;
+    if (!commandRole && !attemptRole) {
         ++state->accessory.publicationFactsRejected;
-        decision.reason = "publication-fact-duplicate-or-out-of-order";
+        decision.reason = "publication-fact-has-no-terminal-role";
         return decision;
     }
-    state->accessory.lastTerminalPresentationCommandIdentity =
-        fact.commandIdentity;
+    if (commandRole && fact.commandIdentity <=
+            state->accessory.lastTerminalPresentationCommandIdentity) {
+        ++state->accessory.publicationFactsRejected;
+        decision.reason = "command-terminal-duplicate-or-out-of-order";
+        return decision;
+    }
+    if (attemptRole && fact.visiblePublicationAttemptIdentity <=
+            state->accessory.lastVisiblePublicationAttemptIdentity) {
+        ++state->accessory.publicationFactsRejected;
+        decision.reason = "visible-publication-duplicate-or-out-of-order";
+        return decision;
+    }
+    if (commandRole) {
+        state->accessory.lastTerminalPresentationCommandIdentity =
+            fact.commandIdentity;
+        state->accessory.maximumPublicationElapsedMicroseconds = std::max(
+            state->accessory.maximumPublicationElapsedMicroseconds,
+            fact.commandElapsedMicroseconds);
+        decision.commandTerminalAccepted = true;
+    }
+    if (attemptRole) {
+        state->accessory.lastVisiblePublicationAttemptIdentity =
+            fact.visiblePublicationAttemptIdentity;
+        if (fact.visibilityTimingApplicable) {
+            state->accessory.maximumVisiblePublicationMicroseconds = std::max(
+                state->accessory.maximumVisiblePublicationMicroseconds,
+                fact.visibleEligibilityToFirstFrameMicroseconds);
+        }
+        decision.visibleAttemptTerminalAccepted = true;
+    }
     ++state->accessory.publicationFactsConsumed;
-    state->accessory.maximumPublicationElapsedMicroseconds = std::max(
-        state->accessory.maximumPublicationElapsedMicroseconds,
-        fact.commandElapsedMicroseconds);
-    if (fact.commandElapsedMicroseconds > 500'000) {
+    const bool clickTimingApplicable =
+        fact.clickTimingApplicable || fact.originatingClickSequence != 0;
+    bool livenessFailure =
+        clickTimingApplicable && fact.clickToTerminalMicroseconds >= 500'000;
+    if (fact.disposition ==
+            BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled &&
+        fact.cancellationTimingApplicable) {
+        state->accessory.maximumCancellationMicroseconds = std::max(
+            state->accessory.maximumCancellationMicroseconds,
+            fact.issueToCancellationMicroseconds);
+        livenessFailure = livenessFailure ||
+            fact.issueToCancellationMicroseconds >= 500'000;
+    }
+    if (attemptRole && fact.visibilityTimingApplicable) {
+        livenessFailure = livenessFailure ||
+            fact.visibleEligibilityToFirstFrameMicroseconds >= 500'000;
+    }
+    if (livenessFailure) {
         ++state->accessory.publicationLivenessFailureCount;
     }
     decision.consumed = true;
     decision.terminal = true;
-    decision.reason = "publication-terminal-fact-consumed";
+    decision.combinedTerminalAccepted = commandRole && attemptRole;
+    decision.reason = decision.combinedTerminalAccepted
+        ? "combined-publication-terminal-fact-consumed"
+        : (commandRole
+            ? "command-publication-terminal-fact-consumed"
+            : "visible-publication-terminal-fact-consumed");
     return decision;
 }
 
@@ -7339,14 +7385,19 @@ BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForInvalidAircraft(
 }
 BrainOwnedAccessoryBoundaryDecision DisableBrainOwnedAccessoryRuntime(
     BrainOwnedRuntimeState* state) {
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
     auto decision = CloseAccessoryPreservingHistory(state);
     if (state != nullptr) {
         ++state->accessory.lifecycleEpoch;
         if (state->accessory.lifecycleEpoch == 0) {
             state->accessory.lifecycleEpoch = 1;
         }
+        state->accessory.publicationOrderingLifecycleEpoch =
+            state->accessory.lifecycleEpoch;
+        state->accessory.lastTerminalPresentationCommandIdentity = 0;
+        state->accessory.lastVisiblePublicationAttemptIdentity = 0;
         state->accessory.cachedPresentationSnapshot.reset();
-        state->accessory.cachedPreparationSnapshots = {};
+        RecordBrainOwnedAccessoryLifecycleMutation(state);
         state->accessory.pendingPresentationClickSequence = 0;
         state->accessory.pendingPresentationClickAcceptedMicroseconds = 0;
         state->accessory.pendingPresentationMouseCallbackExitedMicroseconds = 0;
@@ -7365,6 +7416,55 @@ BrainOwnedAccessoryBoundaryDecision EnableBrainOwnedAccessoryRuntime(
     decision.activeCallsign = state->accessory.callsignIdentity;
     decision.callsignIdentityGeneration =
         state->accessory.callsignIdentityGeneration;
+    return decision;
+}
+BrainOwnedPluginAdminLifecycleDecision
+SuspendBrainOwnedRuntimeForPluginAdmin(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAsyncWorkerBindings& workers) {
+    BrainOwnedPluginAdminLifecycleDecision decision;
+    if (state == nullptr) {
+        return decision;
+    }
+    decision.status = BrainOwnedAccessoryOperationStatus::Available;
+    decision.suspended = true;
+    if (state->pluginAdminSuspended) {
+        decision.suspensionGeneration =
+            state->pluginAdminSuspensionGeneration;
+        decision.workerShutdown = workers.metar != nullptr
+            ? workers.metar->ShutdownSnapshot()
+            : BrainMetarWorkerShutdownSnapshot{};
+        return decision;
+    }
+
+    decision.accessory = DisableBrainOwnedAccessoryRuntime(state);
+    decision.workerShutdown = ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+        state, workers, false);
+    state->pluginAdminSuspended = true;
+    ++state->pluginAdminSuspensionGeneration;
+    if (state->pluginAdminSuspensionGeneration == 0) {
+        state->pluginAdminSuspensionGeneration = 1;
+    }
+    decision.stateChanged = true;
+    decision.suspensionGeneration = state->pluginAdminSuspensionGeneration;
+    return decision;
+}
+
+BrainOwnedPluginAdminLifecycleDecision
+ResumeBrainOwnedRuntimeFromPluginAdmin(BrainOwnedRuntimeState* state) {
+    BrainOwnedPluginAdminLifecycleDecision decision;
+    if (state == nullptr) {
+        return decision;
+    }
+    decision.status = BrainOwnedAccessoryOperationStatus::Available;
+    decision.suspensionGeneration = state->pluginAdminSuspensionGeneration;
+    decision.accessory = EnableBrainOwnedAccessoryRuntime(state);
+    if (!state->pluginAdminSuspended) {
+        return decision;
+    }
+    state->pluginAdminSuspended = false;
+    decision.stateChanged = true;
+    decision.resumed = true;
     return decision;
 }
 BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForTemporaryOverlaySleep(

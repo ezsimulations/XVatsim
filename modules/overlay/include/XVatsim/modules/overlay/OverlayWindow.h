@@ -53,8 +53,7 @@ public:
     void UpdateAccessory(
         const brain::BrainOwnedAccessoryPresentationHandle& presentation,
         AccessoryDispatchStageWallTimings* acceptedActionStages = nullptr);
-    void QueueAccessoryPreparation(
-        const brain::BrainOwnedAccessoryPreparationHandle& preparation);
+    void ServicePendingAccessoryPresentation();
     void StartAccessoryPreparation();
     void StopAccessoryPreparation();
     AccessoryPreparationWorkerCounters GetAccessoryPreparationCounters() const;
@@ -164,18 +163,22 @@ private:
         AccessoryPerformanceCategory category,
         std::uint64_t elapsedMicroseconds);
     void PublishFirstAccessoryPerformanceWarningIfNeeded();
-    void RetryPendingAccessoryPreparations();
+    void ServiceAccessoryPreparationAdmission();
+    void EnsureAccessoryPreparation(
+        const std::shared_ptr<const
+            brain::BrainOwnedAccessoryPresentationSnapshot>& snapshot);
     void ResetAccessoryPreparationTiming();
     bool QueueAccessoryPublicationFact(
-        const brain::BrainOwnedAccessoryPublicationFact& fact);
+        brain::BrainOwnedAccessoryPublicationFact fact);
+    void ApplyAccessoryViewportDiagnostic(
+        brain::BrainOwnedAccessoryPublicationFact* fact) const;
+    bool IsAccessoryVisiblePublicationEligible() const;
+    AccessoryVisiblePublicationKey BuildAccessoryVisiblePublicationKey() const;
+    void HandleAccessoryVisibilityLoss(const char* reason);
+    bool RetryRetainedAccessoryPublication();
     void CancelUndeliveredAccessoryCommandForLifecycle();
     AccessoryPreparationKey BuildAccessoryPreparationKey(
-        brain::BrainOwnedAccessoryDrawerId drawer,
-        std::uint64_t historyGeneration,
-        std::uint64_t contentGeneration,
-        std::uint64_t commandIdentity,
-        std::uint64_t lifecycleEpoch,
-        std::uint64_t drawerContentRevision) const;
+        const brain::BrainOwnedAccessoryPresentationSnapshot& snapshot) const;
 
     XPLMWindowID window_ = nullptr;
     brain::OverlayViewModel viewModel_{};
@@ -219,13 +222,11 @@ private:
         accessoryPreparationFailureCallback_ = nullptr;
     void* accessoryPreparationFailureRefcon_ = nullptr;
     bool accessoryPreparationFailureDiagnosticEmitted_ = false;
-    std::array<AccessoryPreparationKey, 3> accessoryRequestedPreparationKeys_{};
-    std::array<bool, 3> accessoryPreparationRequested_{};
-    std::array<std::optional<AccessoryPreparationRequest>, 3>
-        accessoryPendingPreparationRequests_{};
+    std::optional<AccessoryPreparationKey> accessoryRequestedPreparationKey_;
+    std::optional<AccessoryPreparationRequest>
+        accessoryPendingPreparationRequest_;
     std::uint64_t accessoryPreparationWaitStartedMicroseconds_ = 0;
     std::uint64_t accessoryPreparationReadyCollectedMicroseconds_ = 0;
-    std::uint64_t accessoryLastConsumedPreparationReadySequence_ = 0;
     AccessoryPublicationFactQueue accessoryPublicationFacts_{};
     std::uint64_t accessoryIssuedCommandIdentity_ = 0;
     std::uint64_t accessoryIssuedLifecycleEpoch_ = 0;
@@ -233,10 +234,19 @@ private:
     std::uint64_t accessoryIssuedClickAcceptedMicroseconds_ = 0;
     std::uint64_t accessoryIssuedMouseCallbackExitedMicroseconds_ = 0;
     bool accessoryIssuedCommandTerminal_ = true;
-    std::uint64_t accessoryAwaitingFirstFrameCommandIdentity_ = 0;
     std::uint64_t accessoryCommandCommitStartedMicroseconds_ = 0;
     std::uint64_t accessoryCommitOperationStartedMicroseconds_ = 0;
     std::uint64_t accessoryCommandCommittedMicroseconds_ = 0;
+    std::uint64_t accessoryViewportDiagnosticCommandIdentity_ = 0;
+    std::uint64_t accessorySnapshotScrollResetGeneration_ = 0;
+    std::uint64_t accessoryPreviouslyAppliedScrollResetGeneration_ = 0;
+    int accessoryDrawerOffsetBeforeCommit_ = 0;
+    int accessoryDrawerOffsetAfterCommit_ = 0;
+    bool accessoryScrollResetApplied_ = false;
+    AccessoryVisiblePublicationState accessoryVisiblePublicationState_{};
+    std::uint64_t accessoryPublicationWakeSequence_ = 0;
+    brain::BrainOwnedAccessoryPresentationHandle
+        accessoryIssuedPresentationHandle_{};
     brain::BrainOwnedAccessoryPresentationHandle accessoryPresentationHandle_{};
     std::string mainCardProductionSignature_ = "0";
     bool accessoryRailTextureDirty_ = true;

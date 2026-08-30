@@ -1436,6 +1436,8 @@ void OverlayWindow::Create() {
 }
 
 void OverlayWindow::Destroy() {
+    HandleAccessoryVisibilityLoss(
+        "visible-eligibility-lost-before-first-frame");
     StopAccessoryPreparation();
     if (window_ != nullptr) {
         XPLMDestroyWindow(window_);
@@ -1474,45 +1476,50 @@ void OverlayWindow::Destroy() {
     accessoryIssuedOriginatingClickSequence_ = 0;
     accessoryIssuedClickAcceptedMicroseconds_ = 0;
     accessoryIssuedMouseCallbackExitedMicroseconds_ = 0;
+    accessoryViewportDiagnosticCommandIdentity_ = 0;
+    accessorySnapshotScrollResetGeneration_ = 0;
+    accessoryPreviouslyAppliedScrollResetGeneration_ = 0;
+    accessoryDrawerOffsetBeforeCommit_ = 0;
+    accessoryDrawerOffsetAfterCommit_ = 0;
+    accessoryScrollResetApplied_ = false;
     accessoryLayout_ = {};
     accessoryDrawerOpen_ = false;
     accessoryAnchorState_ = {};
     dragMoved_ = false;
     accessoryClickQueue_ = {};
+    if (!accessoryVisiblePublicationState_.HasRetainedTerminal() &&
+        accessoryPublicationFacts_.PendingCount() == 0) {
+        accessoryVisiblePublicationState_ = {};
+        accessoryPublicationFacts_ = {};
+    }
     accessoryPerformance_.reset();
     accessoryDrawCallbackOrdinal_ = 0;
     accessoryLastDrawCallbackEnteredMicroseconds_ = 0;
 }
 
 AccessoryPreparationKey OverlayWindow::BuildAccessoryPreparationKey(
-    brain::BrainOwnedAccessoryDrawerId drawer,
-    std::uint64_t historyGeneration,
-    std::uint64_t contentGeneration,
-    std::uint64_t commandIdentity,
-    std::uint64_t lifecycleEpoch,
-    std::uint64_t drawerContentRevision) const {
-    AccessoryPreparationKey key;
-    key.drawer = drawer;
-    key.historyGeneration = historyGeneration;
-    key.contentGeneration = contentGeneration;
-    key.layoutGeneration = accessoryLayoutGeneration_;
-    key.commandIdentity = commandIdentity;
-    key.lifecycleEpoch = lifecycleEpoch;
-    key.drawerContentRevision = drawerContentRevision;
-    key.typographyGeneration = accessoryTypography_.generation;
-    key.scaleThousandths = static_cast<int>(std::lround(scale_ * 1000.0f));
-    key.contentWidth = std::max(1,
+    const brain::BrainOwnedAccessoryPresentationSnapshot& snapshot) const {
+    AccessoryPreparationKeyInput input;
+    input.drawer = snapshot.activeDrawer;
+    input.layoutGeneration = accessoryLayoutGeneration_;
+    input.commandIdentity = snapshot.commandIdentity;
+    input.lifecycleEpoch = snapshot.lifecycleEpoch;
+    input.selectedDrawerContentRevision =
+        snapshot.selectedDrawerContentRevision;
+    input.typographyGeneration = accessoryTypography_.generation;
+    input.scaleThousandths = static_cast<int>(std::lround(scale_ * 1000.0f));
+    input.contentWidth = std::max(1,
         accessoryLayout_.drawerBounds.right - accessoryLayout_.drawerBounds.left -
             (2 * accessoryLayout_.drawerContentInset));
-    key.visibleLineCapacity = accessoryLayout_.drawerVisibleLineCapacity;
-    return key;
+    input.visibleLineCapacity = accessoryLayout_.drawerVisibleLineCapacity;
+    return BuildAccessoryPreparationKeyForCommand(input);
 }
 
 void OverlayWindow::StartAccessoryPreparation() {
     auto state = accessoryPreparationWorker_.State();
     if (state == AccessoryPreparationWorkerState::Stopped) {
         accessoryPreparationWorker_.Start(GetCurrentThreadId());
-        accessoryPreparationRequested_.fill(false);
+        accessoryRequestedPreparationKey_.reset();
         state = accessoryPreparationWorker_.State();
     }
     if (state == AccessoryPreparationWorkerState::Failed &&
@@ -1529,8 +1536,8 @@ void OverlayWindow::StopAccessoryPreparation() {
     CancelUndeliveredAccessoryCommandForLifecycle();
     accessoryPreparationWorker_.Stop();
     accessoryPreparationFailureDiagnosticEmitted_ = false;
-    accessoryPreparationRequested_.fill(false);
-    accessoryPendingPreparationRequests_ = {};
+    accessoryRequestedPreparationKey_.reset();
+    accessoryPendingPreparationRequest_.reset();
     accessoryUpdateInput_.preparedPlan.reset();
     ResetAccessoryPreparationTiming();
 }
@@ -1552,54 +1559,53 @@ OverlayWindow::GetAccessoryPreparationCounters() const {
     return accessoryPreparationWorker_.SnapshotCounters();
 }
 
-void OverlayWindow::QueueAccessoryPreparation(
-    const brain::BrainOwnedAccessoryPreparationHandle& preparation) {
-    if (preparation.snapshot == nullptr ||
-        preparation.snapshot->status !=
+void OverlayWindow::EnsureAccessoryPreparation(
+    const std::shared_ptr<const
+        brain::BrainOwnedAccessoryPresentationSnapshot>& snapshot) {
+    if (snapshot == nullptr ||
+        snapshot->status !=
             brain::BrainOwnedAccessoryOperationStatus::Available ||
-        preparation.snapshot->drawer ==
+        snapshot->activeDrawer ==
             brain::BrainOwnedAccessoryDrawerId::None) return;
     StartAccessoryPreparation();
     const auto workerState = accessoryPreparationWorker_.State();
     if (workerState != AccessoryPreparationWorkerState::Starting &&
         workerState != AccessoryPreparationWorkerState::Ready) return;
-    const auto key = BuildAccessoryPreparationKey(
-        preparation.snapshot->drawer, preparation.historyGeneration,
-        preparation.contentGeneration, preparation.commandIdentity,
-        preparation.lifecycleEpoch, preparation.drawerContentRevision);
-    const auto drawerIndex = preparation.snapshot->drawer ==
-            brain::BrainOwnedAccessoryDrawerId::Metar ? 0U :
-        preparation.snapshot->drawer == brain::BrainOwnedAccessoryDrawerId::Atis
-            ? 1U : 2U;
-    if (accessoryPreparationRequested_[drawerIndex] &&
-        accessoryRequestedPreparationKeys_[drawerIndex] == key) return;
+    const auto key = BuildAccessoryPreparationKey(*snapshot);
+    if (accessoryRequestedPreparationKey_.has_value() &&
+        accessoryRequestedPreparationKey_.value() == key) return;
     AccessoryPreparationRequest request;
     request.key = key;
-    request.snapshot = preparation.snapshot;
+    request.snapshot = snapshot;
     request.layout = accessoryLayout_;
     request.requestedMicroseconds = AccessoryWallClockMicroseconds();
+    request.supersessionTerminalAccounted = true;
     if (accessoryPreparationWorker_.Request(request)) {
-        accessoryPreparationRequested_[drawerIndex] = true;
-        accessoryRequestedPreparationKeys_[drawerIndex] = key;
-        accessoryPendingPreparationRequests_[drawerIndex].reset();
+        accessoryRequestedPreparationKey_ = key;
+        accessoryPendingPreparationRequest_.reset();
     } else if (accessoryPreparationWorker_.State() ==
                    AccessoryPreparationWorkerState::Starting ||
                accessoryPreparationWorker_.State() ==
                    AccessoryPreparationWorkerState::Ready) {
-        accessoryPendingPreparationRequests_[drawerIndex] = std::move(request);
+        accessoryPendingPreparationRequest_ = std::move(request);
     }
 }
 
-void OverlayWindow::RetryPendingAccessoryPreparations() {
-    for (std::size_t index = 0;
-         index < accessoryPendingPreparationRequests_.size(); ++index) {
-        auto& pending = accessoryPendingPreparationRequests_[index];
-        if (!pending.has_value()) continue;
-        if (!accessoryPreparationWorker_.Request(*pending)) continue;
-        accessoryPreparationRequested_[index] = true;
-        accessoryRequestedPreparationKeys_[index] = pending->key;
-        pending.reset();
-    }
+void OverlayWindow::ServiceAccessoryPreparationAdmission() {
+    if (!accessoryPendingPreparationRequest_.has_value()) return;
+    if (!accessoryPreparationWorker_.Request(
+            accessoryPendingPreparationRequest_.value())) return;
+    accessoryRequestedPreparationKey_ =
+        accessoryPendingPreparationRequest_->key;
+    accessoryPendingPreparationRequest_.reset();
+}
+
+void OverlayWindow::ServicePendingAccessoryPresentation() {
+    if (accessoryIssuedPresentationHandle_.snapshot == nullptr) return;
+    if (!HasPendingAccessoryWork() &&
+        accessoryPresentation_.layoutGeneration ==
+            accessoryLayoutGeneration_) return;
+    UpdateAccessory(accessoryIssuedPresentationHandle_, nullptr);
 }
 
 void OverlayWindow::Update(const brain::OverlayViewModel& viewModel) {
@@ -1637,7 +1643,7 @@ void OverlayWindow::UpdateAccessory(
             brain::BrainOwnedAccessoryOperationStatus::Available) {
         return;
     }
-    const bool newCommand = presentation.commandIdentity !=
+    const bool newCommand = presentation.snapshot->commandIdentity !=
         accessoryIssuedCommandIdentity_;
     if (newCommand && accessoryPublicationFacts_.AvailableCapacity() < 2) {
         return;
@@ -1666,7 +1672,7 @@ void OverlayWindow::UpdateAccessory(
             superseded.appliedRailRevision =
                 accessoryPresentation_.railPresentationRevision;
             superseded.appliedDrawerRevision =
-                accessoryPresentation_.drawerContentRevision;
+                accessoryPresentation_.selectedDrawerContentRevision;
             superseded.activeDrawerRendered =
                 accessoryPresentation_.activeSnapshot == nullptr
                 ? brain::BrainOwnedAccessoryDrawerId::None
@@ -1681,16 +1687,19 @@ void OverlayWindow::UpdateAccessory(
             }
             QueueAccessoryPublicationFact(superseded);
         }
-        accessoryIssuedCommandIdentity_ = presentation.commandIdentity;
-        accessoryIssuedLifecycleEpoch_ = presentation.lifecycleEpoch;
+        accessoryIssuedCommandIdentity_ = presentation.snapshot->commandIdentity;
+        accessoryIssuedLifecycleEpoch_ = presentation.snapshot->lifecycleEpoch;
         accessoryIssuedOriginatingClickSequence_ =
-            presentation.originatingClickSequence;
+            presentation.snapshot->originatingClickSequence;
         accessoryIssuedClickAcceptedMicroseconds_ =
-            presentation.originatingClickAcceptedMicroseconds;
+            presentation.snapshot->originatingClickAcceptedMicroseconds;
         accessoryIssuedMouseCallbackExitedMicroseconds_ =
-            presentation.originatingMouseCallbackExitedMicroseconds;
+            presentation.snapshot->originatingMouseCallbackExitedMicroseconds;
         accessoryIssuedCommandTerminal_ = false;
-        accessoryAwaitingFirstFrameCommandIdentity_ = 0;
+        accessoryIssuedPresentationHandle_ = presentation;
+        accessoryRequestedPreparationKey_.reset();
+        accessoryPendingPreparationRequest_.reset();
+        accessoryUpdateInput_.preparedPlan.reset();
         accessoryCommandCommitStartedMicroseconds_ =
             AccessoryWallClockMicroseconds();
     }
@@ -1773,51 +1782,6 @@ void OverlayWindow::UpdateAccessory(
 
     const auto drawerOpen = presentation.snapshot->activeDrawer !=
         brain::BrainOwnedAccessoryDrawerId::None;
-    const bool needsPreparedTransition = drawerOpen &&
-        (accessoryPresentation_.selectionGeneration !=
-             presentation.selectionGeneration ||
-         accessoryPresentation_.historyGeneration !=
-             presentation.historyGeneration ||
-         accessoryPresentation_.contentGeneration !=
-             presentation.contentGeneration ||
-         accessoryPresentation_.layoutGeneration !=
-             presentation.layoutGeneration);
-    if (needsPreparedTransition) {
-        const auto key = BuildAccessoryPreparationKey(
-            presentation.snapshot->activeDrawer, presentation.historyGeneration,
-            presentation.contentGeneration, presentation.commandIdentity,
-            presentation.lifecycleEpoch, presentation.drawerContentRevision);
-        const auto readySequence = accessoryPreparationWorker_.ReadySequence();
-        if (readySequence == accessoryLastConsumedPreparationReadySequence_) {
-            accessoryUpdateInput_.presentation = presentation;
-            accessoryUpdateInput_.layout = accessoryLayout_;
-            accessoryUpdateInput_.mainCardProductionSignature =
-                mainCardProductionSignature_;
-            accessoryUpdateInput_.measurementContext =
-                accessoryMeasurementContext_;
-            return;
-        }
-        std::uint64_t publicationUs = 0;
-        accessoryLastConsumedPreparationReadySequence_ = readySequence;
-        const auto ready = accessoryPreparationWorker_.TryTakeReady(
-            key, &publicationUs);
-        if (ready == nullptr) {
-            accessoryUpdateInput_.presentation = presentation;
-            accessoryUpdateInput_.layout = accessoryLayout_;
-            accessoryUpdateInput_.mainCardProductionSignature =
-                mainCardProductionSignature_;
-            accessoryUpdateInput_.measurementContext =
-                accessoryMeasurementContext_;
-            if (accessoryPreparationWaitStartedMicroseconds_ == 0)
-                accessoryPreparationWaitStartedMicroseconds_ =
-                    AccessoryWallClockMicroseconds();
-            accessoryPreparationReadyCollectedMicroseconds_ = 0;
-            return;
-        }
-        accessoryPreparationReadyCollectedMicroseconds_ =
-            AccessoryWallClockMicroseconds();
-        accessoryUpdateInput_.preparedPlan = ready;
-    }
     bool layoutInputsChanged = false;
     if (drawerOpen == accessoryDrawerOpen_ &&
         accessoryLayout_.status ==
@@ -1869,31 +1833,59 @@ void OverlayWindow::UpdateAccessory(
             }
         }
     }
-
+    const bool needsPreparedTransition = drawerOpen &&
+        (accessoryPresentation_.commandIdentity !=
+             presentation.snapshot->commandIdentity ||
+         accessoryPresentation_.layoutGeneration !=
+             accessoryLayoutGeneration_ ||
+         accessoryPresentation_.selectedDrawerContentRevision !=
+             presentation.snapshot->selectedDrawerContentRevision);
+    if (needsPreparedTransition) {
+        EnsureAccessoryPreparation(presentation.snapshot);
+        ServiceAccessoryPreparationAdmission();
+        const auto key = BuildAccessoryPreparationKey(*presentation.snapshot);
+        std::uint64_t publicationUs = 0;
+        const auto ready = accessoryPreparationWorker_.TryTakeReady(
+            key, &publicationUs);
+        if (ready == nullptr) {
+            accessoryUpdateInput_.presentation = presentation;
+            accessoryUpdateInput_.layout = accessoryLayout_;
+            accessoryUpdateInput_.mainCardProductionSignature =
+                mainCardProductionSignature_;
+            accessoryUpdateInput_.measurementContext =
+                accessoryMeasurementContext_;
+            if (accessoryPreparationWaitStartedMicroseconds_ == 0)
+                accessoryPreparationWaitStartedMicroseconds_ =
+                    AccessoryWallClockMicroseconds();
+            accessoryPreparationReadyCollectedMicroseconds_ = 0;
+            return;
+        }
+        accessoryPreparationReadyCollectedMicroseconds_ =
+            AccessoryWallClockMicroseconds();
+        accessoryUpdateInput_.preparedPlan = ready;
+    }
     const bool selectionChanged =
         accessoryUpdateInput_.presentation.snapshot == nullptr ||
-        accessoryUpdateInput_.presentation.selectionGeneration !=
-            presentation.selectionGeneration;
+        accessoryUpdateInput_.presentation.snapshot->selectionGeneration !=
+            presentation.snapshot->selectionGeneration;
     const bool historyChanged =
         accessoryUpdateInput_.presentation.snapshot == nullptr ||
-        accessoryUpdateInput_.presentation.historyGeneration !=
-            presentation.historyGeneration;
+        accessoryUpdateInput_.presentation.snapshot->historyGeneration !=
+            presentation.snapshot->historyGeneration;
     const bool contentChanged =
         accessoryUpdateInput_.presentation.snapshot == nullptr ||
-        accessoryUpdateInput_.presentation.contentGeneration !=
-            presentation.contentGeneration;
+        accessoryUpdateInput_.presentation.snapshot->contentGeneration !=
+            presentation.snapshot->contentGeneration;
     const bool presentationInputsChanged =
         accessoryUpdateInput_.presentation.snapshot == nullptr ||
         accessoryUpdateInput_.presentation.snapshot.get() !=
             presentation.snapshot.get() ||
-        accessoryUpdateInput_.presentation.selectionGeneration !=
-            presentation.selectionGeneration ||
-        accessoryUpdateInput_.presentation.historyGeneration !=
-            presentation.historyGeneration ||
-        accessoryUpdateInput_.presentation.contentGeneration !=
-            presentation.contentGeneration ||
-        accessoryUpdateInput_.presentation.layoutGeneration !=
-            presentation.layoutGeneration;
+        accessoryUpdateInput_.presentation.snapshot->selectionGeneration !=
+            presentation.snapshot->selectionGeneration ||
+        accessoryUpdateInput_.presentation.snapshot->historyGeneration !=
+            presentation.snapshot->historyGeneration ||
+        accessoryUpdateInput_.presentation.snapshot->contentGeneration !=
+            presentation.snapshot->contentGeneration;
     if (presentationInputsChanged) {
         accessoryUpdateInput_.presentation = presentation;
     }
@@ -1933,21 +1925,16 @@ void OverlayWindow::UpdateAccessory(
             mainCardProductionSignature_;
     }
     accessoryUpdateInput_.measurementContext = accessoryMeasurementContext_;
+    accessoryUpdateInput_.mechanicalLayoutGeneration =
+        accessoryLayoutGeneration_;
     accessoryUpdateInput_.collectAcceptedActionStageTiming =
         acceptedActionStages != nullptr;
     if (drawerOpen) {
-        const auto key = BuildAccessoryPreparationKey(
-            presentation.snapshot->activeDrawer, presentation.historyGeneration,
-            presentation.contentGeneration, presentation.commandIdentity,
-            presentation.lifecycleEpoch, presentation.drawerContentRevision);
-        if (accessoryPresentation_.selectionGeneration ==
-                presentation.selectionGeneration &&
-            accessoryPresentation_.historyGeneration ==
-                presentation.historyGeneration &&
-            accessoryPresentation_.contentGeneration ==
-                presentation.contentGeneration &&
+        const auto key = BuildAccessoryPreparationKey(*presentation.snapshot);
+        if (accessoryPresentation_.commandIdentity ==
+                presentation.snapshot->commandIdentity &&
             accessoryPresentation_.layoutGeneration ==
-                presentation.layoutGeneration) {
+                accessoryLayoutGeneration_) {
             accessoryUpdateInput_.preparedPlan =
                 accessoryPresentation_.preparedPlan;
         } else {
@@ -2005,6 +1992,19 @@ void OverlayWindow::UpdateAccessory(
         return;
     }
     if (update.preparationPending) return;
+    if (update.snapshotChanged ||
+        accessoryViewportDiagnosticCommandIdentity_ !=
+            presentation.snapshot->commandIdentity) {
+        accessoryViewportDiagnosticCommandIdentity_ =
+            presentation.snapshot->commandIdentity;
+        accessorySnapshotScrollResetGeneration_ =
+            update.snapshotScrollResetGeneration;
+        accessoryPreviouslyAppliedScrollResetGeneration_ =
+            update.previouslyAppliedScrollResetGeneration;
+        accessoryDrawerOffsetBeforeCommit_ = update.drawerOffsetBeforeCommit;
+        accessoryDrawerOffsetAfterCommit_ = update.drawerOffsetAfterCommit;
+        accessoryScrollResetApplied_ = update.scrollResetApplied;
+    }
     accessoryCommandCommittedMicroseconds_ = AccessoryWallClockMicroseconds();
     accessoryPresentationHandle_ = presentation;
     if (update.delta.railRasterRequests > 0) {
@@ -2031,46 +2031,42 @@ void OverlayWindow::UpdateAccessory(
         }
     }
     if (!accessoryIssuedCommandTerminal_) {
-        if (update.delta.railRasterRequests == 0 &&
-            update.delta.drawerRasterRequests == 0) {
-            brain::BrainOwnedAccessoryPublicationFact committed;
-            committed.commandIdentity = presentation.commandIdentity;
-            committed.lifecycleEpoch = presentation.lifecycleEpoch;
-            committed.originatingClickSequence =
+        const bool visibleFrameRequired =
+            windowVisible_ && animationProgress_ >= 1.0f &&
+            accessoryLayout_.accessoriesVisible;
+        if (!visibleFrameRequired) {
+            AccessoryHiddenCommandTerminalInput terminalInput;
+            terminalInput.commandIdentity = presentation.snapshot->commandIdentity;
+            terminalInput.lifecycleEpoch = presentation.snapshot->lifecycleEpoch;
+            terminalInput.railRevision =
+                presentation.snapshot->railPresentationRevision;
+            terminalInput.drawerRevision =
+                presentation.snapshot->selectedDrawerContentRevision;
+            terminalInput.activeDrawer = presentation.snapshot->activeDrawer;
+            terminalInput.originatingClickSequence =
                 accessoryIssuedOriginatingClickSequence_;
-            committed.originatingClickAcceptedMicroseconds =
+            terminalInput.clickAcceptedMicroseconds =
                 accessoryIssuedClickAcceptedMicroseconds_;
-            committed.originatingMouseCallbackExitedMicroseconds =
+            terminalInput.mouseCallbackExitedMicroseconds =
                 accessoryIssuedMouseCallbackExitedMicroseconds_;
-            committed.appliedCommandIdentity = presentation.commandIdentity;
-            committed.disposition =
-                brain::BrainOwnedAccessoryPublicationDisposition::Committed;
-            committed.appliedRailRevision =
-                presentation.railPresentationRevision;
-            committed.appliedDrawerRevision =
-                presentation.drawerContentRevision;
-            committed.activeDrawerRendered =
-                presentation.snapshot->activeDrawer;
-            committed.preparationElapsedMicroseconds =
-                accessoryUpdateInput_.preparedPlan == nullptr ? 0 :
-                accessoryUpdateInput_.preparedPlan->preparationMicroseconds;
-            committed.commitElapsedMicroseconds =
-                accessoryCommandCommittedMicroseconds_ -
-                accessoryCommitOperationStartedMicroseconds_;
-            committed.commandElapsedMicroseconds =
+            terminalInput.issueToCommitMicroseconds =
                 accessoryCommandCommittedMicroseconds_ -
                 accessoryCommandCommitStartedMicroseconds_;
-            if (accessoryIssuedClickAcceptedMicroseconds_ != 0) {
-                committed.clickToTerminalMicroseconds =
-                    accessoryCommandCommittedMicroseconds_ -
+            terminalInput.preparationMicroseconds =
+                accessoryUpdateInput_.preparedPlan == nullptr ? 0 :
+                accessoryUpdateInput_.preparedPlan->preparationMicroseconds;
+            terminalInput.commitOperationMicroseconds =
+                accessoryCommandCommittedMicroseconds_ -
+                accessoryCommitOperationStartedMicroseconds_;
+            terminalInput.clickToTerminalMicroseconds =
+                accessoryIssuedClickAcceptedMicroseconds_ == 0 ? 0 :
+                accessoryCommandCommittedMicroseconds_ -
                     accessoryIssuedClickAcceptedMicroseconds_;
-            }
-            if (QueueAccessoryPublicationFact(committed)) {
+            const auto committedHidden =
+                BuildAccessoryHiddenCommandTerminalFact(terminalInput);
+            if (QueueAccessoryPublicationFact(committedHidden)) {
                 accessoryIssuedCommandTerminal_ = true;
             }
-        } else {
-            accessoryAwaitingFirstFrameCommandIdentity_ =
-                presentation.commandIdentity;
         }
     }
     if (update.delta.historyVisits == 0 && update.delta.entryCopies == 0 &&
@@ -2115,6 +2111,7 @@ bool OverlayWindow::HasPendingAccessoryClickFacts() const {
 bool OverlayWindow::HasPendingAccessoryWork() const {
     return accessoryClickQueue_.PendingCount() != 0 ||
         accessoryPublicationFacts_.PendingCount() != 0 ||
+        accessoryVisiblePublicationState_.HasRetainedTerminal() ||
         (accessoryIssuedCommandIdentity_ != 0 &&
          !accessoryIssuedCommandTerminal_);
 }
@@ -2138,25 +2135,134 @@ bool OverlayWindow::ConsumeAccessoryPerformancePublication(
 }
 
 bool OverlayWindow::QueueAccessoryPublicationFact(
-    const brain::BrainOwnedAccessoryPublicationFact& fact) {
-    return accessoryPublicationFacts_.Produce(fact);
+    brain::BrainOwnedAccessoryPublicationFact fact) {
+    ApplyAccessoryViewportDiagnostic(&fact);
+    const auto result = accessoryVisiblePublicationState_.DeliverOrRetain(
+        fact, &accessoryPublicationFacts_);
+    if (accessoryVisiblePublicationState_.DeliveryServiceRequested() &&
+        accessoryInputWakeCallback_ != nullptr) {
+        ++accessoryPublicationWakeSequence_;
+        if (accessoryPublicationWakeSequence_ == 0) {
+            accessoryPublicationWakeSequence_ = 1;
+        }
+        accessoryInputWakeCallback_(
+            accessoryPublicationWakeSequence_, accessoryInputWakeRefcon_);
+        accessoryVisiblePublicationState_.ConsumeDeliveryServiceRequest();
+    }
+    return result == AccessoryPublicationQueueProduceResult::Accepted;
+}
+
+void OverlayWindow::ApplyAccessoryViewportDiagnostic(
+    brain::BrainOwnedAccessoryPublicationFact* fact) const {
+    if (fact == nullptr ||
+        (fact->commandIdentity != accessoryViewportDiagnosticCommandIdentity_ &&
+         fact->appliedCommandIdentity !=
+            accessoryViewportDiagnosticCommandIdentity_)) {
+        return;
+    }
+    fact->snapshotScrollResetGeneration =
+        accessorySnapshotScrollResetGeneration_;
+    fact->previouslyAppliedScrollResetGeneration =
+        accessoryPreviouslyAppliedScrollResetGeneration_;
+    fact->drawerOffsetBeforeCommit = accessoryDrawerOffsetBeforeCommit_;
+    fact->drawerOffsetAfterCommit = accessoryDrawerOffsetAfterCommit_;
+    fact->scrollResetApplied = accessoryScrollResetApplied_;
+    if (fact->disposition ==
+            brain::BrainOwnedAccessoryPublicationDisposition::
+                FirstFrameDisplayed &&
+        accessoryDrawerOpen_ &&
+        accessoryPresentation_.activeSnapshot != nullptr) {
+        const auto renderPlan = BuildAccessoryDrawerRenderPlan(
+            accessoryPresentation_, accessoryLayout_);
+        if (renderPlan.status ==
+            brain::BrainOwnedAccessoryOperationStatus::Available) {
+            fact->firstVisibleLineApplicable = true;
+            fact->firstVisibleLine = renderPlan.firstVisibleLine;
+        }
+    }
+}
+
+bool OverlayWindow::IsAccessoryVisiblePublicationEligible() const {
+    return window_ != nullptr && windowVisible_ && overlayEnabled_ &&
+        animationProgress_ >= 1.0f && accessoryLayout_.accessoriesVisible &&
+        accessoryPresentation_.commandIdentity != 0;
+}
+
+AccessoryVisiblePublicationKey
+OverlayWindow::BuildAccessoryVisiblePublicationKey() const {
+    AccessoryVisiblePublicationKey key;
+    key.commandIdentity = accessoryPresentation_.commandIdentity;
+    key.lifecycleEpoch = accessoryIssuedLifecycleEpoch_;
+    key.railRevision = accessoryPresentation_.railPresentationRevision;
+    key.drawerRevision =
+        accessoryPresentation_.selectedDrawerContentRevision;
+    key.drawerOpen = accessoryDrawerOpen_;
+    return key;
+}
+
+void OverlayWindow::HandleAccessoryVisibilityLoss(const char* reason) {
+    const auto now = AccessoryWallClockMicroseconds();
+    const auto terminal =
+        accessoryVisiblePublicationState_.LoseVisibility(now);
+    if (!terminal.terminal) return;
+    auto fact = BuildAccessoryVisibilityLossTerminalFact(terminal);
+    fact.originatingClickSequence = accessoryIssuedOriginatingClickSequence_;
+    fact.originatingClickAcceptedMicroseconds =
+        accessoryIssuedClickAcceptedMicroseconds_;
+    fact.originatingMouseCallbackExitedMicroseconds =
+        accessoryIssuedMouseCallbackExitedMicroseconds_;
+    if (reason != nullptr) fact.mechanicalFailureReason = reason;
+    fact.commandElapsedMicroseconds =
+        now >= accessoryCommandCommitStartedMicroseconds_
+        ? now - accessoryCommandCommitStartedMicroseconds_ : 0;
+    if (accessoryIssuedClickAcceptedMicroseconds_ != 0 &&
+        now >= accessoryIssuedClickAcceptedMicroseconds_) {
+        fact.clickTimingApplicable = true;
+        fact.clickToTerminalMicroseconds =
+            now - accessoryIssuedClickAcceptedMicroseconds_;
+    }
+    if (QueueAccessoryPublicationFact(fact) && terminal.commandTerminal) {
+        accessoryIssuedCommandTerminal_ = true;
+    }
 }
 
 bool OverlayWindow::ConsumeAccessoryPublicationFact(
     brain::BrainOwnedAccessoryPublicationFact* outFact) {
-    return accessoryPublicationFacts_.Consume(outFact);
+    const bool consumed = accessoryPublicationFacts_.Consume(outFact);
+    if (consumed) RetryRetainedAccessoryPublication();
+    return consumed;
+}
+
+bool OverlayWindow::RetryRetainedAccessoryPublication() {
+    const auto* retained = accessoryVisiblePublicationState_.RetainedTerminal();
+    if (retained == nullptr) return false;
+    const bool completesCommand = retained->commandTerminal;
+    const auto retainedCommand = retained->commandIdentity;
+    const auto result = accessoryVisiblePublicationState_.RetryRetained(
+        &accessoryPublicationFacts_);
+    if (result == AccessoryPublicationQueueProduceResult::Accepted &&
+        completesCommand && retainedCommand == accessoryIssuedCommandIdentity_) {
+        accessoryIssuedCommandTerminal_ = true;
+    }
+    return result == AccessoryPublicationQueueProduceResult::Accepted;
 }
 
 bool OverlayWindow::CanAcceptAccessoryPresentationCommand() const {
     // A new command can terminally supersede the current command and then
     // terminally account for itself. Reserve both facts before the brain
     // projects that command across the plugin binding seam.
-    return accessoryPublicationFacts_.AvailableCapacity() >= 2;
+    return !accessoryVisiblePublicationState_.HasRetainedTerminal() &&
+        accessoryPublicationFacts_.AvailableCapacity() >= 2;
 }
 
 void OverlayWindow::CancelUndeliveredAccessoryCommandForLifecycle() {
     if (accessoryIssuedCommandIdentity_ == 0 ||
         accessoryIssuedCommandTerminal_) return;
+    const auto* retained = accessoryVisiblePublicationState_.RetainedTerminal();
+    if (retained != nullptr && retained->commandTerminal &&
+        retained->commandIdentity == accessoryIssuedCommandIdentity_) {
+        return;
+    }
     brain::BrainOwnedAccessoryPublicationFact fact;
     fact.commandIdentity = accessoryIssuedCommandIdentity_;
     fact.lifecycleEpoch = accessoryIssuedLifecycleEpoch_;
@@ -2169,7 +2275,8 @@ void OverlayWindow::CancelUndeliveredAccessoryCommandForLifecycle() {
     fact.disposition =
         brain::BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
     fact.appliedRailRevision = accessoryPresentation_.railPresentationRevision;
-    fact.appliedDrawerRevision = accessoryPresentation_.drawerContentRevision;
+    fact.appliedDrawerRevision =
+        accessoryPresentation_.selectedDrawerContentRevision;
     fact.activeDrawerRendered = accessoryPresentation_.activeSnapshot == nullptr
         ? brain::BrainOwnedAccessoryDrawerId::None
         : accessoryPresentation_.activeSnapshot->activeDrawer;
@@ -2177,14 +2284,16 @@ void OverlayWindow::CancelUndeliveredAccessoryCommandForLifecycle() {
     fact.commandElapsedMicroseconds =
         now >= accessoryCommandCommitStartedMicroseconds_
         ? now - accessoryCommandCommitStartedMicroseconds_ : 0;
+    fact.cancellationTimingApplicable = true;
+    fact.issueToCancellationMicroseconds = fact.commandElapsedMicroseconds;
     if (accessoryIssuedClickAcceptedMicroseconds_ != 0 &&
         now >= accessoryIssuedClickAcceptedMicroseconds_) {
+        fact.clickTimingApplicable = true;
         fact.clickToTerminalMicroseconds =
             now - accessoryIssuedClickAcceptedMicroseconds_;
     }
     if (QueueAccessoryPublicationFact(fact)) {
         accessoryIssuedCommandTerminal_ = true;
-        accessoryAwaitingFirstFrameCommandIdentity_ = 0;
     }
 }
 
@@ -2391,6 +2500,8 @@ bool OverlayWindow::ConsumeScaleChanged(float* outScale) {
 }
 
 void OverlayWindow::Hide() {
+    HandleAccessoryVisibilityLoss(
+        "visible-eligibility-lost-before-first-frame");
     DiscardPendingAccessoryClickFacts();
     StopAccessoryPreparation();
     ResetOverlayUpdateTiming();
@@ -2692,6 +2803,8 @@ void OverlayWindow::SyncVisibility() {
 
 void OverlayWindow::Draw() {
     if (window_ == nullptr || !windowVisible_) {
+        HandleAccessoryVisibilityLoss(
+            "visible-eligibility-lost-before-first-frame");
         return;
     }
     const auto accessoryDrawCallbackEntered = AccessoryWallClockMicroseconds();
@@ -2714,6 +2827,8 @@ void OverlayWindow::Draw() {
     if (!overlayEnabled_ && animationProgress_ <= 0.0f && animationTarget_ <= 0.0f) {
         XPLMSetWindowIsVisible(window_, 0);
         windowVisible_ = false;
+        HandleAccessoryVisibilityLoss(
+            "visible-eligibility-lost-before-first-frame");
         return;
     }
 
@@ -2763,6 +2878,8 @@ void OverlayWindow::Draw() {
     }
 
     if (animationProgress_ <= 0.02f) {
+        HandleAccessoryVisibilityLoss(
+            "visible-eligibility-lost-before-first-frame");
         return;
     }
 
@@ -2779,7 +2896,53 @@ void OverlayWindow::Draw() {
         opacity_);
 
     if (animationProgress_ < 1.0f || !accessoryLayout_.accessoriesVisible) {
+        HandleAccessoryVisibilityLoss(
+            "visible-eligibility-lost-before-first-frame");
         return;
+    }
+    const auto visiblePublicationKey = BuildAccessoryVisiblePublicationKey();
+    AccessoryVisiblePublicationObservation publicationObservation;
+    publicationObservation.key = visiblePublicationKey;
+    publicationObservation.visibilityRequired =
+        IsAccessoryVisiblePublicationEligible();
+    publicationObservation.requiredTexturesAvailable =
+        accessoryRailTextureId_ != 0 &&
+        (!accessoryDrawerOpen_ || accessoryDrawerTextureId_ != 0);
+    publicationObservation.textureWorkPending =
+        accessoryRailTextureDirty_ ||
+        (accessoryDrawerOpen_ && accessoryDrawerTextureDirty_);
+    publicationObservation.nowMicroseconds = accessoryDrawCallbackEntered;
+    publicationObservation.commandTerminalRequired =
+        !accessoryIssuedCommandTerminal_ &&
+        accessoryIssuedCommandIdentity_ ==
+            accessoryPresentation_.commandIdentity;
+    auto publicationBegin =
+        accessoryVisiblePublicationState_.Observe(publicationObservation);
+    if (publicationBegin.superseded) {
+        AccessoryVisiblePublicationTerminalResult supersededTerminal;
+        supersededTerminal.terminal = true;
+        supersededTerminal.displayed = false;
+        supersededTerminal.attemptIdentity =
+            publicationBegin.supersededAttemptIdentity;
+        supersededTerminal.visibilityEpoch =
+            publicationBegin.supersededVisibilityEpoch;
+        supersededTerminal.elapsedMicroseconds =
+            publicationBegin.supersededElapsedMicroseconds;
+        supersededTerminal.commandTerminal =
+            publicationBegin.supersededCommandTerminal;
+        supersededTerminal.key = publicationBegin.supersededKey;
+        brain::BrainOwnedAccessoryPublicationFact superseded;
+        ApplyAccessoryVisiblePublicationTerminal(
+            supersededTerminal, &superseded);
+        superseded.failureStage =
+            brain::BrainOwnedAccessoryPublicationFailureStage::PostCommit;
+        superseded.mechanicalFailureReason =
+            "visible-publication-superseded-before-first-frame";
+        if (QueueAccessoryPublicationFact(superseded)) {
+            publicationBegin =
+                accessoryVisiblePublicationState_.Observe(
+                    publicationObservation);
+        }
     }
     const bool measuringAccessoryAction =
         accessoryPerformance_ != nullptr &&
@@ -2817,92 +2980,58 @@ void OverlayWindow::Draw() {
         ++accessoryIntegrationCounters_.drawerDraws;
     }
     const auto accessoryDrawCompleted = AccessoryWallClockMicroseconds();
-    const bool publicationTextureFailure =
-        accessoryAwaitingFirstFrameCommandIdentity_ != 0 &&
-        accessoryAwaitingFirstFrameCommandIdentity_ ==
-            accessoryPresentation_.commandIdentity &&
-        (accessoryRailTextureId_ == 0 ||
-         (accessoryDrawerOpen_ && accessoryDrawerTextureId_ == 0));
-    if (!accessoryIssuedCommandTerminal_ && publicationTextureFailure) {
-        brain::BrainOwnedAccessoryPublicationFact failed;
-        failed.commandIdentity =
-            accessoryAwaitingFirstFrameCommandIdentity_;
-        failed.lifecycleEpoch = accessoryIssuedLifecycleEpoch_;
-        failed.originatingClickSequence =
-            accessoryIssuedOriginatingClickSequence_;
-        failed.originatingClickAcceptedMicroseconds =
-            accessoryIssuedClickAcceptedMicroseconds_;
-        failed.originatingMouseCallbackExitedMicroseconds =
-            accessoryIssuedMouseCallbackExitedMicroseconds_;
-        failed.appliedCommandIdentity = accessoryPresentation_.commandIdentity;
-        failed.disposition =
-            brain::BrainOwnedAccessoryPublicationDisposition::PublicationFailed;
-        failed.failureStage =
-            brain::BrainOwnedAccessoryPublicationFailureStage::TextureUpload;
-        failed.appliedRailRevision =
-            accessoryPresentation_.railPresentationRevision;
-        failed.appliedDrawerRevision =
-            accessoryPresentation_.drawerContentRevision;
-        failed.mechanicalFailureReason = "accessory-texture-unavailable";
-        failed.commandElapsedMicroseconds =
-            accessoryDrawCompleted - accessoryCommandCommitStartedMicroseconds_;
-        if (accessoryIssuedClickAcceptedMicroseconds_ != 0) {
-            failed.clickToTerminalMicroseconds =
-                accessoryDrawCompleted -
-                accessoryIssuedClickAcceptedMicroseconds_;
-        }
-        if (QueueAccessoryPublicationFact(failed)) {
-            accessoryIssuedCommandTerminal_ = true;
-            accessoryAwaitingFirstFrameCommandIdentity_ = 0;
-        }
-    }
-    if (!accessoryIssuedCommandTerminal_ &&
-        accessoryAwaitingFirstFrameCommandIdentity_ != 0 &&
-        accessoryAwaitingFirstFrameCommandIdentity_ ==
-            accessoryPresentation_.commandIdentity &&
-        !accessoryRailTextureDirty_ &&
-        (!accessoryDrawerOpen_ || !accessoryDrawerTextureDirty_) &&
+    const bool requiredTexturesAvailable =
         accessoryRailTextureId_ != 0 &&
-        (!accessoryDrawerOpen_ || accessoryDrawerTextureId_ != 0)) {
-        brain::BrainOwnedAccessoryPublicationFact displayed;
-        displayed.commandIdentity =
-            accessoryAwaitingFirstFrameCommandIdentity_;
-        displayed.lifecycleEpoch = accessoryIssuedLifecycleEpoch_;
-        displayed.originatingClickSequence =
+        (!accessoryDrawerOpen_ || accessoryDrawerTextureId_ != 0);
+    const auto terminal =
+        accessoryVisiblePublicationState_.CompleteFirstFrame(
+            visiblePublicationKey,
+            requiredTexturesAvailable,
+            requiredTexturesAvailable,
+            accessoryDrawCompleted);
+    if (terminal.terminal) {
+        brain::BrainOwnedAccessoryPublicationFact publication;
+        ApplyAccessoryVisiblePublicationTerminal(terminal, &publication);
+        publication.originatingClickSequence =
             accessoryIssuedOriginatingClickSequence_;
-        displayed.originatingClickAcceptedMicroseconds =
+        publication.originatingClickAcceptedMicroseconds =
             accessoryIssuedClickAcceptedMicroseconds_;
-        displayed.originatingMouseCallbackExitedMicroseconds =
+        publication.originatingMouseCallbackExitedMicroseconds =
             accessoryIssuedMouseCallbackExitedMicroseconds_;
-        displayed.appliedCommandIdentity =
-            accessoryPresentation_.commandIdentity;
-        displayed.disposition =
-            brain::BrainOwnedAccessoryPublicationDisposition::
-                FirstFrameDisplayed;
-        displayed.appliedRailRevision =
-            accessoryPresentation_.railPresentationRevision;
-        displayed.appliedDrawerRevision =
-            accessoryPresentation_.drawerContentRevision;
-        displayed.activeDrawerRendered =
-            accessoryPresentation_.activeSnapshot->activeDrawer;
-        displayed.firstFrameElapsedMicroseconds =
-            accessoryDrawCompleted - accessoryCommandCommittedMicroseconds_;
-        displayed.preparationElapsedMicroseconds =
+        publication.activeDrawerRendered =
+            accessoryPresentation_.activeSnapshot == nullptr
+            ? brain::BrainOwnedAccessoryDrawerId::None
+            : accessoryPresentation_.activeSnapshot->activeDrawer;
+        publication.firstFrameElapsedMicroseconds =
+            accessoryDrawCompleted >= accessoryCommandCommittedMicroseconds_
+            ? accessoryDrawCompleted - accessoryCommandCommittedMicroseconds_ : 0;
+        publication.preparationElapsedMicroseconds =
             accessoryUpdateInput_.preparedPlan == nullptr ? 0 :
             accessoryUpdateInput_.preparedPlan->preparationMicroseconds;
-        displayed.commitElapsedMicroseconds =
-            accessoryCommandCommittedMicroseconds_ -
-            accessoryCommitOperationStartedMicroseconds_;
-        displayed.commandElapsedMicroseconds =
-            accessoryDrawCompleted - accessoryCommandCommitStartedMicroseconds_;
-        if (accessoryIssuedClickAcceptedMicroseconds_ != 0) {
-            displayed.clickToTerminalMicroseconds =
+        publication.commitElapsedMicroseconds =
+            accessoryCommandCommittedMicroseconds_ >=
+                accessoryCommitOperationStartedMicroseconds_
+            ? accessoryCommandCommittedMicroseconds_ -
+                accessoryCommitOperationStartedMicroseconds_ : 0;
+        publication.commandElapsedMicroseconds =
+            accessoryDrawCompleted >= accessoryCommandCommitStartedMicroseconds_
+            ? accessoryDrawCompleted - accessoryCommandCommitStartedMicroseconds_ : 0;
+        if (!requiredTexturesAvailable) {
+            publication.failureStage =
+                brain::BrainOwnedAccessoryPublicationFailureStage::TextureUpload;
+            publication.mechanicalFailureReason =
+                "accessory-texture-unavailable";
+        }
+        if (accessoryIssuedClickAcceptedMicroseconds_ != 0 &&
+            accessoryDrawCompleted >= accessoryIssuedClickAcceptedMicroseconds_) {
+            publication.clickTimingApplicable = true;
+            publication.clickToTerminalMicroseconds =
                 accessoryDrawCompleted -
                 accessoryIssuedClickAcceptedMicroseconds_;
         }
-        if (QueueAccessoryPublicationFact(displayed)) {
+        if (QueueAccessoryPublicationFact(publication) &&
+            terminal.commandTerminal) {
             accessoryIssuedCommandTerminal_ = true;
-            accessoryAwaitingFirstFrameCommandIdentity_ = 0;
         }
     }
     const auto completedDrawWall =

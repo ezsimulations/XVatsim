@@ -205,15 +205,11 @@ bool ResolveObservationUnix(
     return true;
 }
 
-void InvalidateAccessoryProjection(BrainOwnedRuntimeState* state) {
-    if (state == nullptr) return;
-    state->accessory.cachedPreparationSnapshots[0].reset();
-}
-
 void TouchPresentation(BrainOwnedRuntimeState* state) {
     if (state == nullptr) return;
     ++state->metar.presentationGeneration;
-    InvalidateAccessoryProjection(state);
+    RecordBrainOwnedAccessoryDrawerContentMutation(
+        state, BrainOwnedAccessoryDrawerId::Metar);
 }
 
 bool PresentationOwned(const BrainOwnedRuntimeState& state) {
@@ -221,6 +217,11 @@ bool PresentationOwned(const BrainOwnedRuntimeState& state) {
         state.accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Metar &&
         state.accessory.selectionGeneration ==
             state.metar.lookupPresentationSelectionGeneration;
+}
+
+void AdvanceOwnedMetarViewportReset(BrainOwnedRuntimeState* state) {
+    if (state == nullptr || !PresentationOwned(*state)) return;
+    ++state->accessory.scrollResetGeneration;
 }
 
 void DropLostPresentationOwnership(BrainOwnedRuntimeState* state) {
@@ -236,16 +237,20 @@ void DropLostPresentationOwnership(BrainOwnedRuntimeState* state) {
     }
 }
 
-void SelectMetarDrawerForLookup(BrainOwnedRuntimeState* state) {
-    if (state == nullptr) return;
+bool SelectMetarDrawerForLookup(BrainOwnedRuntimeState* state) {
+    if (state == nullptr) return false;
+    bool selectionChanged = false;
     if (state->accessory.activeDrawer != BrainOwnedAccessoryDrawerId::Metar) {
         state->accessory.activeDrawer = BrainOwnedAccessoryDrawerId::Metar;
         ++state->accessory.selectionGeneration;
         ++state->accessory.scrollResetGeneration;
+        RecordBrainOwnedAccessorySelectionMutation(state);
+        selectionChanged = true;
     }
     state->metar.lookupPresentationSelectionGeneration =
         state->accessory.selectionGeneration;
     state->metar.lookupPresentationOwnershipValid = true;
+    return selectionChanged;
 }
 
 std::string ResolveBrainOwnedMetarPrimaryTarget(
@@ -308,6 +313,7 @@ void EndSpotlightForPrimaryChange(BrainOwnedRuntimeState* state) {
     if (state == nullptr ||
         state->metar.transientPresentation !=
             BrainMetarTransientPresentation::LookupSpotlight) return;
+    AdvanceOwnedMetarViewportReset(state);
     state->metar.transientPresentation = BrainMetarTransientPresentation::None;
     state->metar.transientDeadlineMonotonicMs = 0;
     state->metar.lookupPresentationOwnershipValid = false;
@@ -444,6 +450,7 @@ void HandleLookupFailure(
             BrainMetarTransientPresentation::LookupFailure;
         state->metar.transientDeadlineMonotonicMs =
             nowMs + kBrainMetarLookupFailureMs;
+        AdvanceOwnedMetarViewportReset(state);
         TouchPresentation(state);
         if (presentationChanged != nullptr) *presentationChanged = true;
     } else {
@@ -520,6 +527,7 @@ void CommitBrainOwnedMetarWorkerFact(
     const BrainOwnedAsyncFactCycleInput& input,
     BrainOwnedAsyncFactCycleOutput* output) {
     if (state == nullptr || output == nullptr) return;
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
     auto fact = receivedFact;
     BeginDispositionDiagnostic(fact, output);
     if (!RequestMatchesCurrent(state->metar, fact)) {
@@ -694,6 +702,7 @@ void CommitBrainOwnedMetarWorkerFact(
                 BrainMetarTransientPresentation::LookupSpotlight;
             state->metar.transientDeadlineMonotonicMs =
                 input.monotonicMs + kBrainMetarLookupSpotlightMs;
+            AdvanceOwnedMetarViewportReset(state);
             TouchPresentation(state);
             output->presentationChanged = true;
         } else {
@@ -744,6 +753,7 @@ void CommitBrainOwnedMetarWorkerFact(
             BrainMetarTransientPresentation::LookupSpotlight;
         state->metar.transientDeadlineMonotonicMs =
             input.monotonicMs + kBrainMetarLookupSpotlightMs;
+        AdvanceOwnedMetarViewportReset(state);
         TouchPresentation(state);
         output->presentationChanged = true;
     } else {
@@ -1019,6 +1029,7 @@ BrainOwnedTextEntryDecision CommitBrainOwnedTextEntryFact(
         decision.reason = "metar-lookup-invalid-icao";
         return decision;
     }
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
     state->metar.initialized = true;
     ++state->metar.lookupGeneration;
     state->metar.pendingLookupIcao = decision.normalizedText;
@@ -1029,11 +1040,14 @@ BrainOwnedTextEntryDecision CommitBrainOwnedTextEntryFact(
         state->metar.lookupContentFingerprint = 0;
     }
     state->metar.lookupTimedOut = false;
-    SelectMetarDrawerForLookup(state);
+    const bool lookupChangedSelection = SelectMetarDrawerForLookup(state);
     state->metar.transientPresentation =
         BrainMetarTransientPresentation::LookupPending;
     state->metar.transientDeadlineMonotonicMs =
         fact.monotonicMs + kBrainMetarLookupPendingMs;
+    if (!lookupChangedSelection) {
+        AdvanceOwnedMetarViewportReset(state);
+    }
     TouchPresentation(state);
     decision.accepted = true;
     decision.presentationChanged = true;
@@ -1068,6 +1082,7 @@ BrainOwnedAsyncFactCycleOutput RunBrainOwnedAsyncFactCycle(
         output.reason = "metar-state-unavailable";
         return finish();
     }
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
     state->metar.initialized = true;
     DropLostPresentationOwnership(state);
 
@@ -1137,6 +1152,7 @@ BrainOwnedAsyncFactCycleOutput RunBrainOwnedAsyncFactCycle(
                 state->metar.transientPresentation ==
                     BrainMetarTransientPresentation::LookupFailure) &&
                input.monotonicMs >= state->metar.transientDeadlineMonotonicMs) {
+        AdvanceOwnedMetarViewportReset(state);
         state->metar.transientPresentation =
             BrainMetarTransientPresentation::None;
         state->metar.transientDeadlineMonotonicMs = 0;
@@ -1268,11 +1284,15 @@ BrainMetarWorkerShutdownSnapshot ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
 
 void ResetBrainOwnedMetarForHardBoundary(BrainOwnedRuntimeState* state) {
     if (state == nullptr) return;
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
     const auto nextLifecycleEpoch = state->metar.lifecycleEpoch + 1 == 0
         ? 1 : state->metar.lifecycleEpoch + 1;
     state->metar = {};
     state->metar.lifecycleEpoch = nextLifecycleEpoch;
-    InvalidateAccessoryProjection(state);
+    RecordBrainOwnedAccessoryDrawerContentMutation(
+        state, BrainOwnedAccessoryDrawerId::Metar);
+    RecordBrainOwnedAccessoryLifecycleMutation(state);
+    state->accessory.cachedPresentationSnapshot.reset();
 }
 
 void SuspendBrainOwnedMetarForXPilotDisconnect(BrainOwnedRuntimeState* state) {

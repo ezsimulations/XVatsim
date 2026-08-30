@@ -18,6 +18,7 @@
 #include <iterator>
 #include <map>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -11889,18 +11890,20 @@ std::shared_ptr<const xvatsim::modules::overlay::AccessoryPreparedDrawerPlan>
 Step3PreparePresentationPlan(
     Step3ExecutionContext* context,
     const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& presentation,
-    const xvatsim::modules::overlay::AccessoryLayoutResult& layout) {
+    const xvatsim::modules::overlay::AccessoryLayoutResult& layout,
+    std::uint64_t mechanicalLayoutGeneration = 1) {
     if (context == nullptr || presentation.snapshot == nullptr ||
         presentation.snapshot->activeDrawer ==
             xvatsim::brain::BrainOwnedAccessoryDrawerId::None) return nullptr;
     auto result = std::make_shared<
         xvatsim::modules::overlay::AccessoryPreparedDrawerPlan>();
+    result->snapshot = presentation.snapshot;
     result->key.drawer = presentation.snapshot->activeDrawer;
-    result->key.historyGeneration = presentation.historyGeneration;
-    result->key.layoutGeneration = presentation.layoutGeneration;
-    result->key.commandIdentity = presentation.commandIdentity;
-    result->key.lifecycleEpoch = presentation.lifecycleEpoch;
-    result->key.drawerContentRevision = presentation.drawerContentRevision;
+    result->key.layoutGeneration = mechanicalLayoutGeneration;
+    result->key.commandIdentity = presentation.snapshot->commandIdentity;
+    result->key.lifecycleEpoch = presentation.snapshot->lifecycleEpoch;
+    result->key.selectedDrawerContentRevision =
+        presentation.snapshot->selectedDrawerContentRevision;
     result->key.scaleThousandths = static_cast<int>(
         std::lround(layout.scale * 1000.0f));
     result->key.contentWidth = std::max(1,
@@ -11909,23 +11912,6 @@ Step3PreparePresentationPlan(
     result->key.visibleLineCapacity = layout.drawerVisibleLineCapacity;
     result->layout = xvatsim::modules::overlay::BuildAccessoryHistoryLayout(
         context->measurementContext, *presentation.snapshot, layout);
-    return result;
-}
-
-std::shared_ptr<const xvatsim::modules::overlay::AccessoryPreparedDrawerPlan>
-Step3RetagPreparedPlanForCommand(
-    const std::shared_ptr<const
-        xvatsim::modules::overlay::AccessoryPreparedDrawerPlan>& source,
-    const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& presentation) {
-    if (source == nullptr || presentation.snapshot == nullptr) return nullptr;
-    auto result = std::make_shared<
-        xvatsim::modules::overlay::AccessoryPreparedDrawerPlan>(*source);
-    result->key.commandIdentity = presentation.commandIdentity;
-    result->key.lifecycleEpoch = presentation.lifecycleEpoch;
-    result->key.drawerContentRevision = presentation.drawerContentRevision;
-    result->key.historyGeneration = presentation.historyGeneration;
-    result->key.contentGeneration = presentation.contentGeneration;
-    result->key.layoutGeneration = presentation.layoutGeneration;
     return result;
 }
 
@@ -11995,15 +11981,24 @@ bool ExecuteStep3Action(
         const std::uint64_t mainThread=1;
         const bool started=worker.Start(mainThread);
         std::array<AccessoryPreparationKey,3> keys{};
-        std::array<std::shared_ptr<const xvatsim::brain::BrainOwnedAccessoryPreparationSnapshot>,3> source{};
+        std::array<std::shared_ptr<const
+            xvatsim::brain::BrainOwnedAccessoryPresentationSnapshot>,3> source{};
+        std::array<std::shared_ptr<const AccessoryPreparedDrawerPlan>,3> ready{};
         for(std::size_t index=0;index<drawers.size();++index) {
-            const auto handle=xvatsim::brain::ProjectBrainOwnedAccessoryPreparation(
-                &state,drawers[index],nullptr);
+            xvatsim::brain::BrainOwnedAccessorySelectionRequest selection;
+            selection.drawer=drawers[index];
+            selection.requestSequence=index+1;
+            (void)xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+                &state,selection);
+            const auto handle=xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+                &state,1,nullptr);
             source[index]=handle.snapshot;
             keys[index].drawer=drawers[index];
-            keys[index].historyGeneration=handle.historyGeneration;
-            keys[index].contentGeneration=handle.contentGeneration;
             keys[index].layoutGeneration=1;
+            keys[index].commandIdentity=handle.snapshot->commandIdentity;
+            keys[index].lifecycleEpoch=handle.snapshot->lifecycleEpoch;
+            keys[index].selectedDrawerContentRevision=
+                handle.snapshot->selectedDrawerContentRevision;
             keys[index].typographyGeneration=context->Typography(1.0f)->generation;
             keys[index].scaleThousandths=1000;
             keys[index].contentWidth=layout.drawerBounds.right-layout.drawerBounds.left-
@@ -12011,18 +12006,16 @@ bool ExecuteStep3Action(
             keys[index].visibleLineCapacity=layout.drawerVisibleLineCapacity;
             AccessoryPreparationRequest request;
             request.key=keys[index]; request.snapshot=handle.snapshot; request.layout=layout;
-            submitEventually(&worker,request);
-        }
-        std::array<std::shared_ptr<const AccessoryPreparedDrawerPlan>,3> ready{};
-        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
-        while(std::chrono::steady_clock::now()<deadline) {
-            bool all=true;
-            for(std::size_t index=0;index<ready.size();++index) {
-                if(!ready[index]) ready[index]=worker.TryTakeReady(keys[index],nullptr);
-                all=all && ready[index]!=nullptr;
+            if (submitEventually(&worker,request)) {
+                const auto deadline=std::chrono::steady_clock::now()+
+                    std::chrono::seconds(10);
+                while(std::chrono::steady_clock::now()<deadline &&
+                      ready[index]==nullptr) {
+                    ready[index]=worker.TryTakeReady(keys[index],nullptr);
+                    if(ready[index]==nullptr)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
             }
-            if(all) break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
         std::mutex publicationGateMutex;
@@ -12085,31 +12078,31 @@ bool ExecuteStep3Action(
         }
         publicationGateChanged.notify_all();
         std::array<bool,3> retriedSubmissions{};
+        std::array<std::shared_ptr<const AccessoryPreparedDrawerPlan>,3>
+            contentionPublished{};
         for(std::size_t index=0;index<contendedRequests.size();++index) {
             retriedSubmissions[index]=submitEventually(
                 &contentionWorker,contendedRequests[index]);
+            const auto retryDeadline=std::chrono::steady_clock::now()+
+                std::chrono::seconds(5);
+            while(retriedSubmissions[index] &&
+                  contentionPublished[index]==nullptr &&
+                  std::chrono::steady_clock::now()<retryDeadline) {
+                contentionPublished[index]=contentionWorker.TryTakeReady(
+                    contendedRequests[index].key,nullptr);
+                if(contentionPublished[index]==nullptr)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
         }
         const auto staleAfterRetry=contentionWorker.TryTakeReady(
             keys[0],nullptr);
-        std::array<std::shared_ptr<const AccessoryPreparedDrawerPlan>,3>
-            contentionPublished{};
-        const auto contentionDeadline=
-            std::chrono::steady_clock::now()+std::chrono::seconds(5);
-        while(std::any_of(contentionPublished.begin(),contentionPublished.end(),
-                          [](const auto& value){return value==nullptr;}) &&
-              std::chrono::steady_clock::now()<contentionDeadline) {
-            for(std::size_t index=0;index<contentionPublished.size();++index) {
-                if(!contentionPublished[index]) {
-                    contentionPublished[index]=contentionWorker.TryTakeReady(
-                        contendedRequests[index].key,nullptr);
-                }
-            }
-            if(std::any_of(contentionPublished.begin(),contentionPublished.end(),
-                           [](const auto& value){return value==nullptr;}))
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
 
         auto rapidState=state;
+        rapidState.accessory.activeDrawer=Drawer::None;
+        rapidState.accessory.lastConsumedClickSequence=0;
+        rapidState.accessory.selectionGeneration=0;
+        ++rapidState.accessory.semanticPresentationGeneration;
+        rapidState.accessory.cachedPresentationSnapshot.reset();
         xvatsim::brain::BrainOwnedAccessorySelectionRequest rapidClick;
         std::array<xvatsim::brain::BrainOwnedAccessorySelectionDecision,3>
             rapidDecisions{};
@@ -12128,8 +12121,9 @@ bool ExecuteStep3Action(
         rapidInput.presentation=rapidPresentation;
         rapidInput.layout=layout;
         rapidInput.measurementContext=context->measurementContext;
-        rapidInput.preparedPlan=Step3RetagPreparedPlanForCommand(
-            contentionPublished[2],rapidPresentation);
+        rapidInput.mechanicalLayoutGeneration=101;
+        rapidInput.preparedPlan=Step3PreparePresentationPlan(
+            context,rapidPresentation,layout,101);
         const auto rapidUpdate=UpdateAccessoryPresentation(
             &rapidPresenter,rapidInput);
         const auto contentionCounters=contentionWorker.SnapshotCounters();
@@ -12340,8 +12334,9 @@ bool ExecuteStep3Action(
         AccessoryPresentationUpdateInput updateInput;
         updateInput.presentation=presentation; updateInput.layout=layout;
         updateInput.measurementContext=context->measurementContext;
-        updateInput.preparedPlan=Step3RetagPreparedPlanForCommand(
-            ready[0],presentation);
+        updateInput.mechanicalLayoutGeneration=1;
+        updateInput.preparedPlan=Step3PreparePresentationPlan(
+            context,presentation,layout);
         const auto openStarted=std::chrono::steady_clock::now();
         const auto open=UpdateAccessoryPresentation(&presenter,updateInput);
         const auto openUs=static_cast<std::uint64_t>(std::chrono::duration_cast<
@@ -12350,8 +12345,8 @@ bool ExecuteStep3Action(
         xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(&state,click);
         presentation=xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(&state,1,nullptr);
         updateInput.presentation=presentation;
-        updateInput.preparedPlan=Step3RetagPreparedPlanForCommand(
-            ready[1],presentation);
+        updateInput.preparedPlan=Step3PreparePresentationPlan(
+            context,presentation,layout);
         const auto switchStarted=std::chrono::steady_clock::now();
         const auto switched=UpdateAccessoryPresentation(&presenter,updateInput);
         const auto switchUs=static_cast<std::uint64_t>(std::chrono::duration_cast<
@@ -12363,7 +12358,7 @@ bool ExecuteStep3Action(
             worker.State()==AccessoryPreparationWorkerState::Ready &&
             worker.Failure()==AccessoryPreparationWorkerFailure::None;
         auto staleInput=updateInput;
-        staleInput.presentation.layoutGeneration=2;
+        staleInput.mechanicalLayoutGeneration=2;
         const auto stale=UpdateAccessoryPresentation(&presenter,staleInput);
         const auto historyCountsBeforeDisable=std::array<std::size_t,3>{
             state.accessory.histories[0].entries.size(),
@@ -12391,12 +12386,22 @@ bool ExecuteStep3Action(
         }
         const auto oldKey=keys[0];
         xvatsim::brain::ResetBrainOwnedAccessoryForSessionReset(&state);
-        const auto clearedHandle=xvatsim::brain::ProjectBrainOwnedAccessoryPreparation(
-            &state,Drawer::Metar,nullptr);
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest clearedSelection;
+        clearedSelection.drawer=Drawer::Metar;
+        clearedSelection.requestSequence=1;
+        (void)xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+            &state,clearedSelection);
+        const auto clearedHandle=
+            xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+                &state,1,nullptr);
         AccessoryPreparationRequest clearedRequest;
         clearedRequest.key=oldKey;
-        clearedRequest.key.historyGeneration=clearedHandle.historyGeneration;
-        clearedRequest.key.contentGeneration=clearedHandle.contentGeneration;
+        clearedRequest.key.commandIdentity=
+            clearedHandle.snapshot->commandIdentity;
+        clearedRequest.key.lifecycleEpoch=
+            clearedHandle.snapshot->lifecycleEpoch;
+        clearedRequest.key.selectedDrawerContentRevision=
+            clearedHandle.snapshot->selectedDrawerContentRevision;
         clearedRequest.snapshot=clearedHandle.snapshot; clearedRequest.layout=layout;
         submitEventually(&worker,clearedRequest);
         const bool resetRejectedOld=worker.TryTakeReady(oldKey,nullptr)==nullptr;
@@ -13331,9 +13336,11 @@ bool ExecuteStep3Action(
         context->observed[parts[3] + ".snapshot_identity"] =
             std::to_string(handle.snapshot ? handle.snapshot->snapshotIdentity : 0);
         context->observed[parts[3] + ".selection_generation"] =
-            std::to_string(handle.selectionGeneration);
+            std::to_string(handle.snapshot == nullptr
+                ? 0 : handle.snapshot->selectionGeneration);
         context->observed[parts[3] + ".history_generation"] =
-            std::to_string(handle.historyGeneration);
+            std::to_string(handle.snapshot == nullptr
+                ? 0 : handle.snapshot->historyGeneration);
         context->observed[parts[3] + ".callsign"] =
             handle.snapshot ? handle.snapshot->callsignIdentity : "";
         std::vector<std::string> labels;
@@ -15755,18 +15762,2355 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "successful ORB tone mismatch");
     };
 
-    if (probe == "brain_exclusive_red_hidden_stale_preparation") {
+    if (probe == "plugin_suspend_resume_fresh_enroute_state_survives") {
+        using namespace xvatsim::modules::overlay;
+        auto fixtureStorage = std::make_unique<Step4Fixture>();
+        auto& fixture = *fixtureStorage;
+        fixture.input.flightContext.callsign = "ASA551";
+        fixture.input.workflowStage = WorkflowStage::Enroute;
+        fixture.state.flightContext = fixture.input.flightContext;
+        fixture.state.lastWorkflowStage = WorkflowStage::Enroute;
+        fixture.state.lastPilotIdentitySnapshot.connected = true;
+        fixture.state.lastPilotIdentitySnapshot.ready = true;
+        fixture.state.lastPilotIdentitySnapshot.normalizedCallsign = "ASA551";
+        fixture.state.lastNetworkPlanSnapshot.feedAvailable = true;
+        fixture.state.lastNetworkPlanSnapshot.stale = false;
+        fixture.state.lastNetworkPlanSnapshot.matched = true;
+        fixture.state.lastNetworkPlanSnapshot.matchedCallsign = "ASA551";
+        fixture.state.lastNetworkPlanSnapshot.departureIcao = "KDFW";
+        fixture.state.lastNetworkPlanSnapshot.destinationIcao = "KSAN";
+        const auto accepted = fixture.AcceptPrimary(primaryIfr);
+        require(accepted.completionAccepted && accepted.contentChanged &&
+                    fixture.state.metar.primaryAirportIcao == "KSAN" &&
+                    fixture.state.metar.primaryObservation.valid,
+                "red precondition did not establish accepted KSAN Enroute state");
+
+        AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 100;
+        layoutInput.windowTop = 900;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = false;
+        const auto layout = ResolveAccessoryLayout(layoutInput);
+        AccessoryPresentationState presenter;
+        AccessoryVisiblePublicationState visibility;
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "red seam text measurement unavailable");
+        auto publicationQueueStorage =
+            std::make_unique<AccessoryPublicationFactQueue>();
+        auto& publicationQueue = *publicationQueueStorage;
+        AccessoryPublicationDiagnosticAccounting diagnosticAccounting;
+        std::uint64_t now = 10'000;
+        const auto publishCurrentRail = [&]() {
+            BrainOwnedAccessoryProjectionCounters counters;
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &counters);
+            require(command.snapshot != nullptr && counters.snapshotBuilds == 1,
+                    "red seam did not project one immutable current command");
+            AccessoryPresentationUpdateInput update;
+            update.presentation = command;
+            update.layout = layout;
+            update.mechanicalLayoutGeneration = 1;
+            update.mainCardProductionSignature = "plugin-suspend-resume-red";
+            update.measurementContext = measurement;
+            const auto committed = UpdateAccessoryPresentation(&presenter, update);
+            require(presenter.activeSnapshot.get() == command.snapshot.get(),
+                    "red seam did not commit the immutable command");
+            AccessoryVisiblePublicationKey key;
+            key.commandIdentity = command.snapshot->commandIdentity;
+            key.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            key.railRevision = command.snapshot->railPresentationRevision;
+            key.drawerRevision = 0;
+            key.drawerOpen = false;
+            const auto began = visibility.Observe(
+                {key, true, true, committed.delta.uploadRequests != 0,
+                 now++, true});
+            const auto terminal = visibility.CompleteFirstFrame(
+                key, true, true, now++);
+            BrainOwnedAccessoryPublicationFact fact;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &fact);
+            fact.activeDrawerRendered = BrainOwnedAccessoryDrawerId::None;
+            fact.issueToCommitMicroseconds = 50;
+            fact.commandElapsedMicroseconds = 100;
+            require(began.started && terminal.terminal &&
+                        publicationQueue.Produce(fact),
+                    "red seam terminal did not enter production queue");
+            BrainOwnedAccessoryPublicationFact dequeued;
+            require(publicationQueue.Consume(&dequeued),
+                    "red seam terminal did not leave production queue");
+            const auto disposition = ConsumeBrainOwnedAccessoryPublicationFact(
+                &fixture.state, dequeued);
+            require(disposition.consumed &&
+                        disposition.commandTerminalAccepted &&
+                        disposition.visibleAttemptTerminalAccepted,
+                    "red seam Brain did not accept exact terminal roles");
+            const auto diagnostic = SerializeAccessoryPublicationDiagnostic(
+                dequeued, disposition, &diagnosticAccounting);
+            require(diagnostic.find("event=accessory-publication-terminal") !=
+                        std::string::npos,
+                    "red seam production diagnostic did not serialize");
+            return command;
+        };
+
+        const auto beforeCommand = publishCurrentRail();
+        const auto* beforeOrb = Step4MetarOrb(beforeCommand);
+        require(beforeOrb != nullptr && beforeOrb->airportIcao == "KSAN" &&
+                    beforeOrb->categoryText == "IFR" && !beforeOrb->neutral &&
+                    publicationQueue.PendingCount() == 0 &&
+                    publicationQueue.RejectedCount() == 0 &&
+                    diagnosticAccounting.factsAcceptedByBrain == 1,
+                "red seam pre-disable presentation/accounting was not settled");
+
+        BrainOwnedAsyncWorkerBindings bindings;
+        bindings.metar = &fixture.worker;
+        fixture.input.pluginEnabled = false;
+        const auto suspension = SuspendBrainOwnedRuntimeForPluginAdmin(
+            &fixture.state, bindings);
+        presenter = {};
+        visibility = {};
+        const auto resume = ResumeBrainOwnedRuntimeFromPluginAdmin(
+            &fixture.state);
+        fixture.input.pluginEnabled = true;
+        fixture.input.flightContext = fixture.state.flightContext;
+        fixture.input.workflowStage = fixture.state.lastWorkflowStage;
+        const auto postEnableCycle = fixture.Cycle(1);
+        const auto afterCommand = publishCurrentRail();
+        const auto* afterOrb = Step4MetarOrb(afterCommand);
+        const bool contextPreserved = fixture.state.flightContext.active;
+        const bool stagePreserved =
+            fixture.state.lastWorkflowStage == WorkflowStage::Enroute;
+        const bool primaryPreserved =
+            fixture.state.metar.primaryAirportIcao == "KSAN" &&
+            fixture.state.metar.primaryObservation.valid;
+        const bool orbPreserved = afterOrb != nullptr &&
+            afterOrb->airportIcao == "KSAN" &&
+            afterOrb->categoryText == "IFR" && !afterOrb->neutral;
+        std::cout
+            << "PLUGIN_SUSPEND_RESUME_LEDGER: before_context=1 before_stage=ENR"
+            << " before_primary=KSAN before_category=IFR"
+            << " disable_worker_running="
+            << (suspension.workerShutdown.running ? 1 : 0)
+            << " disable_handles_closed="
+            << (suspension.workerShutdown.handlesClosed ? 1 : 0)
+            << " disable_ui_mechanical_work=0"
+            << " after_context=" << (contextPreserved ? 1 : 0)
+            << " after_stage=" << (stagePreserved ? "ENR" : "NONE")
+            << " after_primary="
+            << (fixture.state.metar.primaryAirportIcao.empty()
+                    ? "UNAVAILABLE" : fixture.state.metar.primaryAirportIcao)
+            << " after_orb=" << (orbPreserved ? "KSAN-IFR" : "NEUTRAL")
+            << " post_enable_dispatch="
+            << (postEnableCycle.requestDispatched ? 1 : 0)
+            << " suspension_generation="
+            << suspension.suspensionGeneration
+            << " resume_changed=" << (resume.stateChanged ? 1 : 0)
+            << " user_actions=0 reset_invoked=0 recover_invoked=0"
+            << " publication_pending=" << publicationQueue.PendingCount()
+            << " publication_rejected=" << publicationQueue.RejectedCount()
+            << " liveness_failures="
+            << fixture.state.accessory.publicationLivenessFailureCount << "\n";
+        ShutdownAccessoryTextMeasurement(measurement);
+        require(suspension.stateChanged && suspension.suspended &&
+                    resume.stateChanged && resume.resumed &&
+                    contextPreserved && stagePreserved && primaryPreserved &&
+                    orbPreserved && !postEnableCycle.requestDispatched &&
+                    diagnosticAccounting.factsAcceptedByBrain == 2,
+                "Plugin Admin disable/re-enable lost accepted Enroute context or primary presentation");
+    } else if (probe.rfind("plugin_suspend_resume_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+
+        if (probe == "plugin_suspend_resume_cold_startup_neutral") {
+            auto state = std::make_unique<BrainOwnedRuntimeState>();
+            Step4FakeWorker worker;
+            BrainOwnedAsyncWorkerBindings bindings;
+            bindings.metar = &worker;
+            EnableBrainOwnedAccessoryRuntime(state.get());
+            const auto suspension = SuspendBrainOwnedRuntimeForPluginAdmin(
+                state.get(), bindings);
+            const auto resume = ResumeBrainOwnedRuntimeFromPluginAdmin(
+                state.get());
+            BrainOwnedAccessoryProjectionCounters counters;
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                state.get(), &counters);
+            const auto* orb = Step4MetarOrb(command);
+            require(suspension.stateChanged && resume.stateChanged &&
+                        !state->flightContext.active &&
+                        state->lastWorkflowStage == WorkflowStage::None &&
+                        state->metar.primaryAirportIcao.empty() &&
+                        orb != nullptr && orb->neutral &&
+                        orb->airportIcao.empty() &&
+                        orb->label == "METAR",
+                    "cold startup resurrected flight or METAR state");
+            std::cout
+                << "PLUGIN_SUSPEND_RESUME_COLD_START: context=0 stage=NONE"
+                << " primary=UNAVAILABLE orb=NEUTRAL dispatches=0"
+                << " generation=" << suspension.suspensionGeneration << "\n";
+        } else {
+            auto fixtureStorage = std::make_unique<Step4Fixture>();
+            auto& fixture = *fixtureStorage;
+            fixture.input.flightContext.callsign = "ASA551";
+            fixture.input.workflowStage = WorkflowStage::Enroute;
+            fixture.state.flightContext = fixture.input.flightContext;
+            fixture.state.lastWorkflowStage = WorkflowStage::Enroute;
+            fixture.state.lastPilotIdentitySnapshot.connected = true;
+            fixture.state.lastPilotIdentitySnapshot.ready = true;
+            fixture.state.lastPilotIdentitySnapshot.normalizedCallsign =
+                "ASA551";
+            fixture.state.lastNetworkPlanSnapshot.feedAvailable = true;
+            fixture.state.lastNetworkPlanSnapshot.stale = false;
+            fixture.state.lastNetworkPlanSnapshot.matched = true;
+            fixture.state.lastNetworkPlanSnapshot.matchedCallsign = "ASA551";
+            fixture.state.lastNetworkPlanSnapshot.departureIcao = "KDFW";
+            fixture.state.lastNetworkPlanSnapshot.destinationIcao = "KSAN";
+            fixture.state.lastNetworkPlanSnapshot.routeText = "DCT";
+            const auto accepted = fixture.AcceptPrimary(primaryIfr);
+            require(accepted.completionAccepted && accepted.contentChanged &&
+                        fixture.state.metar.primaryObservation.valid,
+                    "suspend/resume fixture did not accept fresh KSAN state");
+            BrainOwnedAsyncWorkerBindings bindings;
+            bindings.metar = &fixture.worker;
+            const auto suspendResume = [&]() {
+                fixture.input.pluginEnabled = false;
+                const auto suspended = SuspendBrainOwnedRuntimeForPluginAdmin(
+                    &fixture.state, bindings);
+                const auto resumed = ResumeBrainOwnedRuntimeFromPluginAdmin(
+                    &fixture.state);
+                fixture.input.pluginEnabled = true;
+                fixture.input.flightContext = fixture.state.flightContext;
+                fixture.input.workflowStage = fixture.state.lastWorkflowStage;
+                require(suspended.status ==
+                            BrainOwnedAccessoryOperationStatus::Available &&
+                            resumed.status ==
+                            BrainOwnedAccessoryOperationStatus::Available,
+                        "Brain lifecycle coordinator was unavailable");
+                return std::pair{suspended, resumed};
+            };
+            const auto projectCurrent = [&]() {
+                BrainOwnedAccessoryProjectionCounters counters;
+                auto command = ProjectBrainOwnedAccessoryPresentation(
+                    &fixture.state, &counters);
+                require(command.snapshot != nullptr,
+                        "resume did not project an immutable command");
+                return command;
+            };
+
+            if (probe ==
+                "plugin_suspend_resume_open_drawer_closes_and_reopens") {
+                auto* measurement = InitializeAccessoryTextMeasurement();
+                require(measurement != nullptr,
+                        "drawer lifecycle text measurement unavailable");
+                AccessoryPreparationWorker preparationWorker;
+                require(preparationWorker.Start(GetCurrentThreadId()),
+                        "drawer lifecycle preparation worker did not start");
+                const auto startupDeadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(2);
+                while (preparationWorker.State() ==
+                           AccessoryPreparationWorkerState::Starting &&
+                       std::chrono::steady_clock::now() < startupDeadline) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                const auto typography =
+                    PrepareAccessoryTypography(measurement, 1.0f);
+                AccessoryLayoutInput layoutInput;
+                layoutInput.screenWidth = 1920;
+                layoutInput.screenHeight = 1080;
+                layoutInput.windowLeft = 100;
+                layoutInput.windowTop = 900;
+                layoutInput.scale = 1.0f;
+                layoutInput.cardAnimationProgress = 1.0f;
+                layoutInput.drawerOpen = true;
+                layoutInput.typography = &typography;
+                const auto layout = ResolveAccessoryLayout(layoutInput);
+                AccessoryPresentationState presenter;
+                AccessoryVisiblePublicationState visibility;
+                auto publicationStorage =
+                    std::make_unique<AccessoryPublicationFactQueue>();
+                auto& publications = *publicationStorage;
+                AccessoryPublicationDiagnosticAccounting diagnosticAccounting;
+                std::uint64_t now = 20'000;
+                std::uint64_t preparationRequests = 0;
+                std::uint64_t commits = 0;
+                std::uint64_t terminals = 0;
+                const auto renderAndPublish = [&](const auto& command) {
+                    AccessoryPreparationKeyInput keyInput;
+                    keyInput.drawer = command.snapshot->activeDrawer;
+                    keyInput.layoutGeneration = 1;
+                    keyInput.commandIdentity =
+                        command.snapshot->commandIdentity;
+                    keyInput.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+                    keyInput.selectedDrawerContentRevision =
+                        command.snapshot->selectedDrawerContentRevision;
+                    keyInput.typographyGeneration = typography.generation;
+                    keyInput.scaleThousandths = 1000;
+                    keyInput.contentWidth = std::max(
+                        1, layout.drawerBounds.right -
+                            layout.drawerBounds.left -
+                            (2 * layout.drawerContentInset));
+                    keyInput.visibleLineCapacity =
+                        layout.drawerVisibleLineCapacity;
+                    AccessoryPreparationRequest request;
+                    request.key = BuildAccessoryPreparationKeyForCommand(
+                        keyInput);
+                    request.snapshot = command.snapshot;
+                    request.layout = layout;
+                    request.requestedMicroseconds = now++;
+                    require(preparationWorker.Request(request),
+                            "drawer lifecycle exact command was not prepared");
+                    ++preparationRequests;
+                    std::shared_ptr<const AccessoryPreparedDrawerPlan> plan;
+                    const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::seconds(2);
+                    while (plan == nullptr &&
+                           std::chrono::steady_clock::now() < deadline) {
+                        plan = preparationWorker.TryTakeReady(
+                            request.key, nullptr);
+                        if (plan == nullptr) {
+                            std::this_thread::sleep_for(
+                                std::chrono::milliseconds(1));
+                        }
+                    }
+                    require(plan != nullptr &&
+                                plan->snapshot.get() == command.snapshot.get(),
+                            "drawer lifecycle worker returned wrong command");
+                    AccessoryPresentationUpdateInput update;
+                    update.presentation = command;
+                    update.layout = layout;
+                    update.mechanicalLayoutGeneration = 1;
+                    update.mainCardProductionSignature =
+                        "plugin-suspend-resume-drawer";
+                    update.measurementContext = measurement;
+                    update.preparedPlan = plan;
+                    const auto committed = UpdateAccessoryPresentation(
+                        &presenter, update);
+                    const auto render = BuildAccessoryDrawerRenderPlan(
+                        presenter, layout);
+                    require(!committed.preparationPending &&
+                                committed.publishedSnapshotCount == 1 &&
+                                render.status ==
+                                    BrainOwnedAccessoryOperationStatus::Available,
+                            "drawer lifecycle command did not commit and render");
+                    ++commits;
+                    AccessoryVisiblePublicationKey key;
+                    key.commandIdentity = command.snapshot->commandIdentity;
+                    key.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+                    key.railRevision =
+                        command.snapshot->railPresentationRevision;
+                    key.drawerRevision =
+                        command.snapshot->selectedDrawerContentRevision;
+                    key.drawerOpen = true;
+                    const auto began = visibility.Observe(
+                        {key, true, true,
+                         committed.delta.uploadRequests != 0, now++, true});
+                    const auto terminal = visibility.CompleteFirstFrame(
+                        key, true, true, now++);
+                    BrainOwnedAccessoryPublicationFact fact;
+                    ApplyAccessoryVisiblePublicationTerminal(terminal, &fact);
+                    fact.activeDrawerRendered =
+                        BrainOwnedAccessoryDrawerId::Metar;
+                    fact.originatingClickSequence =
+                        command.snapshot->originatingClickSequence;
+                    fact.originatingClickAcceptedMicroseconds =
+                        command.snapshot
+                            ->originatingClickAcceptedMicroseconds;
+                    fact.originatingMouseCallbackExitedMicroseconds =
+                        command.snapshot
+                            ->originatingMouseCallbackExitedMicroseconds;
+                    fact.issueToCommitMicroseconds = 50;
+                    fact.clickTimingApplicable =
+                        fact.originatingClickSequence != 0;
+                    fact.clickToTerminalMicroseconds =
+                        fact.clickTimingApplicable ? 100 : 0;
+                    require(began.started && terminal.terminal &&
+                                publications.Produce(fact),
+                            "drawer lifecycle terminal was not queued");
+                    BrainOwnedAccessoryPublicationFact dequeued;
+                    require(publications.Consume(&dequeued),
+                            "drawer lifecycle terminal was not dequeued");
+                    const auto disposition =
+                        ConsumeBrainOwnedAccessoryPublicationFact(
+                            &fixture.state, dequeued);
+                    const auto diagnostic =
+                        SerializeAccessoryPublicationDiagnostic(
+                            dequeued, disposition, &diagnosticAccounting);
+                    require(disposition.consumed &&
+                                disposition.commandTerminalAccepted &&
+                                disposition.visibleAttemptTerminalAccepted &&
+                                diagnostic.find(
+                                    "event=accessory-publication-terminal") !=
+                                    std::string::npos,
+                            "drawer lifecycle terminal was not accepted and serialized");
+                    ++terminals;
+                    bool visibleKsan = false;
+                    for (const auto& line : render.visibleLines) {
+                        visibleKsan = visibleKsan ||
+                            line.text.find("KSAN") != std::string::npos;
+                    }
+                    return visibleKsan;
+                };
+                BrainOwnedAccessorySelectionRequest selection;
+                selection.drawer = BrainOwnedAccessoryDrawerId::Metar;
+                selection.requestSequence = 1;
+                selection.clickAcceptedMicroseconds = now++;
+                selection.mouseCallbackEnteredMicroseconds = now++;
+                selection.mouseCallbackExitedMicroseconds = now++;
+                const auto opened = RequestBrainOwnedAccessoryDrawerSelection(
+                    &fixture.state, selection);
+                const auto openCommand = projectCurrent();
+                require(opened.activeDrawer ==
+                            BrainOwnedAccessoryDrawerId::Metar &&
+                            openCommand.snapshot->activeDrawer ==
+                                BrainOwnedAccessoryDrawerId::Metar,
+                        "pre-disable METAR drawer did not open");
+                require(renderAndPublish(openCommand),
+                        "pre-disable drawer did not visibly render KSAN");
+                preparationWorker.Stop();
+                const auto lifecycle = suspendResume();
+                presenter = {};
+                visibility = {};
+                const auto closedCommand = projectCurrent();
+                require(fixture.state.accessory.activeDrawer ==
+                            BrainOwnedAccessoryDrawerId::None &&
+                            closedCommand.snapshot->activeDrawer ==
+                                BrainOwnedAccessoryDrawerId::None,
+                        "disable did not close the open drawer safely");
+                require(preparationWorker.Start(GetCurrentThreadId()),
+                        "drawer lifecycle preparation worker did not restart");
+                const auto restartDeadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(2);
+                while (preparationWorker.State() ==
+                           AccessoryPreparationWorkerState::Starting &&
+                       std::chrono::steady_clock::now() < restartDeadline) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                selection.requestSequence = 2;
+                selection.clickAcceptedMicroseconds = now++;
+                selection.mouseCallbackEnteredMicroseconds = now++;
+                selection.mouseCallbackExitedMicroseconds = now++;
+                (void)RequestBrainOwnedAccessoryDrawerSelection(
+                    &fixture.state, selection);
+                const auto reopenedCommand = projectCurrent();
+                bool retainedKsan = false;
+                for (const auto& entry : reopenedCommand.snapshot->entries) {
+                    retainedKsan = retainedKsan ||
+                        entry.title.find("KSAN") != std::string::npos ||
+                        entry.body.find("KSAN") != std::string::npos;
+                }
+                const bool visibleKsan = renderAndPublish(reopenedCommand);
+                preparationWorker.Stop();
+                ShutdownAccessoryTextMeasurement(measurement);
+                require(lifecycle.first.stateChanged &&
+                            lifecycle.second.stateChanged && retainedKsan &&
+                            visibleKsan && preparationRequests == 2 &&
+                            commits == 2 && terminals == 2 &&
+                            publications.ProducedCount() == 2 &&
+                            publications.ConsumedCount() == 2 &&
+                            publications.RejectedCount() == 0 &&
+                            diagnosticAccounting.factsAcceptedByBrain == 2 &&
+                            reopenedCommand.snapshot->activeDrawer ==
+                                BrainOwnedAccessoryDrawerId::Metar &&
+                            reopenedCommand.snapshot
+                                    ->selectedDrawerContentRevision ==
+                                fixture.state.accessory.drawerContentRevisions[0],
+                        "reopened drawer did not consume retained KSAN content");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_DRAWER: before=METAR"
+                    << " disabled=NONE after=METAR retained=KSAN"
+                    << " preparations=" << preparationRequests
+                    << " commits=" << commits
+                    << " terminals=" << terminals
+                    << " queue_rejections=" << publications.RejectedCount()
+                    << " user_actions=2\n";
+            } else if (probe ==
+                "plugin_suspend_resume_fresh_retained_cadence_no_duplicate") {
+                const auto requestsBefore = fixture.worker.requests.size();
+                const auto eligibleBefore =
+                    fixture.state.metar.nextPrimaryEligibleMonotonicMs;
+                (void)suspendResume();
+                const auto cycle = fixture.Cycle(1);
+                require(!cycle.requestDispatched &&
+                            fixture.worker.requests.size() == requestsBefore &&
+                            fixture.state.metar.nextPrimaryEligibleMonotonicMs ==
+                                eligibleBefore,
+                        "fresh resume fabricated an immediate METAR request");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_FRESH_CADENCE: immediate=0"
+                    << " requests_before=" << requestsBefore
+                    << " requests_after=" << fixture.worker.requests.size()
+                    << " eligible_ms=" << eligibleBefore << "\n";
+            } else if (probe ==
+                "plugin_suspend_resume_due_retained_one_existing_cadence_refresh") {
+                const auto requestsBefore = fixture.worker.requests.size();
+                const auto due = std::max(
+                    fixture.state.metar.nextPrimaryEligibleMonotonicMs,
+                    fixture.state.metar.freshUntilMonotonicMs) + 1;
+                (void)suspendResume();
+                fixture.input.monotonicMs = due;
+                const auto first = fixture.Cycle();
+                const auto second = fixture.Cycle(1);
+                require(first.requestDispatched &&
+                            first.dispatchDiagnostic.request.airportIcao ==
+                                "KSAN" &&
+                            first.dispatchDiagnostic.request.purpose ==
+                                BrainMetarRequestPurpose::PrimaryRefresh &&
+                            !second.requestDispatched &&
+                            fixture.worker.requests.size() == requestsBefore + 1,
+                        "due resume did not use exactly one existing-cadence refresh");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_DUE_CADENCE: dispatches="
+                    << (fixture.worker.requests.size() - requestsBefore)
+                    << " airport="
+                    << first.dispatchDiagnostic.request.airportIcao
+                    << " purpose=primary-refresh overlap="
+                    << (second.requestDispatched ? 1 : 0) << "\n";
+            } else if (probe ==
+                "plugin_suspend_resume_late_pre_disable_completion_rejected") {
+                const auto due =
+                    fixture.state.metar.nextPrimaryEligibleMonotonicMs + 1;
+                fixture.input.monotonicMs = due;
+                const auto dispatched = fixture.Cycle();
+                require(dispatched.requestDispatched && fixture.worker.running,
+                        "late-fact probe did not dispatch pre-disable work");
+                fixture.worker.Complete(
+                    BrainMetarWorkerStatus::Success, "KSAN",
+                    "KSAN 271953Z 25011KT 1SM OVC004");
+                fixture.input.pluginEnabled = false;
+                const auto suspended = SuspendBrainOwnedRuntimeForPluginAdmin(
+                    &fixture.state, bindings);
+                const auto retainedRaw =
+                    fixture.state.metar.primaryObservation.rawMetar;
+                (void)ResumeBrainOwnedRuntimeFromPluginAdmin(&fixture.state);
+                fixture.input.pluginEnabled = true;
+                fixture.input.flightContext = fixture.state.flightContext;
+                fixture.input.workflowStage = fixture.state.lastWorkflowStage;
+                const auto resumed = fixture.Cycle(1);
+                require(suspended.workerShutdown.terminalFactDrained &&
+                            suspended.workerShutdown.dispositionDiagnostic
+                                .available &&
+                            !suspended.workerShutdown.dispositionDiagnostic
+                                 .accepted &&
+                            retainedRaw == primaryIfr &&
+                            !resumed.completionAccepted &&
+                            fixture.state.metar.primaryObservation.rawMetar ==
+                                primaryIfr,
+                        "late pre-disable completion mutated resumed state");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_LATE_FACT: drained=1"
+                    << " accepted=0 prior_primary_retained=1\n";
+            } else if (probe ==
+                "plugin_suspend_resume_repeated_cycles_zero_duplicate_work") {
+                std::set<std::uint64_t> commands;
+                std::set<std::uint64_t> lifecycles;
+                const auto dispatchBefore =
+                    fixture.state.metar.requestDispatchCount;
+                for (int cycle = 0; cycle < 3; ++cycle) {
+                    const auto transition = suspendResume();
+                    const auto command = projectCurrent();
+                    commands.insert(command.snapshot->commandIdentity);
+                    lifecycles.insert(command.snapshot->lifecycleEpoch);
+                    require(transition.first.stateChanged &&
+                                transition.second.stateChanged,
+                            "repeated lifecycle transition did not occur once");
+                }
+                const auto stateBeforeIdle = fixture.state;
+                for (int frame = 0; frame < 10; ++frame) {
+                    require(!fixture.state.pluginAdminSuspended,
+                            "settled resumed state changed during idle");
+                }
+                require(commands.size() == 3 && lifecycles.size() == 3 &&
+                            fixture.state.metar.requestDispatchCount ==
+                                dispatchBefore &&
+                            fixture.state.accessory
+                                    .publicationLivenessFailureCount == 0 &&
+                            fixture.state.metar.primaryObservation.rawMetar ==
+                                stateBeforeIdle.metar.primaryObservation.rawMetar,
+                        "repeated lifecycle created duplicate or recurring work");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_REPEAT: cycles=3 commands=3"
+                    << " lifecycles=3 requests=0 idle_frames=10 idle_work=0\n";
+            } else if (probe ==
+                "plugin_suspend_resume_callsign_change_while_disabled_rejects_prior") {
+                fixture.state.xPilotSessionBoundaryState.lastXPilotConnected =
+                    true;
+                fixture.state.xPilotSessionBoundaryState
+                    .lastConnectedPilotCallsign = "ASA551";
+                fixture.input.pluginEnabled = false;
+                (void)SuspendBrainOwnedRuntimeForPluginAdmin(
+                    &fixture.state, bindings);
+                xvatsim::brain::workflow::XPilotSessionBoundaryInput input;
+                input.state = fixture.state.xPilotSessionBoundaryState;
+                input.xPilotSession.connected = true;
+                input.xPilotSession.callsign = "UAL900";
+                input.pilotIdentity.connected = true;
+                input.pilotIdentity.ready = true;
+                input.pilotIdentity.normalizedCallsign = "UAL900";
+                const auto boundary =
+                    xvatsim::brain::workflow::ResolveXPilotSessionBoundary(input);
+                require(boundary.shouldResetFlightScopedState,
+                        "different callsign did not select existing hard boundary");
+                (void)ResetBrainOwnedAccessoryForCallsignChange(
+                    &fixture.state, "ASA551", "UAL900");
+                (void)ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+                    &fixture.state, bindings, true);
+                ExecuteHarnessPluginRuntimeReset(&fixture.state);
+                ApplyBrainOwnedXPilotSessionBoundaryDecision(
+                    &fixture.state, boundary);
+                (void)ResumeBrainOwnedRuntimeFromPluginAdmin(&fixture.state);
+                const auto command = projectCurrent();
+                const auto* orb = Step4MetarOrb(command);
+                require(!fixture.state.flightContext.active &&
+                            fixture.state.metar.primaryAirportIcao.empty() &&
+                            orb != nullptr && orb->neutral,
+                        "callsign change exposed prior flight or primary");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_CALLSIGN: old=ASA551 new=UAL900"
+                    << " hard_boundary=1 prior_exposed=0\n";
+            } else if (probe ==
+                "plugin_suspend_resume_confirmed_new_flight_clears_prior") {
+                (void)suspendResume();
+                (void)ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+                    &fixture.state, bindings, true);
+                (void)ResetBrainOwnedAccessoryForConfirmedNewFlight(
+                    &fixture.state);
+                ExecuteHarnessPluginRuntimeReset(&fixture.state);
+                workflow::FlightContext next;
+                next.active = true;
+                next.callsign = "ASA551";
+                next.departureIcao = "KSEA";
+                next.destinationIcao = "KLAX";
+                CommitBrainOwnedFlightContext(&fixture.state, next);
+                fixture.state.lastWorkflowStage = WorkflowStage::Departure;
+                (void)ResumeBrainOwnedRuntimeFromPluginAdmin(&fixture.state);
+                fixture.input.flightContext = next;
+                fixture.input.workflowStage = WorkflowStage::Departure;
+                const auto cycle = fixture.Cycle(1);
+                const auto command = projectCurrent();
+                const auto* orb = Step4MetarOrb(command);
+                require(cycle.requestDispatched &&
+                            cycle.dispatchDiagnostic.request.airportIcao ==
+                                "KSEA" &&
+                            fixture.state.metar.primaryAirportIcao == "KSEA" &&
+                            !fixture.state.metar.primaryObservation.valid &&
+                            orb != nullptr && orb->airportIcao != "KSAN",
+                        "confirmed next flight inherited old KSAN state");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_NEW_FLIGHT: route=KSEA-KLAX"
+                    << " dispatch=KSEA old_primary_inherited=0\n";
+            } else if (probe ==
+                "plugin_suspend_resume_session_reset_after_resume_remains_destructive") {
+                (void)suspendResume();
+                (void)ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+                    &fixture.state, bindings, true);
+                (void)ResetBrainOwnedAccessoryForSessionReset(&fixture.state);
+                ExecuteHarnessPluginRuntimeReset(&fixture.state);
+                const auto command = projectCurrent();
+                const auto* orb = Step4MetarOrb(command);
+                require(!fixture.state.flightContext.active &&
+                            fixture.state.lastWorkflowStage ==
+                                WorkflowStage::None &&
+                            fixture.state.metar.primaryAirportIcao.empty() &&
+                            orb != nullptr && orb->neutral,
+                        "Reset XVatsim no longer performed destructive reset");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_SESSION_RESET: destructive=1"
+                    << " context=0 primary=UNAVAILABLE\n";
+            } else if (probe ==
+                "plugin_suspend_resume_recover_current_flight_unchanged") {
+                (void)suspendResume();
+                AircraftStateSnapshot aircraft;
+                aircraft.valid = true;
+                aircraft.batteryOn = true;
+                aircraft.onGround = false;
+                FlightPlanSnapshot plan;
+                NetworkPlanSnapshot network;
+                network.feedAvailable = true;
+                network.stale = false;
+                network.matched = true;
+                network.matchedCallsign = "ASA551";
+                network.departureIcao = "KDFW";
+                network.destinationIcao = "KSAN";
+                network.routeText = "DCT";
+                const auto recovery =
+                    xvatsim::brain::workflow::ResolveCurrentFlightRecovery(
+                        aircraft, plan, network,
+                        fixture.state.flightContext,
+                        xvatsim::brain::workflow::RecoveryRequestMode::Manual);
+                require(recovery.accepted && recovery.usedPreservedContext &&
+                            recovery.stage == WorkflowStage::Enroute &&
+                            recovery.flightContext.departureIcao == "KDFW" &&
+                            recovery.flightContext.destinationIcao == "KSAN" &&
+                            fixture.state.metar.primaryAirportIcao == "KSAN",
+                        "Recover Current Flight behavior changed after resume");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_RECOVERY: accepted=1 stage=ENR"
+                    << " preserved=1 primary=KSAN\n";
+            } else if (probe ==
+                "plugin_suspend_resume_disabled_warm_idle_zero_work") {
+                fixture.input.pluginEnabled = false;
+                const auto suspended = SuspendBrainOwnedRuntimeForPluginAdmin(
+                    &fixture.state, bindings);
+                const auto requests = fixture.state.metar.requestDispatchCount;
+                const auto semantic =
+                    BrainOwnedAccessorySemanticPresentationGeneration(
+                        fixture.state);
+                const auto command =
+                    fixture.state.accessory.nextPresentationCommandIdentity;
+                const auto lifecycle = fixture.state.accessory.lifecycleEpoch;
+                for (int cycle = 0; cycle < 100'000; ++cycle) {
+                    require(fixture.state.pluginAdminSuspended,
+                            "disabled coordinator left suspension during idle");
+                }
+                require(suspended.stateChanged && !fixture.worker.running &&
+                            fixture.state.metar.requestDispatchCount == requests &&
+                            BrainOwnedAccessorySemanticPresentationGeneration(
+                                fixture.state) == semantic &&
+                            fixture.state.accessory
+                                    .nextPresentationCommandIdentity == command &&
+                            fixture.state.accessory.lifecycleEpoch == lifecycle,
+                        "disabled warm idle performed recurring work");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_DISABLED_IDLE: cycles=100000"
+                    << " projections=0 requests=0 commands=0 publications=0"
+                    << " worker_running=0\n";
+            } else {
+                require(false, "unknown plugin suspend/resume probe");
+            }
+        }
+    } else if (probe == "single_snapshot_kdfw_metar_atis_pdc_metar_production_seam") {
+        using namespace xvatsim::modules::overlay;
+        auto fixtureStorage = std::make_unique<Step4Fixture>();
+        auto& fixture = *fixtureStorage;
+        fixture.Cycle();
+        const auto accepted = fixture.AcceptPrimary(primaryVfr);
+        require(accepted.completionAccepted && accepted.contentChanged,
+                "KDFW METAR was not accepted for the production seam");
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "production-seam text measurement unavailable");
+        AccessoryPreparationWorker worker;
+        require(worker.Start(GetCurrentThreadId()),
+                "production-seam worker did not start");
+        const auto startupDeadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (worker.State() == AccessoryPreparationWorkerState::Starting &&
+               std::chrono::steady_clock::now() < startupDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(worker.State() == AccessoryPreparationWorkerState::Ready,
+                "production-seam worker unavailable");
+        AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 100;
+        layoutInput.windowTop = 900;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = true;
+        const auto typography = PrepareAccessoryTypography(measurement, 1.0f);
+        layoutInput.typography = &typography;
+        const auto layout = ResolveAccessoryLayout(layoutInput);
+        require(layout.status == BrainOwnedAccessoryOperationStatus::Available,
+                "production-seam layout unavailable");
+
+        AccessoryClickFactQueue clicks;
+        auto publicationsStorage =
+            std::make_unique<AccessoryPublicationFactQueue>();
+        auto& publications = *publicationsStorage;
+        AccessoryVisiblePublicationState visibility;
+        AccessoryPublicationDiagnosticAccounting diagnostics;
+        AccessoryPresentationState presenter;
+        std::uint64_t now = 1'000;
+        std::uint64_t decisions = 0;
+        std::uint64_t commands = 0;
+        std::uint64_t requests = 0;
+        std::uint64_t plans = 0;
+        std::uint64_t commits = 0;
+        std::uint64_t terminals = 0;
+        std::uint64_t serialized = 0;
+        std::uint64_t maximumClickUs = 0;
+        BrainOwnedAccessoryPresentationHandle lastCommand;
+        AccessoryPresentationUpdateInput lastUpdateInput;
+
+        const auto runSelection = [&](BrainOwnedAccessoryDrawerId drawer,
+                                      std::uint64_t sequence) {
+            AccessoryClickFact captured;
+            require(clicks.Produce(drawer, now++, &captured),
+                    "production-seam click was not captured");
+            require(clicks.MarkMouseCallbackExited(
+                        captured.requestSequence, now++),
+                    "production-seam callback exit was not recorded");
+            AccessoryClickFact consumed;
+            require(clicks.Consume(&consumed),
+                    "production-seam click was not consumed");
+            BrainOwnedAccessorySelectionRequest request;
+            request.drawer = consumed.drawer;
+            request.requestSequence = consumed.requestSequence;
+            request.clickAcceptedMicroseconds = consumed.startedMicroseconds;
+            request.mouseCallbackEnteredMicroseconds =
+                consumed.mouseCallbackEnteredMicroseconds;
+            request.mouseCallbackExitedMicroseconds =
+                consumed.mouseCallbackExitedMicroseconds;
+            const auto selection = RequestBrainOwnedAccessoryDrawerSelection(
+                &fixture.state, request);
+            ++decisions;
+            require(selection.status ==
+                        BrainOwnedAccessoryOperationStatus::Available &&
+                    selection.activeDrawer == drawer,
+                    "Brain did not select requested production-seam drawer");
+            BrainOwnedAccessoryProjectionCounters projection;
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &projection);
+            ++commands;
+            require(command.snapshot != nullptr &&
+                        projection.snapshotBuilds == 1 &&
+                        command.snapshot->activeDrawer == drawer &&
+                        command.snapshot->originatingClickSequence == sequence,
+                    "Brain did not project one exact immutable command");
+
+            AccessoryPreparationKeyInput keyInput;
+            keyInput.drawer = command.snapshot->activeDrawer;
+            keyInput.layoutGeneration = 1;
+            keyInput.commandIdentity = command.snapshot->commandIdentity;
+            keyInput.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            keyInput.selectedDrawerContentRevision =
+                command.snapshot->selectedDrawerContentRevision;
+            keyInput.typographyGeneration = typography.generation;
+            keyInput.scaleThousandths = 1000;
+            keyInput.contentWidth = std::max(1,
+                layout.drawerBounds.right - layout.drawerBounds.left -
+                    (2 * layout.drawerContentInset));
+            keyInput.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+            AccessoryPreparationRequest preparation;
+            preparation.key = BuildAccessoryPreparationKeyForCommand(keyInput);
+            preparation.snapshot = command.snapshot;
+            preparation.layout = layout;
+            preparation.requestedMicroseconds = now++;
+            require(worker.Request(preparation),
+                    "exact immutable command was not submitted once");
+            ++requests;
+            std::shared_ptr<const AccessoryPreparedDrawerPlan> plan;
+            const auto deadline = std::chrono::steady_clock::now() +
+                std::chrono::seconds(2);
+            while (plan == nullptr &&
+                   std::chrono::steady_clock::now() < deadline) {
+                plan = worker.TryTakeReady(preparation.key, nullptr);
+                if (plan == nullptr)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            require(plan != nullptr &&
+                        plan->snapshot.get() == command.snapshot.get() &&
+                        plan->key == preparation.key,
+                    "generic worker did not return the exact command plan");
+            ++plans;
+            AccessoryPresentationUpdateInput update;
+            update.presentation = command;
+            update.mechanicalLayoutGeneration = 1;
+            update.layout = layout;
+            update.mainCardProductionSignature = "single-snapshot-seam";
+            update.measurementContext = measurement;
+            update.preparedPlan = plan;
+            const auto committed = UpdateAccessoryPresentation(
+                &presenter, update);
+            require(!committed.preparationPending &&
+                        committed.publishedSnapshotCount == 1 &&
+                        presenter.activeSnapshot.get() == command.snapshot.get() &&
+                        presenter.activeSnapshot->activeDrawer == drawer,
+                    "exact prepared command did not commit to requested drawer");
+            ++commits;
+            const auto drawerRender = BuildAccessoryDrawerRenderPlan(
+                presenter, layout);
+            require(drawerRender.status ==
+                        BrainOwnedAccessoryOperationStatus::Available,
+                    "committed drawer did not produce its render plan");
+
+            AccessoryVisiblePublicationKey visibleKey;
+            visibleKey.commandIdentity = command.snapshot->commandIdentity;
+            visibleKey.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            visibleKey.railRevision =
+                command.snapshot->railPresentationRevision;
+            visibleKey.drawerRevision =
+                command.snapshot->selectedDrawerContentRevision;
+            visibleKey.drawerOpen = true;
+            const auto began = visibility.Observe(
+                {visibleKey, true, true, committed.delta.uploadRequests != 0,
+                 now++, true});
+            require(began.started && began.attemptIdentity != 0,
+                    "first qualifying draw did not open publication attempt");
+            const auto terminal = visibility.CompleteFirstFrame(
+                visibleKey, true, true, now++);
+            BrainOwnedAccessoryPublicationFact fact;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &fact);
+            fact.originatingClickSequence =
+                command.snapshot->originatingClickSequence;
+            fact.originatingClickAcceptedMicroseconds =
+                command.snapshot->originatingClickAcceptedMicroseconds;
+            fact.originatingMouseCallbackExitedMicroseconds =
+                command.snapshot->originatingMouseCallbackExitedMicroseconds;
+            fact.activeDrawerRendered = drawer;
+            fact.issueToCommitMicroseconds = 50;
+            fact.commandElapsedMicroseconds = 100;
+            fact.clickTimingApplicable = true;
+            fact.clickToTerminalMicroseconds = 100;
+            require(publications.Produce(fact),
+                    "terminal fact was not accepted by production queue");
+            BrainOwnedAccessoryPublicationFact dequeued;
+            require(publications.Consume(&dequeued),
+                    "terminal fact was not dequeued");
+            const auto disposition = ConsumeBrainOwnedAccessoryPublicationFact(
+                &fixture.state, dequeued);
+            require(disposition.consumed &&
+                        disposition.commandTerminalAccepted &&
+                        disposition.visibleAttemptTerminalAccepted,
+                    "Brain did not accept both terminal roles");
+            const auto diagnostic = SerializeAccessoryPublicationDiagnostic(
+                dequeued, disposition, &diagnostics);
+            require(diagnostic.find("event=accessory-publication-terminal") !=
+                        std::string::npos,
+                    "production diagnostic serializer did not execute");
+            ++serialized;
+            ++terminals;
+            maximumClickUs = std::max(
+                maximumClickUs, dequeued.clickToTerminalMicroseconds);
+            lastCommand = command;
+            lastUpdateInput = update;
+        };
+
+        runSelection(BrainOwnedAccessoryDrawerId::Metar, 1);
+        runSelection(BrainOwnedAccessoryDrawerId::Atis, 2);
+        require(lastCommand.snapshot != nullptr &&
+                    lastCommand.snapshot->drawerState ==
+                        BrainOwnedAccessoryDrawerState::Empty &&
+                    lastCommand.snapshot->contentGeneration == 0,
+                "ATIS did not carry its truthful independent empty state");
+        runSelection(BrainOwnedAccessoryDrawerId::Pdc, 3);
+        require(lastCommand.snapshot != nullptr &&
+                    lastCommand.snapshot->drawerState ==
+                        BrainOwnedAccessoryDrawerState::Empty &&
+                    lastCommand.snapshot->contentGeneration == 0,
+                "PDC did not carry its truthful independent empty state");
+        runSelection(BrainOwnedAccessoryDrawerId::Metar, 4);
+        require(lastCommand.snapshot != nullptr &&
+                    lastCommand.snapshot->contentGeneration != 0,
+                "returning METAR lost accepted KDFW content");
+
+        const auto workerBeforeIdle = worker.SnapshotCounters();
+        const auto publicationsBeforeIdle = publications.ProducedCount();
+        const auto idle = RunUnchangedAccessoryPresentationUpdates(
+            &presenter, lastUpdateInput, 10);
+        const auto workerAfterIdle = worker.SnapshotCounters();
+        require(idle.delta.historyVisits == 0 &&
+                    idle.delta.entryCopies == 0 &&
+                    idle.delta.wrapVisits == 0 &&
+                    idle.delta.railRasterRequests == 0 &&
+                    idle.delta.drawerRasterRequests == 0 &&
+                    idle.delta.uploadRequests == 0 &&
+                    workerAfterIdle.readinessCheckCount ==
+                        workerBeforeIdle.readinessCheckCount &&
+                    workerAfterIdle.jobsRequested ==
+                        workerBeforeIdle.jobsRequested &&
+                    publications.ProducedCount() == publicationsBeforeIdle,
+                "terminal publication did not settle to zero work");
+        require(decisions == 4 && commands == 4 && requests == 4 &&
+                    plans == 4 && commits == 4 && terminals == 4 &&
+                    serialized == 4 && clicks.PendingCount() == 0 &&
+                    clicks.DroppedCount() == 0 &&
+                    publications.RejectedCount() == 0 &&
+                    diagnostics.factsAcceptedByBrain == 4 &&
+                    diagnostics.commandTerminalsAccepted == 4 &&
+                    diagnostics.visibleAttemptTerminalsAccepted == 4 &&
+                    fixture.state.accessory.publicationLivenessFailureCount == 0 &&
+                    maximumClickUs < 500'000,
+                "production-seam accounting was not exact");
+        std::cout << "SINGLE_SNAPSHOT_PRODUCTION_SEAM: clicks=4 decisions="
+                  << decisions << " commands=" << commands
+                  << " requests=" << requests << " plans=" << plans
+                  << " commits=" << commits << " terminals=" << terminals
+                  << " diagnostics=" << serialized
+                  << " max_click_us=" << maximumClickUs
+                  << " idle_requests=0 idle_facts=0\n";
+        worker.Stop();
+        ShutdownAccessoryTextMeasurement(measurement);
+    } else if (probe.rfind("single_snapshot_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        auto fixtureStorage = std::make_unique<Step4Fixture>();
+        auto& fixture = *fixtureStorage;
+        fixture.Cycle();
+        const auto accepted = fixture.AcceptPrimary(primaryVfr);
+        require(accepted.completionAccepted && accepted.contentChanged,
+                "single-snapshot focused fixture did not accept KDFW");
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "single-snapshot focused measurement unavailable");
+        AccessoryPreparationWorker worker;
+        require(worker.Start(GetCurrentThreadId()),
+                "single-snapshot focused worker did not start");
+        const auto startupDeadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (worker.State() == AccessoryPreparationWorkerState::Starting &&
+               std::chrono::steady_clock::now() < startupDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 100;
+        layoutInput.windowTop = 900;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = true;
+        const auto typography = PrepareAccessoryTypography(measurement, 1.0f);
+        layoutInput.typography = &typography;
+        const auto layout = ResolveAccessoryLayout(layoutInput);
+        AccessoryPresentationState presenter;
+        AccessoryPresentationUpdateInput lastInput;
+
+        const auto commandFor = [&](BrainOwnedAccessoryDrawerId drawer,
+                                    std::uint64_t sequence) {
+            BrainOwnedAccessorySelectionRequest request;
+            request.drawer = drawer;
+            request.requestSequence = sequence;
+            request.clickAcceptedMicroseconds = sequence * 1'000;
+            request.mouseCallbackExitedMicroseconds =
+                request.clickAcceptedMicroseconds + 1;
+            const auto decision = RequestBrainOwnedAccessoryDrawerSelection(
+                &fixture.state, request);
+            require(decision.activeDrawer == drawer,
+                    "focused Brain selection did not choose requested drawer");
+            BrainOwnedAccessoryProjectionCounters counters;
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &counters);
+            require(command.snapshot != nullptr && counters.snapshotBuilds == 1,
+                    "focused command was not projected exactly once");
+            return command;
+        };
+        const auto prepare = [&](AccessoryPreparationWorker* target,
+                                 const BrainOwnedAccessoryPresentationHandle& command,
+                                 const AccessoryLayoutResult& selectedLayout,
+                                 std::uint64_t mechanicalGeneration,
+                                 bool supersessionAccounted = true) {
+            std::shared_ptr<const AccessoryPreparedDrawerPlan> plan;
+            if (target == nullptr || command.snapshot == nullptr) return plan;
+            AccessoryPreparationKeyInput keyInput;
+            keyInput.drawer = command.snapshot->activeDrawer;
+            keyInput.layoutGeneration = mechanicalGeneration;
+            keyInput.commandIdentity = command.snapshot->commandIdentity;
+            keyInput.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            keyInput.selectedDrawerContentRevision =
+                command.snapshot->selectedDrawerContentRevision;
+            keyInput.typographyGeneration = typography.generation;
+            keyInput.scaleThousandths = static_cast<int>(
+                std::lround(selectedLayout.scale * 1'000.0f));
+            keyInput.contentWidth = std::max(1,
+                selectedLayout.drawerBounds.right -
+                    selectedLayout.drawerBounds.left -
+                    (2 * selectedLayout.drawerContentInset));
+            keyInput.visibleLineCapacity =
+                selectedLayout.drawerVisibleLineCapacity;
+            AccessoryPreparationRequest request;
+            request.key = BuildAccessoryPreparationKeyForCommand(keyInput);
+            request.snapshot = command.snapshot;
+            request.layout = selectedLayout;
+            request.supersessionTerminalAccounted = supersessionAccounted;
+            if (!target->Request(request)) return plan;
+            const auto deadline = std::chrono::steady_clock::now() +
+                std::chrono::seconds(2);
+            while (plan == nullptr &&
+                   std::chrono::steady_clock::now() < deadline) {
+                plan = target->TryTakeReady(request.key, nullptr);
+                if (plan == nullptr)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return plan;
+        };
+        const auto commit = [&](const BrainOwnedAccessoryPresentationHandle& command,
+                                const AccessoryLayoutResult& selectedLayout,
+                                std::uint64_t mechanicalGeneration,
+                                const std::shared_ptr<const
+                                    AccessoryPreparedDrawerPlan>& plan) {
+            AccessoryPresentationUpdateInput input;
+            input.presentation = command;
+            input.layout = selectedLayout;
+            input.mainCardProductionSignature = "single-snapshot-focused";
+            input.measurementContext = measurement;
+            input.preparedPlan = plan;
+            input.mechanicalLayoutGeneration = mechanicalGeneration;
+            const auto result = UpdateAccessoryPresentation(&presenter, input);
+            lastInput = input;
+            return result;
+        };
+        const auto publish = [&require](
+            BrainOwnedRuntimeState* state,
+            AccessoryVisiblePublicationState* visibility,
+            AccessoryPublicationFactQueue* queue,
+            const BrainOwnedAccessoryPresentationHandle& command,
+            bool drawerOpen,
+            std::uint64_t* now) {
+            require(state != nullptr && visibility != nullptr &&
+                        queue != nullptr && command.snapshot != nullptr &&
+                        now != nullptr,
+                    "classification publication seam input unavailable");
+            if (state == nullptr || visibility == nullptr || queue == nullptr ||
+                command.snapshot == nullptr || now == nullptr) return false;
+            AccessoryVisiblePublicationKey key;
+            key.commandIdentity = command.snapshot->commandIdentity;
+            key.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            key.railRevision = command.snapshot->railPresentationRevision;
+            key.drawerRevision =
+                command.snapshot->selectedDrawerContentRevision;
+            key.drawerOpen = drawerOpen;
+            const auto began = visibility->Observe(
+                {key, true, true, true, (*now)++, true});
+            const auto terminal = visibility->CompleteFirstFrame(
+                key, true, !drawerOpen ||
+                    command.snapshot->activeDrawer !=
+                        BrainOwnedAccessoryDrawerId::None,
+                (*now)++);
+            BrainOwnedAccessoryPublicationFact fact;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &fact);
+            fact.originatingClickSequence =
+                command.snapshot->originatingClickSequence;
+            fact.originatingClickAcceptedMicroseconds =
+                command.snapshot->originatingClickAcceptedMicroseconds;
+            fact.originatingMouseCallbackExitedMicroseconds =
+                command.snapshot->originatingMouseCallbackExitedMicroseconds;
+            fact.activeDrawerRendered = command.snapshot->activeDrawer;
+            fact.issueToCommitMicroseconds = 50;
+            fact.commandElapsedMicroseconds = 100;
+            if (fact.originatingClickSequence != 0) {
+                fact.clickTimingApplicable = true;
+                fact.clickToTerminalMicroseconds = 100;
+            }
+            require(began.started && terminal.terminal && queue->Produce(fact),
+                    "classification terminal did not enter production queue");
+            BrainOwnedAccessoryPublicationFact dequeued;
+            require(queue->Consume(&dequeued),
+                    "classification terminal did not leave production queue");
+            const auto decision = ConsumeBrainOwnedAccessoryPublicationFact(
+                state, dequeued);
+            require(decision.consumed &&
+                        decision.commandTerminalAccepted &&
+                        decision.visibleAttemptTerminalAccepted,
+                    "classification terminal was not accepted by Brain");
+            AccessoryPublicationDiagnosticAccounting diagnostics;
+            const auto serialized = SerializeAccessoryPublicationDiagnostic(
+                dequeued, decision, &diagnostics);
+            require(serialized.find("event=accessory-publication-terminal") !=
+                        std::string::npos &&
+                        diagnostics.factsAcceptedByBrain == 1,
+                    "classification terminal was not serialized from acceptance");
+            return decision.consumed;
+        };
+
+        if (probe == "single_snapshot_nonzero_metar_to_atis_empty_state" ||
+            probe == "single_snapshot_nonzero_metar_to_pdc_empty_state" ||
+            probe == "single_snapshot_atis_to_pdc_metar_initialized") {
+            const auto firstDrawer =
+                probe == "single_snapshot_atis_to_pdc_metar_initialized"
+                ? BrainOwnedAccessoryDrawerId::Atis
+                : BrainOwnedAccessoryDrawerId::Metar;
+            const auto targetDrawer =
+                probe == "single_snapshot_nonzero_metar_to_atis_empty_state"
+                ? BrainOwnedAccessoryDrawerId::Atis
+                : BrainOwnedAccessoryDrawerId::Pdc;
+            const auto first = commandFor(firstDrawer, 1);
+            const auto firstPlan = prepare(&worker, first, layout, 1);
+            const auto firstCommit = commit(first, layout, 1, firstPlan);
+            const auto target = commandFor(targetDrawer, 2);
+            const auto targetPlan = prepare(&worker, target, layout, 1);
+            const auto targetCommit = commit(target, layout, 1, targetPlan);
+            require(!firstCommit.preparationPending &&
+                        !targetCommit.preparationPending &&
+                        targetPlan != nullptr &&
+                        targetPlan->snapshot.get() == target.snapshot.get() &&
+                        presenter.activeSnapshot.get() == target.snapshot.get() &&
+                        target.snapshot->activeDrawer == targetDrawer &&
+                        target.snapshot->drawerState ==
+                            BrainOwnedAccessoryDrawerState::Empty &&
+                        target.snapshot->contentGeneration == 0 &&
+                        fixture.state.metar.presentationGeneration != 0,
+                    "nonzero METAR contaminated empty ATIS/PDC command");
+        } else if (probe == "single_snapshot_newer_click_discards_stale_plan_once") {
+            worker.Stop();
+            std::mutex gateMutex;
+            std::condition_variable gateChanged;
+            bool oldPlanReachedPublication = false;
+            bool releaseOldPlan = false;
+            AccessoryPreparationWorkerHooks hooks;
+            hooks.beforeReadyPublicationUnlocked = [&] {
+                std::unique_lock<std::mutex> lock(gateMutex);
+                oldPlanReachedPublication = true;
+                gateChanged.notify_all();
+                gateChanged.wait(lock, [&] { return releaseOldPlan; });
+            };
+            AccessoryPreparationWorker staleWorker(std::move(hooks));
+            require(staleWorker.Start(GetCurrentThreadId()),
+                    "stale-plan worker did not start");
+            while (staleWorker.State() ==
+                       AccessoryPreparationWorkerState::Starting) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            const auto older = commandFor(
+                BrainOwnedAccessoryDrawerId::Atis, 1);
+            AccessoryPreparationKeyInput oldKeyInput;
+            oldKeyInput.drawer = older.snapshot->activeDrawer;
+            oldKeyInput.layoutGeneration = 1;
+            oldKeyInput.commandIdentity = older.snapshot->commandIdentity;
+            oldKeyInput.lifecycleEpoch = older.snapshot->lifecycleEpoch;
+            oldKeyInput.selectedDrawerContentRevision =
+                older.snapshot->selectedDrawerContentRevision;
+            oldKeyInput.typographyGeneration = typography.generation;
+            oldKeyInput.scaleThousandths = 1000;
+            oldKeyInput.contentWidth = std::max(1,
+                layout.drawerBounds.right - layout.drawerBounds.left -
+                    (2 * layout.drawerContentInset));
+            oldKeyInput.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+            AccessoryPreparationRequest olderRequest;
+            olderRequest.key = BuildAccessoryPreparationKeyForCommand(
+                oldKeyInput);
+            olderRequest.snapshot = older.snapshot;
+            olderRequest.layout = layout;
+            require(staleWorker.Request(olderRequest),
+                    "older exact command was not admitted");
+            {
+                std::unique_lock<std::mutex> lock(gateMutex);
+                gateChanged.wait_for(lock, std::chrono::seconds(2), [&] {
+                    return oldPlanReachedPublication;
+                });
+            }
+            auto queueStorage =
+                std::make_unique<AccessoryPublicationFactQueue>();
+            auto& queue = *queueStorage;
+            BrainOwnedAccessoryPublicationFact superseded;
+            superseded.commandIdentity = older.snapshot->commandIdentity;
+            superseded.lifecycleEpoch = older.snapshot->lifecycleEpoch;
+            superseded.appliedCommandIdentity = 0;
+            superseded.commandTerminal = true;
+            superseded.disposition =
+                BrainOwnedAccessoryPublicationDisposition::SupersededBeforeCommit;
+            require(queue.Produce(superseded),
+                    "older supersession terminal was not retained");
+            BrainOwnedAccessoryPublicationFact delivered;
+            require(queue.Consume(&delivered),
+                    "older supersession terminal was not delivered");
+            const auto supersession = ConsumeBrainOwnedAccessoryPublicationFact(
+                &fixture.state, delivered);
+            require(supersession.consumed &&
+                        supersession.commandTerminalAccepted,
+                    "older command was not truthfully terminal before replacement");
+            const auto newer = commandFor(
+                BrainOwnedAccessoryDrawerId::Pdc, 2);
+            AccessoryPreparationKeyInput newKeyInput = oldKeyInput;
+            newKeyInput.drawer = newer.snapshot->activeDrawer;
+            newKeyInput.commandIdentity = newer.snapshot->commandIdentity;
+            newKeyInput.lifecycleEpoch = newer.snapshot->lifecycleEpoch;
+            newKeyInput.selectedDrawerContentRevision =
+                newer.snapshot->selectedDrawerContentRevision;
+            AccessoryPreparationRequest newerRequest;
+            newerRequest.key = BuildAccessoryPreparationKeyForCommand(
+                newKeyInput);
+            newerRequest.snapshot = newer.snapshot;
+            newerRequest.layout = layout;
+            newerRequest.supersessionTerminalAccounted = true;
+            require(staleWorker.Request(newerRequest),
+                    "newer command was not admitted after supersession");
+            {
+                std::lock_guard<std::mutex> lock(gateMutex);
+                releaseOldPlan = true;
+            }
+            gateChanged.notify_all();
+            std::shared_ptr<const AccessoryPreparedDrawerPlan> newerPlan;
+            const auto deadline = std::chrono::steady_clock::now() +
+                std::chrono::seconds(2);
+            while (newerPlan == nullptr &&
+                   std::chrono::steady_clock::now() < deadline) {
+                newerPlan = staleWorker.TryTakeReady(
+                    newerRequest.key, nullptr);
+                if (newerPlan == nullptr)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            const auto counters = staleWorker.SnapshotCounters();
+            require(staleWorker.TryTakeReady(olderRequest.key, nullptr) == nullptr &&
+                        newerPlan != nullptr &&
+                        newerPlan->snapshot.get() == newer.snapshot.get() &&
+                        counters.staleResultsRejected == 1,
+                    "late older plan was not discarded exactly once");
+            staleWorker.Stop();
+        } else if (probe == "single_snapshot_terminal_publication_then_idle_zero_work") {
+            const auto command = commandFor(
+                BrainOwnedAccessoryDrawerId::Atis, 1);
+            const auto plan = prepare(&worker, command, layout, 1);
+            const auto committed = commit(command, layout, 1, plan);
+            auto queueStorage =
+                std::make_unique<AccessoryPublicationFactQueue>();
+            auto& queue = *queueStorage;
+            AccessoryVisiblePublicationState visibility;
+            AccessoryVisiblePublicationKey key{
+                command.snapshot->commandIdentity,
+                command.snapshot->lifecycleEpoch,
+                command.snapshot->railPresentationRevision,
+                command.snapshot->selectedDrawerContentRevision,
+                true};
+            const auto began = visibility.Observe(
+                {key, true, true, true, 1'000, true});
+            const auto terminal = visibility.CompleteFirstFrame(
+                key, true, true, 1'100);
+            BrainOwnedAccessoryPublicationFact fact;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &fact);
+            require(began.started && queue.Produce(fact),
+                    "terminal publication did not enter queue");
+            BrainOwnedAccessoryPublicationFact dequeued;
+            require(queue.Consume(&dequeued) &&
+                        ConsumeBrainOwnedAccessoryPublicationFact(
+                            &fixture.state, dequeued).consumed,
+                    "terminal publication was not consumed");
+            const auto before = worker.SnapshotCounters();
+            const auto producedBefore = queue.ProducedCount();
+            const auto idle = RunUnchangedAccessoryPresentationUpdates(
+                &presenter, lastInput, 10'000);
+            const auto after = worker.SnapshotCounters();
+            require(!committed.preparationPending &&
+                        idle.delta.historyVisits == 0 &&
+                        idle.delta.entryCopies == 0 &&
+                        idle.delta.wrapVisits == 0 &&
+                        idle.delta.railRasterRequests == 0 &&
+                        idle.delta.drawerRasterRequests == 0 &&
+                        idle.delta.uploadRequests == 0 &&
+                        before.readinessCheckCount == after.readinessCheckCount &&
+                        before.jobsRequested == after.jobsRequested &&
+                        producedBefore == queue.ProducedCount(),
+                    "terminal publication retained recurring idle work");
+        } else if (probe == "single_snapshot_per_drawer_revision_cross_contamination") {
+            const auto before = fixture.state.accessory.drawerContentRevisions;
+            const auto atis = commandFor(
+                BrainOwnedAccessoryDrawerId::Atis, 1);
+            const auto atisRevision =
+                atis.snapshot->selectedDrawerContentRevision;
+            fixture.state.metar.nextPrimaryEligibleMonotonicMs =
+                fixture.input.monotonicMs;
+            fixture.Cycle();
+            fixture.worker.Complete(
+                BrainMetarWorkerStatus::Success, "KDFW",
+                "SPECI KDFW 271954Z 18010KT 4SM BKN020");
+            const auto changed = fixture.Cycle(1);
+            const auto after = fixture.state.accessory.drawerContentRevisions;
+            const auto refreshed = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, nullptr);
+            require(changed.contentChanged && after[0] > before[0] &&
+                        after[1] == before[1] && after[2] == before[2] &&
+                        refreshed.snapshot->activeDrawer ==
+                            BrainOwnedAccessoryDrawerId::Atis &&
+                        refreshed.snapshot->selectedDrawerContentRevision ==
+                            atisRevision &&
+                        refreshed.snapshot->contentGeneration == 0,
+                    "METAR mutation cross-contaminated ATIS/PDC revision");
+        } else if (probe == "single_snapshot_closed_drawer_and_neutral_startup_unchanged") {
+            auto neutralStorage = std::make_unique<BrainOwnedRuntimeState>();
+            auto& neutral = *neutralStorage;
+            EnableBrainOwnedAccessoryRuntime(&neutral);
+            BrainOwnedAccessoryProjectionCounters projection;
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                &neutral, &projection);
+            AccessoryLayoutInput closedInput = layoutInput;
+            closedInput.drawerOpen = false;
+            const auto closedLayout = ResolveAccessoryLayout(closedInput);
+            AccessoryPresentationState neutralPresenter;
+            AccessoryPresentationUpdateInput input;
+            input.presentation = command;
+            input.layout = closedLayout;
+            input.mainCardProductionSignature = "neutral-startup";
+            input.measurementContext = measurement;
+            input.mechanicalLayoutGeneration = 1;
+            const auto update = UpdateAccessoryPresentation(
+                &neutralPresenter, input);
+            AccessoryVisiblePublicationState visibility;
+            auto queueStorage =
+                std::make_unique<AccessoryPublicationFactQueue>();
+            auto& queue = *queueStorage;
+            std::uint64_t now = 10'000;
+            require(publish(
+                        &neutral, &visibility, &queue, command, false, &now),
+                    "neutral startup terminal was not published");
+            const bool allNeutral = command.snapshot != nullptr &&
+                std::all_of(command.snapshot->orbs.begin(),
+                            command.snapshot->orbs.end(),
+                            [](const auto& orb) { return orb.neutral; });
+            const auto semanticBefore =
+                neutral.accessory.semanticPresentationGeneration;
+            const auto revisionBefore =
+                neutral.accessory.drawerContentRevisions[0];
+            BrainOwnedAccessoryHistoryEntryInput hidden;
+            hidden.drawer = BrainOwnedAccessoryDrawerId::Metar;
+            hidden.stableKey = "METAR|KSEA|hidden-neutral";
+            hidden.title = "KSEA · LOOKUP";
+            hidden.body = "METAR KSEA 291853Z 18005KT 10SM CLR";
+            const auto hiddenAccepted = AcceptBrainOwnedAccessoryHistoryEntry(
+                &neutral, hidden);
+            BrainOwnedAccessoryProjectionCounters deferredProjection;
+            const auto deferred = ProjectBrainOwnedAccessoryPresentation(
+                &neutral, &deferredProjection);
+            const auto deferredUpdate = UpdateAccessoryPresentation(
+                &neutralPresenter, input);
+            const auto semanticAfterHidden =
+                neutral.accessory.semanticPresentationGeneration;
+            const auto revisionAfterHidden =
+                neutral.accessory.drawerContentRevisions[0];
+            const auto publicationsAfterHidden = queue.ProducedCount();
+
+            BrainOwnedAccessorySelectionRequest openRequest;
+            openRequest.drawer = BrainOwnedAccessoryDrawerId::Metar;
+            openRequest.requestSequence = 1;
+            openRequest.clickAcceptedMicroseconds = now++;
+            openRequest.mouseCallbackExitedMicroseconds = now++;
+            const auto openedDecision = RequestBrainOwnedAccessoryDrawerSelection(
+                &neutral, openRequest);
+            BrainOwnedAccessoryProjectionCounters openedProjection;
+            const auto opened = ProjectBrainOwnedAccessoryPresentation(
+                &neutral, &openedProjection);
+            const auto openedPlan = prepare(&worker, opened, layout, 1);
+            AccessoryPresentationUpdateInput openedInput;
+            openedInput.presentation = opened;
+            openedInput.layout = layout;
+            openedInput.mainCardProductionSignature = "neutral-deferred-open";
+            openedInput.measurementContext = measurement;
+            openedInput.preparedPlan = openedPlan;
+            openedInput.mechanicalLayoutGeneration = 1;
+            const auto openedUpdate = UpdateAccessoryPresentation(
+                &neutralPresenter, openedInput);
+            require(publish(
+                        &neutral, &visibility, &queue, opened, true, &now),
+                    "deferred hidden revision open did not publish");
+            const bool hiddenConsumed = opened.snapshot != nullptr &&
+                std::any_of(opened.snapshot->entries.begin(),
+                            opened.snapshot->entries.end(),
+                            [&](const auto& entry) {
+                                return entry.stableKey == hidden.stableKey;
+                            });
+            require(projection.snapshotBuilds == 1 && allNeutral &&
+                        command.snapshot->activeDrawer ==
+                            BrainOwnedAccessoryDrawerId::None &&
+                        command.snapshot->entries.empty() &&
+                        command.snapshot->drawerState ==
+                            BrainOwnedAccessoryDrawerState::Unavailable &&
+                        !update.preparationPending &&
+                        update.delta.drawerRasterRequests == 0 &&
+                        hiddenAccepted.accepted &&
+                        neutral.accessory.drawerContentRevisions[0] >
+                            revisionBefore &&
+                        semanticAfterHidden == semanticBefore &&
+                        neutral.accessory.semanticPresentationGeneration ==
+                            semanticBefore + 1 &&
+                        deferred.snapshot.get() == command.snapshot.get() &&
+                        deferredProjection.snapshotBuilds == 0 &&
+                        deferredUpdate.publishedSnapshotCount == 0 &&
+                        deferredUpdate.delta.railRasterRequests == 0 &&
+                        deferredUpdate.delta.drawerRasterRequests == 0 &&
+                        deferredUpdate.delta.uploadRequests == 0 &&
+                        openedDecision.activeDrawer ==
+                            BrainOwnedAccessoryDrawerId::Metar &&
+                        openedProjection.snapshotBuilds == 1 &&
+                        opened.snapshot->selectedDrawerContentRevision ==
+                            neutral.accessory.drawerContentRevisions[0] &&
+                        hiddenConsumed && openedPlan != nullptr &&
+                        !openedUpdate.preparationPending &&
+                        queue.ProducedCount() == 2,
+                    "closed neutral startup changed under single snapshot");
+            std::cout
+                << "SINGLE_SNAPSHOT_INVALIDATION_CLOSED_DEFERRED: hidden_revision_delta="
+                << (revisionAfterHidden - revisionBefore)
+                << " hidden_semantic_delta="
+                << (semanticAfterHidden - semanticBefore)
+                << " hidden_commands="
+                << (deferred.snapshot->commandIdentity -
+                    command.snapshot->commandIdentity)
+                << " hidden_snapshots=" << deferredProjection.snapshotBuilds
+                << " hidden_rail_rasters="
+                << deferredUpdate.delta.railRasterRequests
+                << " hidden_drawer_rasters="
+                << deferredUpdate.delta.drawerRasterRequests
+                << " hidden_uploads=" << deferredUpdate.delta.uploadRequests
+                << " hidden_publications=" << (publicationsAfterHidden - 1)
+                << " open_commands="
+                << (opened.snapshot->commandIdentity -
+                    deferred.snapshot->commandIdentity)
+                << " open_publications="
+                << (queue.ProducedCount() - publicationsAfterHidden)
+                << " consumed_revision="
+                << opened.snapshot->selectedDrawerContentRevision << "\n";
+        } else if (probe ==
+                   "single_snapshot_hidden_metar_change_while_atis_selected") {
+            const auto atis = commandFor(
+                BrainOwnedAccessoryDrawerId::Atis, 1);
+            const auto atisPlan = prepare(&worker, atis, layout, 1);
+            const auto atisCommit = commit(atis, layout, 1, atisPlan);
+            AccessoryVisiblePublicationState visibility;
+            auto queueStorage =
+                std::make_unique<AccessoryPublicationFactQueue>();
+            auto& queue = *queueStorage;
+            std::uint64_t now = 20'000;
+            require(publish(
+                        &fixture.state, &visibility, &queue, atis, true, &now),
+                    "initial ATIS command did not publish");
+            const auto revisionsBefore =
+                fixture.state.accessory.drawerContentRevisions;
+            const auto semanticBefore =
+                fixture.state.accessory.semanticPresentationGeneration;
+            BrainOwnedAccessoryHistoryEntryInput hidden;
+            hidden.drawer = BrainOwnedAccessoryDrawerId::Metar;
+            hidden.stableKey = "METAR|KSEA|hidden-behind-atis";
+            hidden.title = "KSEA · LOOKUP";
+            hidden.body = "METAR KSEA 291853Z 18005KT 10SM CLR";
+            const auto acceptedHidden = AcceptBrainOwnedAccessoryHistoryEntry(
+                &fixture.state, hidden);
+            BrainOwnedAccessoryProjectionCounters deferredCounters;
+            const auto deferred = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &deferredCounters);
+            const auto deferredCommit = commit(
+                deferred, layout, 1, atisPlan);
+            const auto semanticAfterHidden =
+                fixture.state.accessory.semanticPresentationGeneration;
+            const auto revisionsAfterHidden =
+                fixture.state.accessory.drawerContentRevisions;
+            const auto publicationsAfterHidden = queue.ProducedCount();
+            const auto metar = commandFor(
+                BrainOwnedAccessoryDrawerId::Metar, 2);
+            const auto metarPlan = prepare(&worker, metar, layout, 1);
+            const auto metarCommit = commit(metar, layout, 1, metarPlan);
+            require(publish(
+                        &fixture.state, &visibility, &queue, metar, true, &now),
+                    "later METAR command did not publish hidden revision");
+            const bool hiddenConsumed = std::any_of(
+                metar.snapshot->entries.begin(), metar.snapshot->entries.end(),
+                [&](const auto& entry) {
+                    return entry.stableKey == hidden.stableKey;
+                });
+            require(!atisCommit.preparationPending && acceptedHidden.accepted &&
+                        revisionsAfterHidden[0] == revisionsBefore[0] + 1 &&
+                        revisionsAfterHidden[1] == revisionsBefore[1] &&
+                        revisionsAfterHidden[2] == revisionsBefore[2] &&
+                        semanticAfterHidden == semanticBefore &&
+                        deferred.snapshot.get() == atis.snapshot.get() &&
+                        deferredCounters.snapshotBuilds == 0 &&
+                        deferred.snapshot->selectedDrawerContentRevision ==
+                            atis.snapshot->selectedDrawerContentRevision &&
+                        deferredCommit.publishedSnapshotCount == 0 &&
+                        deferredCommit.delta.railRasterRequests == 0 &&
+                        deferredCommit.delta.drawerRasterRequests == 0 &&
+                        deferredCommit.delta.uploadRequests == 0 &&
+                        metar.snapshot->selectedDrawerContentRevision ==
+                            revisionsAfterHidden[0] && hiddenConsumed &&
+                        metarPlan != nullptr &&
+                        !metarCommit.preparationPending &&
+                        queue.ProducedCount() == 2,
+                    "hidden METAR mutation replaced or republished ATIS");
+            std::cout
+                << "SINGLE_SNAPSHOT_INVALIDATION_ATIS_SELECTED: hidden_revision_delta="
+                << (revisionsAfterHidden[0] - revisionsBefore[0])
+                << " hidden_atis_revision_delta="
+                << (revisionsAfterHidden[1] - revisionsBefore[1])
+                << " hidden_semantic_delta="
+                << (semanticAfterHidden - semanticBefore)
+                << " hidden_commands="
+                << (deferred.snapshot->commandIdentity -
+                    atis.snapshot->commandIdentity)
+                << " hidden_snapshots=" << deferredCounters.snapshotBuilds
+                << " hidden_rail_rasters="
+                << deferredCommit.delta.railRasterRequests
+                << " hidden_drawer_rasters="
+                << deferredCommit.delta.drawerRasterRequests
+                << " hidden_uploads=" << deferredCommit.delta.uploadRequests
+                << " hidden_publications=" << (publicationsAfterHidden - 1)
+                << " later_metar_commands="
+                << (metar.snapshot->commandIdentity -
+                    deferred.snapshot->commandIdentity)
+                << " later_metar_publications="
+                << (queue.ProducedCount() - publicationsAfterHidden) << "\n";
+        } else if (probe ==
+                   "single_snapshot_closed_kdfw_orb_transition_one_rail_command") {
+            auto orbFixtureStorage = std::make_unique<Step4Fixture>();
+            auto& orbFixture = *orbFixtureStorage;
+            orbFixture.Cycle();
+            BrainOwnedAccessoryProjectionCounters neutralCounters;
+            const auto neutralCommand = ProjectBrainOwnedAccessoryPresentation(
+                &orbFixture.state, &neutralCounters);
+            AccessoryLayoutInput closedInput = layoutInput;
+            closedInput.drawerOpen = false;
+            const auto closedLayout = ResolveAccessoryLayout(closedInput);
+            AccessoryPresentationState closedPresenter;
+            AccessoryPresentationUpdateInput neutralInput;
+            neutralInput.presentation = neutralCommand;
+            neutralInput.layout = closedLayout;
+            neutralInput.mainCardProductionSignature = "closed-neutral-orb";
+            neutralInput.measurementContext = measurement;
+            neutralInput.mechanicalLayoutGeneration = 1;
+            const auto neutralUpdate = UpdateAccessoryPresentation(
+                &closedPresenter, neutralInput);
+            AccessoryVisiblePublicationState visibility;
+            auto queueStorage =
+                std::make_unique<AccessoryPublicationFactQueue>();
+            auto& queue = *queueStorage;
+            std::uint64_t now = 30'000;
+            require(publish(&orbFixture.state, &visibility, &queue,
+                            neutralCommand, false, &now),
+                    "closed neutral ORB command did not publish");
+            const auto semanticBefore =
+                orbFixture.state.accessory.semanticPresentationGeneration;
+            const auto revisionBefore =
+                orbFixture.state.accessory.drawerContentRevisions[0];
+            const auto acceptedOrb = orbFixture.AcceptPrimary(primaryVfr);
+            BrainOwnedAccessoryProjectionCounters kdfwCounters;
+            const auto kdfwCommand = ProjectBrainOwnedAccessoryPresentation(
+                &orbFixture.state, &kdfwCounters);
+            AccessoryPresentationUpdateInput kdfwInput = neutralInput;
+            kdfwInput.presentation = kdfwCommand;
+            const auto kdfwUpdate = UpdateAccessoryPresentation(
+                &closedPresenter, kdfwInput);
+            require(publish(&orbFixture.state, &visibility, &queue,
+                            kdfwCommand, false, &now),
+                    "closed KDFW ORB command did not publish");
+            const auto* kdfwOrb = Step4MetarOrb(kdfwCommand);
+            require(acceptedOrb.completionAccepted &&
+                        acceptedOrb.contentChanged &&
+                        orbFixture.state.accessory.semanticPresentationGeneration ==
+                            semanticBefore + 1 &&
+                        orbFixture.state.accessory.drawerContentRevisions[0] ==
+                            revisionBefore + 1 &&
+                        kdfwCounters.snapshotBuilds == 1 &&
+                        kdfwCommand.snapshot->commandIdentity ==
+                            neutralCommand.snapshot->commandIdentity + 1 &&
+                        kdfwOrb != nullptr && kdfwOrb->airportIcao == "KDFW" &&
+                        kdfwOrb->categoryText == "VFR" &&
+                        kdfwUpdate.publishedSnapshotCount == 1 &&
+                        kdfwUpdate.delta.railRasterRequests == 1 &&
+                        kdfwUpdate.delta.drawerRasterRequests == 0 &&
+                        kdfwUpdate.delta.uploadRequests == 1 &&
+                        queue.ProducedCount() == 2,
+                    "closed KDFW ORB transition was not one rail command");
+            std::cout
+                << "SINGLE_SNAPSHOT_INVALIDATION_ORB_TRANSITION: drawer_revision_delta="
+                << (orbFixture.state.accessory.drawerContentRevisions[0] -
+                    revisionBefore)
+                << " semantic_delta="
+                << (orbFixture.state.accessory.semanticPresentationGeneration -
+                    semanticBefore)
+                << " commands="
+                << (kdfwCommand.snapshot->commandIdentity -
+                    neutralCommand.snapshot->commandIdentity)
+                << " snapshots=" << kdfwCounters.snapshotBuilds
+                << " rail_rasters=" << kdfwUpdate.delta.railRasterRequests
+                << " drawer_rasters=" << kdfwUpdate.delta.drawerRasterRequests
+                << " uploads=" << kdfwUpdate.delta.uploadRequests
+                << " publications=" << (queue.ProducedCount() - 1)
+                << " terminals=" << (queue.ConsumedCount() - 1) << "\n";
+        } else if (probe ==
+                   "single_snapshot_orb_unchanged_hidden_metar_mutation_no_publication") {
+            BrainOwnedAccessoryProjectionCounters baselineCounters;
+            const auto baseline = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &baselineCounters);
+            AccessoryLayoutInput closedInput = layoutInput;
+            closedInput.drawerOpen = false;
+            const auto closedLayout = ResolveAccessoryLayout(closedInput);
+            AccessoryPresentationState classificationPresenter;
+            AccessoryPresentationUpdateInput baselineInput;
+            baselineInput.presentation = baseline;
+            baselineInput.layout = closedLayout;
+            baselineInput.mainCardProductionSignature = "closed-kdfw-baseline";
+            baselineInput.measurementContext = measurement;
+            baselineInput.mechanicalLayoutGeneration = 1;
+            const auto baselineUpdate = UpdateAccessoryPresentation(
+                &classificationPresenter, baselineInput);
+            AccessoryVisiblePublicationState visibility;
+            auto queueStorage =
+                std::make_unique<AccessoryPublicationFactQueue>();
+            auto& queue = *queueStorage;
+            std::uint64_t now = 40'000;
+            require(publish(&fixture.state, &visibility, &queue,
+                            baseline, false, &now),
+                    "closed KDFW baseline did not publish");
+            const auto semanticBefore =
+                fixture.state.accessory.semanticPresentationGeneration;
+            const auto revisionBefore =
+                fixture.state.accessory.drawerContentRevisions[0];
+            BrainOwnedAccessoryHistoryEntryInput hidden;
+            hidden.drawer = BrainOwnedAccessoryDrawerId::Metar;
+            hidden.stableKey = "METAR|KSEA|closed-kdfw-hidden";
+            hidden.title = "KSEA · LOOKUP";
+            hidden.body = "METAR KSEA 291853Z 18005KT 10SM CLR";
+            const auto hiddenAccepted = AcceptBrainOwnedAccessoryHistoryEntry(
+                &fixture.state, hidden);
+            BrainOwnedAccessoryProjectionCounters hiddenCounters;
+            const auto hiddenProjection = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &hiddenCounters);
+            const auto hiddenUpdate = UpdateAccessoryPresentation(
+                &classificationPresenter, baselineInput);
+            const auto semanticAfterHidden =
+                fixture.state.accessory.semanticPresentationGeneration;
+            const auto revisionAfterHidden =
+                fixture.state.accessory.drawerContentRevisions[0];
+            const auto publicationsAfterHidden = queue.ProducedCount();
+
+            const auto opened = commandFor(
+                BrainOwnedAccessoryDrawerId::Metar, 1);
+            const auto openedPlan = prepare(&worker, opened, layout, 1);
+            AccessoryPresentationUpdateInput openedInput;
+            openedInput.presentation = opened;
+            openedInput.layout = layout;
+            openedInput.mainCardProductionSignature = "open-current-metar";
+            openedInput.measurementContext = measurement;
+            openedInput.preparedPlan = openedPlan;
+            openedInput.mechanicalLayoutGeneration = 1;
+            const auto openedUpdate = UpdateAccessoryPresentation(
+                &classificationPresenter, openedInput);
+            require(publish(&fixture.state, &visibility, &queue,
+                            opened, true, &now),
+                    "current METAR open did not publish");
+            const auto activeSemanticBefore =
+                fixture.state.accessory.semanticPresentationGeneration;
+            const auto activeRevisionBefore =
+                fixture.state.accessory.drawerContentRevisions[0];
+            BrainOwnedAccessoryHistoryEntryInput active;
+            active.drawer = BrainOwnedAccessoryDrawerId::Metar;
+            active.stableKey = "METAR|KPDX|active-metar";
+            active.title = "KPDX · LOOKUP";
+            active.body = "METAR KPDX 291853Z 18005KT 10SM CLR";
+            const auto activeAccepted = AcceptBrainOwnedAccessoryHistoryEntry(
+                &fixture.state, active);
+            BrainOwnedAccessoryProjectionCounters activeCounters;
+            const auto activeCommand = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &activeCounters);
+            const auto activePlan = prepare(&worker, activeCommand, layout, 1);
+            AccessoryPresentationUpdateInput activeInput = openedInput;
+            activeInput.presentation = activeCommand;
+            activeInput.preparedPlan = activePlan;
+            const auto activeUpdate = UpdateAccessoryPresentation(
+                &classificationPresenter, activeInput);
+            require(publish(&fixture.state, &visibility, &queue,
+                            activeCommand, true, &now),
+                    "active METAR mutation did not publish once");
+            require(!baselineUpdate.preparationPending && hiddenAccepted.accepted &&
+                        fixture.state.accessory.drawerContentRevisions[0] ==
+                            activeRevisionBefore + 1 &&
+                        semanticAfterHidden == semanticBefore &&
+                        revisionAfterHidden == revisionBefore + 1 &&
+                        activeRevisionBefore == revisionAfterHidden &&
+                        hiddenProjection.snapshot.get() == baseline.snapshot.get() &&
+                        hiddenCounters.snapshotBuilds == 0 &&
+                        hiddenUpdate.publishedSnapshotCount == 0 &&
+                        hiddenUpdate.delta.railRasterRequests == 0 &&
+                        hiddenUpdate.delta.drawerRasterRequests == 0 &&
+                        hiddenUpdate.delta.uploadRequests == 0 &&
+                        opened.snapshot->selectedDrawerContentRevision ==
+                            activeRevisionBefore && openedPlan != nullptr &&
+                        !openedUpdate.preparationPending && activeAccepted.accepted &&
+                        fixture.state.accessory.semanticPresentationGeneration ==
+                            activeSemanticBefore + 1 &&
+                        activeCounters.snapshotBuilds == 1 &&
+                        activeCommand.snapshot->selectedDrawerContentRevision ==
+                            fixture.state.accessory.drawerContentRevisions[0] &&
+                        activePlan != nullptr && !activeUpdate.preparationPending &&
+                        activeUpdate.publishedSnapshotCount == 1 &&
+                        queue.ProducedCount() == 3,
+                    "ORB-unchanged hidden METAR mutation published or was lost");
+            std::cout
+                << "SINGLE_SNAPSHOT_INVALIDATION_ORB_UNCHANGED: hidden_revision_delta="
+                << (revisionAfterHidden - revisionBefore)
+                << " hidden_semantic_delta="
+                << (semanticAfterHidden - semanticBefore)
+                << " hidden_commands="
+                << (hiddenProjection.snapshot->commandIdentity -
+                    baseline.snapshot->commandIdentity)
+                << " hidden_snapshots=" << hiddenCounters.snapshotBuilds
+                << " hidden_rail_rasters="
+                << hiddenUpdate.delta.railRasterRequests
+                << " hidden_drawer_rasters="
+                << hiddenUpdate.delta.drawerRasterRequests
+                << " hidden_uploads=" << hiddenUpdate.delta.uploadRequests
+                << " hidden_publications=" << (publicationsAfterHidden - 1)
+                << " active_revision_delta="
+                << (fixture.state.accessory.drawerContentRevisions[0] -
+                    activeRevisionBefore)
+                << " active_semantic_delta="
+                << (fixture.state.accessory.semanticPresentationGeneration -
+                    activeSemanticBefore)
+                << " active_commands="
+                << (activeCommand.snapshot->commandIdentity -
+                    opened.snapshot->commandIdentity)
+                << " active_snapshots=" << activeCounters.snapshotBuilds
+                << " active_publications="
+                << (queue.ProducedCount() - publicationsAfterHidden - 1)
+                << "\n";
+        } else if (probe == "single_snapshot_layout_change_reprepares_same_command_mechanically") {
+            const auto command = commandFor(
+                BrainOwnedAccessoryDrawerId::Atis, 1);
+            const auto firstPlan = prepare(&worker, command, layout, 1);
+            const auto firstCommit = commit(command, layout, 1, firstPlan);
+            AccessoryLayoutInput scaledInput = layoutInput;
+            scaledInput.scale = 1.25f;
+            const auto scaledTypography = PrepareAccessoryTypography(
+                measurement, 1.25f);
+            scaledInput.typography = &scaledTypography;
+            const auto scaledLayout = ResolveAccessoryLayout(scaledInput);
+            BrainOwnedAccessoryProjectionCounters repeatedCounters;
+            const auto repeated = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &repeatedCounters);
+            const auto secondPlan = prepare(
+                &worker, repeated, scaledLayout, 2);
+            const auto secondCommit = commit(
+                repeated, scaledLayout, 2, secondPlan);
+            const auto counters = worker.SnapshotCounters();
+            require(!firstCommit.preparationPending &&
+                        !secondCommit.preparationPending &&
+                        repeated.snapshot.get() == command.snapshot.get() &&
+                        repeatedCounters.snapshotBuilds == 0 &&
+                        secondPlan != nullptr &&
+                        secondPlan->snapshot.get() == command.snapshot.get() &&
+                        secondPlan->key.layoutGeneration == 2 &&
+                        presenter.commandIdentity ==
+                            command.snapshot->commandIdentity &&
+                        presenter.layoutGeneration == 2 &&
+                        secondCommit.delta.drawerRasterRequests == 1 &&
+                        counters.jobsRequested == 2,
+                    "layout change created semantic command or missed mechanical reprepare");
+        } else {
+            require(false, "unknown single-snapshot focused probe");
+        }
+        worker.Stop();
+        ShutdownAccessoryTextMeasurement(measurement);
+    } else if (probe.rfind("repeated_lookup_viewport_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        const std::string longPrimary =
+            "KDFW 271951Z 18010KT 10SM FEW050 SCT080 BKN120 29/18 "
+            "A2992 RMK AO2 SLP123 T02940183";
+        const std::string longLookup =
+            "KABQ 271953Z 18012KT 4SM BKN020 OVC080 22/12 A3005 "
+            "RMK AO2 SLP101 T02220117";
+        auto fixtureStorage = std::make_unique<Step4Fixture>();
+        auto& fixture = *fixtureStorage;
+        fixture.Cycle();
+        const auto primaryAccepted = fixture.AcceptPrimary(longPrimary);
+        require(primaryAccepted.completionAccepted &&
+                    primaryAccepted.contentChanged,
+                "viewport seam did not accept usable KDFW primary");
+
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "viewport seam text measurement unavailable");
+        AccessoryPreparationWorker worker;
+        require(worker.Start(GetCurrentThreadId()),
+                "viewport seam preparation worker did not start");
+        const auto workerDeadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (worker.State() == AccessoryPreparationWorkerState::Starting &&
+               std::chrono::steady_clock::now() < workerDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(worker.State() == AccessoryPreparationWorkerState::Ready,
+                "viewport seam preparation worker unavailable");
+
+        AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1280;
+        layoutInput.screenHeight = 720;
+        layoutInput.windowLeft = 80;
+        layoutInput.windowTop = 640;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = true;
+        const auto typography = PrepareAccessoryTypography(measurement, 1.0f);
+        layoutInput.typography = &typography;
+        const auto layout = ResolveAccessoryLayout(layoutInput);
+        require(layout.status == BrainOwnedAccessoryOperationStatus::Available,
+                "viewport seam layout unavailable");
+
+        AccessoryPresentationState presenter;
+        auto publicationQueueStorage =
+            std::make_unique<AccessoryPublicationFactQueue>();
+        auto& publicationQueue = *publicationQueueStorage;
+        AccessoryVisiblePublicationState visibility;
+        AccessoryPublicationDiagnosticAccounting diagnosticAccounting;
+        std::uint64_t now = 50'000;
+        std::uint64_t nextClick = 1;
+        std::uint64_t commands = 0;
+        std::uint64_t commits = 0;
+        std::uint64_t terminalFacts = 0;
+        std::uint64_t serializedDiagnostics = 0;
+
+        struct ViewportSeamResult {
+            BrainOwnedAccessoryPresentationHandle command;
+            std::shared_ptr<const AccessoryPreparedDrawerPlan> plan;
+            AccessoryPresentationUpdateInput input;
+            AccessoryPresentationUpdateResult update;
+            AccessoryDrawerRenderPlan render;
+            BrainOwnedAccessoryPublicationFact fact;
+            BrainOwnedAccessoryPublicationDecision decision;
+            std::string diagnostic;
+        };
+
+        const auto projectCurrent = [&]() {
+            BrainOwnedAccessoryProjectionCounters projection;
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &projection);
+            require(command.snapshot != nullptr &&
+                        projection.snapshotBuilds == 1,
+                    "viewport seam did not project one immutable command");
+            ++commands;
+            return command;
+        };
+        const auto prepareCommand = [&] (
+            const BrainOwnedAccessoryPresentationHandle& command) {
+            std::shared_ptr<const AccessoryPreparedDrawerPlan> plan;
+            if (command.snapshot == nullptr) return plan;
+            AccessoryPreparationKeyInput keyInput;
+            keyInput.drawer = command.snapshot->activeDrawer;
+            keyInput.layoutGeneration = 1;
+            keyInput.commandIdentity = command.snapshot->commandIdentity;
+            keyInput.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            keyInput.selectedDrawerContentRevision =
+                command.snapshot->selectedDrawerContentRevision;
+            keyInput.typographyGeneration = typography.generation;
+            keyInput.scaleThousandths = 1000;
+            keyInput.contentWidth = std::max(
+                1, layout.drawerBounds.right - layout.drawerBounds.left -
+                    (2 * layout.drawerContentInset));
+            keyInput.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+            AccessoryPreparationRequest request;
+            request.key = BuildAccessoryPreparationKeyForCommand(keyInput);
+            request.snapshot = command.snapshot;
+            request.layout = layout;
+            request.requestedMicroseconds = now++;
+            require(worker.Request(request),
+                    "viewport seam exact command was not prepared");
+            const auto deadline = std::chrono::steady_clock::now() +
+                std::chrono::seconds(2);
+            while (plan == nullptr &&
+                   std::chrono::steady_clock::now() < deadline) {
+                plan = worker.TryTakeReady(request.key, nullptr);
+                if (plan == nullptr) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
+            require(plan != nullptr &&
+                        plan->snapshot.get() == command.snapshot.get() &&
+                        plan->key == request.key,
+                    "viewport seam worker did not return exact command plan");
+            return plan;
+        };
+        const auto commitAndPublish = [&] (
+            const BrainOwnedAccessoryPresentationHandle& command) {
+            ViewportSeamResult result;
+            result.command = command;
+            result.plan = prepareCommand(command);
+            result.input.presentation = command;
+            result.input.layout = layout;
+            result.input.mainCardProductionSignature =
+                "repeated-lookup-viewport-production-seam";
+            result.input.measurementContext = measurement;
+            result.input.preparedPlan = result.plan;
+            result.input.mechanicalLayoutGeneration = 1;
+            result.update = UpdateAccessoryPresentation(
+                &presenter, result.input);
+            require(!result.update.preparationPending &&
+                        result.update.publishedSnapshotCount == 1 &&
+                        presenter.activeSnapshot.get() == command.snapshot.get(),
+                    "viewport seam exact command did not commit");
+            ++commits;
+            result.render = BuildAccessoryDrawerRenderPlan(presenter, layout);
+            require(result.render.status ==
+                        BrainOwnedAccessoryOperationStatus::Available,
+                    "viewport seam committed command did not build raster plan");
+
+            AccessoryVisiblePublicationKey key;
+            key.commandIdentity = command.snapshot->commandIdentity;
+            key.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            key.railRevision = command.snapshot->railPresentationRevision;
+            key.drawerRevision =
+                command.snapshot->selectedDrawerContentRevision;
+            key.drawerOpen = command.snapshot->activeDrawer !=
+                BrainOwnedAccessoryDrawerId::None;
+            const auto began = visibility.Observe(
+                {key, true, true, result.update.delta.uploadRequests != 0,
+                 now++, true});
+            const auto terminal = visibility.CompleteFirstFrame(
+                key, true, true, now++);
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &result.fact);
+            result.fact.originatingClickSequence =
+                command.snapshot->originatingClickSequence;
+            result.fact.originatingClickAcceptedMicroseconds =
+                command.snapshot->originatingClickAcceptedMicroseconds;
+            result.fact.originatingMouseCallbackExitedMicroseconds =
+                command.snapshot->originatingMouseCallbackExitedMicroseconds;
+            result.fact.activeDrawerRendered = command.snapshot->activeDrawer;
+            result.fact.issueToCommitMicroseconds = 50;
+            result.fact.commandElapsedMicroseconds = 100;
+            result.fact.snapshotScrollResetGeneration =
+                result.update.snapshotScrollResetGeneration;
+            result.fact.previouslyAppliedScrollResetGeneration =
+                result.update.previouslyAppliedScrollResetGeneration;
+            result.fact.drawerOffsetBeforeCommit =
+                result.update.drawerOffsetBeforeCommit;
+            result.fact.drawerOffsetAfterCommit =
+                result.update.drawerOffsetAfterCommit;
+            result.fact.scrollResetApplied =
+                result.update.scrollResetApplied;
+            result.fact.firstVisibleLineApplicable = true;
+            result.fact.firstVisibleLine = result.render.firstVisibleLine;
+            if (result.fact.originatingClickSequence != 0) {
+                result.fact.clickTimingApplicable = true;
+                result.fact.clickToTerminalMicroseconds = 100;
+            }
+            require(began.started && terminal.terminal &&
+                        publicationQueue.Produce(result.fact),
+                    "viewport seam terminal fact did not enter production queue");
+            BrainOwnedAccessoryPublicationFact dequeued;
+            require(publicationQueue.Consume(&dequeued),
+                    "viewport seam terminal fact did not leave production queue");
+            result.fact = dequeued;
+            result.decision = ConsumeBrainOwnedAccessoryPublicationFact(
+                &fixture.state, dequeued);
+            require(result.decision.consumed &&
+                        result.decision.commandTerminalAccepted &&
+                        result.decision.visibleAttemptTerminalAccepted,
+                    "viewport seam terminal roles were not accepted by Brain");
+            result.diagnostic = SerializeAccessoryPublicationDiagnostic(
+                dequeued, result.decision, &diagnosticAccounting);
+            require(result.diagnostic.find(
+                        "event=accessory-publication-terminal") !=
+                        std::string::npos &&
+                        result.diagnostic.find(
+                            "snapshotScrollResetGeneration=" +
+                            std::to_string(
+                                command.snapshot->scrollResetGeneration)) !=
+                            std::string::npos &&
+                        result.diagnostic.find(
+                            "firstVisibleLine=" +
+                            std::to_string(result.render.firstVisibleLine)) !=
+                            std::string::npos,
+                    "viewport seam diagnostic serializer did not execute");
+            ++terminalFacts;
+            ++serializedDiagnostics;
+            return result;
+        };
+        const auto selectDrawer = [&] (BrainOwnedAccessoryDrawerId drawer) {
+            BrainOwnedAccessorySelectionRequest request;
+            request.drawer = drawer;
+            request.requestSequence = nextClick++;
+            request.clickAcceptedMicroseconds = now++;
+            request.mouseCallbackEnteredMicroseconds =
+                request.clickAcceptedMicroseconds;
+            request.mouseCallbackExitedMicroseconds = now++;
+            const auto decision = RequestBrainOwnedAccessoryDrawerSelection(
+                &fixture.state, request);
+            require(decision.activeDrawer == drawer,
+                    "viewport seam Brain selection did not choose drawer");
+            return commitAndPublish(projectCurrent());
+        };
+        const auto visibleContains = [] (
+            const AccessoryDrawerRenderPlan& render,
+            const std::string& token) {
+            return std::any_of(
+                render.visibleLines.begin(), render.visibleLines.end(),
+                [&](const auto& line) {
+                    return line.text.find(token) != std::string::npos;
+                });
+        };
+        const auto projectMutation = [&]() {
+            return commitAndPublish(projectCurrent());
+        };
+
+        const auto opened = selectDrawer(BrainOwnedAccessoryDrawerId::Metar);
+        require(visibleContains(opened.render, "KDFW"),
+                "viewport seam initial primary was not visible");
+        const auto firstLookupDecision = fixture.SubmitLookup("KABQ");
+        require(firstLookupDecision.accepted,
+                "viewport seam first KABQ lookup was not accepted");
+        const auto firstPending = projectMutation();
+        require(visibleContains(firstPending.render, "FETCHING METAR") &&
+                    firstPending.render.firstVisibleLine == 0,
+                "viewport seam first KABQ pending state was not visible");
+        const auto firstAccepted = fixture.AcceptLookup(longLookup);
+        require(firstAccepted.completionAccepted && firstAccepted.contentChanged,
+                "viewport seam first KABQ completion was not accepted");
+        const auto firstSpotlight = projectMutation();
+        require(visibleContains(firstSpotlight.render, "METAR LOOKUP") &&
+                    firstSpotlight.render.firstVisibleLine == 0,
+                "viewport seam first KABQ spotlight was not visible");
+        const auto firstExpiryCycle = fixture.Cycle(
+            xvatsim::brain::kBrainMetarLookupSpotlightMs);
+        require(firstExpiryCycle.presentationChanged &&
+                    fixture.state.metar.transientPresentation ==
+                        BrainMetarTransientPresentation::None,
+                "viewport seam first spotlight did not expire");
+        const auto firstExpiry = projectMutation();
+        require(visibleContains(firstExpiry.render, "KDFW") &&
+                    firstExpiry.render.firstVisibleLine == 0,
+                "viewport seam first spotlight did not return to KDFW");
+
+        AccessoryPresentationScrollInput scrollInput;
+        scrollInput.layout = layout;
+        scrollInput.pointerX =
+            (layout.drawerBounds.left + layout.drawerBounds.right) / 2;
+        scrollInput.pointerY =
+            (layout.drawerBounds.top + layout.drawerBounds.bottom) / 2;
+        scrollInput.wheelClicks = 100;
+        const auto scrolled = ScrollAccessoryPresentation(
+            &presenter, scrollInput);
+        require(scrolled.changed && scrolled.drawerOffset > 0 &&
+                    presenter.drawerOffset > 0,
+                "viewport seam could not establish real nonzero scroll offset");
+        const int verifiedScrolledOffset = presenter.drawerOffset;
+        const auto resetBeforeSecond =
+            fixture.state.accessory.scrollResetGeneration;
+
+        const auto secondLookupDecision = fixture.SubmitLookup("KABQ");
+        require(secondLookupDecision.accepted,
+                "viewport seam second KABQ lookup was not accepted");
+        const auto secondLookupGeneration =
+            fixture.state.metar.lookupGeneration;
+        const auto secondPending = projectMutation();
+        if (probe == "repeated_lookup_viewport_pending_reset_top") {
+            require(fixture.state.accessory.scrollResetGeneration ==
+                        resetBeforeSecond + 1,
+                    "repeated lookup pending did not advance reset generation once");
+            require(secondPending.update.drawerOffsetReset &&
+                        presenter.drawerOffset == 0 &&
+                        secondPending.render.firstVisibleLine == 0 &&
+                        visibleContains(secondPending.render, "FETCHING METAR"),
+                    "repeated lookup pending retained the scrolled viewport");
+            std::cout
+                << "REPEATED_LOOKUP_VIEWPORT_PENDING: reset_before="
+                << resetBeforeSecond << " reset_after="
+                << fixture.state.accessory.scrollResetGeneration
+                << " offset_before=" << verifiedScrolledOffset
+                << " offset_after=" << presenter.drawerOffset
+                << " first_visible_line="
+                << secondPending.render.firstVisibleLine
+                << " pending_visible="
+                << (visibleContains(secondPending.render, "FETCHING METAR")
+                        ? 1 : 0)
+                << " commands=" << commands << " terminals=" << terminalFacts
+                << " diagnostics=" << serializedDiagnostics << "\n";
+        } else if (probe ==
+                   "repeated_lookup_viewport_lost_ownership_blocks_reset") {
+            const auto atis = selectDrawer(BrainOwnedAccessoryDrawerId::Atis);
+            const auto atisSnapshot = atis.command.snapshot;
+            const auto atisOffset = presenter.drawerOffset;
+            const auto producedBeforeLate = publicationQueue.ProducedCount();
+            const auto lateAccepted = fixture.AcceptLookup(longLookup);
+            BrainOwnedAccessoryProjectionCounters lateProjectionCounters;
+            const auto lateProjection = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &lateProjectionCounters);
+            const auto lateUpdate = UpdateAccessoryPresentation(
+                &presenter, atis.input);
+            const auto lateRender = BuildAccessoryDrawerRenderPlan(
+                presenter, layout);
+            require(lateAccepted.completionAccepted &&
+                        fixture.state.accessory.activeDrawer ==
+                            BrainOwnedAccessoryDrawerId::Atis &&
+                        lateProjection.snapshot.get() == atisSnapshot.get() &&
+                        lateProjectionCounters.snapshotBuilds == 0 &&
+                        presenter.activeSnapshot.get() == atisSnapshot.get() &&
+                        presenter.drawerOffset == atisOffset &&
+                        lateUpdate.publishedSnapshotCount == 0 &&
+                        lateUpdate.delta.drawerRasterRequests == 0 &&
+                        lateUpdate.delta.uploadRequests == 0 &&
+                        publicationQueue.ProducedCount() == producedBeforeLate &&
+                        !visibleContains(lateRender, "KABQ"),
+                    "late lookup completion reset or stole ATIS ownership");
+            std::cout
+                << "REPEATED_LOOKUP_VIEWPORT_LOST_OWNERSHIP: active_drawer="
+                << static_cast<int>(fixture.state.accessory.activeDrawer)
+                << " snapshot_builds=" << lateProjectionCounters.snapshotBuilds
+                << " offset_before=" << atisOffset
+                << " offset_after=" << presenter.drawerOffset
+                << " late_publications="
+                << (publicationQueue.ProducedCount() - producedBeforeLate)
+                << "\n";
+        } else {
+            const auto parseBefore = fixture.state.metar.parseCount;
+            const auto historyBefore = fixture.state.metar.historyMutationCount;
+            const auto resetBeforeCompletion =
+                fixture.state.accessory.scrollResetGeneration;
+            const auto secondAccepted = fixture.AcceptLookup(longLookup);
+            const auto secondRequestIdentity = fixture.worker.requests.empty()
+                ? 0 : fixture.worker.requests.back().requestId;
+            require(secondAccepted.completionAccepted &&
+                        !secondAccepted.contentChanged &&
+                        secondAccepted.reason ==
+                            "metar-lookup-identical-content-accepted" &&
+                        fixture.state.metar.parseCount == parseBefore &&
+                        fixture.state.metar.historyMutationCount == historyBefore,
+                    "identical KABQ completion reparsed or mutated history");
+            const auto secondSpotlight = projectMutation();
+            if (probe ==
+                "repeated_lookup_viewport_identical_spotlight_top") {
+                require(fixture.state.accessory.scrollResetGeneration ==
+                            resetBeforeCompletion + 1,
+                        "identical spotlight did not advance reset generation once");
+                require(secondSpotlight.update.drawerOffsetReset &&
+                            presenter.drawerOffset == 0 &&
+                            secondSpotlight.render.firstVisibleLine == 0 &&
+                            visibleContains(secondSpotlight.render,
+                                            "METAR LOOKUP"),
+                        "identical KABQ spotlight remained above viewport");
+                const auto queueBeforeIdle = publicationQueue.ProducedCount();
+                const auto workerBeforeIdle = worker.SnapshotCounters();
+                const auto idle = RunUnchangedAccessoryPresentationUpdates(
+                    &presenter, secondSpotlight.input, 10);
+                const auto workerAfterIdle = worker.SnapshotCounters();
+                require(idle.delta.drawerRasterRequests == 0 &&
+                            idle.delta.uploadRequests == 0 &&
+                            idle.delta.snapshotPublications == 0 &&
+                            publicationQueue.ProducedCount() == queueBeforeIdle &&
+                            workerAfterIdle.jobsRequested ==
+                                workerBeforeIdle.jobsRequested,
+                        "unchanged spotlight frames performed recurring work");
+                std::cout
+                    << "REPEATED_LOOKUP_VIEWPORT_SPOTLIGHT: parse_delta="
+                    << (fixture.state.metar.parseCount - parseBefore)
+                    << " history_delta="
+                    << (fixture.state.metar.historyMutationCount - historyBefore)
+                    << " reset_before=" << resetBeforeCompletion
+                    << " reset_after="
+                    << fixture.state.accessory.scrollResetGeneration
+                    << " offset_before=" << verifiedScrolledOffset
+                    << " offset_after=" << presenter.drawerOffset
+                    << " first_visible_line="
+                    << secondSpotlight.render.firstVisibleLine
+                    << " spotlight_visible="
+                    << (visibleContains(secondSpotlight.render,
+                                        "METAR LOOKUP") ? 1 : 0)
+                    << " idle_rasters=" << idle.delta.drawerRasterRequests
+                    << " idle_publications="
+                    << idle.delta.snapshotPublications
+                    << " request_identity=" << secondRequestIdentity
+                    << " lookup_generation=" << secondLookupGeneration
+                    << " pending_command="
+                    << secondPending.command.snapshot->commandIdentity
+                    << " spotlight_command="
+                    << secondSpotlight.command.snapshot->commandIdentity
+                    << " command_terminals=" << terminalFacts
+                    << " visible_attempt_terminals=" << terminalFacts
+                    << " duplicate_facts=" << publicationQueue.RejectedCount()
+                    << " stale_rejections="
+                    << fixture.state.accessory.publicationFactsRejected
+                    << " liveness_failures="
+                    << fixture.state.accessory.publicationLivenessFailureCount
+                    << "\n";
+            } else if (probe ==
+                       "repeated_lookup_viewport_expiry_primary_top") {
+                const auto resetBeforeExpiry =
+                    fixture.state.accessory.scrollResetGeneration;
+                const auto expiryCycle = fixture.Cycle(
+                    xvatsim::brain::kBrainMetarLookupSpotlightMs);
+                require(expiryCycle.presentationChanged,
+                        "second spotlight expiry did not change presentation");
+                const auto expired = projectMutation();
+                require(fixture.state.accessory.scrollResetGeneration ==
+                            resetBeforeExpiry + 1,
+                        "spotlight expiry did not advance reset generation once");
+                require(expired.update.drawerOffsetReset &&
+                            presenter.drawerOffset == 0 &&
+                            expired.render.firstVisibleLine == 0 &&
+                            visibleContains(expired.render, "KDFW"),
+                        "spotlight expiry did not restore KDFW at top");
+                std::cout
+                    << "REPEATED_LOOKUP_VIEWPORT_EXPIRY: reset_before="
+                    << resetBeforeExpiry << " reset_after="
+                    << fixture.state.accessory.scrollResetGeneration
+                    << " offset_before=" << verifiedScrolledOffset
+                    << " offset_after=" << presenter.drawerOffset
+                    << " first_visible_line="
+                    << expired.render.firstVisibleLine
+                    << " primary_visible="
+                    << (visibleContains(expired.render, "KDFW") ? 1 : 0)
+                    << " request_identity=" << secondRequestIdentity
+                    << " lookup_generation=" << secondLookupGeneration
+                    << " pending_command="
+                    << secondPending.command.snapshot->commandIdentity
+                    << " spotlight_command="
+                    << secondSpotlight.command.snapshot->commandIdentity
+                    << " expiry_command="
+                    << expired.command.snapshot->commandIdentity
+                    << " pending_reset="
+                    << secondPending.update.snapshotScrollResetGeneration
+                    << " spotlight_reset="
+                    << secondSpotlight.update.snapshotScrollResetGeneration
+                    << " expiry_reset="
+                    << expired.update.snapshotScrollResetGeneration
+                    << " command_terminals=" << terminalFacts
+                    << " visible_attempt_terminals=" << terminalFacts
+                    << " duplicate_facts=" << publicationQueue.RejectedCount()
+                    << " stale_rejections="
+                    << fixture.state.accessory.publicationFactsRejected
+                    << " liveness_failures="
+                    << fixture.state.accessory.publicationLivenessFailureCount
+                    << "\n";
+            } else if (probe ==
+                       "repeated_lookup_viewport_background_mutation_preserves_scroll") {
+                (void)secondSpotlight;
+                fixture.Cycle(xvatsim::brain::kBrainMetarLookupSpotlightMs);
+                (void)projectMutation();
+                scrollInput.wheelClicks = 100;
+                const auto backgroundScroll = ScrollAccessoryPresentation(
+                    &presenter, scrollInput);
+                require(backgroundScroll.changed && presenter.drawerOffset > 0,
+                        "background control could not establish nonzero offset");
+                const int offsetBeforeBackground = presenter.drawerOffset;
+                const auto resetBeforeBackground =
+                    fixture.state.accessory.scrollResetGeneration;
+                fixture.state.metar.nextPrimaryEligibleMonotonicMs =
+                    fixture.input.monotonicMs;
+                const auto dispatch = fixture.Cycle();
+                require(dispatch.requestDispatched,
+                        "background primary refresh was not dispatched");
+                fixture.worker.Complete(
+                    BrainMetarWorkerStatus::Success, "KDFW",
+                    "KDFW 271955Z 19011KT 10SM FEW060 SCT090 BKN140 "
+                    "30/18 A2990 RMK AO2 SLP118 T03000183");
+                const auto backgroundAccepted = fixture.Cycle(1);
+                require(backgroundAccepted.completionAccepted &&
+                            backgroundAccepted.contentChanged,
+                        "background primary mutation was not accepted");
+                const auto backgroundCommand = projectMutation();
+                require(fixture.state.accessory.scrollResetGeneration ==
+                            resetBeforeBackground &&
+                            !backgroundCommand.update.drawerOffsetReset &&
+                            presenter.drawerOffset == offsetBeforeBackground &&
+                            backgroundCommand.render.firstVisibleLine ==
+                                offsetBeforeBackground,
+                        "ordinary background mutation reset user scroll");
+                std::cout
+                    << "REPEATED_LOOKUP_VIEWPORT_BACKGROUND: reset_before="
+                    << resetBeforeBackground << " reset_after="
+                    << fixture.state.accessory.scrollResetGeneration
+                    << " offset_before=" << offsetBeforeBackground
+                    << " offset_after=" << presenter.drawerOffset
+                    << " commands=" << commands
+                    << " terminals=" << terminalFacts << "\n";
+            } else {
+                require(false, "unknown repeated-lookup viewport probe");
+            }
+        }
+        require(publicationQueue.RejectedCount() == 0 &&
+                    fixture.state.accessory.publicationFactsRejected == 0 &&
+                    fixture.state.accessory.publicationLivenessFailureCount == 0,
+                "viewport seam publication accounting was not exact");
+        worker.Stop();
+        ShutdownAccessoryTextMeasurement(measurement);
+    } else if (probe == "brain_exclusive_red_hidden_stale_preparation") {
         Step4Fixture fixture;
         fixture.Cycle();
-        const auto emptyHidden = ProjectBrainOwnedAccessoryPreparation(
-            &fixture.state, BrainOwnedAccessoryDrawerId::Metar, nullptr);
+        Step4SelectDrawer(
+            &fixture.state, BrainOwnedAccessoryDrawerId::Metar, 1);
+        const auto emptyHidden = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, 1, nullptr);
         require(emptyHidden.snapshot != nullptr,
                 "initial hidden METAR preparation unavailable");
         const auto accepted = fixture.AcceptPrimary(primaryVfr);
         require(accepted.completionAccepted && accepted.contentChanged,
                 "KDFW primary was not accepted for hidden preparation red case");
-        const auto currentHidden = ProjectBrainOwnedAccessoryPreparation(
-            &fixture.state, BrainOwnedAccessoryDrawerId::Metar, nullptr);
+        const auto currentHidden = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, 1, nullptr);
         require(currentHidden.snapshot != nullptr,
                 "current hidden METAR preparation unavailable");
         require(currentHidden.snapshot->snapshotIdentity !=
@@ -15811,7 +18155,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         cancelled.lifecycleEpoch = state.accessory.lifecycleEpoch;
         cancelled.disposition =
             BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
-        cancelled.commandElapsedMicroseconds = 600'001;
+        cancelled.cancellationTimingApplicable = true;
+        cancelled.issueToCancellationMicroseconds = 600'001;
         const auto disposition = ConsumeBrainOwnedAccessoryPublicationFact(
             &state, cancelled);
         require(disposition.consumed && disposition.terminal &&
@@ -15917,14 +18262,15 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     return std::shared_ptr<const AccessoryPreparedDrawerPlan>{};
                 }
                 auto plan = std::make_shared<AccessoryPreparedDrawerPlan>();
+                plan->snapshot = presentation.snapshot;
                 plan->key.drawer = presentation.snapshot->activeDrawer;
-                plan->key.historyGeneration = presentation.historyGeneration;
-                plan->key.contentGeneration = presentation.contentGeneration;
-                plan->key.layoutGeneration = presentation.layoutGeneration;
-                plan->key.commandIdentity = presentation.commandIdentity;
-                plan->key.lifecycleEpoch = presentation.lifecycleEpoch;
-                plan->key.drawerContentRevision =
-                    presentation.drawerContentRevision;
+                plan->key.layoutGeneration = 1;
+                plan->key.commandIdentity =
+                    presentation.snapshot->commandIdentity;
+                plan->key.lifecycleEpoch =
+                    presentation.snapshot->lifecycleEpoch;
+                plan->key.selectedDrawerContentRevision =
+                    presentation.snapshot->selectedDrawerContentRevision;
                 plan->key.scaleThousandths = static_cast<int>(
                     std::lround(layout.scale * 1000.0f));
                 plan->key.contentWidth = std::max(
@@ -15941,6 +18287,7 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                                              const auto& layout) {
                 AccessoryPresentationUpdateInput input;
                 input.presentation = presentation;
+                input.mechanicalLayoutGeneration = 1;
                 input.layout = layout;
                 input.mainCardProductionSignature = "orb-transition-matrix";
                 input.measurementContext = measurement;
@@ -16010,24 +18357,95 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             categoryTransition.worker.Complete(
                 BrainMetarWorkerStatus::Success, "KDFW", categoryCases[1].raw);
             categoryTransition.Cycle(1);
-            const auto categoryChanged = updatePresenter(
-                &categoryPresenter,
+            const auto categoryPresentation =
                 ProjectBrainOwnedAccessoryPresentation(
-                    &categoryTransition.state, 1, nullptr), closedLayout);
+                    &categoryTransition.state, 1, nullptr);
+            const auto categoryChanged = updatePresenter(
+                &categoryPresenter, categoryPresentation, closedLayout);
             require(categoryChanged.delta.railRasterRequests == 1 &&
                         categoryChanged.delta.uploadRequests == 1,
                     "VFR to MVFR did not publish one rail transition");
 
-            categoryTransition.state.metar.visibleState =
-                BrainMetarVisibleState::Stale;
-            ++categoryTransition.state.metar.presentationGeneration;
-            const auto stale = updatePresenter(
-                &categoryPresenter,
+            const auto semanticBeforeStale = categoryTransition.state.accessory.
+                semanticPresentationGeneration;
+            const auto drawerRevisionBeforeStale =
+                categoryTransition.state.accessory.drawerContentRevisions[0];
+            const auto snapshotIdentityBeforeStale =
+                categoryPresentation.snapshot->snapshotIdentity;
+            const auto commandIdentityBeforeStale =
+                categoryPresentation.snapshot->commandIdentity;
+            const auto freshnessDeadline =
+                categoryTransition.state.metar.freshUntilMonotonicMs;
+            require(freshnessDeadline >= categoryTransition.input.monotonicMs,
+                    "freshness deadline preceded the accepted MVFR state");
+            const auto staleCycle = categoryTransition.Cycle(
+                freshnessDeadline - categoryTransition.input.monotonicMs);
+            require(staleCycle.freshnessChanged &&
+                        staleCycle.presentationChanged &&
+                        categoryTransition.state.metar.visibleState ==
+                            BrainMetarVisibleState::Stale,
+                    "Brain-owned freshness cycle did not produce stale state");
+            BrainOwnedAccessoryProjectionCounters staleProjection;
+            const auto stalePresentation =
                 ProjectBrainOwnedAccessoryPresentation(
-                    &categoryTransition.state, 1, nullptr), closedLayout);
+                    &categoryTransition.state, 1, &staleProjection);
+            const auto stale = updatePresenter(
+                &categoryPresenter, stalePresentation, closedLayout);
+            const auto* staleOrb = Step4MetarOrb(stalePresentation);
+            const auto repeatedStale = updatePresenter(
+                &categoryPresenter, stalePresentation, closedLayout);
+            require(categoryTransition.state.accessory.
+                            semanticPresentationGeneration ==
+                        semanticBeforeStale + 1 &&
+                        categoryTransition.state.accessory.
+                                drawerContentRevisions[0] ==
+                            drawerRevisionBeforeStale + 1 &&
+                        staleProjection.snapshotBuilds == 1 &&
+                        stalePresentation.snapshot->snapshotIdentity ==
+                            snapshotIdentityBeforeStale + 1 &&
+                        stalePresentation.snapshot->commandIdentity ==
+                            commandIdentityBeforeStale + 1,
+                    "stale transition did not advance one semantic command");
+            require(staleOrb != nullptr && staleOrb->label == "METAR" &&
+                        staleOrb->airportIcao.empty() &&
+                        staleOrb->categoryText.empty() &&
+                        staleOrb->stateText.empty() &&
+                        staleOrb->selectedIndicator.empty() &&
+                        staleOrb->tone ==
+                            BrainOwnedAccessoryOrbPresentation::Tone::Gray,
+                    "Brain-owned stale transition did not neutralize METAR ORB");
             require(stale.delta.railRasterRequests == 1 &&
-                        stale.delta.uploadRequests == 1,
+                        stale.delta.uploadRequests == 1 &&
+                        stale.delta.drawerRasterRequests == 0 &&
+                        stale.publishedSnapshotCount == 1,
                     "successful primary to neutral did not publish once");
+            require(repeatedStale.delta.railRasterRequests == 0 &&
+                        repeatedStale.delta.uploadRequests == 0 &&
+                        repeatedStale.delta.drawerRasterRequests == 0 &&
+                        repeatedStale.publishedSnapshotCount == 0,
+                    "reused stale command repeated presentation work");
+            std::cout
+                << "STEP4_STALE_TRANSITION_MIGRATION: semantic_delta="
+                << (categoryTransition.state.accessory.
+                        semanticPresentationGeneration - semanticBeforeStale)
+                << " drawer_revision_delta="
+                << (categoryTransition.state.accessory.
+                        drawerContentRevisions[0] - drawerRevisionBeforeStale)
+                << " snapshot_identity_delta="
+                << (stalePresentation.snapshot->snapshotIdentity -
+                    snapshotIdentityBeforeStale)
+                << " command_identity_delta="
+                << (stalePresentation.snapshot->commandIdentity -
+                    commandIdentityBeforeStale)
+                << " rail_rasters=" << stale.delta.railRasterRequests
+                << " uploads=" << stale.delta.uploadRequests
+                << " drawer_rasters=" << stale.delta.drawerRasterRequests
+                << " publications=" << stale.publishedSnapshotCount
+                << " repeated_rail_rasters="
+                << repeatedStale.delta.railRasterRequests
+                << " repeated_uploads=" << repeatedStale.delta.uploadRequests
+                << " repeated_publications="
+                << repeatedStale.publishedSnapshotCount << "\n";
 
             Step4Fixture primaryTransition;
             primaryTransition.AcceptPrimary(primaryVfr);
@@ -16838,8 +19256,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
     } else if (probe == "changed_content_history_once") {
         Step4Fixture f;
         f.AcceptPrimary(primaryVfr);
-        const auto hiddenBefore = ProjectBrainOwnedAccessoryPreparation(
-            &f.state, BrainOwnedAccessoryDrawerId::Metar, nullptr);
+        const auto hiddenBefore = ProjectBrainOwnedAccessoryPresentation(
+            &f.state, 1, nullptr);
         f.state.metar.nextPrimaryEligibleMonotonicMs = f.input.monotonicMs;
         f.Cycle();
         f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW",
@@ -16851,18 +19269,17 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(f.state.accessory.histories[0].entries.size() == 2,
                 "changed observation must enter history once");
         BrainOwnedAccessoryProjectionCounters hiddenCounters;
-        const auto hiddenAfter = ProjectBrainOwnedAccessoryPreparation(
-            &f.state, BrainOwnedAccessoryDrawerId::Metar, &hiddenCounters);
+        const auto hiddenAfter = ProjectBrainOwnedAccessoryPresentation(
+            &f.state, 1, &hiddenCounters);
         require(hiddenBefore.snapshot && hiddenAfter.snapshot &&
                     hiddenBefore.snapshot->snapshotIdentity !=
                         hiddenAfter.snapshot->snapshotIdentity &&
                     hiddenCounters.snapshotBuilds == 1,
                 "changed hidden METAR did not invalidate stale preparation");
         Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar);
-        (void)ProjectBrainOwnedAccessoryPresentation(&f.state, 1, nullptr);
         BrainOwnedAccessoryProjectionCounters openedCounters;
-        const auto opened = ProjectBrainOwnedAccessoryPreparation(
-            &f.state, BrainOwnedAccessoryDrawerId::Metar, &openedCounters);
+        const auto opened = ProjectBrainOwnedAccessoryPresentation(
+            &f.state, 1, &openedCounters);
         require(opened.snapshot && hiddenAfter.snapshot &&
                     opened.snapshot->commandIdentity !=
                         hiddenAfter.snapshot->commandIdentity &&
@@ -17426,6 +19843,712 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         requireSuccessfulMetarOrb(
             &f.state, "KDFW", "VFR",
             BrainOwnedAccessoryOrbPresentation::Tone::Green);
+    } else if (probe.rfind("publication_integration_red_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        if (probe == "publication_integration_red_same_command_queue") {
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            BrainOwnedAccessoryPublicationFact hidden;
+            hidden.commandIdentity = 1;
+            hidden.lifecycleEpoch = 1;
+            hidden.commandTerminal = true;
+            const bool hiddenQueued = queue->Produce(hidden);
+            BrainOwnedAccessoryPublicationFact drained;
+            const bool hiddenDrained = queue->Consume(&drained);
+            BrainOwnedAccessoryPublicationFact visible = hidden;
+            visible.commandTerminal = false;
+            visible.visiblePublicationAttemptIdentity = 1;
+            visible.visibilityTimingApplicable = true;
+            const bool visibleQueued = queue->Produce(visible);
+            require(hiddenQueued && hiddenDrained && visibleQueued,
+                    "same-command visible-attempt terminal was rejected after hidden terminal");
+        } else if (probe == "publication_integration_red_combined_brain") {
+            BrainOwnedRuntimeState brain;
+            BrainOwnedAccessoryPublicationFact combined;
+            combined.commandIdentity = 1;
+            combined.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            combined.commandTerminal = true;
+            combined.visiblePublicationAttemptIdentity = 1;
+            combined.visibilityTimingApplicable = true;
+            combined.visibleEligibilityToFirstFrameMicroseconds = 100;
+            const auto decision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, combined);
+            require(decision.consumed &&
+                        brain.accessory.lastTerminalPresentationCommandIdentity == 1 &&
+                        brain.accessory.lastVisiblePublicationAttemptIdentity == 1,
+                    "combined terminal did not advance both Brain ordering domains");
+        } else if (probe == "publication_integration_red_competing_coordinator") {
+            AccessoryVisiblePublicationState coordinator;
+            AccessoryVisiblePublicationKey key{1, 1, 1, 1, false};
+            const auto first = coordinator.Observe(
+                {key, true, true, true, 1'000});
+            const auto second = coordinator.Observe(
+                {key, true, true, false, 1'050});
+            require(first.started && !second.started &&
+                        coordinator.ActiveAttemptIdentity() ==
+                            first.attemptIdentity,
+                    "unified coordinator created competing attempt state");
+        } else if (probe == "publication_integration_red_failed_enqueue") {
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            for (std::uint64_t identity = 1;
+                 identity <= AccessoryPublicationFactQueue::kCapacity;
+                 ++identity) {
+                BrainOwnedAccessoryPublicationFact filler;
+                filler.commandIdentity = identity;
+                filler.lifecycleEpoch = 1;
+                require(queue->Produce(filler), "failed to establish bounded full queue");
+            }
+            AccessoryVisiblePublicationState coordinator;
+            AccessoryVisiblePublicationKey key{257, 1, 257, 1, false};
+            coordinator.Observe({key, true, true, false, 1'000});
+            const auto terminal =
+                coordinator.CompleteFirstFrame(key, true, true, 1'100);
+            BrainOwnedAccessoryPublicationFact fact;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &fact);
+            const auto firstDelivery =
+                coordinator.DeliverOrRetain(fact, queue.get());
+            const bool serviceLatched =
+                coordinator.DeliveryServiceRequested() &&
+                coordinator.ConsumeDeliveryServiceRequest();
+            BrainOwnedAccessoryPublicationFact freed;
+            require(queue->Consume(&freed), "failed to free bounded capacity");
+            const auto retry = coordinator.RetryRetained(queue.get());
+            std::uint64_t deliveredAttemptFacts = 0;
+            std::uint64_t deliveredAttemptIdentity = 0;
+            std::uint64_t deliveredVisibleMicroseconds = 0;
+            BrainOwnedAccessoryPublicationFact drained;
+            while (queue->Consume(&drained)) {
+                if (drained.visiblePublicationAttemptIdentity ==
+                    terminal.attemptIdentity) {
+                    ++deliveredAttemptFacts;
+                    deliveredAttemptIdentity =
+                        drained.visiblePublicationAttemptIdentity;
+                    deliveredVisibleMicroseconds =
+                        drained.visibleEligibilityToFirstFrameMicroseconds;
+                }
+            }
+            std::uint64_t laterIdleAttempts = 0;
+            for (int cycle = 0; cycle < 100; ++cycle) {
+                if (coordinator.Observe(
+                        {key, true, true, false,
+                         2'000U + cycle}).started) {
+                    ++laterIdleAttempts;
+                }
+            }
+            require(firstDelivery ==
+                        AccessoryPublicationQueueProduceResult::QueueFull &&
+                        serviceLatched &&
+                        retry ==
+                        AccessoryPublicationQueueProduceResult::Accepted &&
+                        !coordinator.HasRetainedTerminal() &&
+                        coordinator.RetainedRetryCount() == 1 &&
+                        deliveredAttemptFacts == 1 &&
+                        deliveredAttemptIdentity == terminal.attemptIdentity &&
+                        deliveredVisibleMicroseconds ==
+                            terminal.elapsedMicroseconds &&
+                        laterIdleAttempts == 0 &&
+                        !coordinator.DeliveryServiceRequested(),
+                    "bounded retained terminal was not delivered exactly once");
+        } else if (probe == "publication_integration_red_diagnostic_acceptance") {
+            BrainOwnedRuntimeState brain;
+            brain.accessory.lastTerminalPresentationCommandIdentity = 1;
+            BrainOwnedAccessoryPublicationFact duplicate;
+            duplicate.commandIdentity = 1;
+            duplicate.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            const auto rejected =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, duplicate);
+            AccessoryPublicationDiagnosticAccounting accounting;
+            const auto diagnostic = SerializeAccessoryPublicationDiagnostic(
+                duplicate, rejected, &accounting);
+            require(accounting.factsDequeued == 1 &&
+                        accounting.factsAcceptedByBrain == 0 &&
+                        accounting.factsRejectedByBrain == 1 &&
+                        accounting.commandTerminalsAccepted == 0 &&
+                        diagnostic.find("brainConsumed=false") !=
+                            std::string::npos,
+                    "dequeued Brain-rejected fact was counted as terminal success");
+        }
+    } else if (probe.rfind("publication_integration_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        if (probe == "publication_integration_queue_ordering_domains") {
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            BrainOwnedAccessoryPublicationFact command;
+            command.commandIdentity = 1;
+            command.lifecycleEpoch = 1;
+            command.commandTerminal = true;
+            BrainOwnedAccessoryPublicationFact attempt = command;
+            attempt.commandTerminal = false;
+            attempt.visiblePublicationAttemptIdentity = 1;
+            require(queue->Produce(command), "command terminal rejected");
+            BrainOwnedAccessoryPublicationFact drained;
+            require(queue->Consume(&drained), "command terminal not FIFO consumed");
+            require(queue->Produce(attempt), "same-command attempt rejected");
+            require(queue->Consume(&drained), "attempt terminal not FIFO consumed");
+            require(!queue->Produce(command), "duplicate command accepted");
+            require(!queue->Produce(attempt), "duplicate attempt accepted");
+            command.commandIdentity = 0;
+            require(!queue->Produce(command), "zero command accepted");
+            require(queue->ProducedCount() == 2 &&
+                        queue->ConsumedCount() == 2 &&
+                        queue->RejectedCount() == 3,
+                    "independent queue ordering counters were not exact");
+        } else if (probe == "publication_integration_combined_visible") {
+            AccessoryVisiblePublicationState coordinator;
+            AccessoryVisiblePublicationKey key{1, 1, 1, 1, false};
+            AccessoryVisiblePublicationObservation observation{
+                key, true, true, false, 1'000, true};
+            const auto began = coordinator.Observe(observation);
+            const auto terminal = coordinator.CompleteFirstFrame(
+                key, true, true, 1'100);
+            BrainOwnedAccessoryPublicationFact combined;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &combined);
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            const auto queued = coordinator.DeliverOrRetain(combined, queue.get());
+            BrainOwnedAccessoryPublicationFact transported;
+            const bool dequeued = queue->Consume(&transported);
+            BrainOwnedRuntimeState brain;
+            const auto decision = ConsumeBrainOwnedAccessoryPublicationFact(
+                &brain, transported);
+            std::uint64_t repeats = 0;
+            for (int frame = 0; frame < 10; ++frame) {
+                if (coordinator.Observe({key, true, true, false,
+                                         2'000U + frame, true}).started) {
+                    ++repeats;
+                }
+            }
+            require(began.started && terminal.commandTerminal &&
+                        queued ==
+                            AccessoryPublicationQueueProduceResult::Accepted &&
+                        dequeued && decision.combinedTerminalAccepted &&
+                        decision.commandTerminalAccepted &&
+                        decision.visibleAttemptTerminalAccepted &&
+                        queue->ProducedCount() == 1 && repeats == 0,
+                    "combined visible fact did not close both obligations once");
+        } else if (probe == "publication_integration_lifecycle_scoped") {
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            BrainOwnedRuntimeState brain;
+            auto runEpoch = [&](std::uint64_t epoch) {
+                BrainOwnedAccessoryPublicationFact command;
+                command.commandIdentity = 1;
+                command.lifecycleEpoch = epoch;
+                BrainOwnedAccessoryPublicationFact attempt = command;
+                attempt.commandTerminal = false;
+                attempt.visiblePublicationAttemptIdentity = 1;
+                BrainOwnedAccessoryPublicationFact transported;
+                const bool q1 = queue->Produce(command);
+                const bool d1 = queue->Consume(&transported);
+                const auto b1 = ConsumeBrainOwnedAccessoryPublicationFact(
+                    &brain, transported);
+                const bool q2 = queue->Produce(attempt);
+                const bool d2 = queue->Consume(&transported);
+                const auto b2 = ConsumeBrainOwnedAccessoryPublicationFact(
+                    &brain, transported);
+                return q1 && d1 && b1.commandTerminalAccepted && q2 && d2 &&
+                    b2.visibleAttemptTerminalAccepted;
+            };
+            require(runEpoch(1), "lifecycle 1 identities were rejected");
+            DisableBrainOwnedAccessoryRuntime(&brain);
+            require(brain.accessory.lifecycleEpoch == 2 && runEpoch(2),
+                    "lifecycle 2 reset identities were rejected");
+            BrainOwnedAccessoryPublicationFact stale;
+            stale.commandIdentity = 2;
+            stale.lifecycleEpoch = 1;
+            const auto staleDecision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, stale);
+            BrainOwnedAccessoryPublicationFact current;
+            current.commandIdentity = 2;
+            current.lifecycleEpoch = 2;
+            const auto currentDecision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, current);
+            require(staleDecision.staleEpoch && !staleDecision.consumed &&
+                        currentDecision.commandTerminalAccepted &&
+                        brain.accessory.lastTerminalPresentationCommandIdentity == 2,
+                    "stale prior lifecycle contaminated current ordering");
+        } else if (probe == "publication_integration_visibility_loss") {
+            AccessoryVisiblePublicationState coordinator;
+            AccessoryVisiblePublicationKey key{1, 1, 9, 4, true};
+            const auto began = coordinator.Observe(
+                {key, true, true, false, 1'000});
+            const auto terminal = coordinator.LoseVisibility(1'250);
+            const auto fact =
+                BuildAccessoryVisibilityLossTerminalFact(terminal);
+            const auto regained = coordinator.Observe(
+                {key, true, true, false, 2'000});
+            require(began.started && terminal.terminal && !terminal.displayed &&
+                        fact.visiblePublicationAttemptIdentity ==
+                            began.attemptIdentity &&
+                        fact.visibilityEpoch == began.visibilityEpoch &&
+                        fact.appliedRailRevision == key.railRevision &&
+                        fact.appliedDrawerRevision == key.drawerRevision &&
+                        fact.visibleEligibilityToFirstFrameMicroseconds == 250 &&
+                        !fact.commandTerminal &&
+                        fact.mechanicalFailureReason ==
+                            "visible-eligibility-lost-before-first-frame" &&
+                        regained.started && regained.visibilityEpoch ==
+                            began.visibilityEpoch + 1,
+                    "visibility loss was not terminally named and re-epoched");
+        } else if (probe == "publication_integration_lifecycle_delivery") {
+            BrainOwnedRuntimeState brain;
+            AccessoryPublicationDiagnosticAccounting accounting;
+            BrainOwnedAccessoryPublicationFact orderly;
+            orderly.commandIdentity = 1;
+            orderly.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            orderly.disposition = BrainOwnedAccessoryPublicationDisposition::
+                LifecycleCancelled;
+            orderly.cancellationTimingApplicable = true;
+            orderly.issueToCancellationMicroseconds = 100;
+            const auto orderlyDecision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, orderly);
+            SerializeAccessoryPublicationDiagnostic(
+                orderly, orderlyDecision, &accounting);
+            DisableBrainOwnedAccessoryRuntime(&brain);
+            BrainOwnedAccessoryPublicationFact forced = orderly;
+            forced.commandIdentity = 2;
+            const auto staleDecision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, forced);
+            SerializeAccessoryPublicationDiagnostic(
+                forced, staleDecision, &accounting);
+            require(orderlyDecision.commandTerminalAccepted &&
+                        staleDecision.staleEpoch &&
+                        accounting.factsAcceptedByBrain == 1 &&
+                        accounting.factsRejectedByBrain == 1 &&
+                        accounting.staleFactsRejected == 1,
+                    "orderly and forced-stale lifecycle delivery were conflated");
+        }
+    } else if (probe.rfind("visibility_edge_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        AccessoryVisiblePublicationState state;
+        AccessoryVisiblePublicationKey key{1, 1, 1, 1, false};
+        auto observe = [&](bool visible, bool textures, bool dirty,
+                           std::uint64_t now = 1'000) {
+            return state.Observe({key, visible, textures, dirty, now});
+        };
+        auto complete = [&](bool textures, bool drawn,
+                            std::uint64_t now = 1'100) {
+            return state.CompleteFirstFrame(key, textures, drawn, now);
+        };
+
+        if (probe == "visibility_edge_hidden_then_clean_visible" ||
+            probe == "visibility_edge_live_failure_reproduction" ||
+            probe == "visibility_edge_attempt_starts_on_edge" ||
+            probe == "visibility_edge_attempt_terminates_after_draw" ||
+            probe == "visibility_edge_hidden_no_fabricated_click") {
+            require(!observe(false, true, false).started,
+                    "hidden state opened a visible attempt");
+            const auto began = observe(true, true, false, 2'000);
+            require(began.started && began.attemptIdentity != 0,
+                    "clean reusable texture did not open visibility-edge attempt");
+            const auto terminal = complete(true, true, 2'100);
+            require(terminal.terminal && terminal.displayed &&
+                        terminal.elapsedMicroseconds == 100,
+                    "clean first visible draw did not terminally publish");
+        } else if (probe == "visibility_edge_clean_texture_attempt") {
+            const auto began = observe(true, true, false, 2'000);
+            require(began.started && began.attemptIdentity == 1 &&
+                        state.HasActiveAttempt(),
+                    "clean texture did not start one active edge attempt");
+        } else if (probe ==
+                   "visibility_edge_clean_texture_first_visibility") {
+            const auto began = observe(true, true, false, 2'000);
+            const auto terminal = complete(true, true, 2'075);
+            require(began.started && terminal.terminal && terminal.displayed &&
+                        terminal.elapsedMicroseconds == 75 &&
+                        !state.HasActiveAttempt(),
+                    "clean texture first visibility did not complete after draw");
+        } else if (probe == "visibility_edge_exactly_one_attempt" ||
+                   probe == "visibility_edge_ten_frames_zero_repeat") {
+            require(observe(true, true, true).started,
+                    "dirty first visibility did not begin attempt");
+            require(complete(true, true).terminal,
+                    "first qualifying draw did not terminate attempt");
+            std::uint64_t repeats = 0;
+            for (int index = 0; index < 10; ++index) {
+                if (observe(true, true, false, 2'000 + index).started) ++repeats;
+            }
+            require(repeats == 0, "unchanged frames repeated visible attempts");
+        } else if (probe == "visibility_edge_loss_regain_new_epoch") {
+            const auto first = observe(true, true, true);
+            complete(true, true);
+            state.LoseVisibility();
+            const auto second = observe(true, true, false, 2'000);
+            require(first.started && second.started &&
+                        second.visibilityEpoch == first.visibilityEpoch + 1,
+                    "visibility regain did not create one new epoch attempt");
+        } else if (probe == "visibility_edge_lifecycle_change") {
+            const auto first = observe(true, true, true);
+            ++key.lifecycleEpoch;
+            const auto second = observe(true, true, true, 2'000);
+            const auto third = observe(true, true, true, 2'001);
+            require(first.started && second.superseded && !second.started &&
+                        third.started,
+                    "lifecycle change did not supersede old attempt");
+        } else if (probe == "visibility_edge_dirty_texture_attempt") {
+            require(observe(true, true, true).started &&
+                        complete(true, true).displayed,
+                    "dirty texture path did not publish once");
+        } else if (probe == "visibility_edge_missing_texture_failure") {
+            const auto began = observe(true, false, false);
+            const auto terminal = complete(false, false);
+            require(began.started && terminal.terminal && !terminal.displayed,
+                    "missing texture did not create one truthful failure");
+        } else if (probe == "visibility_edge_closed_requires_rail_only") {
+            key.drawerOpen = false;
+            require(observe(true, true, false).started &&
+                        complete(true, true).displayed,
+                    "closed rail-only publication did not complete");
+        } else if (probe == "visibility_edge_open_requires_both") {
+            key.drawerOpen = true;
+            require(observe(true, false, false).started &&
+                        complete(false, false).terminal,
+                    "open drawer missing texture did not fail truthfully");
+        } else if (probe == "visibility_edge_newer_supersedes_old") {
+            const auto first = observe(true, true, true);
+            ++key.commandIdentity;
+            ++key.railRevision;
+            const auto second = observe(true, true, false, 2'000);
+            const auto third = observe(true, true, false, 2'001);
+            require(first.started && second.superseded && !second.started &&
+                        third.started &&
+                        second.supersededAttemptIdentity == first.attemptIdentity &&
+                        second.supersededVisibilityEpoch == first.visibilityEpoch &&
+                        second.supersededElapsedMicroseconds == 1'000,
+                    "newer presentation did not accountably supersede attempt");
+        } else if (probe == "visibility_edge_click_visible_once") {
+            BrainOwnedRuntimeState brain;
+            require(observe(true, true, false).started,
+                    "click-visible command did not open attempt");
+            const auto terminal = complete(true, true);
+            BrainOwnedAccessoryPublicationFact fact;
+            fact.commandIdentity = key.commandIdentity;
+            fact.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            fact.originatingClickSequence = 1;
+            fact.clickTimingApplicable = true;
+            fact.clickToTerminalMicroseconds = 499'999;
+            fact.commandTerminal = true;
+            const auto decision = ConsumeBrainOwnedAccessoryPublicationFact(&brain, fact);
+            require(terminal.terminal && decision.consumed &&
+                        brain.accessory.publicationLivenessFailureCount == 0,
+                    "click-driven visible command was not terminal below 500 ms");
+        } else if (probe == "visibility_edge_startup_integration") {
+            BrainOwnedRuntimeState brain;
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            AccessoryPublicationDiagnosticAccounting accounting;
+            const auto hiddenObservation = observe(false, true, false);
+            AccessoryHiddenCommandTerminalInput hiddenInput;
+            hiddenInput.commandIdentity = key.commandIdentity;
+            hiddenInput.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            hiddenInput.railRevision = key.railRevision;
+            hiddenInput.drawerRevision = key.drawerRevision;
+            hiddenInput.issueToCommitMicroseconds = 80;
+            const auto hiddenFact =
+                BuildAccessoryHiddenCommandTerminalFact(hiddenInput);
+            const auto hiddenEnqueue =
+                state.DeliverOrRetain(hiddenFact, queue.get());
+            BrainOwnedAccessoryPublicationFact hiddenTransport;
+            const bool hiddenDequeued = queue->Consume(&hiddenTransport);
+            const auto hiddenDecision =
+                ConsumeBrainOwnedAccessoryPublicationFact(
+                    &brain, hiddenTransport);
+            const auto hiddenDiagnostic =
+                SerializeAccessoryPublicationDiagnostic(
+                    hiddenTransport, hiddenDecision, &accounting);
+            const auto began = observe(true, true, false, 2'000);
+            const auto terminal = complete(true, true, 2'100);
+            BrainOwnedAccessoryPublicationFact visibleFact;
+            ApplyAccessoryVisiblePublicationTerminal(
+                terminal, &visibleFact);
+            const auto visibleEnqueue =
+                state.DeliverOrRetain(visibleFact, queue.get());
+            BrainOwnedAccessoryPublicationFact transported;
+            const bool transportedByBinding = queue->Consume(&transported);
+            const auto accepted = ConsumeBrainOwnedAccessoryPublicationFact(
+                &brain, transported);
+            const auto visibleDiagnostic =
+                SerializeAccessoryPublicationDiagnostic(
+                    transported, accepted, &accounting);
+            std::uint64_t unchangedAttempts = 0;
+            for (int frame = 0; frame < 10; ++frame) {
+                if (observe(true, true, false, 3'000 + frame).started) {
+                    ++unchangedAttempts;
+                }
+            }
+            require(!hiddenObservation.started && hiddenDequeued &&
+                        hiddenEnqueue ==
+                            AccessoryPublicationQueueProduceResult::Accepted &&
+                        hiddenDecision.commandTerminalAccepted &&
+                        began.started && terminal.terminal &&
+                        terminal.attemptIdentity == began.attemptIdentity &&
+                        visibleEnqueue ==
+                            AccessoryPublicationQueueProduceResult::Accepted &&
+                        transportedByBinding && accepted.consumed &&
+                        accepted.visibleAttemptTerminalAccepted &&
+                        !transported.commandTerminal &&
+                        transported.visibilityTimingApplicable &&
+                        transported.visibilityEpoch == began.visibilityEpoch &&
+                        queue->ProducedCount() == 2 &&
+                        queue->ConsumedCount() == 2 &&
+                        queue->RejectedCount() == 0 &&
+                        accounting.factsAcceptedByBrain == 2 &&
+                        accounting.commandTerminalsAccepted == 1 &&
+                        accounting.visibleAttemptTerminalsAccepted == 1 &&
+                        accounting.factsRejectedByBrain == 0 &&
+                        accounting.diagnosticsSerialized == 2 &&
+                        !hiddenDiagnostic.empty() &&
+                        !visibleDiagnostic.empty() &&
+                        unchangedAttempts == 0 &&
+                        brain.accessory.lastVisiblePublicationAttemptIdentity ==
+                            began.attemptIdentity,
+                    "startup visibility event sequence was not correlated");
+            std::cout << "STEP4_VISIBILITY_STARTUP_LEDGER: physical_produced="
+                      << queue->ProducedCount()
+                      << " physical_consumed=" << queue->ConsumedCount()
+                      << " brain_accepted="
+                      << accounting.factsAcceptedByBrain
+                      << " brain_rejected="
+                      << accounting.factsRejectedByBrain
+                      << " command_terminals="
+                      << accounting.commandTerminalsAccepted
+                      << " attempt_terminals="
+                      << accounting.visibleAttemptTerminalsAccepted
+                      << " diagnostics="
+                      << accounting.diagnosticsSerialized
+                      << " queue_rejections=" << queue->RejectedCount()
+                      << " unchanged_attempts=" << unchangedAttempts
+                      << " liveness_failures="
+                      << brain.accessory.publicationLivenessFailureCount
+                      << " visibility_epoch=" << transported.visibilityEpoch
+                      << " attempt_identity="
+                      << transported.visiblePublicationAttemptIdentity
+                      << " visible_us="
+                      << transported.visibleEligibilityToFirstFrameMicroseconds
+                      << '\n';
+        } else if (probe == "visibility_edge_hidden_terminal_preserved") {
+            BrainOwnedRuntimeState brain;
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            AccessoryHiddenCommandTerminalInput hiddenInput;
+            hiddenInput.commandIdentity = 1;
+            hiddenInput.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            const auto hidden =
+                BuildAccessoryHiddenCommandTerminalFact(hiddenInput);
+            require(queue->Produce(hidden), "hidden terminal did not enqueue");
+            BrainOwnedAccessoryPublicationFact transported;
+            queue->Consume(&transported);
+            const auto decision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, transported);
+            require(decision.commandTerminalAccepted &&
+                        !decision.visibleAttemptTerminalAccepted &&
+                        brain.accessory.lastTerminalPresentationCommandIdentity == 1 &&
+                        brain.accessory.lastVisiblePublicationAttemptIdentity == 0,
+                    "hidden command terminal was not preserved independently");
+        } else if (probe == "visibility_edge_visible_attempt_separate") {
+            BrainOwnedRuntimeState brain;
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            AccessoryHiddenCommandTerminalInput hiddenInput;
+            hiddenInput.commandIdentity = 1;
+            hiddenInput.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            auto hidden = BuildAccessoryHiddenCommandTerminalFact(hiddenInput);
+            queue->Produce(hidden);
+            BrainOwnedAccessoryPublicationFact transported;
+            queue->Consume(&transported);
+            ConsumeBrainOwnedAccessoryPublicationFact(&brain, transported);
+            const auto began = observe(true, true, false, 2'000);
+            const auto terminal = complete(true, true, 2'100);
+            BrainOwnedAccessoryPublicationFact visible;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &visible);
+            require(queue->Produce(visible), "same-command attempt did not enqueue");
+            queue->Consume(&transported);
+            const auto decision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, transported);
+            require(decision.visibleAttemptTerminalAccepted &&
+                        !decision.commandTerminalAccepted &&
+                        brain.accessory.lastTerminalPresentationCommandIdentity == 1 &&
+                        brain.accessory.lastVisiblePublicationAttemptIdentity ==
+                            began.attemptIdentity,
+                    "later visible attempt reopened hidden command");
+        }
+    } else if (probe.rfind("hidden_publication_timing_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        const auto overlaySource = Step4ReadFile("modules/overlay/src/OverlayWindow.cpp");
+        BrainOwnedRuntimeState state;
+        auto fact = [&](std::uint64_t identity) {
+            BrainOwnedAccessoryPublicationFact value;
+            value.commandIdentity = identity;
+            value.lifecycleEpoch = state.accessory.lifecycleEpoch;
+            value.appliedCommandIdentity = identity;
+            return value;
+        };
+
+        if (probe == "hidden_publication_timing_hidden_terminal_named") {
+            AccessoryVisiblePublicationState publication;
+            AccessoryVisiblePublicationKey key{1, state.accessory.lifecycleEpoch,
+                                                1, 1, false};
+            require(!publication.Observe({key, false, true, false, 1'000}).started,
+                    "hidden commitment incorrectly opened a visible attempt");
+            auto hidden = fact(1);
+            hidden.disposition = BrainOwnedAccessoryPublicationDisposition::
+                CommittedNoVisibleFrameRequired;
+            require(ConsumeBrainOwnedAccessoryPublicationFact(&state, hidden).consumed &&
+                        state.accessory.lastTerminalPresentationCommandIdentity == 1,
+                    "hidden commitment did not retain its named terminal result");
+        } else if (probe == "hidden_publication_timing_hidden_62906600_not_click_failure") {
+            auto hidden = fact(1);
+            hidden.disposition = BrainOwnedAccessoryPublicationDisposition::
+                CommittedNoVisibleFrameRequired;
+            hidden.commandElapsedMicroseconds = 62'906'600;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, hidden);
+            require(result.consumed &&
+                        state.accessory.publicationLivenessFailureCount == 0,
+                    "intentionally hidden duration triggered blanket liveness failure");
+        } else if (probe == "hidden_publication_timing_hidden_no_fabricated_click") {
+            auto hidden = fact(1);
+            hidden.disposition = BrainOwnedAccessoryPublicationDisposition::
+                CommittedNoVisibleFrameRequired;
+            hidden.intentionallyHiddenTimingApplicable = true;
+            hidden.intentionallyHiddenMicroseconds = 62'906'600;
+            require(ConsumeBrainOwnedAccessoryPublicationFact(&state, hidden).consumed &&
+                        !hidden.clickTimingApplicable &&
+                        hidden.clickToTerminalMicroseconds == 0 &&
+                        state.accessory.publicationLivenessFailureCount == 0,
+                    "hidden no-click command fabricated click timing");
+        } else if (probe == "hidden_publication_timing_repeat_hidden_no_duplicate") {
+            auto hidden = fact(1);
+            const auto first = ConsumeBrainOwnedAccessoryPublicationFact(&state, hidden);
+            const auto duplicate = ConsumeBrainOwnedAccessoryPublicationFact(&state, hidden);
+            require(first.consumed && !duplicate.consumed &&
+                        state.accessory.publicationFactsConsumed == 1,
+                    "repeated hidden command duplicated terminal accounting");
+        } else if (probe == "hidden_publication_timing_awaiting_not_downgraded") {
+            AccessoryVisiblePublicationState publication;
+            AccessoryVisiblePublicationKey key{1, state.accessory.lifecycleEpoch,
+                                                1, 1, false};
+            const auto began = publication.Observe({key, true, true, true, 1'000});
+            const auto repeated = publication.Observe({key, true, true, false, 1'050});
+            require(began.started && !repeated.started &&
+                        publication.ActiveAttemptIdentity() == began.attemptIdentity,
+                    "zero-raster resynchronization downgraded awaiting attempt");
+        } else if (probe == "hidden_publication_timing_repeat_awaiting_timer_stable") {
+            AccessoryVisiblePublicationState publication;
+            AccessoryVisiblePublicationKey key{1, state.accessory.lifecycleEpoch,
+                                                1, 1, false};
+            publication.Observe({key, true, true, true, 1'000});
+            publication.Observe({key, true, true, false, 50'000});
+            const auto terminal =
+                publication.CompleteFirstFrame(key, true, true, 1'100);
+            require(terminal.terminal && terminal.elapsedMicroseconds == 100,
+                    "repeated awaiting command restarted visible timer");
+        } else if (probe == "hidden_publication_timing_later_visibility_new_timer") {
+            AccessoryVisiblePublicationState publication;
+            AccessoryVisiblePublicationKey key{1, state.accessory.lifecycleEpoch,
+                                                1, 1, false};
+            publication.Observe({key, false, true, false, 1'000});
+            publication.Observe({key, true, true, false, 62'906'600});
+            const auto terminal = publication.CompleteFirstFrame(
+                key, true, true, 62'906'700);
+            require(terminal.terminal && terminal.elapsedMicroseconds == 100,
+                    "later visibility measured from hidden command issue");
+        } else if (probe == "hidden_publication_timing_visibility_does_not_reopen_hidden") {
+            auto hidden = fact(1);
+            hidden.disposition = BrainOwnedAccessoryPublicationDisposition::
+                CommittedNoVisibleFrameRequired;
+            const auto committed =
+                ConsumeBrainOwnedAccessoryPublicationFact(&state, hidden);
+            auto visible = fact(1);
+            visible.disposition =
+                BrainOwnedAccessoryPublicationDisposition::FirstFrameDisplayed;
+            visible.commandTerminal = false;
+            visible.visiblePublicationAttemptIdentity = 1;
+            visible.visibilityTimingApplicable = true;
+            visible.visibleEligibilityToFirstFrameMicroseconds = 100;
+            const auto displayed =
+                ConsumeBrainOwnedAccessoryPublicationFact(&state, visible);
+            require(committed.consumed && displayed.consumed &&
+                        state.accessory.lastTerminalPresentationCommandIdentity == 1 &&
+                        state.accessory.lastVisiblePublicationAttemptIdentity == 1,
+                    "later visibility reopened or contradicted hidden terminal result");
+        } else if (probe == "hidden_publication_timing_click_499999_passes") {
+            auto clicked = fact(1);
+            clicked.originatingClickSequence = 1;
+            clicked.commandElapsedMicroseconds = 62'906'600;
+            clicked.clickToTerminalMicroseconds = 499'999;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, clicked);
+            require(result.consumed &&
+                        state.accessory.publicationLivenessFailureCount == 0,
+                    "499999-us click was not classified strictly by click timing");
+        } else if (probe == "hidden_publication_timing_click_500000_fails") {
+            auto clicked = fact(1);
+            clicked.originatingClickSequence = 1;
+            clicked.clickToTerminalMicroseconds = 500'000;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, clicked);
+            require(result.consumed &&
+                        state.accessory.publicationLivenessFailureCount == 1,
+                    "500000-us click incorrectly passed strict-below contract");
+        } else if (probe == "hidden_publication_timing_lifecycle_exactly_once") {
+            auto cancelled = fact(1);
+            cancelled.disposition =
+                BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+            const auto first = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            const auto duplicate = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            require(first.consumed && !duplicate.consumed &&
+                        state.accessory.publicationFactsConsumed == 1,
+                    "lifecycle cancellation was not terminal exactly once");
+        } else if (probe == "hidden_publication_timing_cancellation_499999_passes") {
+            auto cancelled = fact(1);
+            cancelled.disposition = BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+            cancelled.cancellationTimingApplicable = true;
+            cancelled.issueToCancellationMicroseconds = 499'999;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            require(result.consumed && result.terminal &&
+                        state.accessory.publicationLivenessFailureCount == 0,
+                    "499999-us lifecycle cancellation failed strict bound");
+        } else if (probe == "hidden_publication_timing_cancellation_500000_fails") {
+            auto cancelled = fact(1);
+            cancelled.disposition = BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+            cancelled.cancellationTimingApplicable = true;
+            cancelled.issueToCancellationMicroseconds = 500'000;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            require(result.consumed && result.terminal &&
+                        state.accessory.publicationLivenessFailureCount == 1,
+                    "500000-us lifecycle cancellation passed strict bound");
+        } else if (probe == "hidden_publication_timing_hidden_not_cancellation") {
+            auto cancelled = fact(1);
+            cancelled.disposition = BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+            cancelled.intentionallyHiddenTimingApplicable = true;
+            cancelled.intentionallyHiddenMicroseconds = 62'906'600;
+            cancelled.cancellationTimingApplicable = true;
+            cancelled.issueToCancellationMicroseconds = 100;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            require(result.consumed && state.accessory.publicationLivenessFailureCount == 0,
+                    "hidden duration was misclassified as cancellation latency");
+        } else if (probe == "hidden_publication_timing_click_cancellation_separate") {
+            auto cancelled = fact(1);
+            cancelled.disposition = BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+            cancelled.cancellationTimingApplicable = true;
+            cancelled.issueToCancellationMicroseconds = 100;
+            cancelled.clickTimingApplicable = true;
+            cancelled.clickToTerminalMicroseconds = 500'000;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            require(result.consumed && state.accessory.publicationLivenessFailureCount == 1,
+                    "click-driven cancellation did not evaluate click timing separately");
+        } else if (probe == "hidden_publication_timing_dual_breach_one_failure") {
+            auto cancelled = fact(1);
+            cancelled.disposition = BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+            cancelled.cancellationTimingApplicable = true;
+            cancelled.issueToCancellationMicroseconds = 600'001;
+            cancelled.clickTimingApplicable = true;
+            cancelled.clickToTerminalMicroseconds = 600'001;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            require(result.consumed && state.accessory.publicationLivenessFailureCount == 1,
+                    "two applicable breaches produced multiple aggregate failures");
+        } else if (probe == "hidden_publication_timing_newer_preserves_order") {
+            auto first = fact(1);
+            auto second = fact(2);
+            const auto firstResult = ConsumeBrainOwnedAccessoryPublicationFact(&state, first);
+            const auto secondResult = ConsumeBrainOwnedAccessoryPublicationFact(&state, second);
+            const auto lateFirst = ConsumeBrainOwnedAccessoryPublicationFact(&state, first);
+            require(firstResult.consumed && secondResult.consumed &&
+                        !lateFirst.consumed &&
+                        state.accessory.publicationFactsConsumed == 2,
+                    "newer command lost or reordered terminal accounting");
+        }
     } else if (probe.rfind("accessory_input_boundary_", 0) == 0) {
         using namespace xvatsim::modules::overlay;
         struct CorrectedInputBoundary {
@@ -17476,15 +20599,16 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 const BrainOwnedAccessoryPresentationHandle& command,
                 std::uint64_t elapsedMicroseconds = 100) {
                 BrainOwnedAccessoryPublicationFact terminal;
-                terminal.commandIdentity = command.commandIdentity;
-                terminal.lifecycleEpoch = command.lifecycleEpoch;
-                terminal.appliedCommandIdentity = command.commandIdentity;
+                terminal.commandIdentity = command.snapshot->commandIdentity;
+                terminal.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+                terminal.appliedCommandIdentity =
+                    command.snapshot->commandIdentity;
                 terminal.originatingClickSequence =
-                    command.originatingClickSequence;
+                    command.snapshot->originatingClickSequence;
                 terminal.originatingClickAcceptedMicroseconds =
-                    command.originatingClickAcceptedMicroseconds;
+                    command.snapshot->originatingClickAcceptedMicroseconds;
                 terminal.originatingMouseCallbackExitedMicroseconds =
-                    command.originatingMouseCallbackExitedMicroseconds;
+                    command.snapshot->originatingMouseCallbackExitedMicroseconds;
                 terminal.disposition =
                     BrainOwnedAccessoryPublicationDisposition::
                         FirstFrameDisplayed;
@@ -17497,7 +20621,7 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 if (disposition.consumed) {
                     ++terminalCount;
                     terminalClickSequences.push_back(
-                        command.originatingClickSequence);
+                        command.snapshot->originatingClickSequence);
                     maximumTerminalMicroseconds = std::max(
                         maximumTerminalMicroseconds, elapsedMicroseconds);
                 }
@@ -17533,7 +20657,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     const auto command = ProjectBrainOwnedAccessoryPresentation(
                         &brain, 1, nullptr);
                     ++commandCount;
-                    commandIdentities.push_back(command.commandIdentity);
+                    commandIdentities.push_back(
+                        command.snapshot->commandIdentity);
                     Complete(command, terminalElapsedMicroseconds);
                 }
                 return consumedCount;
@@ -17954,34 +21079,28 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         const auto neutralToPrimary =
             ProjectBrainOwnedAccessoryPresentation(&fixture.state, 1, nullptr);
         require(neutralToPrimary.snapshot != nullptr &&
-                    neutralToPrimary.commandIdentity != 0 &&
-                    neutralToPrimary.lifecycleEpoch ==
+                    neutralToPrimary.snapshot->commandIdentity != 0 &&
+                    neutralToPrimary.snapshot->lifecycleEpoch ==
                         fixture.state.accessory.lifecycleEpoch &&
-                    neutralToPrimary.railPresentationRevision != 0 &&
-                    neutralToPrimary.drawerContentRevision != 0,
+                    neutralToPrimary.snapshot->railPresentationRevision != 0,
                 "complete brain presentation command identity is missing");
 
         Step4SelectDrawer(&fixture.state, BrainOwnedAccessoryDrawerId::Metar);
         const auto openCommand = ProjectBrainOwnedAccessoryPresentation(
             &fixture.state, 1, nullptr);
-        const auto preparation = ProjectBrainOwnedAccessoryPreparation(
-            &fixture.state, BrainOwnedAccessoryDrawerId::Metar, nullptr);
-        require(preparation.snapshot != nullptr &&
-                    preparation.commandIdentity == openCommand.commandIdentity &&
-                    preparation.lifecycleEpoch == openCommand.lifecycleEpoch &&
-                    preparation.drawerContentRevision ==
-                        openCommand.drawerContentRevision &&
-                    preparation.snapshot->finalMarker ==
+        require(openCommand.snapshot != nullptr &&
+                    openCommand.snapshot->selectedDrawerContentRevision != 0 &&
+                    openCommand.snapshot->drawerFinalMarker ==
                         "END OF METAR HISTORY",
-                "prepared snapshot is not exact-command brain content");
+                "immutable command is not exact-command brain content");
         require(std::any_of(
-                    preparation.snapshot->entries.begin(),
-                    preparation.snapshot->entries.end(),
+                    openCommand.snapshot->entries.begin(),
+                    openCommand.snapshot->entries.end(),
                     [](const BrainOwnedAccessoryHistoryEntry& entry) {
                         return entry.title.find("KDFW") != std::string::npos ||
                             entry.body.find("KDFW") != std::string::npos;
                     }),
-                "first METAR preparation does not contain accepted KDFW");
+                "first METAR command does not contain accepted KDFW");
 
         if (probe == "brain_exclusive_lifecycle_epoch_rejects_old_command") {
             BrainOwnedRuntimeState epochState;
@@ -18137,9 +21256,10 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 const auto command = ProjectBrainOwnedAccessoryPresentation(
                     &stressState, 1, nullptr);
                 BrainOwnedAccessoryPublicationFact terminal;
-                terminal.commandIdentity = command.commandIdentity;
-                terminal.lifecycleEpoch = command.lifecycleEpoch;
-                terminal.appliedCommandIdentity = command.commandIdentity;
+                terminal.commandIdentity = command.snapshot->commandIdentity;
+                terminal.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+                terminal.appliedCommandIdentity =
+                    command.snapshot->commandIdentity;
                 terminal.disposition =
                     BrainOwnedAccessoryPublicationDisposition::Committed;
                 terminal.commandElapsedMicroseconds = 100;

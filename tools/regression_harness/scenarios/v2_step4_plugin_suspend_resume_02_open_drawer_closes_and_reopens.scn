@@ -1,0 +1,2 @@
+name=v2_step4_plugin_suspend_resume_02_open_drawer_closes_and_reopens
+step4.probe=plugin_suspend_resume_open_drawer_closes_and_reopens

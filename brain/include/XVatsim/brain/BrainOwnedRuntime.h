@@ -133,8 +133,6 @@ struct BrainOwnedAccessoryHistory {
     std::uint64_t nextAcceptedSequence = 1;
 };
 
-struct BrainOwnedAccessoryPreparationSnapshot;
-
 struct BrainOwnedAccessoryRuntimeState {
     std::uint64_t lifecycleEpoch = 1;
     BrainOwnedAccessoryDrawerId activeDrawer = BrainOwnedAccessoryDrawerId::None;
@@ -150,23 +148,25 @@ struct BrainOwnedAccessoryRuntimeState {
     std::array<BrainOwnedAccessoryHistory, 3> histories;
     std::shared_ptr<const BrainOwnedAccessoryPresentationSnapshot>
         cachedPresentationSnapshot;
-    std::uint64_t cachedPresentationSelectionGeneration = 0;
-    std::uint64_t cachedPresentationHistoryGeneration = 0;
-    std::uint64_t cachedPresentationLayoutGeneration = 0;
-    std::array<std::shared_ptr<const BrainOwnedAccessoryPreparationSnapshot>, 3>
-        cachedPreparationSnapshots;
-    std::array<std::uint64_t, 3> cachedPreparationHistoryGenerations{};
-    std::array<std::uint64_t, 3> cachedPreparationContentGenerations{};
-    std::uint64_t cachedPresentationContentGeneration = 0;
+    std::uint64_t semanticPresentationGeneration = 1;
+    std::uint64_t cachedSemanticPresentationGeneration = 0;
     std::uint64_t nextPresentationSnapshotIdentity = 1;
     std::uint64_t nextPresentationCommandIdentity = 1;
     std::uint64_t railPresentationRevision = 1;
-    std::uint64_t drawerContentRevision = 1;
+    std::array<std::uint64_t, 3> drawerContentRevisions{1, 1, 1};
+    std::uint32_t visibleInvalidationBatchDepth = 0;
+    std::array<bool, 3> pendingDrawerContentInvalidations{};
+    bool pendingSelectionInvalidation = false;
+    bool pendingLifecycleInvalidation = false;
     std::uint64_t publicationFactsConsumed = 0;
     std::uint64_t publicationFactsRejected = 0;
     std::uint64_t publicationLivenessFailureCount = 0;
     std::uint64_t maximumPublicationElapsedMicroseconds = 0;
     std::uint64_t lastTerminalPresentationCommandIdentity = 0;
+    std::uint64_t lastVisiblePublicationAttemptIdentity = 0;
+    std::uint64_t publicationOrderingLifecycleEpoch = 1;
+    std::uint64_t maximumVisiblePublicationMicroseconds = 0;
+    std::uint64_t maximumCancellationMicroseconds = 0;
 };
 
 struct BrainOwnedAccessoryHistoryDecision {
@@ -235,6 +235,13 @@ struct BrainOwnedAccessoryOrbPresentation {
     } tone = Tone::Neutral;
 };
 
+enum class BrainOwnedAccessoryDrawerState {
+    Ready,
+    Empty,
+    Loading,
+    Unavailable,
+};
+
 struct BrainOwnedAccessoryPresentationSnapshot {
     BrainOwnedAccessoryOperationStatus status =
         BrainOwnedAccessoryOperationStatus::Unavailable;
@@ -242,18 +249,21 @@ struct BrainOwnedAccessoryPresentationSnapshot {
         BrainOwnedAccessoryDrawerId::None;
     std::vector<BrainOwnedAccessoryOrbPresentation> orbs;
     std::vector<BrainOwnedAccessoryHistoryEntry> entries;
+    BrainOwnedAccessoryDrawerState drawerState =
+        BrainOwnedAccessoryDrawerState::Unavailable;
     std::string drawerTitle;
     std::string emptyStateText;
+    std::string drawerStateText;
     std::string drawerFinalMarker;
     std::uint64_t selectionGeneration = 0;
     std::uint64_t historyGeneration = 0;
-    std::uint64_t layoutGeneration = 0;
     std::uint64_t contentGeneration = 0;
     std::uint64_t snapshotIdentity = 0;
     std::uint64_t commandIdentity = 0;
     std::uint64_t lifecycleEpoch = 0;
     std::uint64_t railPresentationRevision = 0;
-    std::uint64_t drawerContentRevision = 0;
+    std::uint64_t selectedDrawerContentRevision = 0;
+    std::uint64_t scrollResetGeneration = 0;
     std::uint64_t originatingClickSequence = 0;
     std::uint64_t originatingClickAcceptedMicroseconds = 0;
     std::uint64_t originatingMouseCallbackExitedMicroseconds = 0;
@@ -269,44 +279,11 @@ struct BrainOwnedAccessoryProjectionCounters {
 
 struct BrainOwnedAccessoryPresentationHandle {
     std::shared_ptr<const BrainOwnedAccessoryPresentationSnapshot> snapshot;
-    std::uint64_t selectionGeneration = 0;
-    std::uint64_t historyGeneration = 0;
-    std::uint64_t layoutGeneration = 0;
-    std::uint64_t contentGeneration = 0;
-    std::uint64_t commandIdentity = 0;
-    std::uint64_t lifecycleEpoch = 0;
-    std::uint64_t railPresentationRevision = 0;
-    std::uint64_t drawerContentRevision = 0;
-    std::uint64_t originatingClickSequence = 0;
-    std::uint64_t originatingClickAcceptedMicroseconds = 0;
-    std::uint64_t originatingMouseCallbackExitedMicroseconds = 0;
-};
-
-struct BrainOwnedAccessoryPreparationSnapshot {
-    BrainOwnedAccessoryOperationStatus status =
-        BrainOwnedAccessoryOperationStatus::Unavailable;
-    BrainOwnedAccessoryDrawerId drawer = BrainOwnedAccessoryDrawerId::None;
-    std::vector<BrainOwnedAccessoryHistoryEntry> entries;
-    std::uint64_t historyGeneration = 0;
-    std::uint64_t contentGeneration = 0;
-    std::uint64_t snapshotIdentity = 0;
-    std::uint64_t commandIdentity = 0;
-    std::uint64_t lifecycleEpoch = 0;
-    std::uint64_t drawerContentRevision = 0;
-    std::string finalMarker;
-};
-
-struct BrainOwnedAccessoryPreparationHandle {
-    std::shared_ptr<const BrainOwnedAccessoryPreparationSnapshot> snapshot;
-    std::uint64_t historyGeneration = 0;
-    std::uint64_t contentGeneration = 0;
-    std::uint64_t commandIdentity = 0;
-    std::uint64_t lifecycleEpoch = 0;
-    std::uint64_t drawerContentRevision = 0;
 };
 
 enum class BrainOwnedAccessoryPublicationDisposition {
     Committed,
+    CommittedNoVisibleFrameRequired,
     FirstFrameDisplayed,
     SupersededBeforeCommit,
     SupersededAfterCommitBeforeFirstFrame,
@@ -343,6 +320,24 @@ struct BrainOwnedAccessoryPublicationFact {
     std::uint64_t firstFrameElapsedMicroseconds = 0;
     std::uint64_t commandElapsedMicroseconds = 0;
     std::uint64_t clickToTerminalMicroseconds = 0;
+    std::uint64_t issueToCommitMicroseconds = 0;
+    std::uint64_t visibleEligibilityToFirstFrameMicroseconds = 0;
+    std::uint64_t intentionallyHiddenMicroseconds = 0;
+    std::uint64_t issueToCancellationMicroseconds = 0;
+    std::uint64_t visiblePublicationAttemptIdentity = 0;
+    std::uint64_t visibilityEpoch = 0;
+    std::uint64_t snapshotScrollResetGeneration = 0;
+    std::uint64_t previouslyAppliedScrollResetGeneration = 0;
+    int drawerOffsetBeforeCommit = 0;
+    int drawerOffsetAfterCommit = 0;
+    int firstVisibleLine = 0;
+    bool clickTimingApplicable = false;
+    bool visibilityTimingApplicable = false;
+    bool intentionallyHiddenTimingApplicable = false;
+    bool cancellationTimingApplicable = false;
+    bool scrollResetApplied = false;
+    bool firstVisibleLineApplicable = false;
+    bool commandTerminal = true;
     std::string mechanicalFailureReason;
 };
 
@@ -350,6 +345,9 @@ struct BrainOwnedAccessoryPublicationDecision {
     bool consumed = false;
     bool terminal = false;
     bool staleEpoch = false;
+    bool commandTerminalAccepted = false;
+    bool visibleAttemptTerminalAccepted = false;
+    bool combinedTerminalAccepted = false;
     std::string reason;
 };
 
@@ -664,6 +662,17 @@ struct BrainOwnedAsyncWorkerBindings {
     BrainMetarWorker* metar = nullptr;
 };
 
+struct BrainOwnedPluginAdminLifecycleDecision {
+    BrainOwnedAccessoryOperationStatus status =
+        BrainOwnedAccessoryOperationStatus::Unavailable;
+    bool stateChanged = false;
+    bool suspended = false;
+    bool resumed = false;
+    std::uint64_t suspensionGeneration = 0;
+    BrainOwnedAccessoryBoundaryDecision accessory;
+    BrainMetarWorkerShutdownSnapshot workerShutdown;
+};
+
 struct BrainOwnedAsyncFactCycleInput {
     bool pluginEnabled = true;
     bool xpilotConnected = false;
@@ -883,6 +892,8 @@ struct BrainOwnedRuntimeState {
     bool aircraftStateInvalidBoundaryActive = false;
     bool pendingAutomaticFlightRecovery = false;
     bool manualFlightRecoveryRequested = false;
+    bool pluginAdminSuspended = false;
+    std::uint64_t pluginAdminSuspensionGeneration = 0;
 
     WorkflowStage lastWorkflowStage = WorkflowStage::None;
     std::string lastPlanKey;
@@ -1908,6 +1919,33 @@ struct BrainOwnedPublisherOutput {
     int rejectedUnapprovedStations = 0;
 };
 
+void BeginBrainOwnedAccessoryVisibleInvalidationBatch(
+    BrainOwnedRuntimeState* state);
+void RecordBrainOwnedAccessoryDrawerContentMutation(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedAccessoryDrawerId drawer);
+void RecordBrainOwnedAccessorySelectionMutation(
+    BrainOwnedRuntimeState* state);
+void RecordBrainOwnedAccessoryLifecycleMutation(
+    BrainOwnedRuntimeState* state);
+void EndBrainOwnedAccessoryVisibleInvalidationBatch(
+    BrainOwnedRuntimeState* state);
+
+class BrainOwnedAccessoryVisibleInvalidationBatch {
+public:
+    explicit BrainOwnedAccessoryVisibleInvalidationBatch(
+        BrainOwnedRuntimeState* state);
+    ~BrainOwnedAccessoryVisibleInvalidationBatch();
+
+    BrainOwnedAccessoryVisibleInvalidationBatch(
+        const BrainOwnedAccessoryVisibleInvalidationBatch&) = delete;
+    BrainOwnedAccessoryVisibleInvalidationBatch& operator=(
+        const BrainOwnedAccessoryVisibleInvalidationBatch&) = delete;
+
+private:
+    BrainOwnedRuntimeState* state_ = nullptr;
+};
+
 void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state);
 void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     BrainOwnedRuntimeState* state);
@@ -1931,13 +1969,16 @@ BrainOwnedAccessorySelectionDecision RequestBrainOwnedAccessoryDrawerSelection(
 
 BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
     BrainOwnedRuntimeState* state,
-    std::uint64_t layoutGeneration,
     BrainOwnedAccessoryProjectionCounters* counters);
-
-BrainOwnedAccessoryPreparationHandle ProjectBrainOwnedAccessoryPreparation(
+inline BrainOwnedAccessoryPresentationHandle
+ProjectBrainOwnedAccessoryPresentation(
     BrainOwnedRuntimeState* state,
-    BrainOwnedAccessoryDrawerId drawer,
-    BrainOwnedAccessoryProjectionCounters* counters);
+    std::uint64_t,
+    BrainOwnedAccessoryProjectionCounters* counters) {
+    return ProjectBrainOwnedAccessoryPresentation(state, counters);
+}
+std::uint64_t BrainOwnedAccessorySemanticPresentationGeneration(
+    const BrainOwnedRuntimeState& state);
 
 BrainOwnedAccessoryPublicationDecision
 ConsumeBrainOwnedAccessoryPublicationFact(
@@ -1954,6 +1995,12 @@ BrainOwnedAccessoryBoundaryDecision DisableBrainOwnedAccessoryRuntime(
     BrainOwnedRuntimeState* state);
 BrainOwnedAccessoryBoundaryDecision EnableBrainOwnedAccessoryRuntime(
     BrainOwnedRuntimeState* state);
+BrainOwnedPluginAdminLifecycleDecision
+SuspendBrainOwnedRuntimeForPluginAdmin(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAsyncWorkerBindings& workers);
+BrainOwnedPluginAdminLifecycleDecision
+ResumeBrainOwnedRuntimeFromPluginAdmin(BrainOwnedRuntimeState* state);
 BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForTemporaryOverlaySleep(
     BrainOwnedRuntimeState* state);
 BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForSessionReset(

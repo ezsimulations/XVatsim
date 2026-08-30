@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -328,10 +329,22 @@ private:
         brain::BrainOwnedAccessoryDrawerAction::None;
 };
 
+enum class AccessoryPublicationQueueProduceResult {
+    Accepted,
+    InvalidFact,
+    QueueFull,
+    StaleLifecycle,
+    LifecycleTransitionBlocked,
+    DuplicateOrOutOfOrderCommand,
+    DuplicateOrOutOfOrderVisibleAttempt,
+};
+
 class AccessoryPublicationFactQueue {
 public:
     static constexpr std::size_t kCapacity = 256;
     bool Produce(const brain::BrainOwnedAccessoryPublicationFact& fact);
+    AccessoryPublicationQueueProduceResult ProduceDetailed(
+        const brain::BrainOwnedAccessoryPublicationFact& fact);
     bool Consume(brain::BrainOwnedAccessoryPublicationFact* fact);
     std::size_t PendingCount() const;
     std::size_t AvailableCapacity() const;
@@ -344,11 +357,141 @@ private:
     std::size_t head_ = 0;
     std::size_t size_ = 0;
     std::uint64_t lastProducedCommandIdentity_ = 0;
+    std::uint64_t lastProducedVisibleAttemptIdentity_ = 0;
     std::uint64_t lastProducedLifecycleEpoch_ = 0;
     std::uint64_t producedCount_ = 0;
     std::uint64_t consumedCount_ = 0;
     std::uint64_t rejectedCount_ = 0;
 };
+
+struct AccessoryVisiblePublicationKey {
+    std::uint64_t commandIdentity = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::uint64_t railRevision = 0;
+    std::uint64_t drawerRevision = 0;
+    bool drawerOpen = false;
+    bool operator==(const AccessoryVisiblePublicationKey& other) const;
+};
+
+struct AccessoryVisiblePublicationObservation {
+    AccessoryVisiblePublicationKey key;
+    bool visibilityRequired = false;
+    bool requiredTexturesAvailable = false;
+    bool textureWorkPending = false;
+    std::uint64_t nowMicroseconds = 0;
+    bool commandTerminalRequired = false;
+};
+
+struct AccessoryVisiblePublicationBeginResult {
+    bool started = false;
+    bool superseded = false;
+    std::uint64_t attemptIdentity = 0;
+    std::uint64_t visibilityEpoch = 0;
+    std::uint64_t supersededAttemptIdentity = 0;
+    std::uint64_t supersededVisibilityEpoch = 0;
+    std::uint64_t supersededElapsedMicroseconds = 0;
+    bool supersededCommandTerminal = false;
+    AccessoryVisiblePublicationKey supersededKey;
+};
+
+struct AccessoryVisiblePublicationTerminalResult {
+    bool terminal = false;
+    bool displayed = false;
+    std::uint64_t attemptIdentity = 0;
+    std::uint64_t visibilityEpoch = 0;
+    std::uint64_t elapsedMicroseconds = 0;
+    bool commandTerminal = false;
+    AccessoryVisiblePublicationKey key;
+};
+
+class AccessoryVisiblePublicationState {
+public:
+    AccessoryVisiblePublicationBeginResult Observe(
+        const AccessoryVisiblePublicationObservation& observation);
+    AccessoryVisiblePublicationTerminalResult CompleteFirstFrame(
+        const AccessoryVisiblePublicationKey& key,
+        bool requiredTexturesAvailable,
+        bool requiredTexturesDrawn,
+        std::uint64_t nowMicroseconds);
+    AccessoryVisiblePublicationTerminalResult LoseVisibility(
+        std::uint64_t nowMicroseconds = 0);
+    AccessoryPublicationQueueProduceResult DeliverOrRetain(
+        const brain::BrainOwnedAccessoryPublicationFact& fact,
+        AccessoryPublicationFactQueue* queue);
+    AccessoryPublicationQueueProduceResult RetryRetained(
+        AccessoryPublicationFactQueue* queue);
+    bool HasRetainedTerminal() const;
+    const brain::BrainOwnedAccessoryPublicationFact* RetainedTerminal() const;
+    bool DeliveryServiceRequested() const;
+    bool ConsumeDeliveryServiceRequest();
+    std::uint64_t RetainedRetryCount() const;
+    std::uint64_t DeliveredTerminalCount() const;
+    bool HasActiveAttempt() const;
+    std::uint64_t ActiveAttemptIdentity() const;
+    std::uint64_t VisibilityEpoch() const;
+
+private:
+    bool visibilityRequired_ = false;
+    bool active_ = false;
+    bool completedForEpoch_ = false;
+    bool activeCompletesCommand_ = false;
+    std::uint64_t nextAttemptIdentity_ = 1;
+    std::uint64_t activeAttemptIdentity_ = 0;
+    std::uint64_t visibilityEpoch_ = 0;
+    std::uint64_t eligibilityStartedMicroseconds_ = 0;
+    AccessoryVisiblePublicationKey activeKey_;
+    AccessoryVisiblePublicationKey completedKey_;
+    std::optional<brain::BrainOwnedAccessoryPublicationFact> retainedTerminal_;
+    bool deliveryServiceRequested_ = false;
+    std::uint64_t retainedRetryCount_ = 0;
+    std::uint64_t deliveredTerminalCount_ = 0;
+};
+
+void ApplyAccessoryVisiblePublicationTerminal(
+    const AccessoryVisiblePublicationTerminalResult& terminal,
+    brain::BrainOwnedAccessoryPublicationFact* fact);
+brain::BrainOwnedAccessoryPublicationFact
+BuildAccessoryVisibilityLossTerminalFact(
+    const AccessoryVisiblePublicationTerminalResult& terminal);
+
+struct AccessoryHiddenCommandTerminalInput {
+    std::uint64_t commandIdentity = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::uint64_t railRevision = 0;
+    std::uint64_t drawerRevision = 0;
+    brain::BrainOwnedAccessoryDrawerId activeDrawer =
+        brain::BrainOwnedAccessoryDrawerId::None;
+    std::uint64_t originatingClickSequence = 0;
+    std::uint64_t clickAcceptedMicroseconds = 0;
+    std::uint64_t mouseCallbackExitedMicroseconds = 0;
+    std::uint64_t issueToCommitMicroseconds = 0;
+    std::uint64_t preparationMicroseconds = 0;
+    std::uint64_t commitOperationMicroseconds = 0;
+    std::uint64_t clickToTerminalMicroseconds = 0;
+};
+
+brain::BrainOwnedAccessoryPublicationFact
+BuildAccessoryHiddenCommandTerminalFact(
+    const AccessoryHiddenCommandTerminalInput& input);
+
+struct AccessoryPublicationDiagnosticAccounting {
+    std::uint64_t factsDequeued = 0;
+    std::uint64_t factsAcceptedByBrain = 0;
+    std::uint64_t factsRejectedByBrain = 0;
+    std::uint64_t commandTerminalsAccepted = 0;
+    std::uint64_t visibleAttemptTerminalsAccepted = 0;
+    std::uint64_t combinedTerminalsAccepted = 0;
+    std::uint64_t staleFactsRejected = 0;
+    std::uint64_t diagnosticsSerialized = 0;
+};
+
+void RecordAccessoryPublicationDiagnosticAccounting(
+    const brain::BrainOwnedAccessoryPublicationDecision& decision,
+    AccessoryPublicationDiagnosticAccounting* accounting);
+std::string SerializeAccessoryPublicationDiagnostic(
+    const brain::BrainOwnedAccessoryPublicationFact& fact,
+    const brain::BrainOwnedAccessoryPublicationDecision& decision,
+    AccessoryPublicationDiagnosticAccounting* accounting);
 
 enum class AccessoryPerformanceCategory : std::size_t {
     RailRasterization = 0,
@@ -736,12 +879,10 @@ struct AccessoryHistoryLayoutResult {
 struct AccessoryPreparationKey {
     brain::BrainOwnedAccessoryDrawerId drawer =
         brain::BrainOwnedAccessoryDrawerId::None;
-    std::uint64_t historyGeneration = 0;
-    std::uint64_t contentGeneration = 0;
     std::uint64_t layoutGeneration = 0;
     std::uint64_t commandIdentity = 0;
     std::uint64_t lifecycleEpoch = 0;
-    std::uint64_t drawerContentRevision = 0;
+    std::uint64_t selectedDrawerContentRevision = 0;
     std::uint64_t typographyGeneration = 0;
     int scaleThousandths = 1000;
     int contentWidth = 0;
@@ -750,8 +891,26 @@ struct AccessoryPreparationKey {
     bool operator==(const AccessoryPreparationKey& other) const;
 };
 
+struct AccessoryPreparationKeyInput {
+    brain::BrainOwnedAccessoryDrawerId drawer =
+        brain::BrainOwnedAccessoryDrawerId::None;
+    std::uint64_t layoutGeneration = 0;
+    std::uint64_t commandIdentity = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::uint64_t selectedDrawerContentRevision = 0;
+    std::uint64_t typographyGeneration = 0;
+    int scaleThousandths = 1000;
+    int contentWidth = 0;
+    int visibleLineCapacity = 0;
+};
+
+AccessoryPreparationKey BuildAccessoryPreparationKeyForCommand(
+    const AccessoryPreparationKeyInput& input);
+
 struct AccessoryPreparedDrawerPlan {
     AccessoryPreparationKey key;
+    std::shared_ptr<const brain::BrainOwnedAccessoryPresentationSnapshot>
+        snapshot;
     AccessoryHistoryLayoutResult layout;
     std::uint64_t requestedMicroseconds = 0;
     std::uint64_t workerStartedMicroseconds = 0;
@@ -761,6 +920,21 @@ struct AccessoryPreparedDrawerPlan {
     std::uint64_t maximumContiguousSliceMicroseconds = 0;
     std::uint64_t workerThreadIdentity = 0;
 };
+
+struct AccessoryPreparationBindingDecision {
+    bool accepted = false;
+    bool drawerMatches = false;
+    bool snapshotMatches = false;
+    bool layoutGenerationMatches = false;
+    bool commandIdentityMatches = false;
+    bool lifecycleEpochMatches = false;
+    bool selectedDrawerContentRevisionMatches = false;
+};
+
+AccessoryPreparationBindingDecision EvaluateAccessoryPreparationBinding(
+    const std::shared_ptr<const AccessoryPreparedDrawerPlan>& preparedPlan,
+    const brain::BrainOwnedAccessoryPresentationHandle& presentation,
+    std::uint64_t mechanicalLayoutGeneration);
 
 struct AccessoryDeferredTimingInput {
     std::uint64_t waitStartedMicroseconds = 0;
@@ -787,9 +961,10 @@ AccessoryDeferredTimingBreakdown ResolveAccessoryDeferredTiming(
 
 struct AccessoryPreparationRequest {
     AccessoryPreparationKey key;
-    std::shared_ptr<const brain::BrainOwnedAccessoryPreparationSnapshot> snapshot;
+    std::shared_ptr<const brain::BrainOwnedAccessoryPresentationSnapshot> snapshot;
     AccessoryLayoutResult layout;
     std::uint64_t requestedMicroseconds = 0;
+    bool supersessionTerminalAccounted = false;
 };
 
 enum class AccessoryPreparationWorkerState {
@@ -826,6 +1001,7 @@ struct AccessoryPreparationWorkerHooks {
     std::function<AccessoryTextMeasurementContext*()> initializeTextMeasurement;
     std::function<void(AccessoryTextMeasurementContext*)> shutdownTextMeasurement;
     std::function<void()> beforeReadyPublication;
+    std::function<void()> beforeReadyPublicationUnlocked;
 };
 
 struct AccessoryPreparationWorkerCounters {
@@ -944,7 +1120,8 @@ struct AccessoryPresentationState {
     std::uint64_t commandIdentity = 0;
     std::uint64_t lifecycleEpoch = 0;
     std::uint64_t railPresentationRevision = 0;
-    std::uint64_t drawerContentRevision = 0;
+    std::uint64_t selectedDrawerContentRevision = 0;
+    std::uint64_t appliedScrollResetGeneration = 0;
     std::string railRenderSignature;
     std::string drawerRenderSignature;
     std::string mainCardProductionSignature;
@@ -980,6 +1157,7 @@ struct AccessoryPresentationUpdateInput {
     AccessoryTextMeasurementContext* measurementContext = nullptr;
     std::shared_ptr<const AccessoryPreparedDrawerPlan> preparedPlan;
     bool collectAcceptedActionStageTiming = false;
+    std::uint64_t mechanicalLayoutGeneration = 0;
 };
 
 struct AccessoryPresentationUpdateResult {
@@ -993,7 +1171,12 @@ struct AccessoryPresentationUpdateResult {
     bool cachedPlanBuilt = false;
     bool preparationPending = false;
     bool drawerOffsetReset = false;
+    bool scrollResetApplied = false;
     bool mainCardUnchanged = false;
+    std::uint64_t snapshotScrollResetGeneration = 0;
+    std::uint64_t previouslyAppliedScrollResetGeneration = 0;
+    int drawerOffsetBeforeCommit = 0;
+    int drawerOffsetAfterCommit = 0;
     int publishedSnapshotCount = 0;
     brain::BrainOwnedAccessoryDrawerId publishedDrawer =
         brain::BrainOwnedAccessoryDrawerId::None;

@@ -251,6 +251,8 @@ struct AccessoryInputRuntimeAccounting {
     std::uint64_t maximumSynchronousMicroseconds = 0;
     std::uint64_t maximumClickToTerminalMicroseconds = 0;
     std::uint64_t lastObservedNotificationSequence = 0;
+    xvatsim::modules::overlay::AccessoryPublicationDiagnosticAccounting
+        publication;
 };
 
 xvatsim::modules::aircraft_state::AircraftStateSampler gAircraftStateSampler;
@@ -295,6 +297,7 @@ PluginDiagnosticsState gDiagnosticsState;
 AccessoryInputRuntimeAccounting gAccessoryInputAccounting;
 xvatsim::brain::BrainOwnedAccessoryProjectionCounters
     gAccessoryProjectionCounters;
+std::uint64_t gLastAccessorySemanticPresentationGeneration = 0;
 std::optional<xvatsim::core::preflight::PreflightRouteCache> gPreflightRouteCacheCandidate;
 std::string gPreflightRouteCachePath;
 std::optional<xvatsim::modules::update_checker::UpdateCheckResult>
@@ -594,6 +597,7 @@ void ResetPluginRuntimeState(
     ClearFlightRecoveryState();
     ResetSessionRuntimeCaches(resetVatsimFeed, preserveAccessory);
     ResetPresentationStateForColdDark();
+    gLastAccessorySemanticPresentationGeneration = 0;
     if (resetColdDarkLatch) {
         xvatsim::brain::SetBrainOwnedColdDarkResetApplied(
             &gBrainOwnedRuntimeState,
@@ -3076,7 +3080,8 @@ bool ServicePendingAccessoryInput() {
         xvatsim::modules::overlay::AccessoryDispatchStageWallTimings stages;
         stages.elapsedMicroseconds = fact.dispatchStageWallMicroseconds;
         const auto presentation = SynchronizeAccessoryPresentation(&stages);
-        if (presentation.commandIdentity != 0) {
+        if (presentation.snapshot != nullptr &&
+            presentation.snapshot->commandIdentity != 0) {
             ++gAccessoryInputAccounting.commandsIssued;
         }
         const auto synchronousCompleted =
@@ -3109,7 +3114,9 @@ bool ServicePendingAccessoryInput() {
              << static_cast<int>(decision.activeDrawer)
              << " selectionGeneration=" << decision.selectionGeneration
              << " presentationCommandIdentity="
-             << presentation.commandIdentity
+             << (presentation.snapshot == nullptr
+                    ? 0
+                    : presentation.snapshot->commandIdentity)
              << " synchronousUs=" << synchronousUs;
         AppendDiagnosticsLogLine(line.str());
         DrainAccessoryPublicationFacts();
@@ -3120,7 +3127,7 @@ bool ServicePendingAccessoryInput() {
     // brain command on the active next-cycle cadence without consuming or
     // inventing another input fact.
     if (!consumedClick && gOverlayWindow.HasPendingAccessoryWork()) {
-        (void)SynchronizeAccessoryPresentation();
+        gOverlayWindow.ServicePendingAccessoryPresentation();
         DrainAccessoryPublicationFacts();
         performedWork = true;
     }
@@ -3137,6 +3144,15 @@ SynchronizeAccessoryPresentation(
     if (!gOverlayWindow.CanAcceptAccessoryPresentationCommand()) {
         return {};
     }
+    const auto semanticGeneration =
+        xvatsim::brain::BrainOwnedAccessorySemanticPresentationGeneration(
+            gBrainOwnedRuntimeState);
+    if (semanticGeneration ==
+            gLastAccessorySemanticPresentationGeneration) {
+        gOverlayWindow.ServicePendingAccessoryPresentation();
+        DrainAccessoryPublicationFacts();
+        return {};
+    }
     const auto projectionStarted = acceptedActionStages != nullptr
         ? xvatsim::modules::overlay::OverlayWindow::
             AccessoryWallClockMicroseconds()
@@ -3144,17 +3160,8 @@ SynchronizeAccessoryPresentation(
     const auto presentation =
         xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
             &gBrainOwnedRuntimeState,
-            gOverlayWindow.GetAccessoryLayoutGeneration(),
             &gAccessoryProjectionCounters);
-    if (presentation.snapshot != nullptr &&
-        presentation.snapshot->activeDrawer !=
-            xvatsim::brain::BrainOwnedAccessoryDrawerId::None) {
-        const auto drawer = presentation.snapshot->activeDrawer;
-        const auto preparation =
-            xvatsim::brain::ProjectBrainOwnedAccessoryPreparation(
-                &gBrainOwnedRuntimeState, drawer, nullptr);
-        gOverlayWindow.QueueAccessoryPreparation(preparation);
-    }
+    gLastAccessorySemanticPresentationGeneration = semanticGeneration;
     if (acceptedActionStages != nullptr) {
         acceptedActionStages->elapsedMicroseconds[static_cast<std::size_t>(
             xvatsim::modules::overlay::AccessoryDispatchStage::
@@ -3173,34 +3180,26 @@ void DrainAccessoryPublicationFacts() {
         const auto decision =
             xvatsim::brain::ConsumeBrainOwnedAccessoryPublicationFact(
             &gBrainOwnedRuntimeState, fact);
-        ++gAccessoryInputAccounting.terminalFacts;
-        if (fact.originatingClickSequence != 0) {
+        if (decision.consumed) {
+            ++gAccessoryInputAccounting.terminalFacts;
+        }
+        if (decision.consumed && fact.originatingClickSequence != 0) {
             ++gAccessoryInputAccounting.clickTerminalFacts;
             gAccessoryInputAccounting.maximumClickToTerminalMicroseconds =
                 std::max(
                     gAccessoryInputAccounting.
                         maximumClickToTerminalMicroseconds,
                     fact.clickToTerminalMicroseconds);
-            if (fact.clickToTerminalMicroseconds >
+            if (fact.clickToTerminalMicroseconds >=
                 kAccessoryTerminalBudgetMicroseconds) {
                 ++gAccessoryInputAccounting.livenessFailures;
             }
         }
-        std::ostringstream line;
-        line << "event=accessory-publication-terminal"
-             << " clickSequence=" << fact.originatingClickSequence
-             << " commandIdentity=" << fact.commandIdentity
-             << " lifecycleEpoch=" << fact.lifecycleEpoch
-             << " disposition=" << static_cast<int>(fact.disposition)
-             << " failureStage=" << static_cast<int>(fact.failureStage)
-             << " appliedCommandIdentity=" << fact.appliedCommandIdentity
-             << " activeDrawer="
-             << static_cast<int>(fact.activeDrawerRendered)
-             << " commandElapsedUs=" << fact.commandElapsedMicroseconds
-             << " clickToTerminalUs=" << fact.clickToTerminalMicroseconds
-             << " brainConsumed=" << (decision.consumed ? "true" : "false")
-             << " reason=" << SanitizeLogText(decision.reason, 96);
-        AppendDiagnosticsLogLine(line.str());
+        AppendDiagnosticsLogLine(
+            xvatsim::modules::overlay::
+                SerializeAccessoryPublicationDiagnostic(
+                    fact, decision,
+                    &gAccessoryInputAccounting.publication));
     }
 }
 
@@ -3342,6 +3341,20 @@ void LogAccessoryPerformanceSnapshot(const char* boundary) {
          << gAccessoryInputAccounting.commandsIssued
          << " accessoryTerminalFacts="
          << gAccessoryInputAccounting.terminalFacts
+         << " accessoryPublicationFactsDequeued="
+         << gAccessoryInputAccounting.publication.factsDequeued
+         << " accessoryPublicationFactsAccepted="
+         << gAccessoryInputAccounting.publication.factsAcceptedByBrain
+         << " accessoryPublicationFactsRejected="
+         << gAccessoryInputAccounting.publication.factsRejectedByBrain
+         << " accessoryCommandTerminalsAccepted="
+         << gAccessoryInputAccounting.publication.commandTerminalsAccepted
+         << " accessoryVisibleAttemptTerminalsAccepted="
+         << gAccessoryInputAccounting.publication.visibleAttemptTerminalsAccepted
+         << " accessoryCombinedTerminalsAccepted="
+         << gAccessoryInputAccounting.publication.combinedTerminalsAccepted
+         << " accessoryStalePublicationFactsRejected="
+         << gAccessoryInputAccounting.publication.staleFactsRejected
          << " accessoryClickTerminalFacts="
          << gAccessoryInputAccounting.clickTerminalFacts
          << " accessoryLifecycleDiscards="
@@ -5444,7 +5457,7 @@ PLUGIN_API void XPluginStop() {
     UnregisterFlightLoop();
     PersistOverlayGeometryIfChanged();
     DiscardPendingAccessoryClickFacts();
-    gOverlayWindow.StopAccessoryPreparation();
+    gOverlayWindow.Hide();
     DrainAccessoryPublicationFacts();
     LogAccessoryPerformanceSnapshot("plugin-stop");
     xvatsim::brain::StopBrainOwnedAccessoryRuntime(
@@ -5459,9 +5472,14 @@ PLUGIN_API void XPluginStop() {
 }
 
 PLUGIN_API int XPluginEnable() {
-    ResetPluginRuntimeState(true, true, true);
-    xvatsim::brain::EnableBrainOwnedAccessoryRuntime(
-        &gBrainOwnedRuntimeState);
+    const auto xPilotSessionSnapshot = gXPilotBridge.Poll();
+    const auto pilotIdentitySnapshot =
+        gPilotIdentityResolver.Resolve(xPilotSessionSnapshot);
+    (void)HandleXPilotSessionBoundary(
+        xPilotSessionSnapshot, pilotIdentitySnapshot);
+    const auto resume =
+        xvatsim::brain::ResumeBrainOwnedRuntimeFromPluginAdmin(
+            &gBrainOwnedRuntimeState);
     LoadPreflightRouteCacheCandidate();
     xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
         &gBrainOwnedRuntimeState,
@@ -5471,6 +5489,23 @@ PLUGIN_API int XPluginEnable() {
     PreinitializeOverlayWindow();
     SynchronizeAccessoryPresentation();
     RegisterFlightLoop(kInitialFlightLoopDelaySeconds);
+    {
+        std::ostringstream stream;
+        stream << "event=plugin-admin-resume"
+               << " changed=" << (resume.stateChanged ? 1 : 0)
+               << " generation=" << resume.suspensionGeneration
+               << " flightContext="
+               << (gBrainOwnedRuntimeState.flightContext.active ? 1 : 0)
+               << " stage="
+               << WorkflowStageToken(gBrainOwnedRuntimeState.lastWorkflowStage)
+               << " callsign="
+               << SanitizeLogText(
+                      gBrainOwnedRuntimeState.flightContext.callsign, 32)
+               << " primary="
+               << SanitizeLogText(
+                      gBrainOwnedRuntimeState.metar.primaryAirportIcao, 4);
+        AppendDiagnosticsLogLine(stream.str());
+    }
     XPLMDebugString("[XVatsim] Plugin enabled.\n");
     return 1;
 }
@@ -5480,17 +5515,42 @@ PLUGIN_API void XPluginDisable() {
     UnregisterFlightLoop();
     PersistOverlayGeometryIfChanged();
     DiscardPendingAccessoryClickFacts();
-    gOverlayWindow.StopAccessoryPreparation();
+    gOverlayWindow.Hide();
     DrainAccessoryPublicationFacts();
     LogAccessoryPerformanceSnapshot("plugin-disable");
-    xvatsim::brain::DisableBrainOwnedAccessoryRuntime(
-        &gBrainOwnedRuntimeState);
-    (void)ApplyBoundAsyncWorkerLifecycleBoundary(false);
-    ResetPluginRuntimeState(true, true, true);
+    DiscardPendingTextEntryState();
+    xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
+    const auto suspension =
+        xvatsim::brain::SuspendBrainOwnedRuntimeForPluginAdmin(
+            &gBrainOwnedRuntimeState,
+            gAsyncFactWorkerHost.Bindings());
+    LogMetarLifecycleDiagnostics(suspension.workerShutdown);
+    gVatsimDataFeedClient.Reset();
+    gNetworkPlanLink.Reset();
+    gTransceiverResolver.Reset();
+    gLastAccessorySemanticPresentationGeneration = 0;
     xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
         &gBrainOwnedRuntimeState,
         ToDisplayOverrideMode(gPluginSettings.displayMode));
-    gOverlayWindow.Hide();
+    {
+        std::ostringstream stream;
+        stream << "event=plugin-admin-suspend"
+               << " changed=" << (suspension.stateChanged ? 1 : 0)
+               << " generation=" << suspension.suspensionGeneration
+               << " flightContext="
+               << (gBrainOwnedRuntimeState.flightContext.active ? 1 : 0)
+               << " stage="
+               << WorkflowStageToken(gBrainOwnedRuntimeState.lastWorkflowStage)
+               << " callsign="
+               << SanitizeLogText(
+                      gBrainOwnedRuntimeState.flightContext.callsign, 32)
+               << " primary="
+               << SanitizeLogText(
+                      gBrainOwnedRuntimeState.metar.primaryAirportIcao, 4)
+               << " workerRunning="
+               << (suspension.workerShutdown.running ? 1 : 0);
+        AppendDiagnosticsLogLine(stream.str());
+    }
     XPLMDebugString("[XVatsim] Plugin disabled.\n");
 }
 

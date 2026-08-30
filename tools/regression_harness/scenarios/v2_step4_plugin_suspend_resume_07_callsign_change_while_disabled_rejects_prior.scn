@@ -1,0 +1,2 @@
+name=v2_step4_plugin_suspend_resume_07_callsign_change_while_disabled_rejects_prior
+step4.probe=plugin_suspend_resume_callsign_change_while_disabled_rejects_prior

@@ -1,0 +1,2 @@
+name=v2_step4_plugin_suspend_resume_09_session_reset_after_resume_remains_destructive
+step4.probe=plugin_suspend_resume_session_reset_after_resume_remains_destructive

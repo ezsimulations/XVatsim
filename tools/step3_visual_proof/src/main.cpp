@@ -312,27 +312,27 @@ public:
     }
 
     std::shared_ptr<const overlay::AccessoryPreparedDrawerPlan> Prepare(
-        brain::BrainOwnedRuntimeState* brainState,
-        brain::BrainOwnedAccessoryDrawerId drawer,
+        const brain::BrainOwnedAccessoryPresentationHandle& presentation,
         const overlay::AccessoryLayoutResult& layout,
         const overlay::AccessoryTypographyMetrics& typography,
         std::uint64_t proofGeneration,
         std::uint64_t* waitMicroseconds) {
-        brain::BrainOwnedAccessoryProjectionCounters projectionCounters;
-        const auto preparation = brain::ProjectBrainOwnedAccessoryPreparation(
-            brainState, drawer, &projectionCounters);
-        if (preparation.snapshot == nullptr ||
-            preparation.snapshot->status !=
+        if (presentation.snapshot == nullptr ||
+            presentation.snapshot->status !=
                 brain::BrainOwnedAccessoryOperationStatus::Available ||
-            preparation.snapshot->drawer != drawer) {
+            presentation.snapshot->activeDrawer ==
+                brain::BrainOwnedAccessoryDrawerId::None) {
             throw std::runtime_error(
-                "brain did not issue an immutable preparation snapshot");
+                "brain did not issue an immutable presentation command");
         }
 
         overlay::AccessoryPreparationKey key;
-        key.drawer = drawer;
-        key.historyGeneration = preparation.historyGeneration;
+        key.drawer = presentation.snapshot->activeDrawer;
         key.layoutGeneration = proofGeneration;
+        key.commandIdentity = presentation.snapshot->commandIdentity;
+        key.lifecycleEpoch = presentation.snapshot->lifecycleEpoch;
+        key.selectedDrawerContentRevision =
+            presentation.snapshot->selectedDrawerContentRevision;
         key.typographyGeneration = typography.generation;
         key.scaleThousandths = static_cast<int>(
             std::lround(layout.scale * 1000.0f));
@@ -343,8 +343,9 @@ public:
 
         overlay::AccessoryPreparationRequest request;
         request.key = key;
-        request.snapshot = preparation.snapshot;
+        request.snapshot = presentation.snapshot;
         request.layout = layout;
+        request.supersessionTerminalAccounted = true;
 
         const auto started = std::chrono::steady_clock::now();
         const auto deadline = started + kOfflinePreparationTimeout;
@@ -509,8 +510,7 @@ PreparedVisual PrepareVisual(
 
     if (drawer != brain::BrainOwnedAccessoryDrawerId::None) {
         result.preparedPlan = preparationSession->Prepare(
-            &result.brainState,
-            drawer,
+            result.presentation,
             result.layout,
             typography,
             result.proofGeneration,
@@ -519,6 +519,7 @@ PreparedVisual PrepareVisual(
 
     overlay::AccessoryPresentationUpdateInput updateInput;
     updateInput.presentation = result.presentation;
+    updateInput.mechanicalLayoutGeneration = result.proofGeneration;
     updateInput.layout = result.layout;
     updateInput.mainCardProductionSignature = std::to_string(
         overlay::BuildProductionMainCardSignatureForOfflineProof(mainCard, 0));
