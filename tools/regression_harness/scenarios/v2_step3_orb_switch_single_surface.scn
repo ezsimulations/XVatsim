@@ -21,7 +21,8 @@ expect.step3=switch.generation=2
 expect.step3=atis_present.rail=1
 expect.step3=atis_present.drawer=1
 expect.step3=atis_present.offset_reset=true
-expect.step3=atis_present.keys=AX
+expect.step3=atis_snapshot.entry_count=0
+expect.step3=atis_snapshot.empty_state_text=ATIS IDLE — NO ACCEPTED FLIGHT ENDPOINT
 expect.step3=atis_present.published_count=1
 expect.step3=atis_present.published_drawer=ATIS
 expect.step3=atis_present.intermediate_none=false

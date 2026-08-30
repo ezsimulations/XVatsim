@@ -1892,6 +1892,8 @@ AccessoryDrawerRenderPlan BuildAccessoryDrawerRenderPlan(
         if (!state.finalHistoryMarker.empty()) {
             allLines.push_back({state.finalHistoryMarker, true, true});
         }
+    } else if (!state.activeSnapshot->drawerStateText.empty()) {
+        allLines.push_back({state.activeSnapshot->drawerStateText, false, false});
     } else if (!state.activeSnapshot->emptyStateText.empty()) {
         allLines.push_back({state.activeSnapshot->emptyStateText, false, false});
     }
@@ -2632,6 +2634,24 @@ void ApplyAccessoryVisiblePublicationTerminal(
         terminal.elapsedMicroseconds;
 }
 
+void ApplyAccessoryPresentationRevisionDiagnostic(
+    const brain::BrainOwnedAccessoryPresentationSnapshot* snapshot,
+    brain::BrainOwnedAccessoryPublicationFact* fact) {
+    if (snapshot == nullptr || fact == nullptr ||
+        fact->disposition !=
+            brain::BrainOwnedAccessoryPublicationDisposition::
+                FirstFrameDisplayed ||
+        fact->activeDrawerRendered !=
+            brain::BrainOwnedAccessoryDrawerId::Atis ||
+        snapshot->activeDrawer != brain::BrainOwnedAccessoryDrawerId::Atis ||
+        snapshot->commandIdentity != fact->appliedCommandIdentity ||
+        snapshot->lifecycleEpoch != fact->lifecycleEpoch) {
+        return;
+    }
+    fact->atisVisibleRevisionIdentity =
+        snapshot->atisVisibleRevisionIdentity;
+}
+
 brain::BrainOwnedAccessoryPublicationFact
 BuildAccessoryVisibilityLossTerminalFact(
     const AccessoryVisiblePublicationTerminalResult& terminal) {
@@ -2745,6 +2765,9 @@ std::string SerializeAccessoryPublicationDiagnostic(
          << " firstVisibleLine=" << fact.firstVisibleLine
          << " firstVisibleLineApplicable="
          << (fact.firstVisibleLineApplicable ? "true" : "false")
+         << " atisVisibleRevisionIdentity="
+         << (fact.atisVisibleRevisionIdentity.empty()
+                ? "none" : fact.atisVisibleRevisionIdentity)
          << " brainConsumed=" << (decision.consumed ? "true" : "false")
          << " commandAccepted="
          << (decision.commandTerminalAccepted ? "true" : "false")

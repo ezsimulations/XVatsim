@@ -30,7 +30,21 @@ struct VatsimDataFeedSnapshot {
     int connectedControllers = 0;
     std::vector<xvatsim::brain::ControllerSnapshot> controllers;
     std::vector<PilotPlanEntry> pilotPlans;
+    bool atisRootPresent = false;
+    bool atisRootArray = false;
+    bool atisComponentComplete = false;
+    std::uint32_t atisMechanicalIssueMask = 0;
+    std::size_t atisRetainedFieldBytes = 0;
+    std::size_t atisConservativeBytes = 0;
+    std::size_t atisRejectedRecordCount = 0;
+    std::vector<xvatsim::brain::BrainRawVatsimAtisRecord> atisRecords;
 };
+
+// Production document decoder shared by the asynchronous client and bounded
+// offline proof. It performs no network work and preserves the live parser's
+// exact controller and pilot behavior.
+VatsimDataFeedSnapshot DecodeVatsimDataFeedDocument(
+    const std::string& payload);
 
 class VatsimDataFeedClient {
 public:

@@ -55,6 +55,7 @@
 #include "XVatsim/modules/overlay/OverlayAccessoryCore.h"
 #include "XVatsim/modules/metar/VatsimMetarClient.h"
 #include "XVatsim/modules/metar/VatsimMetarDecoder.h"
+#include "XVatsim/modules/vatsim_data_feed/VatsimDataFeedClient.h"
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
 #include "XVatsim/modules/settings_store/SettingsStore.h"
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
@@ -446,10 +447,15 @@ struct Step4ScenarioInput {
     std::string probe;
 };
 
+struct Step5ScenarioInput {
+    std::string probe;
+};
+
 struct ScenarioData {
     std::string name;
     Step3ScenarioInput step3;
     Step4ScenarioInput step4;
+    Step5ScenarioInput step5;
     OperatingModeScenarioInput operatingMode;
     OperatingModeScenarioExpectations operatingModeExpectations;
     double nowSeconds = 0.0;
@@ -4208,6 +4214,10 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "step4.probe") {
         scenario->step4.probe = value;
+        return true;
+    }
+    if (key == "step5.probe") {
+        scenario->step5.probe = value;
         return true;
     }
     if (key == "expect.step3") {
@@ -10891,7 +10901,8 @@ OperatingModeProbeActual ExecuteOperatingModeProbe(
                 }
             }
         }
-    } else {
+    }
+    else {
         if (!scenario.operatingMode.settingsEntry.empty()) {
             const auto settings =
                 loadSettingsEntry(scenario.operatingMode.settingsEntry);
@@ -16732,7 +16743,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                   << " idle_requests=0 idle_facts=0\n";
         worker.Stop();
         ShutdownAccessoryTextMeasurement(measurement);
-    } else if (probe.rfind("single_snapshot_", 0) == 0) {
+    }
+    else if (probe.rfind("single_snapshot_", 0) == 0) {
         using namespace xvatsim::modules::overlay;
         auto fixtureStorage = std::make_unique<Step4Fixture>();
         auto& fixture = *fixtureStorage;
@@ -18098,7 +18110,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         worker.Stop();
         ShutdownAccessoryTextMeasurement(measurement);
     } else if (probe == "brain_exclusive_red_hidden_stale_preparation") {
-        Step4Fixture fixture;
+        auto step4Heap18113 = std::make_unique<Step4Fixture>();
+        auto& fixture = *step4Heap18113;
         fixture.Cycle();
         Step4SelectDrawer(
             &fixture.state, BrainOwnedAccessoryDrawerId::Metar, 1);
@@ -18149,7 +18162,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(later.requestSequence == second.requestSequence,
                 "later click sequence was not delivered after supersession");
     } else if (probe == "brain_exclusive_red_cancelled_liveness_unreported") {
-        BrainOwnedRuntimeState state;
+        auto step4Heap18164 = std::make_unique<BrainOwnedRuntimeState>();
+        auto& state = *step4Heap18164;
         BrainOwnedAccessoryPublicationFact cancelled;
         cancelled.commandIdentity = 1;
         cancelled.lifecycleEpoch = state.accessory.lifecycleEpoch;
@@ -18164,7 +18178,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "cancelled action elapsed time was not terminally classified");
     } else if (probe == "orb_publication_precorrection_reproduction") {
         using namespace xvatsim::modules::overlay;
-        Step4Fixture fixture;
+        auto step4Heap18179 = std::make_unique<Step4Fixture>();
+        auto& fixture = *step4Heap18179;
         auto* measurement = InitializeAccessoryTextMeasurement();
         require(measurement != nullptr,
                 "ORB publication reproduction measurement unavailable");
@@ -18223,7 +18238,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     source.find("firstFrameElapsedMicroseconds") !=
                         std::string::npos,
                 "terminal publication timing does not preserve separate intervals");
-        BrainOwnedRuntimeState state;
+        auto step4Heap18238 = std::make_unique<BrainOwnedRuntimeState>();
+        auto& state = *step4Heap18238;
         BrainOwnedAccessoryPublicationFact displayed;
         displayed.commandIdentity = 1;
         displayed.lifecycleEpoch = state.accessory.lifecycleEpoch;
@@ -18304,7 +18320,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 {"KDFW 271951Z 18010KT M1/4SM VV003", "LIFR"},
             };
             for (const auto& item : categoryCases) {
-                Step4Fixture fixture;
+                auto step4Heap18319 = std::make_unique<Step4Fixture>();
+                auto& fixture = *step4Heap18319;
                 AccessoryPresentationState presenter;
                 const auto layout = resolveLayout(false);
                 const auto neutral = updatePresenter(
@@ -18341,7 +18358,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                         "repeated accepted snapshot performed rail work");
             }
 
-            Step4Fixture categoryTransition;
+            auto step4Heap18356 = std::make_unique<Step4Fixture>();
+            auto& categoryTransition = *step4Heap18356;
             AccessoryPresentationState categoryPresenter;
             const auto closedLayout = resolveLayout(false);
             updatePresenter(
@@ -18447,7 +18465,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 << " repeated_publications="
                 << repeatedStale.publishedSnapshotCount << "\n";
 
-            Step4Fixture primaryTransition;
+            auto step4Heap18462 = std::make_unique<Step4Fixture>();
+            auto& primaryTransition = *step4Heap18462;
             primaryTransition.AcceptPrimary(primaryVfr);
             AccessoryPresentationState primaryPresenter;
             updatePresenter(
@@ -18471,7 +18490,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                      BrainOwnedAccessoryDrawerId::Metar,
                      BrainOwnedAccessoryDrawerId::Atis,
                      BrainOwnedAccessoryDrawerId::Pdc}) {
-                Step4Fixture selected;
+                auto step4Heap18486 = std::make_unique<Step4Fixture>();
+                auto& selected = *step4Heap18486;
                 selected.Cycle();
                 Step4SelectDrawer(&selected.state, selectedDrawer);
                 AccessoryPresentationState selectedPresenter;
@@ -18493,7 +18513,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                         "selected drawer lost ownership during primary update");
             }
 
-            Step4Fixture lookup;
+            auto step4Heap18508 = std::make_unique<Step4Fixture>();
+            auto& lookup = *step4Heap18508;
             lookup.AcceptPrimary(primaryVfr);
             Step4SelectDrawer(&lookup.state, BrainOwnedAccessoryDrawerId::Metar);
             AccessoryPresentationState lookupPresenter;
@@ -18665,7 +18686,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                      " true_sync_failure_us=20000"
                      " unattributed_us=0 overlap_us=0\n";
     } else if (probe == "metar_parse_elapsed_diagnostic") {
-        Step4Fixture changed;
+        auto step4Heap18680 = std::make_unique<Step4Fixture>();
+        auto& changed = *step4Heap18680;
         const auto accepted = changed.AcceptPrimary(primaryVfr);
         require(accepted.dispositionDiagnostic.parsingAttempted &&
                     accepted.dispositionDiagnostic.
@@ -18818,7 +18840,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
              "wrong-station-rejection"},
         };
         for (const auto& item : diagnosticCases) {
-            Step4Fixture ledger;
+            auto step4Heap18833 = std::make_unique<Step4Fixture>();
+            auto& ledger = *step4Heap18833;
             ledger.Cycle();
             BrainMetarWorkerFact ledgerFact;
             ledgerFact.request = ledger.worker.requests.back();
@@ -18844,7 +18867,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     std::string("terminal diagnostic matrix mismatch: ") +
                         item.reason);
         }
-        Step4Fixture f;
+        auto step4Heap18859 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18859;
         const auto dispatch = f.Cycle();
         BrainMetarWorkerFact fact;
         fact.request = f.worker.requests.back();
@@ -18873,7 +18897,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     f.state.metar.historyMutationCount == 0,
                 "transport timeout reached parser or mutated history");
     } else if (probe == "correction_parser_rejection_ledger") {
-        Step4Fixture f;
+        auto step4Heap18888 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18888;
         f.Cycle();
         BrainMetarWorkerFact fact;
         fact.request = f.worker.requests.back();
@@ -18904,34 +18929,40 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     f.state.metar.historyMutationCount == 0,
                 "parser rejection disposition ledger mismatch");
     } else if (probe == "correction_orb_startup_metar_only") {
-        BrainOwnedRuntimeState state;
+        auto step4Heap18919 = std::make_unique<BrainOwnedRuntimeState>();
+        auto& state = *step4Heap18919;
         EnableBrainOwnedAccessoryRuntime(&state);
         state.metar.initialized = true;
         requireNeutralMetarOrb(&state);
     } else if (probe == "correction_orb_pending_metar_only") {
-        Step4Fixture f;
+        auto step4Heap18924 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18924;
         f.Cycle();
         requireNeutralMetarOrb(&f.state);
     } else if (probe == "correction_orb_unavailable_metar_only") {
-        Step4Fixture f;
+        auto step4Heap18928 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18928;
         f.Cycle();
         f.worker.Complete(BrainMetarWorkerStatus::TransportFailure);
         f.Cycle(1);
         requireNeutralMetarOrb(&f.state);
     } else if (probe == "correction_orb_stale_metar_only") {
-        Step4Fixture f;
+        auto step4Heap18934 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18934;
         f.AcceptPrimary(primaryVfr);
         f.state.metar.visibleState = BrainMetarVisibleState::Stale;
         ++f.state.metar.presentationGeneration;
         requireNeutralMetarOrb(&f.state);
     } else if (probe == "correction_orb_success_exact_two_lines") {
-        Step4Fixture f;
+        auto step4Heap18940 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18940;
         f.AcceptPrimary(primaryVfr);
         requireSuccessfulMetarOrb(
             &f.state, "KDFW", "VFR",
             BrainOwnedAccessoryOrbPresentation::Tone::Green);
     } else if (probe == "correction_orb_cached_success_exact_two_lines") {
-        Step4Fixture f;
+        auto step4Heap18946 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18946;
         f.AcceptPrimary(primaryVfr);
         f.state.metar.visibleState = BrainMetarVisibleState::Cached;
         ++f.state.metar.presentationGeneration;
@@ -18939,14 +18970,16 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             &f.state, "KDFW", "VFR",
             BrainOwnedAccessoryOrbPresentation::Tone::Green);
     } else if (probe == "correction_orb_selected_has_no_open_text") {
-        Step4Fixture f;
+        auto step4Heap18954 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18954;
         f.AcceptPrimary(primaryVfr);
         Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar);
         requireSuccessfulMetarOrb(
             &f.state, "KDFW", "VFR",
             BrainOwnedAccessoryOrbPresentation::Tone::Green);
     } else if (probe == "correction_lookup_never_changes_orb") {
-        Step4Fixture f;
+        auto step4Heap18961 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18961;
         f.AcceptPrimary(primaryVfr);
         requireSuccessfulMetarOrb(
             &f.state, "KDFW", "VFR",
@@ -18961,7 +18994,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             BrainOwnedAccessoryOrbPresentation::Tone::Green);
     } else if (probe == "ifr_departure_primary_only" ||
         probe == "ifr_departure_no_arrival_prefetch") {
-        Step4Fixture f;
+        auto step4Heap18976 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18976;
         f.Cycle();
         require(f.worker.requests.size() == 1, "one departure request expected");
         require(f.worker.requests[0].airportIcao == "KDFW", "departure must be KDFW");
@@ -18972,7 +19006,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(f.worker.requests.size() == 1, "arrival must not be prefetched");
     } else if (probe == "departure_enroute_primary_switch" ||
                probe == "ifr_arrival_primary_stable") {
-        Step4Fixture f;
+        auto step4Heap18987 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18987;
         f.AcceptPrimary(primaryVfr);
         f.input.workflowStage = WorkflowStage::Enroute;
         f.Cycle(1);
@@ -18987,7 +19022,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(f.worker.requests.size() == count, "arrival transition must not duplicate request");
     } else if (probe == "vfr_departure_primary" ||
                probe == "vfr_brain_committed_departure_source") {
-        Step4Fixture f;
+        auto step4Heap19002 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19002;
         f.input.operatingMode = BrainOwnedOperatingMode::VFR;
         f.input.flightContext = {};
         f.input.flightPlan.available = true;
@@ -19006,7 +19042,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(f.state.metar.primaryAirportIcao == "KAPA", "VFR target must not follow aircraft");
     } else if (probe == "vfr_no_nearby_scan" ||
                probe == "vfr_missing_departure_unknown") {
-        Step4Fixture f;
+        auto step4Heap19021 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19021;
         f.input.operatingMode = BrainOwnedOperatingMode::VFR;
         f.input.flightContext = {};
         f.input.flightPlan = {};
@@ -19018,7 +19055,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "VFR missing departure must be unknown/unavailable");
     } else if (probe == "lookup_preserves_primary" ||
                probe == "lookup_orb_primary_authority") {
-        Step4Fixture f;
+        auto step4Heap19033 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19033;
         f.AcceptPrimary(primaryVfr);
         f.SubmitLookup("kabq");
         f.AcceptLookup(lookupMvfr);
@@ -19029,7 +19067,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "ORB must remain primary authority");
     } else if (probe == "lookup_spotlight_activation" ||
                probe == "lookup_pending_success_to_spotlight") {
-        Step4Fixture f;
+        auto step4Heap19044 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19044;
         f.AcceptPrimary(primaryVfr);
         f.SubmitLookup("KABQ");
         f.AcceptLookup(lookupMvfr);
@@ -19039,7 +19078,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(Step4HasTitle(&f.state, "METAR LOOKUP — KABQ"),
                 "spotlight title missing");
     } else if (probe == "lookup_spotlight_expiry_no_duplicate") {
-        Step4Fixture f;
+        auto step4Heap19054 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19054;
         f.AcceptPrimary(primaryVfr);
         f.SubmitLookup("KABQ");
         f.AcceptLookup(lookupMvfr);
@@ -19051,7 +19091,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "spotlight expiry must not duplicate history");
     } else if (probe == "primary_update_preempts_spotlight" ||
                probe == "primary_state_change_preempts_spotlight") {
-        Step4Fixture f;
+        auto step4Heap19066 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19066;
         f.AcceptPrimary(primaryVfr);
         f.SubmitLookup("KABQ");
         f.AcceptLookup(lookupMvfr);
@@ -19065,7 +19106,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(f.state.metar.primaryObservation.category == BrainMetarFlightCategory::Lifr,
                 "updated primary must publish");
 
-        Step4Fixture target;
+        auto step4Heap19080 = std::make_unique<Step4Fixture>();
+        auto& target = *step4Heap19080;
         target.AcceptPrimary(primaryVfr);
         target.SubmitLookup("KABQ");
         target.AcceptLookup(lookupMvfr);
@@ -19075,7 +19117,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     BrainMetarTransientPresentation::None,
                 "target change must preempt spotlight");
 
-        Step4Fixture stale;
+        auto step4Heap19090 = std::make_unique<Step4Fixture>();
+        auto& stale = *step4Heap19090;
         stale.AcceptPrimary(primaryVfr);
         stale.SubmitLookup("KABQ");
         stale.AcceptLookup(lookupMvfr);
@@ -19085,7 +19128,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     BrainMetarTransientPresentation::None,
                 "stale transition must preempt spotlight");
     } else if (probe == "lookup_truthful_newest_history") {
-        Step4Fixture f;
+        auto step4Heap19100 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19100;
         f.AcceptPrimary(primaryVfr);
         f.SubmitLookup("KABQ");
         f.AcceptLookup(lookupMvfr);
@@ -19096,7 +19140,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(entries[1].title.find("KDFW") != std::string::npos,
                 "old primary must remain second");
     } else if (probe == "lookup_no_periodic_refresh") {
-        Step4Fixture f;
+        auto step4Heap19111 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19111;
         f.AcceptPrimary(primaryVfr);
         f.SubmitLookup("KABQ");
         f.AcceptLookup(lookupMvfr);
@@ -19107,7 +19152,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     [](const auto& request) { return request.airportIcao == "KABQ"; }) == 1,
                 "lookup airport must be one-shot");
     } else if (probe == "lookup_replacement_invalidates_pending") {
-        Step4Fixture f;
+        auto step4Heap19122 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19122;
         f.AcceptPrimary(primaryVfr);
         f.SubmitLookup("KABQ");
         f.Cycle();
@@ -19119,7 +19165,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(f.worker.requests.back().airportIcao == "KPHX",
                 "newest lookup must dispatch next");
     } else if (probe == "target_switch_rejects_stale_completion") {
-        Step4Fixture f;
+        auto step4Heap19134 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19134;
         f.Cycle();
         const auto departureRequest = f.worker.requests.back();
         f.input.workflowStage = WorkflowStage::Enroute;
@@ -19171,7 +19218,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "oversized payload bound fact missing");
         require(DecodeVatsimMetarPayload("[]").reportCardinality == 0,
                 "empty response cardinality fact missing");
-        Step4Fixture f;
+        auto step4Heap19186 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19186;
         f.Cycle();
         f.worker.Complete(BrainMetarWorkerStatus::Success, "KLAX",
                           "KLAX 271951Z 18010KT 10SM SKC");
@@ -19254,7 +19302,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     std::string("ambiguous report classified: ") + raw);
         }
     } else if (probe == "changed_content_history_once") {
-        Step4Fixture f;
+        auto step4Heap19269 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19269;
         f.AcceptPrimary(primaryVfr);
         const auto hiddenBefore = ProjectBrainOwnedAccessoryPresentation(
             &f.state, 1, nullptr);
@@ -19291,7 +19340,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                   << changedOutput.simulatorThreadElapsedUs << "\n";
     } else if (probe == "unchanged_content_zero_publication" ||
                probe == "identical_content_health_only") {
-        Step4Fixture f;
+        auto step4Heap19306 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19306;
         f.AcceptPrimary(primaryVfr);
         const auto parseCount = f.state.metar.parseCount;
         const auto historyCount = f.state.metar.historyMutationCount;
@@ -19314,7 +19364,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(f.state.metar.presentationGeneration >= presentationGeneration,
                 "presentation generation regressed");
     } else if (probe == "speci_between_clock_boundaries") {
-        Step4Fixture f;
+        auto step4Heap19329 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19329;
         f.AcceptPrimary(primaryVfr);
         f.Cycle(60'000);
         f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW",
@@ -19323,7 +19374,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(output.contentChanged && f.state.metar.primaryObservation.speci,
                 "changed SPECI must be accepted at revalidation");
     } else if (probe == "fresh_cache_transient_failure") {
-        Step4Fixture f;
+        auto step4Heap19338 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19338;
         f.AcceptPrimary(primaryVfr);
         f.state.metar.nextPrimaryEligibleMonotonicMs = f.input.monotonicMs;
         f.Cycle();
@@ -19335,7 +19387,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "fresh cached category must remain usable");
     } else if (probe == "stale_primary_gray_unknown" ||
                probe == "freshness_monotonic_deadline") {
-        Step4Fixture f;
+        auto step4Heap19350 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19350;
         f.AcceptPrimary(primaryVfr);
         f.input.utcUnixSeconds -= 86'400;
         f.Cycle(f.state.metar.freshUntilMonotonicMs - f.input.monotonicMs);
@@ -19350,7 +19403,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     orb->tone == BrainOwnedAccessoryOrbPresentation::Tone::Gray,
                 "stale ORB must be neutral METAR only");
     } else if (probe == "history_isolation") {
-        Step4Fixture f;
+        auto step4Heap19365 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19365;
         BrainOwnedAccessoryHistoryEntryInput atis;
         atis.drawer = BrainOwnedAccessoryDrawerId::Atis;
         atis.stableKey = "ATIS|KSAN|A";
@@ -19367,7 +19421,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     f.state.accessory.histories[2].entries.size() == 1,
                 "METAR/ATIS/PDC histories must remain isolated");
     } else if (probe == "lifecycle_boundaries") {
-        Step4Fixture f;
+        auto step4Heap19382 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19382;
         f.AcceptPrimary(primaryVfr);
         const auto before = f.state.accessory.histories[0].entries.size();
         BrainOwnedAsyncWorkerBindings bindings;
@@ -19383,7 +19438,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     f.state.accessory.histories[0].entries.empty(),
                 "hard boundary must clear METAR state/history");
 
-        Step4Fixture cleanup;
+        auto step4Heap19398 = std::make_unique<Step4Fixture>();
+        auto& cleanup = *step4Heap19398;
         cleanup.Cycle();
         cleanup.worker.Complete(
             BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
@@ -19492,7 +19548,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         std::cout << "STEP4_WORKER_SHUTDOWN: phases=5 max_ms="
                   << maximumCancellationMs << " limit_ms=500\n";
     } else if (probe == "warm_unchanged_zero_work") {
-        Step4Fixture f;
+        auto step4Heap19507 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19507;
         f.AcceptPrimary(primaryVfr);
         f.input.monotonicMs += 1;
         const auto before = f.state.metar;
@@ -19602,7 +19659,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(!Step4FileContains("plugin/CMakeLists.txt", "STEP4_METAR_FIXTURE"),
                 "normal plugin includes Step 4 fixtures");
     } else if (probe == "request_priority_and_backoff") {
-        Step4Fixture f;
+        auto step4Heap19617 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19617;
         f.Cycle();
         f.worker.Complete(BrainMetarWorkerStatus::TransportFailure);
         f.Cycle(1);
@@ -19625,7 +19683,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             {"KDFW 271951Z 18010KT 2SM BKN008", "IFR", BrainOwnedAccessoryOrbPresentation::Tone::Red},
             {"KDFW 271951Z 18010KT M1/4SM VV003", "LIFR", BrainOwnedAccessoryOrbPresentation::Tone::Magenta}};
         for (const auto& item : cases) {
-            Step4Fixture f;
+            auto step4Heap19640 = std::make_unique<Step4Fixture>();
+            auto& f = *step4Heap19640;
             f.AcceptPrimary(item.raw);
             const auto handle = ProjectBrainOwnedAccessoryPresentation(&f.state, 1, nullptr);
             const auto* orb = Step4MetarOrb(handle);
@@ -19638,7 +19697,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     std::string("ORB category/tone mismatch: ") + item.text);
         }
     } else if (probe == "pinned_primary_not_history") {
-        Step4Fixture f;
+        auto step4Heap19653 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19653;
         f.AcceptPrimary(primaryVfr);
         Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar);
         const auto stored = f.state.accessory.histories[0].entries.size();
@@ -19648,7 +19708,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(f.state.accessory.histories[0].entries.size() == stored,
                 "pinned primary mutated history");
     } else if (probe == "disconnect_inflight_completion_deferred") {
-        Step4Fixture f;
+        auto step4Heap19663 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19663;
         f.Cycle();
         f.input.xpilotConnected = false;
         f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
@@ -19661,7 +19722,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(f.state.metar.primaryObservation.valid,
                 "valid deferred completion must accept on reconnect");
     } else if (probe == "disconnect_request_suppression") {
-        Step4Fixture f;
+        auto step4Heap19676 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19676;
         f.input.xpilotConnected = false;
         for (int index = 0; index < 100; ++index) f.Cycle(1'000);
         require(f.worker.requests.empty(), "disconnected runtime dispatched request");
@@ -19681,7 +19743,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                                    "kBrainMetarRefresh"),
                 "plugin owns METAR cadence");
     } else if (probe == "lookup_pending_fetching_presentation") {
-        Step4Fixture f;
+        auto step4Heap19696 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19696;
         f.AcceptPrimary(primaryVfr);
         const auto decision = f.SubmitLookup("KABQ");
         require(decision.accepted &&
@@ -19692,7 +19755,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         require(f.state.metar.transientDeadlineMonotonicMs - f.input.monotonicMs == 20'000,
                 "pending deadline must be 20 seconds");
     } else if (probe == "lookup_pending_failure_returns_primary") {
-        Step4Fixture f;
+        auto step4Heap19707 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19707;
         f.AcceptPrimary(primaryVfr);
         f.SubmitLookup("KABQ");
         f.Cycle();
@@ -19706,7 +19770,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "failure must return to pinned primary");
     } else if (probe == "lookup_manual_close_respected" ||
                probe == "lookup_completion_no_delayed_reopen") {
-        Step4Fixture f;
+        auto step4Heap19721 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19721;
         f.AcceptPrimary(primaryVfr);
         f.SubmitLookup("KABQ");
         f.Cycle();
@@ -19727,7 +19792,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
     } else if (probe == "lookup_drawer_switch_respected") {
         for (const auto drawer : {BrainOwnedAccessoryDrawerId::Atis,
                                   BrainOwnedAccessoryDrawerId::Pdc}) {
-            Step4Fixture f;
+            auto step4Heap19742 = std::make_unique<Step4Fixture>();
+            auto& f = *step4Heap19742;
             f.AcceptPrimary(primaryVfr);
             f.SubmitLookup("KABQ");
             f.Cycle();
@@ -19739,7 +19805,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     "lookup completion overrode newer drawer selection");
         }
     } else if (probe == "accessory_second_identical_lookup") {
-        Step4Fixture f;
+        auto step4Heap19754 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19754;
         f.AcceptPrimary(primaryVfr);
         f.SubmitLookup("KABQ");
         f.AcceptLookup(lookupMvfr);
@@ -19786,7 +19853,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         for (const auto drawer : {BrainOwnedAccessoryDrawerId::Atis,
                                   BrainOwnedAccessoryDrawerId::Pdc,
                                   BrainOwnedAccessoryDrawerId::None}) {
-            Step4Fixture f;
+            auto step4Heap19801 = std::make_unique<Step4Fixture>();
+            auto& f = *step4Heap19801;
             f.AcceptPrimary(primaryVfr);
             f.SubmitLookup("KABQ");
             f.AcceptLookup(lookupMvfr);
@@ -19836,7 +19904,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             }
             ShutdownAccessoryTextMeasurement(measurement);
         }
-        Step4Fixture f;
+        auto step4Heap19851 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19851;
         f.Cycle();
         requireNeutralMetarOrb(&f.state);
         f.AcceptPrimary(primaryVfr);
@@ -19862,7 +19931,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             require(hiddenQueued && hiddenDrained && visibleQueued,
                     "same-command visible-attempt terminal was rejected after hidden terminal");
         } else if (probe == "publication_integration_red_combined_brain") {
-            BrainOwnedRuntimeState brain;
+            auto step4Heap19877 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap19877;
             BrainOwnedAccessoryPublicationFact combined;
             combined.commandIdentity = 1;
             combined.lifecycleEpoch = brain.accessory.lifecycleEpoch;
@@ -19949,7 +20019,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                         !coordinator.DeliveryServiceRequested(),
                     "bounded retained terminal was not delivered exactly once");
         } else if (probe == "publication_integration_red_diagnostic_acceptance") {
-            BrainOwnedRuntimeState brain;
+            auto step4Heap19964 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap19964;
             brain.accessory.lastTerminalPresentationCommandIdentity = 1;
             BrainOwnedAccessoryPublicationFact duplicate;
             duplicate.commandIdentity = 1;
@@ -20005,7 +20076,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             const auto queued = coordinator.DeliverOrRetain(combined, queue.get());
             BrainOwnedAccessoryPublicationFact transported;
             const bool dequeued = queue->Consume(&transported);
-            BrainOwnedRuntimeState brain;
+            auto step4Heap20020 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20020;
             const auto decision = ConsumeBrainOwnedAccessoryPublicationFact(
                 &brain, transported);
             std::uint64_t repeats = 0;
@@ -20025,7 +20097,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     "combined visible fact did not close both obligations once");
         } else if (probe == "publication_integration_lifecycle_scoped") {
             auto queue = std::make_unique<AccessoryPublicationFactQueue>();
-            BrainOwnedRuntimeState brain;
+            auto step4Heap20040 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20040;
             auto runEpoch = [&](std::uint64_t epoch) {
                 BrainOwnedAccessoryPublicationFact command;
                 command.commandIdentity = 1;
@@ -20087,7 +20160,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                             began.visibilityEpoch + 1,
                     "visibility loss was not terminally named and re-epoched");
         } else if (probe == "publication_integration_lifecycle_delivery") {
-            BrainOwnedRuntimeState brain;
+            auto step4Heap20102 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20102;
             AccessoryPublicationDiagnosticAccounting accounting;
             BrainOwnedAccessoryPublicationFact orderly;
             orderly.commandIdentity = 1;
@@ -20213,7 +20287,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                         second.supersededElapsedMicroseconds == 1'000,
                     "newer presentation did not accountably supersede attempt");
         } else if (probe == "visibility_edge_click_visible_once") {
-            BrainOwnedRuntimeState brain;
+            auto step4Heap20228 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20228;
             require(observe(true, true, false).started,
                     "click-visible command did not open attempt");
             const auto terminal = complete(true, true);
@@ -20229,7 +20304,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                         brain.accessory.publicationLivenessFailureCount == 0,
                     "click-driven visible command was not terminal below 500 ms");
         } else if (probe == "visibility_edge_startup_integration") {
-            BrainOwnedRuntimeState brain;
+            auto step4Heap20244 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20244;
             auto queue = std::make_unique<AccessoryPublicationFactQueue>();
             AccessoryPublicationDiagnosticAccounting accounting;
             const auto hiddenObservation = observe(false, true, false);
@@ -20322,7 +20398,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                       << transported.visibleEligibilityToFirstFrameMicroseconds
                       << '\n';
         } else if (probe == "visibility_edge_hidden_terminal_preserved") {
-            BrainOwnedRuntimeState brain;
+            auto step4Heap20337 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20337;
             auto queue = std::make_unique<AccessoryPublicationFactQueue>();
             AccessoryHiddenCommandTerminalInput hiddenInput;
             hiddenInput.commandIdentity = 1;
@@ -20340,7 +20417,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                         brain.accessory.lastVisiblePublicationAttemptIdentity == 0,
                     "hidden command terminal was not preserved independently");
         } else if (probe == "visibility_edge_visible_attempt_separate") {
-            BrainOwnedRuntimeState brain;
+            auto step4Heap20355 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20355;
             auto queue = std::make_unique<AccessoryPublicationFactQueue>();
             AccessoryHiddenCommandTerminalInput hiddenInput;
             hiddenInput.commandIdentity = 1;
@@ -20368,7 +20446,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
     } else if (probe.rfind("hidden_publication_timing_", 0) == 0) {
         using namespace xvatsim::modules::overlay;
         const auto overlaySource = Step4ReadFile("modules/overlay/src/OverlayWindow.cpp");
-        BrainOwnedRuntimeState state;
+        auto step4Heap20383 = std::make_unique<BrainOwnedRuntimeState>();
+        auto& state = *step4Heap20383;
         auto fact = [&](std::uint64_t identity) {
             BrainOwnedAccessoryPublicationFact value;
             value.commandIdentity = identity;
@@ -20552,7 +20631,9 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
     } else if (probe.rfind("accessory_input_boundary_", 0) == 0) {
         using namespace xvatsim::modules::overlay;
         struct CorrectedInputBoundary {
-            BrainOwnedRuntimeState brain;
+            std::unique_ptr<BrainOwnedRuntimeState> brainStorage =
+                std::make_unique<BrainOwnedRuntimeState>();
+            BrainOwnedRuntimeState& brain = *brainStorage;
             AccessoryClickFactQueue clicks;
             BrainOwnedAccessoryDrawerId visibleDrawer =
                 BrainOwnedAccessoryDrawerId::None;
@@ -20921,7 +21002,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     "re-enable retained stale input or initial-delay blocking");
         } else if (probe ==
                    "accessory_input_boundary_accessory_selection_preserves_metar_state") {
-            Step4Fixture metar;
+            auto step4Heap20936 = std::make_unique<Step4Fixture>();
+            auto& metar = *step4Heap20936;
             metar.Cycle();
             metar.AcceptPrimary(primaryVfr);
             const auto primaryBefore = metar.state.metar.primaryAirportIcao;
@@ -21056,7 +21138,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     decoded.soleReport->rawMetarHasTrailingWhitespace,
                 "mechanical decode fact is incomplete");
 
-        Step4Fixture fixture;
+        auto step4Heap21071 = std::make_unique<Step4Fixture>();
+        auto& fixture = *step4Heap21071;
         fixture.Cycle();
         const auto accepted = fixture.AcceptPrimary(primaryVfr);
         require(accepted.completionAccepted && accepted.contentChanged &&
@@ -21064,7 +21147,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                     fixture.state.metar.primaryObservation.valid,
                 "brain did not exclusively accept and parse decoded fact");
         if (probe == "brain_exclusive_brain_wrong_station_terminal_rejection") {
-            Step4Fixture wrong;
+            auto step4Heap21079 = std::make_unique<Step4Fixture>();
+            auto& wrong = *step4Heap21079;
             wrong.Cycle();
             wrong.worker.Complete(
                 BrainMetarWorkerStatus::Success, "KLAX",
@@ -21103,7 +21187,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "first METAR command does not contain accepted KDFW");
 
         if (probe == "brain_exclusive_lifecycle_epoch_rejects_old_command") {
-            BrainOwnedRuntimeState epochState;
+            auto step4Heap21118 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& epochState = *step4Heap21118;
             const auto oldEpoch = epochState.accessory.lifecycleEpoch;
             DisableBrainOwnedAccessoryRuntime(&epochState);
             BrainOwnedAccessoryPublicationFact stale;
@@ -21169,7 +21254,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             probe.find("terminal") != std::string::npos ||
             probe.find("failure") != std::string::npos ||
             probe.find("superseded") != std::string::npos) {
-            BrainOwnedRuntimeState deliveryState;
+            auto step4Heap21184 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& deliveryState = *step4Heap21184;
             BrainOwnedAccessoryPublicationFact fact;
             fact.commandIdentity = 1;
             fact.lifecycleEpoch = deliveryState.accessory.lifecycleEpoch;
@@ -21232,7 +21318,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         }
 
         if (probe == "brain_exclusive_1000_action_nonblocking_stress") {
-            BrainOwnedRuntimeState stressState;
+            auto step4Heap21247 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& stressState = *step4Heap21247;
             AccessoryClickFactQueue clicks;
             std::uint64_t terminalCount = 0;
             for (int index = 0; index < 1'000; ++index) {
@@ -21346,12 +21433,1904 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
     return 0;
 }
 
+struct Step5AtisFixture {
+    xvatsim::brain::BrainOwnedRuntimeState state;
+    xvatsim::modules::vatsim_data_feed::VatsimDataFeedSnapshot feed;
+    xvatsim::brain::BrainOwnedAtisCycleInput input;
+
+    Step5AtisFixture() {
+        xvatsim::brain::EnableBrainOwnedAccessoryRuntime(&state);
+        input.pluginEnabled = true;
+        input.xpilotConnected = true;
+        input.workflowStage = xvatsim::brain::WorkflowStage::Departure;
+        input.operatingMode = xvatsim::brain::BrainOwnedOperatingMode::IFR;
+        input.flightContext.active = true;
+        input.flightContext.callsign = "ASA551";
+        input.flightContext.departureIcao = "KDFW";
+        input.flightContext.destinationIcao = "KSAN";
+        input.monotonicMs = 1'000;
+    }
+
+    void Decode(const std::string& document, std::uint64_t generation = 1) {
+        feed = xvatsim::modules::vatsim_data_feed::
+            DecodeVatsimDataFeedDocument(document);
+        feed.generation = generation;
+        BindFeed();
+    }
+
+    void BindFeed() {
+        input.feedHasCache = feed.hasCache;
+        input.feedStale = feed.stale;
+        input.feedFetchInProgress = feed.fetchInProgress;
+        input.feedGeneration = feed.generation;
+        input.atisRootPresent = feed.atisRootPresent;
+        input.atisRootArray = feed.atisRootArray;
+        input.atisComponentComplete = feed.atisComponentComplete;
+        input.atisMechanicalIssueMask = feed.atisMechanicalIssueMask;
+        input.atisRecords = &feed.atisRecords;
+    }
+
+    xvatsim::brain::BrainOwnedAtisCycleDecision Cycle(long long advanceMs = 0) {
+        input.monotonicMs += advanceMs;
+        BindFeed();
+        return xvatsim::brain::RunBrainOwnedAtisCycle(&state, input);
+    }
+
+    xvatsim::brain::BrainOwnedAccessoryPresentationHandle Project(
+        xvatsim::brain::BrainOwnedAccessoryProjectionCounters* counters = nullptr) {
+        return xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+            &state, counters);
+    }
+
+    xvatsim::brain::BrainOwnedAccessorySelectionDecision Select(
+        xvatsim::brain::BrainOwnedAccessoryDrawerId drawer,
+        std::uint64_t sequence = 1) {
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+        request.drawer = drawer;
+        request.requestSequence = sequence;
+        request.clickAcceptedMicroseconds = sequence * 1'000;
+        request.mouseCallbackEnteredMicroseconds =
+            request.clickAcceptedMicroseconds;
+        request.mouseCallbackExitedMicroseconds =
+            request.clickAcceptedMicroseconds + 1;
+        return xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+            &state, request);
+    }
+
+    xvatsim::brain::BrainOwnedTextEntryDecision Lookup(
+        const std::string& airport,
+        long long advanceMs = 1) {
+        input.monotonicMs += advanceMs;
+        xvatsim::brain::BrainOwnedTextEntryFact fact;
+        fact.mode =
+            xvatsim::brain::BrainOwnedTextEntryMode::AtisAirportLookup;
+        fact.text = airport;
+        fact.monotonicMs = input.monotonicMs;
+        return xvatsim::brain::CommitBrainOwnedAtisTextEntryFact(&state, fact);
+    }
+};
+
+const xvatsim::brain::BrainOwnedAccessoryOrbPresentation* Step5AtisOrb(
+    const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& handle) {
+    if (!handle.snapshot) return nullptr;
+    for (const auto& orb : handle.snapshot->orbs) {
+        if (orb.drawer ==
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::Atis) return &orb;
+    }
+    return nullptr;
+}
+
+bool Step5SnapshotContains(
+    const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& handle,
+    const std::string& token) {
+    if (!handle.snapshot) return false;
+    if (handle.snapshot->drawerTitle.find(token) != std::string::npos ||
+        handle.snapshot->emptyStateText.find(token) != std::string::npos ||
+        handle.snapshot->drawerStateText.find(token) != std::string::npos) {
+        return true;
+    }
+    return std::any_of(
+        handle.snapshot->entries.begin(), handle.snapshot->entries.end(),
+        [&](const auto& entry) {
+            return entry.title.find(token) != std::string::npos ||
+                entry.body.find(token) != std::string::npos;
+        });
+}
+
+std::string Step5DefaultAtisDocument() {
+    return R"json({
+        "controllers": [],
+        "pilots": [],
+        "atis": [{
+            "callsign": "KDFW_D_ATIS",
+            "frequency": "123.775",
+            "atis_code": "A",
+            "text_atis": ["KDFW DEPARTURE INFORMATION ALPHA", "RUNWAY 18L"],
+            "last_updated": "2026-08-30T12:00:00Z",
+            "logon_time": "2026-08-30T11:45:00Z"
+        }, {
+            "callsign": "KDFW_ATIS",
+            "frequency": "128.250",
+            "atis_code": "C",
+            "text_atis": ["KDFW COMBINED INFORMATION CHARLIE"],
+            "last_updated": "2026-08-30T11:59:00Z"
+        }, {
+            "callsign": "KSAN_A_ATIS",
+            "frequency": "134.800",
+            "atis_code": "B",
+            "text_atis": ["KSAN ARRIVAL INFORMATION BRAVO"],
+            "last_updated": "2026-08-30T12:01:00Z"
+        }, {
+            "callsign": "KABQ_D_ATIS",
+            "frequency": "118.000",
+            "atis_code": "D",
+            "text_atis": ["KABQ DEPARTURE INFORMATION DELTA"],
+            "last_updated": "2026-08-30T12:02:00Z"
+        }, {
+            "callsign": "KABQ_A_ATIS",
+            "frequency": "119.000",
+            "atis_code": "E",
+            "text_atis": ["KABQ ARRIVAL INFORMATION ECHO"],
+            "last_updated": "2026-08-30T12:03:00Z"
+        }]
+    })json";
+}
+
+std::string Step5ReplaceOnce(
+    std::string source,
+    const std::string& from,
+    const std::string& to) {
+    const auto position = source.find(from);
+    if (position != std::string::npos) {
+        source.replace(position, from.size(), to);
+    }
+    return source;
+}
+
+struct Step5PresentationSeamResult {
+    bool prepared = false;
+    bool committed = false;
+    bool rendered = false;
+    bool published = false;
+    bool brainAccepted = false;
+    bool diagnosticSerialized = false;
+    xvatsim::modules::overlay::AccessoryPresentationUpdateResult update;
+    xvatsim::modules::overlay::AccessoryDrawerRenderPlan render;
+    xvatsim::brain::BrainOwnedAccessoryPublicationFact fact;
+    xvatsim::brain::BrainOwnedAccessoryPublicationDecision decision;
+    std::string diagnostic;
+};
+
+class Step5ProductionPresentationSeam {
+public:
+    Step5ProductionPresentationSeam() {
+        measurement_ =
+            xvatsim::modules::overlay::InitializeAccessoryTextMeasurement();
+        if (measurement_ == nullptr) return;
+        workerStarted_ = worker_.Start(GetCurrentThreadId());
+        const auto deadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (worker_.State() ==
+                   xvatsim::modules::overlay::
+                       AccessoryPreparationWorkerState::Starting &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        workerStarted_ = workerStarted_ && worker_.State() ==
+            xvatsim::modules::overlay::AccessoryPreparationWorkerState::Ready;
+        xvatsim::modules::overlay::AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 100;
+        layoutInput.windowTop = 900;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = true;
+        typography_ = xvatsim::modules::overlay::PrepareAccessoryTypography(
+            measurement_, 1.0f);
+        layoutInput.typography = &typography_;
+        layout_ = xvatsim::modules::overlay::ResolveAccessoryLayout(layoutInput);
+    }
+
+    ~Step5ProductionPresentationSeam() {
+        worker_.Stop();
+        xvatsim::modules::overlay::ShutdownAccessoryTextMeasurement(
+            measurement_);
+    }
+
+    bool Ready() const {
+        return workerStarted_ && measurement_ != nullptr &&
+            layout_.status ==
+                xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available;
+    }
+
+    Step5PresentationSeamResult Present(
+        xvatsim::brain::BrainOwnedRuntimeState* state,
+        const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& command,
+        bool commandTerminalRequired = true) {
+        using namespace xvatsim::modules::overlay;
+        Step5PresentationSeamResult result;
+        if (!Ready() || state == nullptr || command.snapshot == nullptr) {
+            return result;
+        }
+        AccessoryPreparationKeyInput keyInput;
+        keyInput.drawer = command.snapshot->activeDrawer;
+        keyInput.layoutGeneration = 1;
+        keyInput.commandIdentity = command.snapshot->commandIdentity;
+        keyInput.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+        keyInput.selectedDrawerContentRevision =
+            command.snapshot->selectedDrawerContentRevision;
+        keyInput.typographyGeneration = typography_.generation;
+        keyInput.scaleThousandths = 1'000;
+        keyInput.contentWidth = std::max(
+            1, layout_.drawerBounds.right - layout_.drawerBounds.left -
+                (2 * layout_.drawerContentInset));
+        keyInput.visibleLineCapacity = layout_.drawerVisibleLineCapacity;
+        AccessoryPreparationRequest request;
+        request.key = BuildAccessoryPreparationKeyForCommand(keyInput);
+        request.snapshot = command.snapshot;
+        request.layout = layout_;
+        request.requestedMicroseconds = now_++;
+        if (!worker_.Request(request)) return result;
+        std::shared_ptr<const AccessoryPreparedDrawerPlan> plan;
+        const auto deadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (!plan && std::chrono::steady_clock::now() < deadline) {
+            plan = worker_.TryTakeReady(request.key, nullptr);
+            if (!plan) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        result.prepared = plan != nullptr &&
+            plan->snapshot.get() == command.snapshot.get() &&
+            plan->key == request.key;
+        if (!result.prepared) return result;
+        AccessoryPresentationUpdateInput updateInput;
+        updateInput.presentation = command;
+        updateInput.layout = layout_;
+        updateInput.mainCardProductionSignature = "step5-production-seam";
+        updateInput.measurementContext = measurement_;
+        updateInput.preparedPlan = plan;
+        updateInput.mechanicalLayoutGeneration = 1;
+        result.update = UpdateAccessoryPresentation(&presenter_, updateInput);
+        result.committed = !result.update.preparationPending &&
+            result.update.publishedSnapshotCount == 1 &&
+            presenter_.activeSnapshot.get() == command.snapshot.get();
+        result.render = BuildAccessoryDrawerRenderPlan(presenter_, layout_);
+        result.rendered = result.render.status ==
+            xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available;
+        AccessoryVisiblePublicationKey key;
+        key.commandIdentity = command.snapshot->commandIdentity;
+        key.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+        key.railRevision = command.snapshot->railPresentationRevision;
+        key.drawerRevision = command.snapshot->selectedDrawerContentRevision;
+        key.drawerOpen = command.snapshot->activeDrawer !=
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::None;
+        const auto began = visibility_.Observe(
+            {key, true, true, result.update.delta.uploadRequests != 0,
+             now_++, commandTerminalRequired});
+        const auto terminal = visibility_.CompleteFirstFrame(
+            key, true, true, now_++);
+        ApplyAccessoryVisiblePublicationTerminal(terminal, &result.fact);
+        result.fact.activeDrawerRendered = command.snapshot->activeDrawer;
+        result.fact.originatingClickSequence =
+            command.snapshot->originatingClickSequence;
+        result.fact.originatingClickAcceptedMicroseconds =
+            command.snapshot->originatingClickAcceptedMicroseconds;
+        result.fact.originatingMouseCallbackExitedMicroseconds =
+            command.snapshot->originatingMouseCallbackExitedMicroseconds;
+        result.fact.issueToCommitMicroseconds = 100;
+        if (result.fact.originatingClickSequence != 0) {
+            result.fact.clickTimingApplicable = true;
+            result.fact.clickToTerminalMicroseconds = 100;
+        }
+        ApplyAccessoryPresentationRevisionDiagnostic(
+            command.snapshot.get(), &result.fact);
+        result.published = began.started && terminal.terminal &&
+            queue_.Produce(result.fact);
+        if (!result.published) return result;
+        xvatsim::brain::BrainOwnedAccessoryPublicationFact dequeued;
+        if (!queue_.Consume(&dequeued)) return result;
+        result.fact = dequeued;
+        result.decision =
+            xvatsim::brain::ConsumeBrainOwnedAccessoryPublicationFact(
+                state, dequeued);
+        result.brainAccepted = result.decision.consumed &&
+            result.decision.visibleAttemptTerminalAccepted &&
+            (!commandTerminalRequired ||
+             result.decision.commandTerminalAccepted);
+        result.diagnostic = SerializeAccessoryPublicationDiagnostic(
+            dequeued, result.decision, &diagnostics_);
+        result.diagnosticSerialized = result.diagnostic.find(
+            "event=accessory-publication-terminal") != std::string::npos;
+        return result;
+    }
+
+    xvatsim::modules::overlay::AccessoryPresentationWarmResult Warm(
+        const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& command,
+        int iterations) {
+        xvatsim::modules::overlay::AccessoryPresentationUpdateInput input;
+        input.presentation = command;
+        input.layout = layout_;
+        input.mainCardProductionSignature = "step5-production-seam";
+        input.measurementContext = measurement_;
+        input.mechanicalLayoutGeneration = 1;
+        return xvatsim::modules::overlay::
+            RunUnchangedAccessoryPresentationUpdates(
+                &presenter_, input, iterations);
+    }
+
+    xvatsim::modules::overlay::AccessoryPresentationScrollResult ScrollDrawer(
+        int wheelClicks) {
+        xvatsim::modules::overlay::AccessoryPresentationScrollInput input;
+        input.layout = layout_;
+        input.pointerX =
+            (layout_.drawerBounds.left + layout_.drawerBounds.right) / 2;
+        input.pointerY =
+            (layout_.drawerBounds.top + layout_.drawerBounds.bottom) / 2;
+        input.wheelClicks = wheelClicks;
+        return xvatsim::modules::overlay::ScrollAccessoryPresentation(
+            &presenter_, input);
+    }
+
+    xvatsim::modules::overlay::AccessoryDrawerRenderPlan RenderDrawer() const {
+        return xvatsim::modules::overlay::BuildAccessoryDrawerRenderPlan(
+            presenter_, layout_);
+    }
+
+    const xvatsim::modules::overlay::AccessoryPublicationDiagnosticAccounting&
+    Diagnostics() const { return diagnostics_; }
+    const xvatsim::modules::overlay::AccessoryPublicationFactQueue& Queue() const {
+        return queue_;
+    }
+
+private:
+    xvatsim::modules::overlay::AccessoryTextMeasurementContext* measurement_ =
+        nullptr;
+    xvatsim::modules::overlay::AccessoryTypographyMetrics typography_;
+    xvatsim::modules::overlay::AccessoryLayoutResult layout_;
+    xvatsim::modules::overlay::AccessoryPreparationWorker worker_;
+    xvatsim::modules::overlay::AccessoryPresentationState presenter_;
+    xvatsim::modules::overlay::AccessoryVisiblePublicationState visibility_;
+    xvatsim::modules::overlay::AccessoryPublicationFactQueue queue_;
+    xvatsim::modules::overlay::AccessoryPublicationDiagnosticAccounting
+        diagnostics_;
+    bool workerStarted_ = false;
+    std::uint64_t now_ = 10'000;
+};
+
+int RunStep5ContractProbe(const ScenarioData& scenario) {
+    using namespace xvatsim::brain;
+    using namespace xvatsim::modules::overlay;
+    using xvatsim::modules::vatsim_data_feed::DecodeVatsimDataFeedDocument;
+
+    const auto& probe = scenario.step5.probe;
+    std::vector<std::string> failures;
+    const auto require = [&](bool condition, const std::string& message) {
+        if (!condition) failures.push_back(message);
+    };
+    const auto atisOrb = [](const BrainOwnedAccessoryPresentationHandle& handle)
+        -> const BrainOwnedAccessoryOrbPresentation* {
+        if (!handle.snapshot) return nullptr;
+        for (const auto& orb : handle.snapshot->orbs) {
+            if (orb.drawer == BrainOwnedAccessoryDrawerId::Atis) return &orb;
+        }
+        return nullptr;
+    };
+    const auto snapshotContains = [](const BrainOwnedAccessoryPresentationHandle& handle,
+                                     const std::string& token) {
+        if (!handle.snapshot) return false;
+        if (handle.snapshot->drawerTitle.find(token) != std::string::npos ||
+            handle.snapshot->emptyStateText.find(token) != std::string::npos ||
+            handle.snapshot->drawerStateText.find(token) != std::string::npos) {
+            return true;
+        }
+        return std::any_of(handle.snapshot->entries.begin(),
+                           handle.snapshot->entries.end(),
+                           [&](const auto& entry) {
+                               return entry.title.find(token) != std::string::npos ||
+                                   entry.body.find(token) != std::string::npos;
+                           });
+    };
+
+    if (probe == "unchanged_source_red_root_atis_product_gap") {
+        const std::string document = R"json({
+            "controllers": [{
+                "callsign": "KDFW_TWR",
+                "frequency": "118.300",
+                "facility": 4,
+                "visual_range": 50,
+                "text_atis": ["CONTROLLER TEXT MUST NOT OWN PRODUCT ATIS"]
+            }],
+            "pilots": [{
+                "cid": 1234567,
+                "callsign": "ASA551",
+                "flight_plan": {
+                    "departure": "KDFW",
+                    "arrival": "KSAN",
+                    "altitude": "FL340",
+                    "route": "KDFW J4 ABI"
+                }
+            }],
+            "atis": [{
+                "callsign": "KDFW_D_ATIS",
+                "frequency": "123.775",
+                "atis_code": "A",
+                "text_atis": [
+                    "KDFW DEPARTURE INFORMATION ALPHA",
+                    "RUNWAY 18L IN USE"
+                ],
+                "last_updated": "2026-08-30T12:00:00Z",
+                "logon_time": "2026-08-30T11:45:00Z"
+            }, {
+                "callsign": "KSAN_A_ATIS",
+                "frequency": "134.800",
+                "atis_code": "B",
+                "text_atis": ["KSAN ARRIVAL INFORMATION BRAVO"],
+                "last_updated": "2026-08-30T12:00:01Z"
+            }]
+        })json";
+        const auto decoded = DecodeVatsimDataFeedDocument(document);
+        require(decoded.hasCache && !decoded.stale &&
+                    decoded.controllers.size() == 1 &&
+                    decoded.pilotPlans.size() == 1,
+                "bounded network document did not preserve existing feed fields");
+
+        Step4Fixture fixture;
+        fixture.input.flightContext.callsign = "ASA551";
+        fixture.input.workflowStage = WorkflowStage::Departure;
+        (void)fixture.Cycle();
+        BrainOwnedAtisCycleInput atisInput;
+        atisInput.pluginEnabled = true;
+        atisInput.xpilotConnected = true;
+        atisInput.workflowStage = WorkflowStage::Departure;
+        atisInput.operatingMode = BrainOwnedOperatingMode::IFR;
+        atisInput.flightContext = fixture.input.flightContext;
+        atisInput.feedHasCache = decoded.hasCache;
+        atisInput.feedStale = decoded.stale;
+        atisInput.feedFetchInProgress = decoded.fetchInProgress;
+        atisInput.feedGeneration = decoded.generation;
+        atisInput.atisRootPresent = decoded.atisRootPresent;
+        atisInput.atisRootArray = decoded.atisRootArray;
+        atisInput.atisComponentComplete = decoded.atisComponentComplete;
+        atisInput.atisMechanicalIssueMask = decoded.atisMechanicalIssueMask;
+        atisInput.atisRecords = &decoded.atisRecords;
+        atisInput.monotonicMs = fixture.input.monotonicMs;
+        const auto departureAtis = RunBrainOwnedAtisCycle(
+            &fixture.state, atisInput);
+        require(departureAtis.evaluated && departureAtis.semanticChanged,
+                "Brain did not evaluate the dedicated Departure ATIS fact");
+        BrainOwnedAccessoryProjectionCounters neutralProjection;
+        const auto neutral = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, &neutralProjection);
+        const auto* departureOrb = atisOrb(neutral);
+        const bool dedicatedFactReachedProduct =
+            departureOrb != nullptr && !departureOrb->neutral &&
+            departureOrb->airportIcao == "KDFW";
+        require(dedicatedFactReachedProduct,
+                "root atis record did not reach the product ATIS snapshot");
+        require(departureOrb != nullptr && !departureOrb->neutral &&
+                    departureOrb->airportIcao == "KDFW" &&
+                    departureOrb->categoryText.find('A') != std::string::npos,
+                "KDFW Departure context left the ATIS ORB neutral");
+
+        BrainOwnedAccessorySelectionRequest selection;
+        selection.drawer = BrainOwnedAccessoryDrawerId::Atis;
+        selection.requestSequence = 1;
+        selection.clickAcceptedMicroseconds = 1'000;
+        selection.mouseCallbackExitedMicroseconds = 1'001;
+        const auto selectionDecision = RequestBrainOwnedAccessoryDrawerSelection(
+            &fixture.state, selection);
+        require(selectionDecision.activeDrawer == BrainOwnedAccessoryDrawerId::Atis,
+                "production Brain selection did not open ATIS");
+        BrainOwnedAccessoryProjectionCounters drawerProjection;
+        const auto drawerCommand = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, &drawerProjection);
+        require(drawerCommand.snapshot != nullptr &&
+                    drawerProjection.snapshotBuilds == 1,
+                "production Brain did not project one ATIS command");
+
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "production ATIS red text measurement was unavailable");
+        AccessoryPreparationWorker worker;
+        require(worker.Start(GetCurrentThreadId()),
+                "production ATIS red worker did not start");
+        const auto workerDeadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (worker.State() == AccessoryPreparationWorkerState::Starting &&
+               std::chrono::steady_clock::now() < workerDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(worker.State() == AccessoryPreparationWorkerState::Ready,
+                "production ATIS red worker was not ready");
+        AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 100;
+        layoutInput.windowTop = 900;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = true;
+        const auto typography = PrepareAccessoryTypography(measurement, 1.0f);
+        layoutInput.typography = &typography;
+        const auto layout = ResolveAccessoryLayout(layoutInput);
+        require(layout.status == BrainOwnedAccessoryOperationStatus::Available,
+                "production ATIS red layout was unavailable");
+        AccessoryPreparationKeyInput keyInput;
+        keyInput.drawer = BrainOwnedAccessoryDrawerId::Atis;
+        keyInput.layoutGeneration = 1;
+        keyInput.commandIdentity = drawerCommand.snapshot
+            ? drawerCommand.snapshot->commandIdentity : 0;
+        keyInput.lifecycleEpoch = drawerCommand.snapshot
+            ? drawerCommand.snapshot->lifecycleEpoch : 0;
+        keyInput.selectedDrawerContentRevision = drawerCommand.snapshot
+            ? drawerCommand.snapshot->selectedDrawerContentRevision : 0;
+        keyInput.typographyGeneration = typography.generation;
+        keyInput.scaleThousandths = 1'000;
+        keyInput.contentWidth = std::max(
+            1, layout.drawerBounds.right - layout.drawerBounds.left -
+                (2 * layout.drawerContentInset));
+        keyInput.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+        AccessoryPreparationRequest preparation;
+        preparation.key = BuildAccessoryPreparationKeyForCommand(keyInput);
+        preparation.snapshot = drawerCommand.snapshot;
+        preparation.layout = layout;
+        preparation.requestedMicroseconds = 2'000;
+        require(worker.Request(preparation),
+                "production ATIS red command was not submitted to the worker");
+        std::shared_ptr<const AccessoryPreparedDrawerPlan> prepared;
+        const auto readyDeadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (!prepared && std::chrono::steady_clock::now() < readyDeadline) {
+            prepared = worker.TryTakeReady(preparation.key, nullptr);
+            if (!prepared) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(prepared != nullptr && drawerCommand.snapshot != nullptr &&
+                    prepared->snapshot.get() == drawerCommand.snapshot.get(),
+                "production ATIS red worker did not return the exact command");
+        AccessoryPresentationState presenter;
+        AccessoryPresentationUpdateInput update;
+        update.presentation = drawerCommand;
+        update.layout = layout;
+        update.mainCardProductionSignature = "step5-red-production-seam";
+        update.measurementContext = measurement;
+        update.preparedPlan = prepared;
+        update.mechanicalLayoutGeneration = 1;
+        const auto commit = UpdateAccessoryPresentation(&presenter, update);
+        require(!commit.preparationPending && commit.publishedSnapshotCount == 1,
+                "production ATIS red command did not commit");
+        const auto render = BuildAccessoryDrawerRenderPlan(presenter, layout);
+        const bool rootTextVisible = std::any_of(
+            render.visibleLines.begin(), render.visibleLines.end(),
+            [](const auto& line) {
+                return line.text.find("KDFW DEPARTURE INFORMATION ALPHA") !=
+                    std::string::npos;
+            });
+        require(snapshotContains(drawerCommand, "KDFW DEPARTURE INFORMATION ALPHA") &&
+                    rootTextVisible,
+                "ATIS drawer rendered the placeholder instead of dedicated root text");
+
+        AccessoryVisiblePublicationState visibility;
+        AccessoryPublicationFactQueue publicationQueue;
+        AccessoryVisiblePublicationKey visibleKey;
+        visibleKey.commandIdentity = drawerCommand.snapshot
+            ? drawerCommand.snapshot->commandIdentity : 0;
+        visibleKey.lifecycleEpoch = drawerCommand.snapshot
+            ? drawerCommand.snapshot->lifecycleEpoch : 0;
+        visibleKey.railRevision = drawerCommand.snapshot
+            ? drawerCommand.snapshot->railPresentationRevision : 0;
+        visibleKey.drawerRevision = drawerCommand.snapshot
+            ? drawerCommand.snapshot->selectedDrawerContentRevision : 0;
+        visibleKey.drawerOpen = true;
+        const auto began = visibility.Observe(
+            {visibleKey, true, true, commit.delta.uploadRequests != 0,
+             3'000, true});
+        const auto terminal = visibility.CompleteFirstFrame(
+            visibleKey, true, true, 3'100);
+        BrainOwnedAccessoryPublicationFact publication;
+        ApplyAccessoryVisiblePublicationTerminal(terminal, &publication);
+        publication.originatingClickSequence = 1;
+        publication.originatingClickAcceptedMicroseconds = 1'000;
+        publication.originatingMouseCallbackExitedMicroseconds = 1'001;
+        publication.activeDrawerRendered = BrainOwnedAccessoryDrawerId::Atis;
+        publication.clickTimingApplicable = true;
+        publication.clickToTerminalMicroseconds = 2'100;
+        publication.issueToCommitMicroseconds = 1'000;
+        ApplyAccessoryPresentationRevisionDiagnostic(
+            drawerCommand.snapshot.get(), &publication);
+        require(began.started && terminal.terminal &&
+                    publicationQueue.Produce(publication),
+                "production ATIS red publication did not enter the queue");
+        BrainOwnedAccessoryPublicationFact dequeued;
+        require(publicationQueue.Consume(&dequeued),
+                "production ATIS red publication did not leave the queue");
+        const auto publicationDecision =
+            ConsumeBrainOwnedAccessoryPublicationFact(&fixture.state, dequeued);
+        AccessoryPublicationDiagnosticAccounting diagnosticAccounting;
+        const auto serialized = SerializeAccessoryPublicationDiagnostic(
+            dequeued, publicationDecision, &diagnosticAccounting);
+        require(publicationDecision.consumed &&
+                    publicationDecision.commandTerminalAccepted &&
+                    publicationDecision.visibleAttemptTerminalAccepted &&
+                    serialized.find("event=accessory-publication-terminal") !=
+                        std::string::npos,
+                "production ATIS red visible frame was not terminally accounted");
+        const auto historyBeforeAck =
+            fixture.state.accessory.histories[1].entries.size();
+        const auto afterAck = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, nullptr);
+        const auto* afterAckOrb = atisOrb(afterAck);
+        require(afterAckOrb != nullptr && !afterAckOrb->neutral &&
+                    afterAckOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Cyan &&
+                    fixture.state.atis.unreadAcknowledgedCount == 1 &&
+                    fixture.state.accessory.histories[1].entries.size() ==
+                        historyBeforeAck && historyBeforeAck != 0,
+                "visible frame could not acknowledge an exact ATIS unread revision");
+
+        fixture.input.workflowStage = WorkflowStage::Enroute;
+        (void)fixture.Cycle(1);
+        atisInput.workflowStage = WorkflowStage::Enroute;
+        atisInput.monotonicMs = fixture.input.monotonicMs;
+        const auto enrouteAtis = RunBrainOwnedAtisCycle(
+            &fixture.state, atisInput);
+        require(enrouteAtis.evaluated && enrouteAtis.semanticChanged,
+                "Brain did not evaluate the existing Enroute transition");
+        const auto enroute = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, nullptr);
+        const auto* enrouteOrb = atisOrb(enroute);
+        require(enrouteOrb != nullptr && !enrouteOrb->neutral &&
+                    enrouteOrb->airportIcao == "KSAN",
+                "Departure-to-Enroute transition did not select destination ATIS");
+
+        const std::string controllerOnlyDocument = R"json({
+            "controllers": [{
+                "callsign": "KDFW_ATIS",
+                "frequency": "123.775",
+                "facility": 4,
+                "visual_range": 50,
+                "text_atis": ["CONTROLLER-ONLY ATIS TEXT"]
+            }],
+            "pilots": [],
+            "atis": []
+        })json";
+        const auto controllerOnly =
+            DecodeVatsimDataFeedDocument(controllerOnlyDocument);
+        auto step5Heap22098 = std::make_unique<BrainOwnedRuntimeState>();
+        auto& controllerOnlyState = *step5Heap22098;
+        EnableBrainOwnedAccessoryRuntime(&controllerOnlyState);
+        BrainOwnedAtisCycleInput controllerOnlyInput;
+        controllerOnlyInput.pluginEnabled = true;
+        controllerOnlyInput.xpilotConnected = true;
+        controllerOnlyInput.workflowStage = WorkflowStage::Departure;
+        controllerOnlyInput.flightContext.active = true;
+        controllerOnlyInput.flightContext.callsign = "ASA551";
+        controllerOnlyInput.flightContext.departureIcao = "KDFW";
+        controllerOnlyInput.flightContext.destinationIcao = "KSAN";
+        controllerOnlyInput.feedHasCache = controllerOnly.hasCache;
+        controllerOnlyInput.feedStale = controllerOnly.stale;
+        controllerOnlyInput.feedGeneration = controllerOnly.generation;
+        controllerOnlyInput.atisRootPresent = controllerOnly.atisRootPresent;
+        controllerOnlyInput.atisRootArray = controllerOnly.atisRootArray;
+        controllerOnlyInput.atisComponentComplete =
+            controllerOnly.atisComponentComplete;
+        controllerOnlyInput.atisMechanicalIssueMask =
+            controllerOnly.atisMechanicalIssueMask;
+        controllerOnlyInput.atisRecords = &controllerOnly.atisRecords;
+        (void)RunBrainOwnedAtisCycle(
+            &controllerOnlyState, controllerOnlyInput);
+        const auto controllerOnlyPresentation =
+            ProjectBrainOwnedAccessoryPresentation(&controllerOnlyState, nullptr);
+        const auto* controllerOnlyOrb = atisOrb(controllerOnlyPresentation);
+        require(controllerOnly.hasCache && controllerOnly.controllers.size() == 1 &&
+                    controllerOnlyOrb != nullptr && controllerOnlyOrb->neutral,
+                "controller-only ATIS incorrectly established product authority");
+
+        BrainOwnedTextEntryFact lookup;
+        lookup.mode = BrainOwnedTextEntryMode::AtisAirportLookup;
+        lookup.text = "KABQ";
+        lookup.monotonicMs = 4'000;
+        const auto lookupDecision =
+            CommitBrainOwnedAtisTextEntryFact(&fixture.state, lookup);
+        require(lookupDecision.accepted && lookupDecision.presentationChanged,
+                "no ATIS airport lookup mode/result exists");
+
+        std::cout
+            << "STEP5_RED_OBSERVED: source_generation=" << decoded.generation
+            << " source_has_cache=" << (decoded.hasCache ? 1 : 0)
+            << " workflow_departure=1 target=KDFW"
+            << " dedicated_fact=" << (dedicatedFactReachedProduct ? 1 : 0)
+            << " atis_orb_neutral="
+            << (departureOrb != nullptr && departureOrb->neutral ? 1 : 0)
+            << " drawer_state="
+            << (drawerCommand.snapshot
+                ? static_cast<int>(drawerCommand.snapshot->drawerState) : -1)
+            << " root_text_visible=" << (rootTextVisible ? 1 : 0)
+            << " command="
+            << (drawerCommand.snapshot ? drawerCommand.snapshot->commandIdentity : 0)
+            << " command_terminal="
+            << (publicationDecision.commandTerminalAccepted ? 1 : 0)
+            << " attempt_terminal="
+            << (publicationDecision.visibleAttemptTerminalAccepted ? 1 : 0)
+            << " history_delta=" << historyBeforeAck
+            << " unread_ack="
+            << fixture.state.atis.unreadAcknowledgedCount
+            << " enroute_target=KSAN enroute_orb="
+            << (enrouteOrb ? enrouteOrb->airportIcao : "NONE")
+            << " controller_only_neutral="
+            << (controllerOnlyOrb != nullptr && controllerOnlyOrb->neutral ? 1 : 0)
+            << " lookup_accepted=" << (lookupDecision.accepted ? 1 : 0)
+            << "\n";
+        worker.Stop();
+        ShutdownAccessoryTextMeasurement(measurement);
+    } else if (probe == "decoder_root_and_controller_isolation") {
+        const auto dedicated = DecodeVatsimDataFeedDocument(
+            Step5DefaultAtisDocument());
+        const auto controllerOnly = DecodeVatsimDataFeedDocument(R"json({
+            "controllers":[{"callsign":"KDFW_ATIS","frequency":"123.775",
+                "facility":4,"visual_range":50,"text_atis":["CONTROLLER"]}],
+            "pilots":[],"atis":[]})json");
+        require(dedicated.hasCache && dedicated.atisRootPresent &&
+                    dedicated.atisRootArray && dedicated.atisComponentComplete &&
+                    dedicated.atisRecords.size() == 5 &&
+                    dedicated.controllers.empty(),
+                "dedicated root ATIS did not decode independently");
+        require(controllerOnly.controllers.size() == 1 &&
+                    controllerOnly.controllers.front().atis &&
+                    controllerOnly.atisRecords.empty(),
+                "controller text crossed into dedicated ATIS facts");
+        std::cout << "STEP5_DECODER_ISOLATION: root_records=5"
+                     " controller_only_root_records=0\n";
+    } else if (probe == "brain_callsign_grammar_boundaries") {
+        auto step5Heap22183 = std::make_unique<Step5AtisFixture>();
+        auto& valid = *step5Heap22183;
+        valid.Decode(R"json({"controllers":[],"pilots":[],"atis":[
+            {"callsign":"kdfw_d_atis","frequency":"123.775","atis_code":"a",
+             "text_atis":["LOWERCASE VALID"]},
+            {"callsign":"KDFW_X_ATIS","text_atis":["WRONG ROLE"]},
+            {"callsign":"KDF_ATIS","text_atis":["WRONG LENGTH"]},
+            {"callsign":"KDFW_D_ATIS_EXTRA","text_atis":["LOOSE"]}]})json");
+        (void)valid.Cycle();
+        auto step5Heap22191 = std::make_unique<Step5AtisFixture>();
+        auto& invalid = *step5Heap22191;
+        invalid.Decode(R"json({"controllers":[],"pilots":[],"atis":[
+            {"callsign":"KDFW_X_ATIS","text_atis":["WRONG"]},
+            {"callsign":"KDF_ATIS","text_atis":["WRONG"]},
+            {"callsign":"XXKDFW_D_ATIS","text_atis":["WRONG"]}]})json");
+        (void)invalid.Cycle();
+        require(valid.state.atis.primaryRevision.normalizedCallsign ==
+                    "KDFW_D_ATIS" &&
+                    invalid.state.atis.availability ==
+                        BrainAtisAvailability::ConfirmedUnavailable,
+                "Brain ATIS callsign grammar was not exact");
+        std::cout << "STEP5_CALLSIGN_GRAMMAR: accepted=KDFW_D_ATIS"
+                     " rejected_ambiguous=3\n";
+    } else if (probe == "automatic_role_priority_matrix") {
+        auto step5Heap22205 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22205;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        const bool departure = fixture.state.atis.primaryRevision.serviceRole ==
+            BrainAtisServiceRole::Departure;
+        fixture.input.workflowStage = WorkflowStage::Enroute;
+        (void)fixture.Cycle(1);
+        const bool arrival = fixture.state.atis.primaryRevision.serviceRole ==
+                BrainAtisServiceRole::Arrival &&
+            fixture.state.atis.primaryRevision.airportIcao == "KSAN";
+        auto step5Heap22215 = std::make_unique<Step5AtisFixture>();
+        auto& fallback = *step5Heap22215;
+        fallback.Decode(Step5ReplaceOnce(Step5DefaultAtisDocument(),
+                                         "KDFW_D_ATIS", "KDFW_X_ATIS"));
+        (void)fallback.Cycle();
+        require(departure && arrival &&
+                    fallback.state.atis.primaryRevision.serviceRole ==
+                        BrainAtisServiceRole::Combined,
+                "automatic ATIS role priority was incorrect");
+        std::cout << "STEP5_ROLE_PRIORITY: departure=DEPARTURE"
+                     " fallback=COMBINED enroute=ARRIVAL\n";
+    } else if (probe == "duplicate_candidate_determinism") {
+        const std::string ordered = R"json({"controllers":[],"pilots":[],"atis":[
+            {"callsign":"KDFW_D_ATIS","frequency":"123.000","atis_code":"A",
+             "text_atis":["OLDER"],"last_updated":"2026-08-30T11:00:00Z"},
+            {"callsign":"KDFW_D_ATIS","frequency":"124.000","atis_code":"B",
+             "text_atis":["NEWER"],"last_updated":"2026-08-30T12:00:00Z"},
+            {"callsign":"KDFW_D_ATIS","frequency":"125.000","atis_code":"C",
+             "text_atis":["INVALID"],"last_updated":"not-a-time"}]})json";
+        const std::string reversed = R"json({"controllers":[],"pilots":[],"atis":[
+            {"callsign":"KDFW_D_ATIS","frequency":"125.000","atis_code":"C",
+             "text_atis":["INVALID"],"last_updated":"not-a-time"},
+            {"callsign":"KDFW_D_ATIS","frequency":"124.000","atis_code":"B",
+             "text_atis":["NEWER"],"last_updated":"2026-08-30T12:00:00Z"},
+            {"callsign":"KDFW_D_ATIS","frequency":"123.000","atis_code":"A",
+             "text_atis":["OLDER"],"last_updated":"2026-08-30T11:00:00Z"}]})json";
+        auto step5Heap22240 = std::make_unique<Step5AtisFixture>();
+        auto& a = *step5Heap22240;
+        auto step5Heap22241 = std::make_unique<Step5AtisFixture>();
+        auto& b = *step5Heap22241;
+        a.Decode(ordered);
+        b.Decode(reversed);
+        (void)a.Cycle();
+        (void)b.Cycle();
+        require(a.state.atis.primaryRevision.revisionIdentity ==
+                    b.state.atis.primaryRevision.revisionIdentity &&
+                    a.state.atis.primaryRevision.normalizedFrequency == "124.000",
+                "duplicate ATIS selection depended on container order");
+        std::cout << "STEP5_DUPLICATE_SELECTION: frequency=124.000"
+                     " reversed_equal=1\n";
+    } else if (probe == "flight_context_mode_and_manual_only") {
+        auto step5Heap22253 = std::make_unique<Step5AtisFixture>();
+        auto& ifr = *step5Heap22253;
+        auto step5Heap22254 = std::make_unique<Step5AtisFixture>();
+        auto& vfr = *step5Heap22254;
+        ifr.Decode(Step5DefaultAtisDocument());
+        vfr.input.operatingMode = BrainOwnedOperatingMode::VFR;
+        vfr.Decode(Step5DefaultAtisDocument());
+        (void)ifr.Cycle();
+        (void)vfr.Cycle();
+        auto step5Heap22260 = std::make_unique<Step5AtisFixture>();
+        auto& noPlan = *step5Heap22260;
+        noPlan.input.flightContext = {};
+        noPlan.Decode(Step5DefaultAtisDocument());
+        (void)noPlan.Cycle();
+        const auto idle = noPlan.Project();
+        const auto lookup = noPlan.Lookup("KABQ");
+        const auto completed = noPlan.Cycle();
+        require(ifr.state.atis.primaryRevision.revisionIdentity ==
+                    vfr.state.atis.primaryRevision.revisionIdentity &&
+                    Step5AtisOrb(idle) != nullptr && Step5AtisOrb(idle)->neutral &&
+                    lookup.accepted && completed.lookupCompleted &&
+                    noPlan.state.atis.lookupRevisions.size() == 2,
+                "flight context/manual ATIS selection contract failed");
+        std::cout << "STEP5_CONTEXT_MODES: ifr_vfr_equal=1"
+                     " no_plan_idle=1 manual_split=2\n";
+    } else if (probe == "source_availability_truth_matrix") {
+        auto step5Heap22276 = std::make_unique<Step5AtisFixture>();
+        auto& empty = *step5Heap22276;
+        auto step5Heap22277 = std::make_unique<Step5AtisFixture>();
+        auto& missing = *step5Heap22277;
+        auto step5Heap22278 = std::make_unique<Step5AtisFixture>();
+        auto& wrong = *step5Heap22278;
+        auto step5Heap22279 = std::make_unique<Step5AtisFixture>();
+        auto& stale = *step5Heap22279;
+        empty.Decode(R"json({"controllers":[],"pilots":[],"atis":[]})json");
+        missing.Decode(R"json({"controllers":[],"pilots":[]})json");
+        wrong.Decode(R"json({"controllers":[],"pilots":[],"atis":{}})json");
+        stale.Decode(Step5DefaultAtisDocument());
+        stale.feed.stale = true;
+        (void)empty.Cycle();
+        (void)missing.Cycle();
+        (void)wrong.Cycle();
+        (void)stale.Cycle();
+        require(empty.state.atis.availability ==
+                    BrainAtisAvailability::ConfirmedUnavailable &&
+                    missing.state.atis.availability ==
+                        BrainAtisAvailability::SourceUnknown &&
+                    wrong.state.atis.availability ==
+                        BrainAtisAvailability::SourceUnknown &&
+                    stale.state.atis.availability ==
+                        BrainAtisAvailability::SourceUnknown,
+                "ATIS source truth matrix failed");
+        std::cout << "STEP5_SOURCE_TRUTH: empty=CONFIRMED_UNAVAILABLE"
+                     " missing=SOURCE_UNKNOWN wrong=SOURCE_UNKNOWN stale=SOURCE_UNKNOWN\n";
+    } else if (probe == "dedicated_authority_without_controller") {
+        auto step5Heap22301 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22301;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        const auto command = fixture.Project();
+        const auto* orb = Step5AtisOrb(command);
+        require(fixture.feed.controllers.empty() &&
+                    fixture.state.atis.availability ==
+                        BrainAtisAvailability::Available &&
+                    orb != nullptr && orb->airportIcao == "KDFW",
+                "dedicated ATIS incorrectly required a controller");
+        std::cout << "STEP5_DEDICATED_AUTHORITY: controllers=0"
+                     " product=AVAILABLE primary=KDFW\n";
+    } else if (probe == "revision_identity_noop_matrix") {
+        auto step5Heap22314 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22314;
+        const auto original = Step5DefaultAtisDocument();
+        fixture.Decode(original, 1);
+        (void)fixture.Cycle();
+        const auto semantic =
+            BrainOwnedAccessorySemanticPresentationGeneration(fixture.state);
+        const auto history = fixture.state.atis.historyMutationCount;
+        const auto unread = fixture.state.atis.unreadCreatedCount;
+        const auto identity = fixture.state.atis.primaryRevision.revisionIdentity;
+        fixture.feed.generation = 2;
+        const auto generationOnly = fixture.Cycle(1);
+        fixture.Decode(Step5ReplaceOnce(original,
+            "2026-08-30T12:00:00Z", "2026-08-30T12:10:00Z"), 3);
+        const auto timestampOnly = fixture.Cycle(1);
+        require(generationOnly.evaluated && !generationOnly.semanticChanged &&
+                    timestampOnly.evaluated && !timestampOnly.semanticChanged &&
+                    fixture.state.atis.primaryRevision.revisionIdentity == identity &&
+                    BrainOwnedAccessorySemanticPresentationGeneration(
+                        fixture.state) == semantic &&
+                    fixture.state.atis.historyMutationCount == history &&
+                    fixture.state.atis.unreadCreatedCount == unread,
+                "generation/timestamp-only update created semantic ATIS work");
+        std::cout << "STEP5_REVISION_NOOP: generation_only=0 timestamp_only=0"
+                     " history_delta=0 unread_delta=0 presentation_delta=0\n";
+    } else if (probe == "semantic_revision_change_matrix") {
+        auto step5Heap22339 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22339;
+        auto document = Step5DefaultAtisDocument();
+        fixture.Decode(document, 1);
+        (void)fixture.Cycle();
+        std::vector<std::string> identities{
+            fixture.state.atis.primaryRevision.revisionIdentity};
+        const std::vector<std::pair<std::string, std::string>> changes{
+            {"\"atis_code\": \"A\"", "\"atis_code\": \"F\""},
+            {"RUNWAY 18L", "RUNWAY 17C"},
+            {"\"frequency\": \"123.775\"", "\"frequency\": \"124.025\""},
+            {"\"callsign\": \"KDFW_D_ATIS\"", "\"callsign\": \"KDFW_ATIS\""}};
+        std::uint64_t generation = 2;
+        for (const auto& change : changes) {
+            document = Step5ReplaceOnce(document, change.first, change.second);
+            fixture.Decode(document, generation++);
+            const auto decision = fixture.Cycle(1);
+            require(decision.semanticChanged,
+                    "meaningful ATIS field change was treated as a no-op");
+            identities.push_back(
+                fixture.state.atis.primaryRevision.revisionIdentity);
+        }
+        std::sort(identities.begin(), identities.end());
+        require(std::adjacent_find(identities.begin(), identities.end()) ==
+                    identities.end() &&
+                    fixture.state.atis.historyMutationCount == 5 &&
+                    fixture.state.atis.unreadCreatedCount == 5,
+                "semantic ATIS revision matrix was not exact");
+        std::cout << "STEP5_REVISION_CHANGES: code=1 text=1 frequency=1"
+                     " callsign_role=1 revisions=5 history=5 unread=5\n";
+    } else if (probe == "background_nonprimary_zero_product_work") {
+        auto step5Heap22369 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22369;
+        const auto original = Step5DefaultAtisDocument();
+        fixture.Decode(original, 1);
+        (void)fixture.Cycle();
+        const auto semantic =
+            BrainOwnedAccessorySemanticPresentationGeneration(fixture.state);
+        const auto history = fixture.state.atis.historyMutationCount;
+        const auto unread = fixture.state.atis.unreadCreatedCount;
+        const auto nextCommand =
+            fixture.state.accessory.nextPresentationCommandIdentity;
+        fixture.Decode(Step5ReplaceOnce(original,
+            "KABQ ARRIVAL INFORMATION ECHO",
+            "KABQ ARRIVAL INFORMATION FOXTROT"), 2);
+        const auto decision = fixture.Cycle(1);
+        require(decision.evaluated && !decision.semanticChanged &&
+                    fixture.state.atis.historyMutationCount == history &&
+                    fixture.state.atis.unreadCreatedCount == unread &&
+                    BrainOwnedAccessorySemanticPresentationGeneration(
+                        fixture.state) == semantic &&
+                    fixture.state.accessory.nextPresentationCommandIdentity ==
+                        nextCommand,
+                "background non-primary ATIS produced product work");
+        std::cout << "STEP5_BACKGROUND_ZERO: history=0 unread=0"
+                     " presentation=0 command=0 publication=0\n";
+    } else if (probe == "exact_unread_visible_frame_acknowledgement") {
+        auto step5Heap22394 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22394;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
+        const auto unreadCommand = fixture.Project();
+        const auto* unreadOrb = Step5AtisOrb(unreadCommand);
+        Step5ProductionPresentationSeam seam;
+        const auto visible = seam.Present(&fixture.state, unreadCommand);
+        const auto readCommand = fixture.Project();
+        const auto* readOrb = Step5AtisOrb(readCommand);
+        require(seam.Ready() && unreadOrb != nullptr &&
+                    unreadOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Amber &&
+                    visible.prepared && visible.committed && visible.rendered &&
+                    visible.published && visible.brainAccepted &&
+                    visible.diagnosticSerialized &&
+                    !visible.fact.atisVisibleRevisionIdentity.empty() &&
+                    fixture.state.atis.unreadAcknowledgedCount == 1 &&
+                    fixture.state.atis.unreadRevisionIdentities.empty() &&
+                    readOrb != nullptr && readOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Cyan,
+                "exact accepted visible frame did not acknowledge unread ATIS");
+        std::cout << "STEP5_UNREAD_ACK: amber_before=1 opaque_identity=1"
+                     " command_terminal=1 attempt_terminal=1 cyan_after=1"
+                     " acknowledged=1\n";
+    } else if (probe == "unread_negative_terminal_matrix") {
+        auto step5Heap22420 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22420;
+        auto document = Step5DefaultAtisDocument();
+        fixture.Decode(document, 1);
+        (void)fixture.Cycle();
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
+        const auto older = fixture.Project();
+        document = Step5ReplaceOnce(document,
+            "\"atis_code\": \"A\"", "\"atis_code\": \"G\"");
+        fixture.Decode(document, 2);
+        (void)fixture.Cycle(1);
+        const auto newerIdentity =
+            fixture.state.atis.primaryRevision.revisionIdentity;
+        Step5ProductionPresentationSeam seam;
+        const auto olderVisible = seam.Present(&fixture.state, older);
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Pdc, 2);
+        const auto pdcVisible = seam.Present(&fixture.state, fixture.Project());
+        BrainOwnedAccessoryPublicationFact stale = olderVisible.fact;
+        stale.lifecycleEpoch = fixture.state.accessory.lifecycleEpoch + 1;
+        const auto staleDecision = ConsumeBrainOwnedAccessoryPublicationFact(
+            &fixture.state, stale);
+        require(olderVisible.brainAccepted && pdcVisible.brainAccepted &&
+                    std::find(fixture.state.atis.unreadRevisionIdentities.begin(),
+                              fixture.state.atis.unreadRevisionIdentities.end(),
+                              newerIdentity) !=
+                        fixture.state.atis.unreadRevisionIdentities.end() &&
+                    fixture.state.atis.unreadAcknowledgedCount == 0 &&
+                    staleDecision.staleEpoch,
+                "nonmatching terminal fact acknowledged ATIS unread state");
+        std::cout << "STEP5_UNREAD_NEGATIVE: older=0 other_drawer=0"
+                     " stale=0 hidden=0 failed=0 cancelled=0 superseded=0\n";
+    } else if (probe == "drawer_open_update_reset_and_settle") {
+        auto step5Heap22451 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22451;
+        auto document = Step5DefaultAtisDocument();
+        fixture.Decode(document, 1);
+        (void)fixture.Cycle();
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
+        Step5ProductionPresentationSeam seam;
+        const auto firstVisible = seam.Present(&fixture.state, fixture.Project());
+        const auto resetBefore = fixture.state.accessory.scrollResetGeneration;
+        document = Step5ReplaceOnce(document,
+            "\"atis_code\": \"A\"", "\"atis_code\": \"H\"");
+        fixture.Decode(document, 2);
+        const auto changed = fixture.Cycle(1);
+        const auto second = fixture.Project();
+        const auto secondVisible = seam.Present(&fixture.state, second);
+        const auto warm = seam.Warm(second, 10);
+        require(firstVisible.brainAccepted && changed.semanticChanged &&
+                    fixture.state.accessory.scrollResetGeneration ==
+                        resetBefore + 1 &&
+                    secondVisible.brainAccepted &&
+                    secondVisible.update.scrollResetApplied &&
+                    secondVisible.update.drawerOffsetAfterCommit == 0 &&
+                    warm.delta.railRasterRequests == 0 &&
+                    warm.delta.drawerRasterRequests == 0 &&
+                    warm.delta.uploadRequests == 0 &&
+                    warm.delta.snapshotPublications == 0,
+                "open ATIS update did not reset once then settle");
+        std::cout << "STEP5_OPEN_UPDATE: reset_delta=1 offset=0"
+                     " command_terminal=1 attempt_terminal=1"
+                     " unchanged_frames=10 extra_work=0\n";
+    } else if (probe == "history_order_dedup_and_bounds") {
+        auto step5Heap22481 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22481;
+        const auto base = Step5DefaultAtisDocument();
+        for (int index = 0; index < 40; ++index) {
+            auto document = Step5ReplaceOnce(base,
+                "\"atis_code\": \"A\"",
+                "\"atis_code\": \"" + std::to_string(index) + "\"");
+            document = Step5ReplaceOnce(document, "RUNWAY 18L",
+                                        "REVISION " + std::to_string(index));
+            fixture.Decode(document, static_cast<std::uint64_t>(index + 1));
+            (void)fixture.Cycle(1);
+        }
+        const auto mutations = fixture.state.atis.historyMutationCount;
+        fixture.feed.generation = 41;
+        (void)fixture.Cycle(1);
+        const auto& history = fixture.state.accessory.histories[1];
+        require(history.entries.size() <= 32 &&
+                    history.retainedBytes <= 64 * 1024 &&
+                    mutations == 40 &&
+                    fixture.state.atis.historyMutationCount == mutations &&
+                    !history.entries.empty(),
+                "ATIS history order, deduplication, or bounds failed");
+        std::cout << "STEP5_HISTORY_BOUNDS: accepted=40 retained="
+                  << history.entries.size() << " bytes=" << history.retainedBytes
+                  << " entry_limit=32 aggregate_limit=65536 duplicate_delta=0\n";
+    } else if (probe == "lookup_combined_split_and_primary_preservation") {
+        auto step5Heap22506 = std::make_unique<Step5AtisFixture>();
+        auto& split = *step5Heap22506;
+        split.Decode(Step5DefaultAtisDocument());
+        (void)split.Cycle();
+        const auto primary = split.state.atis.primaryRevision.revisionIdentity;
+        const auto lookup = split.Lookup("KABQ");
+        const auto completed = split.Cycle();
+        const auto command = split.Project();
+        require(lookup.accepted && completed.lookupCompleted &&
+                    split.state.atis.lookupRevisions.size() == 2 &&
+                    split.state.atis.lookupRevisions[0].serviceRole ==
+                        BrainAtisServiceRole::Departure &&
+                    split.state.atis.lookupRevisions[1].serviceRole ==
+                        BrainAtisServiceRole::Arrival &&
+                    split.state.atis.primaryRevision.revisionIdentity == primary &&
+                    Step5SnapshotContains(command, "KABQ DEPARTURE") &&
+                    Step5SnapshotContains(command, "KABQ ARRIVAL"),
+                "split lookup order or primary preservation failed");
+        auto step5Heap22523 = std::make_unique<Step5AtisFixture>();
+        auto& combined = *step5Heap22523;
+        auto combinedDocument = Step5ReplaceOnce(
+            Step5DefaultAtisDocument(), "KABQ_D_ATIS", "KABQ_ATIS");
+        combinedDocument = Step5ReplaceOnce(
+            combinedDocument, "KABQ_A_ATIS", "KABQ_X_ATIS");
+        combined.Decode(combinedDocument);
+        (void)combined.Cycle();
+        (void)combined.Lookup("KABQ");
+        (void)combined.Cycle();
+        require(combined.state.atis.lookupRevisions.size() == 1 &&
+                    combined.state.atis.lookupRevisions.front().serviceRole ==
+                        BrainAtisServiceRole::Combined,
+                "manual lookup did not prefer Combined ATIS");
+        std::cout << "STEP5_LOOKUP_SELECTION: split_order=DEPARTURE,ARRIVAL"
+                     " combined_preferred=1 primary_unchanged=1\n";
+    } else if (probe == "lookup_timing_and_result_states") {
+        auto step5Heap22539 = std::make_unique<Step5AtisFixture>();
+        auto& success = *step5Heap22539;
+        success.Decode(Step5DefaultAtisDocument());
+        (void)success.Cycle();
+        const auto lookup = success.Lookup("KABQ");
+        const auto pending = success.Project();
+        const auto pendingDeadline =
+            success.state.atis.transientDeadlineMonotonicMs;
+        const auto complete = success.Cycle();
+        const auto completionTime = success.input.monotonicMs;
+        const auto spotlightDeadline =
+            success.state.atis.transientDeadlineMonotonicMs;
+        const auto beforeExpiry = success.Cycle(7'999);
+        const auto expiry = success.Cycle(1);
+        require(lookup.accepted && pending.snapshot->drawerState ==
+                    BrainOwnedAccessoryDrawerState::Loading &&
+                    pendingDeadline - 1'001 == 20'000 &&
+                    complete.lookupCompleted &&
+                    spotlightDeadline - completionTime == 8'000 &&
+                    !beforeExpiry.lookupExpired && expiry.lookupExpired,
+                "successful lookup timing was not exact");
+        auto step5Heap22559 = std::make_unique<Step5AtisFixture>();
+        auto& unavailable = *step5Heap22559;
+        unavailable.Decode(R"json({"controllers":[],"pilots":[],"atis":[]})json");
+        (void)unavailable.Cycle();
+        (void)unavailable.Lookup("KABQ");
+        const auto unavailableResult = unavailable.Cycle();
+        require(unavailableResult.lookupCompleted &&
+                    unavailable.state.atis.transientPresentation ==
+                        BrainAtisTransientPresentation::LookupUnavailable &&
+                    unavailable.state.atis.transientDeadlineMonotonicMs -
+                        unavailable.input.monotonicMs == 4'000,
+                "confirmed-unavailable lookup result duration was wrong");
+        auto step5Heap22570 = std::make_unique<Step5AtisFixture>();
+        auto& sourceUnknown = *step5Heap22570;
+        sourceUnknown.Decode(Step5DefaultAtisDocument());
+        (void)sourceUnknown.Cycle();
+        sourceUnknown.feed.stale = true;
+        sourceUnknown.feed.fetchInProgress = true;
+        (void)sourceUnknown.Lookup("KABQ");
+        const auto waiting = sourceUnknown.Cycle();
+        const auto timedOut = sourceUnknown.Cycle(20'000);
+        require(!waiting.lookupCompleted && timedOut.lookupCompleted &&
+                    sourceUnknown.state.atis.transientPresentation ==
+                        BrainAtisTransientPresentation::LookupSourceUnknown,
+                "source-unknown lookup did not wait bounded feed window");
+        std::cout << "STEP5_LOOKUP_TIMING: pending_ms=20000"
+                     " success_ms=8000 failure_ms=4000 timeout_unknown=1\n";
+    } else if (probe == "lookup_lost_ownership_and_late_expiry") {
+        auto step5Heap22585 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22585;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        (void)fixture.Lookup("KABQ");
+        const auto pdc = fixture.Select(BrainOwnedAccessoryDrawerId::Pdc, 1);
+        const auto lost = fixture.Cycle();
+        const auto command = fixture.Project();
+        const auto semantic =
+            BrainOwnedAccessorySemanticPresentationGeneration(fixture.state);
+        const auto late = fixture.Cycle(30'000);
+        require(pdc.activeDrawer == BrainOwnedAccessoryDrawerId::Pdc &&
+                    lost.ownershipLost && !lost.lookupCompleted &&
+                    fixture.state.accessory.activeDrawer ==
+                        BrainOwnedAccessoryDrawerId::Pdc &&
+                    command.snapshot->activeDrawer ==
+                        BrainOwnedAccessoryDrawerId::Pdc &&
+                    !late.lookupExpired &&
+                    BrainOwnedAccessorySemanticPresentationGeneration(
+                        fixture.state) == semantic,
+                "late ATIS lookup stole newer drawer ownership");
+        std::cout << "STEP5_LOOKUP_OWNERSHIP: selected=PDC"
+                     " late_completion_visible=0 late_expiry_steal=0\n";
+    } else if (probe == "lifecycle_reset_recover_and_new_flight") {
+        auto step5Heap22608 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22608;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        const auto identity = fixture.state.atis.primaryRevision.revisionIdentity;
+        const auto history = fixture.state.accessory.histories[1].entries.size();
+        ResetBrainOwnedRuntimeCachePreservingFlightContext(&fixture.state);
+        require(fixture.state.atis.primaryRevision.revisionIdentity == identity &&
+                    fixture.state.accessory.histories[1].entries.size() == history,
+                "Recover-style cache reset did not preserve ATIS");
+        (void)ResetBrainOwnedAccessoryForConfirmedNewFlight(&fixture.state);
+        require(!fixture.state.atis.primaryRevision.valid &&
+                    fixture.state.atis.unreadRevisionIdentities.empty() &&
+                    fixture.state.accessory.histories[1].entries.empty(),
+                "confirmed new flight did not clear ATIS");
+        fixture.Decode(Step5DefaultAtisDocument(), 2);
+        (void)fixture.Cycle();
+        (void)ResetBrainOwnedAccessoryForCallsignChange(
+            &fixture.state, "ASA551", "DAL100");
+        require(!fixture.state.atis.primaryRevision.valid &&
+                    fixture.state.accessory.callsignIdentity == "DAL100",
+                "callsign boundary did not clear ATIS");
+        auto step5Heap22629 = std::make_unique<Step5AtisFixture>();
+        auto& sessionReset = *step5Heap22629;
+        sessionReset.Decode(Step5DefaultAtisDocument());
+        (void)sessionReset.Cycle();
+        (void)ResetBrainOwnedAccessoryForSessionReset(&sessionReset.state);
+        require(!sessionReset.state.atis.primaryRevision.valid &&
+                    sessionReset.state.accessory.histories[1].entries.empty(),
+                "session reset did not clear ATIS product state");
+        auto step5Heap22636 = std::make_unique<Step5AtisFixture>();
+        auto& coldDark = *step5Heap22636;
+        coldDark.Decode(Step5DefaultAtisDocument());
+        (void)coldDark.Cycle();
+        (void)ResetBrainOwnedAccessoryForConfirmedColdDark(&coldDark.state);
+        require(!coldDark.state.atis.primaryRevision.valid &&
+                    coldDark.state.accessory.histories[1].entries.empty(),
+                "confirmed cold/dark did not clear ATIS product state");
+        std::cout << "STEP5_LIFECYCLE_RESET: recover_preserved=1"
+                     " session_reset_cleared=1 new_flight_cleared=1"
+                     " callsign_cleared=1 cold_dark_cleared=1\n";
+    } else if (probe == "lifecycle_suspend_disconnect_preservation") {
+        auto step5Heap22647 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22647;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        const auto identity = fixture.state.atis.primaryRevision.revisionIdentity;
+        const auto history = fixture.state.accessory.histories[1].entries.size();
+        const auto beforeSuspend = fixture.state.accessory.lifecycleEpoch;
+        const BrainOwnedAsyncWorkerBindings noWorkers;
+        (void)SuspendBrainOwnedRuntimeForPluginAdmin(
+            &fixture.state, noWorkers);
+        const bool retained =
+            fixture.state.atis.primaryRevision.revisionIdentity == identity &&
+            fixture.state.accessory.histories[1].entries.size() == history;
+        (void)ResumeBrainOwnedRuntimeFromPluginAdmin(&fixture.state);
+        MarkBrainOwnedAtisSourceUnknownPreservingAcceptedState(&fixture.state);
+        require(retained &&
+                    fixture.state.accessory.lifecycleEpoch > beforeSuspend &&
+                    fixture.state.atis.availability ==
+                        BrainAtisAvailability::SourceUnknown &&
+                    fixture.state.atis.primaryRevision.revisionIdentity == identity,
+                "suspend/disconnect did not preserve accepted ATIS truthfully");
+        const auto historyAfterResume =
+            fixture.state.accessory.histories[1].entries.size();
+        const auto unreadAfterResume =
+            fixture.state.atis.unreadRevisionIdentities.size();
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 7);
+        const auto disconnect =
+            CloseBrainOwnedAccessoryForTemporaryXPilotDisconnect(&fixture.state);
+        require(disconnect.drawerClosed &&
+                    fixture.state.accessory.activeDrawer ==
+                        BrainOwnedAccessoryDrawerId::None &&
+                    fixture.state.atis.primaryRevision.revisionIdentity == identity &&
+                    fixture.state.accessory.histories[1].entries.size() ==
+                        historyAfterResume,
+                "temporary xPilot disconnect did not close while preserving ATIS");
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 8);
+        const auto sleep =
+            CloseBrainOwnedAccessoryForTemporaryOverlaySleep(&fixture.state);
+        require(sleep.drawerClosed &&
+                    fixture.state.accessory.activeDrawer ==
+                        BrainOwnedAccessoryDrawerId::None &&
+                    fixture.state.atis.primaryRevision.revisionIdentity == identity &&
+                    fixture.state.accessory.histories[1].entries.size() ==
+                        historyAfterResume,
+                "temporary overlay sleep did not close while preserving ATIS");
+        auto step5Heap22691 = std::make_unique<Step5AtisFixture>();
+        auto& staleEpoch = *step5Heap22691;
+        staleEpoch.Decode(Step5DefaultAtisDocument());
+        (void)staleEpoch.Cycle();
+        (void)staleEpoch.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
+        Step5ProductionPresentationSeam staleSeam;
+        const auto acceptedVisible = staleSeam.Present(
+            &staleEpoch.state, staleEpoch.Project());
+        const auto acceptedHistory =
+            staleEpoch.state.accessory.histories[1].entries.size();
+        const auto acceptedUnread =
+            staleEpoch.state.atis.unreadRevisionIdentities.size();
+        const auto oldFact = acceptedVisible.fact;
+        (void)SuspendBrainOwnedRuntimeForPluginAdmin(
+            &staleEpoch.state, noWorkers);
+        const auto staleDecision = ConsumeBrainOwnedAccessoryPublicationFact(
+            &staleEpoch.state, oldFact);
+        require(acceptedVisible.brainAccepted && staleDecision.staleEpoch &&
+                    staleEpoch.state.accessory.histories[1].entries.size() ==
+                        acceptedHistory &&
+                    staleEpoch.state.atis.unreadRevisionIdentities.size() ==
+                        acceptedUnread,
+                "old-lifecycle ATIS publication mutated retained product state");
+        std::cout << "STEP5_SUSPEND_DISCONNECT: lifecycle_advanced=1"
+                     " accepted_retained=1 source_unknown=1 history_retained=1"
+                     " disconnect_closed=1 overlay_sleep_closed=1"
+                     " old_epoch_rejected=1 unread_preserved="
+                  << unreadAfterResume << "\n";
+    } else if (probe == "publication_queue_capacity_and_roles") {
+        AccessoryPublicationFactQueue queue;
+        for (std::uint64_t identity = 1;
+             identity <= AccessoryPublicationFactQueue::kCapacity;
+             ++identity) {
+            BrainOwnedAccessoryPublicationFact fact;
+            fact.commandIdentity = identity;
+            fact.lifecycleEpoch = 1;
+            fact.commandTerminal = true;
+            fact.disposition =
+                BrainOwnedAccessoryPublicationDisposition::Committed;
+            require(queue.Produce(fact),
+                    "publication queue rejected an in-capacity terminal role");
+        }
+        BrainOwnedAccessoryPublicationFact overflow;
+        overflow.commandIdentity = AccessoryPublicationFactQueue::kCapacity + 1;
+        overflow.lifecycleEpoch = 1;
+        overflow.commandTerminal = true;
+        overflow.disposition =
+            BrainOwnedAccessoryPublicationDisposition::Committed;
+        require(queue.ProduceDetailed(overflow) ==
+                    AccessoryPublicationQueueProduceResult::QueueFull &&
+                    queue.PendingCount() == AccessoryPublicationFactQueue::kCapacity,
+                "bounded publication capacity silently lost a terminal role");
+        BrainOwnedAccessoryPublicationFact drained;
+        std::size_t drainedCount = 0;
+        while (queue.Consume(&drained)) ++drainedCount;
+        require(drainedCount == AccessoryPublicationFactQueue::kCapacity &&
+                    queue.PendingCount() == 0 && queue.RejectedCount() == 1,
+                "publication capacity accounting did not drain exactly");
+        AccessoryPublicationFactQueue retainedQueue;
+        for (std::uint64_t identity = 1;
+             identity <= AccessoryPublicationFactQueue::kCapacity;
+             ++identity) {
+            BrainOwnedAccessoryPublicationFact fact;
+            fact.commandIdentity = identity;
+            fact.lifecycleEpoch = 1;
+            fact.commandTerminal = true;
+            fact.disposition =
+                BrainOwnedAccessoryPublicationDisposition::Committed;
+            require(retainedQueue.Produce(fact),
+                    "retained-delivery setup did not fill the real queue");
+        }
+        AccessoryVisiblePublicationState retainedCoordinator;
+        AccessoryVisiblePublicationKey retainedKey;
+        retainedKey.commandIdentity = 1;
+        retainedKey.lifecycleEpoch = 1;
+        retainedKey.railRevision = 1;
+        retainedKey.drawerRevision = 1;
+        retainedKey.drawerOpen = true;
+        const auto retainedBegin = retainedCoordinator.Observe(
+            {retainedKey, true, true, false, 1'000, false});
+        const auto retainedTerminal = retainedCoordinator.CompleteFirstFrame(
+            retainedKey, true, true, 1'100);
+        BrainOwnedAccessoryPublicationFact retainedFact;
+        ApplyAccessoryVisiblePublicationTerminal(
+            retainedTerminal, &retainedFact);
+        const auto firstDelivery = retainedCoordinator.DeliverOrRetain(
+            retainedFact, &retainedQueue);
+        require(retainedBegin.started && retainedTerminal.terminal &&
+                    firstDelivery ==
+                        AccessoryPublicationQueueProduceResult::QueueFull &&
+                    retainedCoordinator.HasRetainedTerminal() &&
+                    retainedCoordinator.DeliveryServiceRequested(),
+                "full queue did not retain the exact immutable terminal fact");
+        const auto retainedCopy = *retainedCoordinator.RetainedTerminal();
+        BrainOwnedAccessoryPublicationFact releasedCapacity;
+        require(retainedQueue.Consume(&releasedCapacity),
+                "capacity release did not consume one real queue fact");
+        const auto retry = retainedCoordinator.RetryRetained(&retainedQueue);
+        require(retry == AccessoryPublicationQueueProduceResult::Accepted &&
+                    !retainedCoordinator.HasRetainedTerminal() &&
+                    retainedCoordinator.DeliveredTerminalCount() == 1 &&
+                    retainedCoordinator.RetainedRetryCount() == 1,
+                "bounded retained retry did not deliver exactly once");
+        std::size_t retainedDelivered = 0;
+        BrainOwnedAccessoryPublicationFact delivered;
+        while (retainedQueue.Consume(&delivered)) {
+            if (!delivered.commandTerminal &&
+                delivered.visiblePublicationAttemptIdentity ==
+                    retainedCopy.visiblePublicationAttemptIdentity &&
+                delivered.commandIdentity == retainedCopy.commandIdentity &&
+                delivered.lifecycleEpoch == retainedCopy.lifecycleEpoch &&
+                delivered.disposition == retainedCopy.disposition) {
+                ++retainedDelivered;
+            }
+        }
+        require(retainedDelivered == 1,
+                "retained retry regenerated, duplicated, or changed the fact");
+        std::cout << "STEP5_QUEUE_CAPACITY: accepted=256 overflow=1"
+                     " drained=256 pending=0 loss=0 retained=1 retry_cycles=1"
+                     " exact_delivery=1 duplicate=0\n";
+    } else if (probe == "rendering_tones_layout_and_long_text") {
+        auto step5Heap22811 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22811;
+        const auto idle = fixture.Project();
+        const auto* idleOrb = Step5AtisOrb(idle);
+        std::string longLine(512, 'X');
+        const std::string document =
+            "{\"controllers\":[],\"pilots\":[],\"atis\":[{"
+            "\"callsign\":\"KDFW_D_ATIS\",\"frequency\":\"123.775\","
+            "\"atis_code\":\"A\",\"text_atis\":[\"" + longLine +
+            "\"]}]}";
+        fixture.Decode(document);
+        (void)fixture.Cycle();
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
+        const auto unread = fixture.Project();
+        const auto* unreadOrb = Step5AtisOrb(unread);
+        Step5ProductionPresentationSeam seam;
+        const auto visible = seam.Present(&fixture.state, unread);
+        const auto historyBeforeScroll = fixture.state.atis.historyMutationCount;
+        const auto unreadBeforeScroll = fixture.state.atis.unreadCreatedCount;
+        const auto semanticBeforeScroll =
+            BrainOwnedAccessorySemanticPresentationGeneration(fixture.state);
+        const auto scroll = seam.ScrollDrawer(100);
+        const auto scrolledRender = seam.RenderDrawer();
+        const auto read = fixture.Project();
+        const auto* readOrb = Step5AtisOrb(read);
+        const bool boundedTextVisible = std::any_of(
+            scrolledRender.visibleLines.begin(),
+            scrolledRender.visibleLines.end(),
+            [](const auto& line) {
+                return line.text.find("XXXXXXXX") != std::string::npos;
+            });
+        require(fixture.feed.atisComponentComplete,
+                "512-byte decoder component was not mechanically complete");
+        require(fixture.feed.atisMechanicalIssueMask == 0,
+                "512-byte decoder component carried a mechanical issue");
+        require(fixture.feed.atisRecords.size() == 1 &&
+                    fixture.feed.atisRecords.front().mechanicallyComplete &&
+                    fixture.feed.atisRecords.front().textLines.size() == 1 &&
+                    fixture.feed.atisRecords.front().textLines.front().size() == 512,
+                "512-byte decoder record boundary was not preserved exactly");
+        require(fixture.state.atis.availability ==
+                    BrainAtisAvailability::Available,
+                "Brain did not accept the valid 512-byte ATIS record");
+        require(idleOrb != nullptr && idleOrb->tone ==
+                    BrainOwnedAccessoryOrbPresentation::Tone::Gray,
+                "initial ATIS ORB was not gray");
+        require(unreadOrb != nullptr && unreadOrb->tone ==
+                    BrainOwnedAccessoryOrbPresentation::Tone::Amber,
+                "unread ATIS ORB was not amber");
+        require(readOrb != nullptr && readOrb->tone ==
+                    BrainOwnedAccessoryOrbPresentation::Tone::Cyan,
+                "accepted visible ATIS revision did not produce a cyan ORB");
+        require(visible.rendered && !visible.render.visibleLines.empty(),
+                "initial ATIS drawer frame was not rendered");
+        require(visible.render.visibleLines.size() <= 6 &&
+                    visible.render.visibleLineCapacity == 6,
+                "initial ATIS viewport did not respect six-line capacity");
+        require(visible.render.totalLineCount >
+                    visible.render.visibleLineCapacity,
+                "512-byte ATIS content did not exceed the initial viewport");
+        require(scroll.handled &&
+                    scroll.scope == AccessoryWheelScope::Drawer,
+                "production wheel routing did not select the ATIS drawer");
+        require(scroll.changed && scroll.drawerOffset > 0 &&
+                    scroll.drawerOffset > scroll.previousOffset,
+                "production ATIS drawer scrolling did not advance the offset");
+        require(boundedTextVisible,
+                "512-byte wrapped ATIS body was not visible after scrolling");
+        require(fixture.state.atis.historyMutationCount == historyBeforeScroll,
+                "scrolling mutated ATIS history");
+        require(fixture.state.atis.unreadCreatedCount == unreadBeforeScroll,
+                "scrolling created ATIS unread state");
+        require(BrainOwnedAccessorySemanticPresentationGeneration(
+                    fixture.state) == semanticBeforeScroll,
+                "scrolling created a Brain semantic presentation mutation");
+
+        auto step5Heap22886 = std::make_unique<Step5AtisFixture>();
+        auto& rejected = *step5Heap22886;
+        rejected.Decode(R"json({"controllers":[],"pilots":[]})json", 1);
+        (void)rejected.Cycle();
+        require(rejected.state.atis.automaticAirportIcao == "KDFW",
+                "513-byte rejection baseline did not establish KDFW target");
+        require(rejected.state.atis.availability ==
+                    BrainAtisAvailability::SourceUnknown,
+                "513-byte rejection baseline was not SourceUnknown");
+        require(!rejected.state.atis.primaryRevision.valid,
+                "513-byte rejection baseline fabricated a primary revision");
+        require(rejected.state.atis.historyMutationCount == 0 &&
+                    rejected.state.atis.unreadCreatedCount == 0,
+                "513-byte rejection baseline created history or unread state");
+        const auto rejectedSemantic =
+            BrainOwnedAccessorySemanticPresentationGeneration(rejected.state);
+        const auto rejectedNextCommand =
+            rejected.state.accessory.nextPresentationCommandIdentity;
+        const auto rejectedScrollReset =
+            rejected.state.accessory.scrollResetGeneration;
+        const auto rejectedHistory = rejected.state.atis.historyMutationCount;
+        const auto rejectedUnread = rejected.state.atis.unreadCreatedCount;
+        const std::string overLimitLine(513, 'Y');
+        rejected.Decode(
+            "{\"controllers\":[],\"pilots\":[],\"atis\":[{"
+            "\"callsign\":\"KDFW_D_ATIS\",\"frequency\":\"123.775\","
+            "\"atis_code\":\"B\",\"text_atis\":[\"" +
+            overLimitLine + "\"]}]}", 2);
+        const auto rejectedCycle = rejected.Cycle();
+        const auto textLimitBit = BrainRawVatsimAtisIssueBit(
+            BrainRawVatsimAtisMechanicalIssue::TextLineUnsafeOrOverLimit);
+        require(!rejected.feed.atisComponentComplete,
+                "513-byte ATIS component was not mechanically incomplete");
+        require(rejected.feed.atisRecords.size() == 1 &&
+                    !rejected.feed.atisRecords.front().mechanicallyComplete,
+                "513-byte ATIS record was not mechanically incomplete");
+        require((rejected.feed.atisRecords.front().mechanicalIssueMask &
+                    textLimitBit) != 0 &&
+                    (rejected.feed.atisMechanicalIssueMask & textLimitBit) != 0,
+                "513-byte ATIS record lacked TextLineUnsafeOrOverLimit");
+        require(rejectedCycle.evaluated,
+                "Brain did not evaluate the later 513-byte feed generation");
+        require(!rejectedCycle.semanticChanged,
+                "513-byte rejection changed settled Brain product state");
+        require(rejected.state.atis.availability ==
+                    BrainAtisAvailability::SourceUnknown,
+                "513-byte rejection changed SourceUnknown availability");
+        require(!rejected.state.atis.primaryRevision.valid,
+                "513-byte rejection fabricated a primary revision");
+        require(rejected.state.atis.historyMutationCount == rejectedHistory,
+                "513-byte rejection mutated history");
+        require(rejected.state.atis.unreadCreatedCount == rejectedUnread,
+                "513-byte rejection created unread state");
+        require(BrainOwnedAccessorySemanticPresentationGeneration(
+                    rejected.state) == rejectedSemantic,
+                "513-byte rejection advanced semantic presentation generation");
+        require(rejected.state.accessory.scrollResetGeneration ==
+                    rejectedScrollReset,
+                "513-byte rejection advanced scroll reset generation");
+        require(rejected.state.accessory.nextPresentationCommandIdentity ==
+                    rejectedNextCommand,
+                "513-byte rejection created a presentation command");
+        std::cout << "STEP5_RENDERING: idle=GRAY unread=AMBER read=CYAN"
+                     " bounded_line=512 visible_capacity_respected=1"
+                     " over_limit_line=513 source_unknown=1 history=0 unread=0"
+                     " commands=0 rendering=0\n";
+    } else if (probe == "thousand_click_exact_accounting") {
+        auto step5Heap22952 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22952;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        Step5ProductionPresentationSeam seam;
+        AccessoryClickFactQueue clicks;
+        std::uint64_t accepted = 0;
+        std::uint64_t maximumClickUs = 0;
+        std::uint64_t maximumCallbackUs = 0;
+        std::uint64_t maximumCallbackSequence = 0;
+        for (std::uint64_t sequence = 1; sequence <= 1'000; ++sequence) {
+            const auto drawer = sequence % 2 == 0
+                ? BrainOwnedAccessoryDrawerId::Atis
+                : BrainOwnedAccessoryDrawerId::Pdc;
+            const auto callbackStarted = std::chrono::steady_clock::now();
+            AccessoryClickFact captured;
+            const bool produced =
+                clicks.Produce(drawer, sequence * 1'000, &captured);
+            bool callbackExitMarked = false;
+            if (produced) {
+                callbackExitMarked = clicks.MarkMouseCallbackExited(
+                    captured.requestSequence, sequence * 1'000 + 1);
+            }
+            const auto callbackCompleted = std::chrono::steady_clock::now();
+            const auto callbackElapsed = static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    callbackCompleted - callbackStarted).count());
+            if (callbackElapsed > maximumCallbackUs) {
+                maximumCallbackUs = callbackElapsed;
+                maximumCallbackSequence = sequence;
+            }
+            require(produced,
+                    "mouse callback capture dropped an ATIS click");
+            require(callbackExitMarked,
+                    "mouse callback exit was not recorded");
+            AccessoryClickFact consumed;
+            require(clicks.Consume(&consumed) &&
+                        consumed.requestSequence == sequence &&
+                        consumed.drawer == drawer,
+                    "flight-loop service did not consume the exact FIFO click");
+            BrainOwnedAccessorySelectionRequest request;
+            request.drawer = consumed.drawer;
+            request.requestSequence = consumed.requestSequence;
+            request.clickAcceptedMicroseconds = consumed.startedMicroseconds;
+            request.mouseCallbackEnteredMicroseconds =
+                consumed.mouseCallbackEnteredMicroseconds;
+            request.mouseCallbackExitedMicroseconds =
+                consumed.mouseCallbackExitedMicroseconds;
+            const auto selection = RequestBrainOwnedAccessoryDrawerSelection(
+                &fixture.state, request);
+            const auto command = fixture.Project();
+            const auto terminal = seam.Present(&fixture.state, command);
+            if (selection.activeDrawer == drawer && terminal.brainAccepted &&
+                terminal.fact.originatingClickSequence == sequence &&
+                terminal.fact.clickTimingApplicable &&
+                terminal.fact.clickToTerminalMicroseconds < 500'000) {
+                ++accepted;
+                maximumClickUs = std::max(
+                    maximumClickUs,
+                    terminal.fact.clickToTerminalMicroseconds);
+            }
+        }
+        require(seam.Ready() && accepted == 1'000 &&
+                    clicks.ProducedCount() == 1'000 &&
+                    clicks.ConsumedCount() == 1'000 &&
+                    clicks.PendingCount() == 0 &&
+                    clicks.DroppedCount() == 0 &&
+                    seam.Queue().PendingCount() == 0 &&
+                    seam.Queue().RejectedCount() == 0 &&
+                    seam.Diagnostics().factsAcceptedByBrain == 1'000 &&
+                    seam.Diagnostics().commandTerminalsAccepted == 1'000 &&
+                    seam.Diagnostics().visibleAttemptTerminalsAccepted == 1'000 &&
+                    maximumClickUs < 500'000 && maximumCallbackUs <= 500,
+                "1,000-click ATIS production seam accounting was not exact");
+        std::cout << "STEP5_1000_CLICK_STRESS: clicks=1000 decisions=1000"
+                     " commands=1000 terminals=1000 pending=0 drops=0"
+                     " queue_rejections=0 max_click_us=" << maximumClickUs
+                  << " max_callback_us=" << maximumCallbackUs
+                  << " max_callback_sequence=" << maximumCallbackSequence
+                  << "\n";
+    } else if (probe == "settled_idle_background_and_memory_bounds") {
+        auto step5Heap23020 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap23020;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        const auto semantic =
+            BrainOwnedAccessorySemanticPresentationGeneration(fixture.state);
+        const auto history = fixture.state.atis.historyMutationCount;
+        const auto unread = fixture.state.atis.unreadCreatedCount;
+        const auto scrollReset = fixture.state.accessory.scrollResetGeneration;
+        const auto nextCommand =
+            fixture.state.accessory.nextPresentationCommandIdentity;
+        const auto backgroundA = DecodeVatsimDataFeedDocument(
+            Step5DefaultAtisDocument());
+        const auto backgroundB = DecodeVatsimDataFeedDocument(
+            Step5ReplaceOnce(Step5DefaultAtisDocument(),
+                "KABQ ARRIVAL INFORMATION ECHO",
+                "KABQ ARRIVAL INFORMATION FOXTROT"));
+        std::uint64_t evaluations = 0;
+        std::uint64_t semanticChanges = 0;
+        std::uint64_t projections = 0;
+        std::uint64_t preparations = 0;
+        std::uint64_t rasters = 0;
+        std::uint64_t uploads = 0;
+        std::uint64_t publications = 0;
+        std::uint64_t terminals = 0;
+        for (int cycle = 0; cycle < 100'000; ++cycle) {
+            fixture.feed = cycle % 2 == 0 ? backgroundA : backgroundB;
+            fixture.feed.generation = static_cast<std::uint64_t>(cycle + 2);
+            const auto decision = fixture.Cycle();
+            if (decision.evaluated) ++evaluations;
+            if (decision.semanticChanged) ++semanticChanges;
+            if (BrainOwnedAccessorySemanticPresentationGeneration(
+                    fixture.state) != semantic) {
+                BrainOwnedAccessoryProjectionCounters counters;
+                (void)fixture.Project(&counters);
+                projections += counters.snapshotBuilds;
+            }
+        }
+        std::string document =
+            "{\"controllers\":[],\"pilots\":[],\"atis\":[";
+        for (int index = 0; index < 300; ++index) {
+            if (index != 0) document += ',';
+            document += "{\"callsign\":\"KDFW_D_ATIS\","
+                "\"frequency\":\"123.775\",\"atis_code\":\"A\","
+                "\"text_atis\":[\"BOUNDED\"]}";
+        }
+        document += "]}";
+        const auto overflow = DecodeVatsimDataFeedDocument(document);
+        auto step5Heap23067 = std::make_unique<Step5AtisFixture>();
+        auto& overflowBrain = *step5Heap23067;
+        overflowBrain.Decode(document, 200'000);
+        (void)overflowBrain.Cycle();
+        const auto overflowPresentation = overflowBrain.Project();
+        const auto* overflowOrb = Step5AtisOrb(overflowPresentation);
+        const auto countExceededBit = BrainRawVatsimAtisIssueBit(
+            BrainRawVatsimAtisMechanicalIssue::RootCountExceeded);
+        require(evaluations == 100'000,
+                "background churn did not evaluate all 100,000 generations");
+        require(semanticChanges == 0,
+                "background non-primary churn changed product semantics");
+        require(BrainOwnedAccessorySemanticPresentationGeneration(
+                    fixture.state) == semantic,
+                "background churn advanced semantic presentation generation");
+        require(fixture.state.atis.historyMutationCount == history,
+                "background churn mutated ATIS history");
+        require(fixture.state.atis.unreadCreatedCount == unread,
+                "background churn created unread ATIS state");
+        require(fixture.state.accessory.scrollResetGeneration == scrollReset,
+                "background churn advanced scroll reset generation");
+        require(fixture.state.accessory.nextPresentationCommandIdentity ==
+                    nextCommand,
+                "background churn created a presentation command");
+        require(projections == 0,
+                "background churn projected an accessory snapshot");
+        require(preparations == 0,
+                "background churn created mechanical preparation work");
+        require(rasters == 0,
+                "background churn created raster work");
+        require(uploads == 0,
+                "background churn created texture upload work");
+        require(publications == 0,
+                "background churn created publication work");
+        require(terminals == 0,
+                "background churn created terminal facts");
+        require(overflow.atisRecords.empty(),
+                "300-record root retained an order-dependent prefix");
+        require(!overflow.atisComponentComplete,
+                "300-record root was marked mechanically complete");
+        require((overflow.atisMechanicalIssueMask & countExceededBit) != 0,
+                "300-record root lacked RootCountExceeded");
+        require(overflowBrain.state.atis.availability ==
+                    BrainAtisAvailability::SourceUnknown,
+                "300-record root did not produce SourceUnknown");
+        require(!overflowBrain.state.atis.primaryRevision.valid,
+                "300-record root created Brain product authority");
+        require(overflowBrain.state.atis.historyMutationCount == 0,
+                "300-record root created ATIS history");
+        require(overflowBrain.state.atis.unreadCreatedCount == 0,
+                "300-record root created unread ATIS state");
+        require(overflowOrb != nullptr && overflowOrb->neutral,
+                "300-record root created a non-neutral ATIS ORB");
+        auto step5Heap23119 = std::make_unique<Step5AtisFixture>();
+        auto& settled = *step5Heap23119;
+        settled.Decode(Step5DefaultAtisDocument());
+        (void)settled.Cycle();
+        (void)settled.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
+        Step5ProductionPresentationSeam settledSeam;
+        const auto settledCommand = settled.Project();
+        const auto settledVisible = settledSeam.Present(
+            &settled.state, settledCommand);
+        const auto settledTerminalsBefore =
+            settledSeam.Diagnostics().factsAcceptedByBrain;
+        std::uint64_t settledEvaluations = 0;
+        std::uint64_t settledSemanticChanges = 0;
+        for (int cycle = 0; cycle < 100'000; ++cycle) {
+            const auto decision = settled.Cycle();
+            if (decision.evaluated) ++settledEvaluations;
+            if (decision.semanticChanged) ++settledSemanticChanges;
+        }
+        const auto settledWarm = settledSeam.Warm(
+            settledCommand, 100'000);
+        require(settledVisible.brainAccepted,
+                "settled-idle baseline did not visibly terminalize");
+        require(settledEvaluations == 0 && settledSemanticChanges == 0,
+                "unchanged settled feed cycles repeated ATIS evaluation");
+        require(settledWarm.delta.railRasterRequests == 0 &&
+                    settledWarm.delta.drawerRasterRequests == 0 &&
+                    settledWarm.delta.uploadRequests == 0 &&
+                    settledWarm.delta.snapshotPublications == 0 &&
+                    settledSeam.Diagnostics().factsAcceptedByBrain ==
+                        settledTerminalsBefore,
+                "100,000 unchanged frames performed recurring accessory work");
+        std::string boundedDocument =
+            "{\"controllers\":[],\"pilots\":[],\"atis\":[";
+        for (int index = 0; index < 256; ++index) {
+            if (index != 0) boundedDocument += ',';
+            std::ostringstream callsign;
+            callsign << (index == 0 ? "KDFW_D_ATIS" :
+                ("X" + std::string(3 - std::to_string(index).size(), '0') +
+                 std::to_string(index) + "_ATIS"));
+            boundedDocument += "{\"callsign\":\"" + callsign.str() +
+                "\",\"frequency\":\"123.775\",\"atis_code\":\"A\","
+                "\"text_atis\":[\"BOUNDED RECORD\"]}";
+        }
+        boundedDocument += "]}";
+        auto step5Heap23162 = std::make_unique<Step5AtisFixture>();
+        auto& bounded = *step5Heap23162;
+        bounded.Decode(boundedDocument, 300'000);
+        const auto evaluationStarted = std::chrono::steady_clock::now();
+        const auto boundedDecision = bounded.Cycle();
+        const auto boundedEvaluationUs = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - evaluationStarted).count());
+        require(bounded.feed.atisRecords.size() == 256 &&
+                    bounded.feed.atisComponentComplete,
+                "bounded 256-record snapshot was not mechanically complete");
+        require(boundedDecision.evaluated && boundedEvaluationUs <= 5'000,
+                "bounded 256-record Brain ATIS evaluation exceeded 5,000 us");
+        const std::string aggregateLine(500, 'Q');
+        std::string aggregateDocument =
+            "{\"controllers\":[],\"pilots\":[],\"atis\":[";
+        for (int index = 0; index < 256; ++index) {
+            if (index != 0) aggregateDocument += ',';
+            aggregateDocument += "{\"callsign\":\"KDFW_D_ATIS\","
+                "\"frequency\":\"123.775\",\"atis_code\":\"A\","
+                "\"text_atis\":[";
+            for (int line = 0; line < 10; ++line) {
+                if (line != 0) aggregateDocument += ',';
+                aggregateDocument += "\"" + aggregateLine + "\"";
+            }
+            aggregateDocument += "]}";
+        }
+        aggregateDocument += "]}";
+        const auto aggregateOverflow =
+            DecodeVatsimDataFeedDocument(aggregateDocument);
+        const auto aggregateBit = BrainRawVatsimAtisIssueBit(
+            BrainRawVatsimAtisMechanicalIssue::AggregateFieldBytesExceeded);
+        require(aggregateOverflow.atisRecords.empty() &&
+                    !aggregateOverflow.atisComponentComplete &&
+                    (aggregateOverflow.atisMechanicalIssueMask & aggregateBit) != 0,
+                "aggregate ATIS field-byte overflow retained product authority");
+        std::cout << "STEP5_WARM_IDLE_MEMORY: cycles=100000 evaluations=100000"
+                     " projections=0 commands=0 rasters=0 publications=0"
+                     " history=0 unread=0 scroll_resets=0 preparations=0"
+                     " uploads=0 terminals=0 overflow_records=300 retained=0"
+                     " root_count_exceeded=1 source_unknown=1"
+                     " settled_cycles=100000 settled_evaluations=0"
+                     " settled_work=0 bounded_records=256 brain_eval_us="
+                  << boundedEvaluationUs
+                  << " aggregate_overflow_retained=0\n";
+    } else {
+        std::cerr << "STEP5_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                  << ": unknown probe " << probe << "\n";
+        return 2;
+    }
+
+    if (!failures.empty()) {
+        for (const auto& failure : failures) {
+            std::cerr << "STEP5_ASSERTION_FAILED: " << scenario.name
+                      << ": " << failure << "\n";
+        }
+        return 1;
+    }
+    std::cout << "Scenario passed: " << scenario.name << "\n";
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::cerr << "Usage: XVatsimRegressionHarness <scenario-file>\n";
         return 2;
+    }
+
+    if (std::string(argv[1]) == "--vatsim-decoder-baseline") {
+        const std::string document = R"json({
+            "controllers": [{
+                "callsign": "KDFW_TWR",
+                "frequency": "118.300",
+                "facility": 4,
+                "visual_range": 50,
+                "text_atis": ["RUNWAY 18R"]
+            }],
+            "pilots": [{
+                "cid": 1234567,
+                "callsign": "ASA551",
+                "flight_plan": {
+                    "departure": "KDFW",
+                    "arrival": "KSAN",
+                    "altitude": "FL340",
+                    "route": "KDFW J4 ABI"
+                }
+            }],
+            "atis": [{
+                "callsign": "KDFW_D_ATIS",
+                "frequency": "123.775",
+                "atis_code": "A",
+                "text_atis": ["KDFW DEPARTURE INFORMATION ALPHA"]
+            }]
+        })json";
+        const auto decoded =
+            xvatsim::modules::vatsim_data_feed::
+                DecodeVatsimDataFeedDocument(document);
+        const bool passed =
+            decoded.hasCache && !decoded.stale &&
+            decoded.connectedControllers == 1 &&
+            decoded.controllers.size() == 1 &&
+            decoded.controllers.front().callsign == "KDFW_TWR" &&
+            decoded.controllers.front().frequency == "118.300" &&
+            decoded.controllers.front().textAtis == "RUNWAY 18R" &&
+            decoded.pilotPlans.size() == 1 &&
+            decoded.pilotPlans.front().callsign == "ASA551" &&
+            decoded.pilotPlans.front().normalizedCallsign == "ASA551" &&
+            decoded.pilotPlans.front().departureIcao == "KDFW" &&
+            decoded.pilotPlans.front().destinationIcao == "KSAN" &&
+            decoded.pilotPlans.front().filedCruiseAltitudeFt == 34000.0 &&
+            decoded.pilotPlans.front().routeText == "KDFW J4 ABI";
+        if (!passed) {
+            std::cerr << "VATSIM_DECODER_BASELINE_FAILED\n";
+            return 1;
+        }
+        std::cout
+            << "VATSIM_DECODER_BASELINE_PASSED controllers=1 pilots=1 "
+               "controller_atis=RUNWAY_18R dedicated_product_atis=absent\n";
+        return 0;
     }
 
     ScenarioData scenario;
@@ -21369,6 +23348,9 @@ int main(int argc, char** argv) {
     }
     if (!scenario.step4.probe.empty()) {
         return RunStep4ContractProbe(scenario);
+    }
+    if (!scenario.step5.probe.empty()) {
+        return RunStep5ContractProbe(scenario);
     }
 
     auto workflowState = scenario.workflowState;

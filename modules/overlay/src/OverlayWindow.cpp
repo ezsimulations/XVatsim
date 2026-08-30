@@ -1101,6 +1101,14 @@ RasterImage RenderAccessoryRailImage(
                 toneFill = Color(226, 55, 61, 68);
                 toneBorder = Color(236, 145, 153, 160);
                 break;
+            case Tone::Cyan:
+                toneFill = Color(235, 20, 115, 132);
+                toneBorder = Color(255, 95, 229, 244);
+                break;
+            case Tone::Amber:
+                toneFill = Color(235, 155, 92, 18);
+                toneBorder = Color(255, 255, 190, 74);
+                break;
             case Tone::Neutral:
             default:
                 break;
@@ -1116,12 +1124,11 @@ RasterImage RenderAccessoryRailImage(
         graphics.FillEllipse(&fill, circle);
         graphics.DrawEllipse(&border, circle);
 
-        const bool detailedMetar =
-            presentation.drawer == brain::BrainOwnedAccessoryDrawerId::Metar &&
+        const bool detailedOrb =
             !presentation.airportIcao.empty() &&
             !presentation.categoryText.empty();
         const auto labelHeight = std::max(8.0f, 11.0f * layout.scale);
-        if (detailedMetar) {
+        if (detailedOrb) {
             DrawAccessoryText(
                 &graphics,
                 RectF(left + 2.0f * layout.scale, top + diameter * 0.20f,
@@ -2172,6 +2179,8 @@ void OverlayWindow::ApplyAccessoryViewportDiagnostic(
                 FirstFrameDisplayed &&
         accessoryDrawerOpen_ &&
         accessoryPresentation_.activeSnapshot != nullptr) {
+        ApplyAccessoryPresentationRevisionDiagnostic(
+            accessoryPresentation_.activeSnapshot.get(), fact);
         const auto renderPlan = BuildAccessoryDrawerRenderPlan(
             accessoryPresentation_, accessoryLayout_);
         if (renderPlan.status ==

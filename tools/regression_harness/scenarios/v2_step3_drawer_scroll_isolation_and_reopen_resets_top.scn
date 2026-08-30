@@ -1,7 +1,7 @@
 name=v2_step3_drawer_scroll_isolation_and_reopen_resets_top
 step3.action=new:s
 step3.action=series:s:METAR:8:40:m
-step3.action=series:s:ATIS:8:40:a
+step3.action=series:s:PDC:8:40:a
 step3.action=pipeline:main
 step3.action=layout:open:1920:1080:1.0:300:900:1.0:1:l
 step3.action=presenter-new:pr
@@ -10,14 +10,14 @@ step3.action=project:s:1:mp1
 step3.action=presenter-update:pr:mp1:l:main:mu
 step3.action=presenter-scroll:pr:l:drawer:1:ms
 step3.action=presenter-observe:pr:m_scrolled
-step3.action=click:s:ATIS:2:as
+step3.action=click:s:PDC:2:as
 step3.action=project:s:1:ap
 step3.action=presenter-update:pr:ap:l:main:au
 step3.action=click:s:METAR:3:mb
 step3.action=project:s:1:mp
 step3.action=presenter-update:pr:mp:l:main:mbu
 step3.action=history:s:METAR:mh
-step3.action=history:s:ATIS:ah
+step3.action=history:s:PDC:ah
 expect.step3=m.accepted=8
 expect.step3=a.accepted=8
 expect.step3=ms.changed=true

@@ -3,6 +3,7 @@ add_library(XVatsimBrain STATIC
     src/BrainControllerRelevanceWorker.cpp
     src/BrainDisplayIntent.cpp
     src/BrainOwnedRuntime.cpp
+    src/BrainAtisRuntime.cpp
     src/BrainMetarRuntime.cpp
     src/BrainWorkflow.cpp
     src/BrainRadioRangeWorker.cpp

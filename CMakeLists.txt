@@ -12,10 +12,12 @@ option(XVATSIM_BUILD_PREFLIGHT_BUILDER "Build the XVatsim Preflight Builder desk
 option(XVATSIM_ENABLE_CONTROLLER_MESSAGES "Enable experimental controller/private message overlay UI" OFF)
 option(XVATSIM_BUILD_STEP3_VISUAL_PROOF "Build the deterministic Step 3 offline visual exporter" OFF)
 option(XVATSIM_BUILD_STEP4_METAR_VISUAL_PROOF "Build the deterministic Step 4 METAR offline visual exporter" OFF)
+option(XVATSIM_BUILD_STEP5_ATIS_VISUAL_PROOF "Build the deterministic Step 5 ATIS offline visual exporter" OFF)
 option(XVATSIM_STEP3_LIVE_PROOF_FIXTURES "Enable synthetic Step 3 live-proof fixture data" OFF)
 
 if (XVATSIM_BUILD_PLUGIN OR XVATSIM_BUILD_REGRESSION_HARNESS OR
-    XVATSIM_BUILD_STEP3_VISUAL_PROOF OR XVATSIM_BUILD_STEP4_METAR_VISUAL_PROOF)
+    XVATSIM_BUILD_STEP3_VISUAL_PROOF OR XVATSIM_BUILD_STEP4_METAR_VISUAL_PROOF OR
+    XVATSIM_BUILD_STEP5_ATIS_VISUAL_PROOF)
     add_subdirectory(modules)
 endif()
 
@@ -37,6 +39,10 @@ endif()
 
 if (XVATSIM_BUILD_STEP4_METAR_VISUAL_PROOF AND WIN32)
     add_subdirectory(tools/step4_metar_visual_proof)
+endif()
+
+if (XVATSIM_BUILD_STEP5_ATIS_VISUAL_PROOF AND WIN32)
+    add_subdirectory(tools/step5_atis_visual_proof)
 endif()
 
 if (XVATSIM_STEP3_LIVE_PROOF_FIXTURES AND WIN32)

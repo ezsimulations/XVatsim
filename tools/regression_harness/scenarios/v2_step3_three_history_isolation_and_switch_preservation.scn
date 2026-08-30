@@ -18,9 +18,8 @@ expect.step3=p.accepted=true
 expect.step3=mp.entry_count=1
 expect.step3=mp.keys=M1
 expect.step3=mp.bodies=METAR_BODY
-expect.step3=ap.entry_count=1
-expect.step3=ap.keys=A1
-expect.step3=ap.bodies=ATIS_BODY
+expect.step3=ap.entry_count=0
+expect.step3=ap.empty_state_text=ATIS IDLE — NO ACCEPTED FLIGHT ENDPOINT
 expect.step3=pp.entry_count=1
 expect.step3=pp.keys=P1
 expect.step3=pp.bodies=PDC_BODY

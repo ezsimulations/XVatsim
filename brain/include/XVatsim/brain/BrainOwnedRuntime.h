@@ -81,6 +81,7 @@ enum class BrainOwnedTextEntryMode {
     ManualCtaf,
     DiversionAirport,
     MetarAirportLookup,
+    AtisAirportLookup,
 };
 
 enum class BrainOwnedAccessoryOperationStatus {
@@ -232,6 +233,8 @@ struct BrainOwnedAccessoryOrbPresentation {
         Red,
         Magenta,
         Gray,
+        Cyan,
+        Amber,
     } tone = Tone::Neutral;
 };
 
@@ -269,6 +272,7 @@ struct BrainOwnedAccessoryPresentationSnapshot {
     std::uint64_t originatingMouseCallbackExitedMicroseconds = 0;
     std::array<std::uint64_t, 3> drawerHistoryGenerations{};
     std::string callsignIdentity;
+    std::string atisVisibleRevisionIdentity;
 };
 
 struct BrainOwnedAccessoryProjectionCounters {
@@ -339,6 +343,7 @@ struct BrainOwnedAccessoryPublicationFact {
     bool firstVisibleLineApplicable = false;
     bool commandTerminal = true;
     std::string mechanicalFailureReason;
+    std::string atisVisibleRevisionIdentity;
 };
 
 struct BrainOwnedAccessoryPublicationDecision {
@@ -645,6 +650,114 @@ struct BrainOwnedMetarRuntimeState {
     long long maximumSimulatorThreadCycleUs = 0;
 };
 
+enum class BrainAtisServiceRole {
+    Unknown,
+    Departure,
+    Arrival,
+    Combined,
+};
+
+enum class BrainAtisAvailability {
+    Idle,
+    Available,
+    ConfirmedUnavailable,
+    SourceUnknown,
+};
+
+enum class BrainAtisTransientPresentation {
+    None,
+    LookupPending,
+    LookupSpotlight,
+    LookupUnavailable,
+    LookupSourceUnknown,
+};
+
+struct BrainAtisRevision {
+    bool valid = false;
+    std::string airportIcao;
+    BrainAtisServiceRole serviceRole = BrainAtisServiceRole::Unknown;
+    std::string normalizedCallsign;
+    std::string normalizedFrequency;
+    std::string normalizedInformationCode;
+    std::vector<std::string> textLines;
+    std::string validSourceTime;
+    std::string revisionIdentity;
+    std::string deterministicOrderKey;
+};
+
+struct BrainOwnedAtisRuntimeState {
+    bool initialized = false;
+    BrainAtisAvailability availability = BrainAtisAvailability::Idle;
+    WorkflowStage workflowStage = WorkflowStage::None;
+    std::string automaticAirportIcao;
+    BrainAtisRevision primaryRevision;
+    std::vector<std::string> unreadRevisionIdentities;
+    std::string pendingLookupIcao;
+    std::uint64_t lookupGeneration = 0;
+    BrainAtisTransientPresentation transientPresentation =
+        BrainAtisTransientPresentation::None;
+    long long transientDeadlineMonotonicMs = 0;
+    std::uint64_t lookupPresentationSelectionGeneration = 0;
+    bool lookupPresentationOwnershipValid = false;
+    std::vector<BrainAtisRevision> lookupRevisions;
+    std::uint64_t lastFeedGeneration = 0;
+    bool lastFeedHasCache = false;
+    bool lastFeedStale = true;
+    bool lastFeedRootPresent = false;
+    bool lastFeedRootArray = false;
+    bool lastFeedComponentComplete = false;
+    std::uint32_t lastFeedMechanicalIssueMask = 0;
+    std::string lastEvaluationKey;
+    std::uint64_t evaluationCount = 0;
+    std::uint64_t examinedRecordCount = 0;
+    std::uint64_t candidateCount = 0;
+    std::uint64_t semanticChangeCount = 0;
+    std::uint64_t historyMutationCount = 0;
+    std::uint64_t unreadCreatedCount = 0;
+    std::uint64_t unreadAcknowledgedCount = 0;
+    std::uint64_t lookupAcceptedCount = 0;
+    std::uint64_t lookupRejectedCount = 0;
+    std::uint64_t sourceUnknownCount = 0;
+    std::uint64_t confirmedUnavailableCount = 0;
+    std::uint64_t maximumEvaluationMicroseconds = 0;
+};
+
+struct BrainOwnedAtisCycleInput {
+    bool pluginEnabled = true;
+    bool xpilotConnected = false;
+    WorkflowStage workflowStage = WorkflowStage::None;
+    BrainOwnedOperatingMode operatingMode = BrainOwnedOperatingMode::IFR;
+    workflow::FlightContext flightContext;
+    bool feedHasCache = false;
+    bool feedStale = true;
+    bool feedFetchInProgress = false;
+    std::uint64_t feedGeneration = 0;
+    bool atisRootPresent = false;
+    bool atisRootArray = false;
+    bool atisComponentComplete = false;
+    std::uint32_t atisMechanicalIssueMask = 0;
+    const std::vector<BrainRawVatsimAtisRecord>* atisRecords = nullptr;
+    long long monotonicMs = 0;
+};
+
+struct BrainOwnedAtisCycleDecision {
+    bool evaluated = false;
+    bool semanticChanged = false;
+    bool historyMutated = false;
+    bool unreadCreated = false;
+    bool lookupCompleted = false;
+    bool lookupExpired = false;
+    bool ownershipLost = false;
+    std::string targetAirportIcao;
+    BrainAtisAvailability availability = BrainAtisAvailability::Idle;
+    std::string selectedRevisionIdentity;
+    std::string reason;
+    std::uint64_t feedGeneration = 0;
+    std::uint64_t examinedRecords = 0;
+    std::uint64_t candidates = 0;
+    std::uint64_t evaluationMicroseconds = 0;
+};
+
 struct BrainOwnedTextEntryFact {
     BrainOwnedTextEntryMode mode = BrainOwnedTextEntryMode::None;
     std::string text;
@@ -812,6 +925,7 @@ struct BrainOwnedRuntimeState {
     BrainOwnedOperatingModeState operatingMode;
     BrainOwnedAccessoryRuntimeState accessory;
     BrainOwnedMetarRuntimeState metar;
+    BrainOwnedAtisRuntimeState atis;
     bool hasRoutePolygonSnapshot = false;
     RouteSectorSnapshot routePolygonSnapshot;
     std::uint64_t routePolygonHash = 0;
@@ -2116,6 +2230,40 @@ void ExpireBrainOwnedManualQuery(
 BrainOwnedTextEntryDecision CommitBrainOwnedTextEntryFact(
     BrainOwnedRuntimeState* state,
     const BrainOwnedTextEntryFact& fact);
+
+BrainOwnedTextEntryDecision CommitBrainOwnedAtisTextEntryFact(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedTextEntryFact& fact);
+
+BrainOwnedAtisCycleDecision RunBrainOwnedAtisCycle(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAtisCycleInput& input);
+
+void ProjectBrainOwnedAtisOrbPresentation(
+    const BrainOwnedRuntimeState& state,
+    BrainOwnedAccessoryOrbPresentation* orb);
+
+std::vector<BrainOwnedAccessoryHistoryEntry>
+ProjectBrainOwnedAtisDrawerPresentation(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedAccessoryHistory& history,
+    BrainOwnedAccessoryDrawerState* drawerState,
+    std::string* drawerTitle,
+    std::string* drawerStateText,
+    std::string* emptyStateText,
+    std::string* visibleRevisionIdentity);
+
+bool AcknowledgeBrainOwnedAtisVisibleRevision(
+    BrainOwnedRuntimeState* state,
+    const std::string& visibleRevisionIdentity);
+
+void ResetBrainOwnedAtisProductState(BrainOwnedRuntimeState* state);
+void MarkBrainOwnedAtisSourceUnknownPreservingAcceptedState(
+    BrainOwnedRuntimeState* state);
+
+const char* ToString(BrainAtisServiceRole role);
+const char* ToString(BrainAtisAvailability availability);
+const char* ToString(BrainAtisTransientPresentation presentation);
 
 BrainOwnedAsyncFactCycleOutput RunBrainOwnedAsyncFactCycle(
     BrainOwnedRuntimeState* state,

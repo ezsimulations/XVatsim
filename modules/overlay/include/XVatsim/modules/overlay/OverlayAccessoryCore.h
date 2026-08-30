@@ -450,6 +450,9 @@ private:
 void ApplyAccessoryVisiblePublicationTerminal(
     const AccessoryVisiblePublicationTerminalResult& terminal,
     brain::BrainOwnedAccessoryPublicationFact* fact);
+void ApplyAccessoryPresentationRevisionDiagnostic(
+    const brain::BrainOwnedAccessoryPresentationSnapshot* snapshot,
+    brain::BrainOwnedAccessoryPublicationFact* fact);
 brain::BrainOwnedAccessoryPublicationFact
 BuildAccessoryVisibilityLossTerminalFact(
     const AccessoryVisiblePublicationTerminalResult& terminal);

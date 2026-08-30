@@ -117,6 +117,7 @@ constexpr intptr_t kCheckForUpdatesMenuItemRef = 20;
 constexpr intptr_t kIfrModeMenuItemRef = 21;
 constexpr intptr_t kVfrModeMenuItemRef = 22;
 constexpr intptr_t kSelectMetarAirportMenuItemRef = 23;
+constexpr intptr_t kSelectAtisAirportMenuItemRef = 24;
 constexpr double kArrivalWakeDistanceNm = 200.0;
 constexpr float kDepartureReleaseHoldSeconds = 180.0f;
 constexpr float kEnrouteInitialDisplaySeconds = 180.0f;
@@ -337,6 +338,7 @@ void LogRadioBoardCandidateDiffTrace(
 void LogCandidateCompletionTrace(
     xvatsim::brain::WorkflowStage workflowStage,
     const std::string& planKey);
+long long CurrentTickMilliseconds();
 
 std::string SummarizeRouteAuthorityPlan(
     const xvatsim::brain::RouteAuthorityPlan& plan);
@@ -353,6 +355,61 @@ long long CurrentTickSeconds() {
         std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now().time_since_epoch())
             .count());
+}
+
+void LogAtisCycleDiagnostic(
+    const xvatsim::brain::BrainOwnedAtisCycleDecision& decision) {
+    if (!decision.evaluated && !decision.semanticChanged &&
+        !decision.lookupCompleted && !decision.lookupExpired &&
+        !decision.ownershipLost) {
+        return;
+    }
+    std::ostringstream stream;
+    stream << "event=atis-brain-decision"
+           << " feedGeneration=" << decision.feedGeneration
+           << " evaluated=" << (decision.evaluated ? 1 : 0)
+           << " semanticChanged=" << (decision.semanticChanged ? 1 : 0)
+           << " historyMutated=" << (decision.historyMutated ? 1 : 0)
+           << " unreadCreated=" << (decision.unreadCreated ? 1 : 0)
+           << " lookupCompleted=" << (decision.lookupCompleted ? 1 : 0)
+           << " lookupExpired=" << (decision.lookupExpired ? 1 : 0)
+           << " ownershipLost=" << (decision.ownershipLost ? 1 : 0)
+           << " target=" << SanitizeLogText(decision.targetAirportIcao, 4)
+           << " availability="
+           << xvatsim::brain::ToString(decision.availability)
+           << " selectedRevision="
+           << SanitizeLogText(decision.selectedRevisionIdentity, 180)
+           << " examinedRecords=" << decision.examinedRecords
+           << " candidates=" << decision.candidates
+           << " evaluationUs=" << decision.evaluationMicroseconds
+           << " reason=" << SanitizeLogText(decision.reason, 96);
+    AppendDiagnosticsLogLine(stream.str());
+}
+
+xvatsim::brain::BrainOwnedAtisCycleDecision RunAtisCycleFromSharedFeed(
+    const xvatsim::modules::vatsim_data_feed::VatsimDataFeedSnapshot& feed,
+    bool xpilotConnected,
+    xvatsim::brain::WorkflowStage workflowStage) {
+    xvatsim::brain::BrainOwnedAtisCycleInput input;
+    input.pluginEnabled = gPluginRuntimeEnabled;
+    input.xpilotConnected = xpilotConnected;
+    input.workflowStage = workflowStage;
+    input.operatingMode = gBrainOwnedRuntimeState.operatingMode.mode;
+    input.flightContext = gBrainOwnedRuntimeState.flightContext;
+    input.feedHasCache = feed.hasCache;
+    input.feedStale = feed.stale;
+    input.feedFetchInProgress = feed.fetchInProgress;
+    input.feedGeneration = feed.generation;
+    input.atisRootPresent = feed.atisRootPresent;
+    input.atisRootArray = feed.atisRootArray;
+    input.atisComponentComplete = feed.atisComponentComplete;
+    input.atisMechanicalIssueMask = feed.atisMechanicalIssueMask;
+    input.atisRecords = &feed.atisRecords;
+    input.monotonicMs = CurrentTickMilliseconds();
+    const auto decision = xvatsim::brain::RunBrainOwnedAtisCycle(
+        &gBrainOwnedRuntimeState, input);
+    LogAtisCycleDiagnostic(decision);
+    return decision;
 }
 
 long long CurrentTickMilliseconds() {
@@ -2954,6 +3011,17 @@ void BeginMetarAirportLookupEntry() {
     RefreshOverlayFromBrain();
 }
 
+void BeginAtisAirportLookupEntry() {
+    DiscardPendingTextEntryState();
+    xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
+    xvatsim::brain::SetBrainOwnedPendingTextEntryMode(
+        &gBrainOwnedRuntimeState,
+        xvatsim::brain::BrainOwnedTextEntryMode::AtisAirportLookup);
+    ShowTransientStatusLine("ATIS enter four-character ICAO and press Enter");
+    gOverlayWindow.BeginTextEntry("");
+    RefreshOverlayFromBrain();
+}
+
 xvatsim::modules::settings_store::StoredDisplayMode ToStoredDisplayMode(
     xvatsim::brain::BrainOwnedDisplayOverrideMode mode) {
     using xvatsim::modules::settings_store::StoredDisplayMode;
@@ -4313,6 +4381,22 @@ void RefreshManualQueryState() {
         return;
     }
 
+    if (pendingMode ==
+        xvatsim::brain::BrainOwnedTextEntryMode::AtisAirportLookup) {
+        xvatsim::brain::BrainOwnedTextEntryFact fact;
+        fact.mode = pendingMode;
+        fact.text = submittedCommand;
+        fact.monotonicMs = CurrentTickMilliseconds();
+        const auto decision =
+            xvatsim::brain::CommitBrainOwnedAtisTextEntryFact(
+                &gBrainOwnedRuntimeState, fact);
+        ShowTransientStatusLine(
+            decision.accepted
+                ? "ATIS lookup accepted for " + decision.normalizedText
+                : "ATIS lookup rejected: enter one four-character ICAO");
+        return;
+    }
+
     if (pendingMode == xvatsim::brain::BrainOwnedTextEntryMode::ManualCtaf &&
         submittedCommand.find(".ctaf") != 0 &&
         submittedCommand.find("ctaf") != 0) {
@@ -4515,6 +4599,9 @@ void PluginMenuHandler(void* inMenuRef, void* inItemRef) {
         case kSelectMetarAirportMenuItemRef:
             BeginMetarAirportLookupEntry();
             break;
+        case kSelectAtisAirportMenuItemRef:
+            BeginAtisAirportLookupEntry();
+            break;
         case kDisplayOpenMenuItemRef:
             ForceDisplayOpen();
             break;
@@ -4629,6 +4716,11 @@ void RegisterPluginMenu() {
         gPluginMenu,
         u8"Select METAR Airport\u2026",
         reinterpret_cast<void*>(kSelectMetarAirportMenuItemRef),
+        1);
+    XPLMAppendMenuItem(
+        gPluginMenu,
+        u8"Select ATIS Airport\u2026",
+        reinterpret_cast<void*>(kSelectAtisAirportMenuItemRef),
         1);
     XPLMAppendMenuItem(
         gPluginMenu,
@@ -5101,6 +5193,11 @@ void RefreshOverlayFromBrainEngineer3() {
         diagnostics.stage = WorkflowStageToken(workflowStage);
         diagnostics.stageReason = workflowDecision.reason;
     }
+    const auto atisDecision = RunAtisCycleFromSharedFeed(
+        vatsimDataFeedSnapshot,
+        xPilotSessionSnapshot.connected,
+        workflowStage);
+    (void)atisDecision;
     const auto asyncFactOutput = RunBoundAsyncFactCycle(
         xPilotSessionSnapshot.connected,
         workflowStage);

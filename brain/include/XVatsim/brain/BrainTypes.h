@@ -173,6 +173,45 @@ struct ControllerFeedSnapshot {
     }
 };
 
+enum class BrainRawVatsimAtisMechanicalIssue : std::uint32_t {
+    None = 0,
+    RootMissing = 1U << 0U,
+    RootWrongType = 1U << 1U,
+    RootCountExceeded = 1U << 2U,
+    AggregateFieldBytesExceeded = 1U << 3U,
+    ConservativeMemoryExceeded = 1U << 4U,
+    RecordWrongType = 1U << 5U,
+    CallsignWrongType = 1U << 6U,
+    CallsignUnsafeOrOverLimit = 1U << 7U,
+    FrequencyWrongType = 1U << 8U,
+    FrequencyUnsafeOrOverLimit = 1U << 9U,
+    InformationCodeWrongType = 1U << 10U,
+    InformationCodeUnsafeOrOverLimit = 1U << 11U,
+    TimestampWrongType = 1U << 12U,
+    TimestampUnsafeOrOverLimit = 1U << 13U,
+    TextWrongType = 1U << 14U,
+    TextLineCountExceeded = 1U << 15U,
+    TextLineUnsafeOrOverLimit = 1U << 16U,
+    TextBodyExceeded = 1U << 17U,
+};
+
+constexpr std::uint32_t BrainRawVatsimAtisIssueBit(
+    BrainRawVatsimAtisMechanicalIssue issue) {
+    return static_cast<std::uint32_t>(issue);
+}
+
+struct BrainRawVatsimAtisRecord {
+    std::string callsign;
+    std::string frequency;
+    std::string informationCode;
+    std::vector<std::string> textLines;
+    std::string lastUpdated;
+    std::string logonTime;
+    std::uint32_t mechanicalIssueMask = 0;
+    std::size_t retainedFieldBytes = 0;
+    bool mechanicallyComplete = false;
+};
+
 struct ReceivableControllerSnapshot {
     std::string callsign;
     std::string frequency;

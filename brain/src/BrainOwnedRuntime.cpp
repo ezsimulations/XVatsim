@@ -4190,6 +4190,7 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     const auto operatingMode = state->operatingMode;
     const auto accessory = state->accessory;
     const auto metar = state->metar;
+    const auto atis = state->atis;
     const auto flightContext = state->flightContext;
     const auto displayOverrideMode = state->displayOverrideMode;
     const auto pendingTextEntryMode = state->pendingTextEntryMode;
@@ -4201,6 +4202,7 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     state->operatingMode = operatingMode;
     state->accessory = accessory;
     state->metar = metar;
+    state->atis = atis;
     state->flightContext = flightContext;
     state->displayOverrideMode = displayOverrideMode;
     state->pendingTextEntryMode = pendingTextEntryMode;
@@ -6831,6 +6833,8 @@ ProjectBrainOwnedAccessoryRailSemantics(
         }
         if (drawer == BrainOwnedAccessoryDrawerId::Metar) {
             ProjectBrainOwnedMetarOrbPresentation(state, &orb);
+        } else if (drawer == BrainOwnedAccessoryDrawerId::Atis) {
+            ProjectBrainOwnedAtisOrbPresentation(state, &orb);
         }
         orbs.push_back(std::move(orb));
     }
@@ -7228,17 +7232,28 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
         snapshot->drawerStateText = snapshot->emptyStateText;
         snapshot->drawerFinalMarker = std::string("END OF ") +
             AccessoryDrawerLabel(accessory.activeDrawer) + " HISTORY";
-        snapshot->entries = accessory.activeDrawer ==
-                BrainOwnedAccessoryDrawerId::Metar
-            ? ProjectBrainOwnedMetarDrawerPresentation(*state, history)
-            : history.entries;
+        if (accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Metar) {
+            snapshot->entries =
+                ProjectBrainOwnedMetarDrawerPresentation(*state, history);
+        } else if (accessory.activeDrawer ==
+                   BrainOwnedAccessoryDrawerId::Atis) {
+            snapshot->entries = ProjectBrainOwnedAtisDrawerPresentation(
+                *state, history, &snapshot->drawerState,
+                &snapshot->drawerTitle, &snapshot->drawerStateText,
+                &snapshot->emptyStateText,
+                &snapshot->atisVisibleRevisionIdentity);
+        } else {
+            snapshot->entries = history.entries;
+        }
         if (counters != nullptr) {
             counters->historyVisits = history.entries.size();
             counters->entriesCopied = history.entries.size();
         }
-        snapshot->drawerState = snapshot->entries.empty()
-            ? BrainOwnedAccessoryDrawerState::Empty
-            : BrainOwnedAccessoryDrawerState::Ready;
+        if (accessory.activeDrawer != BrainOwnedAccessoryDrawerId::Atis) {
+            snapshot->drawerState = snapshot->entries.empty()
+                ? BrainOwnedAccessoryDrawerState::Empty
+                : BrainOwnedAccessoryDrawerState::Ready;
+        }
         if (snapshot->drawerState == BrainOwnedAccessoryDrawerState::Ready) {
             snapshot->drawerStateText.clear();
         }
@@ -7368,6 +7383,14 @@ ConsumeBrainOwnedAccessoryPublicationFact(
         : (commandRole
             ? "command-publication-terminal-fact-consumed"
             : "visible-publication-terminal-fact-consumed");
+    if (decision.visibleAttemptTerminalAccepted &&
+        fact.disposition ==
+            BrainOwnedAccessoryPublicationDisposition::FirstFrameDisplayed &&
+        fact.activeDrawerRendered == BrainOwnedAccessoryDrawerId::Atis &&
+        !fact.atisVisibleRevisionIdentity.empty()) {
+        (void)AcknowledgeBrainOwnedAtisVisibleRevision(
+            state, fact.atisVisibleRevisionIdentity);
+    }
     return decision;
 }
 
@@ -7377,7 +7400,10 @@ BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForDisplayClose(
 }
 BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForTemporaryXPilotDisconnect(
     BrainOwnedRuntimeState* state) {
-    return CloseAccessoryPreservingHistory(state);
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
+    auto decision = CloseAccessoryPreservingHistory(state);
+    MarkBrainOwnedAtisSourceUnknownPreservingAcceptedState(state);
+    return decision;
 }
 BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForInvalidAircraft(
     BrainOwnedRuntimeState* state) {
@@ -7438,6 +7464,7 @@ SuspendBrainOwnedRuntimeForPluginAdmin(
     }
 
     decision.accessory = DisableBrainOwnedAccessoryRuntime(state);
+    MarkBrainOwnedAtisSourceUnknownPreservingAcceptedState(state);
     decision.workerShutdown = ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
         state, workers, false);
     state->pluginAdminSuspended = true;
@@ -7473,21 +7500,28 @@ BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForTemporaryOverlayS
 }
 BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForSessionReset(
     BrainOwnedRuntimeState* state) {
-    return ClearAccessorySessionHistory(state);
+    auto decision = ClearAccessorySessionHistory(state);
+    ResetBrainOwnedAtisProductState(state);
+    return decision;
 }
 BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForConfirmedNewFlight(
     BrainOwnedRuntimeState* state) {
-    return ClearAccessorySessionHistory(state);
+    auto decision = ClearAccessorySessionHistory(state);
+    ResetBrainOwnedAtisProductState(state);
+    return decision;
 }
 BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForConfirmedColdDark(
     BrainOwnedRuntimeState* state) {
-    return ClearAccessorySessionHistory(state);
+    auto decision = ClearAccessorySessionHistory(state);
+    ResetBrainOwnedAtisProductState(state);
+    return decision;
 }
 BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForCallsignChange(
     BrainOwnedRuntimeState* state,
     const std::string& previousCallsign,
     const std::string& nextCallsign) {
     auto decision = ClearAccessorySessionHistory(state);
+    ResetBrainOwnedAtisProductState(state);
     if (state == nullptr) {
         return decision;
     }
@@ -7502,7 +7536,9 @@ BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForCallsignChange(
 }
 BrainOwnedAccessoryBoundaryDecision StopBrainOwnedAccessoryRuntime(
     BrainOwnedRuntimeState* state) {
-    return ClearAccessorySessionHistory(state);
+    auto decision = ClearAccessorySessionHistory(state);
+    ResetBrainOwnedAtisProductState(state);
+    return decision;
 }
 
 }  // namespace xvatsim::brain

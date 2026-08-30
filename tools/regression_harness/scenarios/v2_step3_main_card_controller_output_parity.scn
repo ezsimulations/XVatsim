@@ -33,6 +33,7 @@ expect.step3=changed_signature.rail=0
 expect.step3=changed_signature.drawer=0
 expect.step3=changed_signature.uploads=0
 expect.step3=metar_snapshot.keys=MX
-expect.step3=atis_snapshot.keys=AX
+expect.step3=atis_snapshot.entry_count=0
+expect.step3=atis_snapshot.empty_state_text=ATIS IDLE — NO ACCEPTED FLIGHT ENDPOINT
 expect.step3=pdc_snapshot.keys=PX
 expect.step3=scrolled.scope=drawer
