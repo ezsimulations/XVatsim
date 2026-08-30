@@ -1,56 +1,51 @@
 # Milestone Status
 
-Updated: 2026-08-28
+Updated: 2026-08-29
 
 ## Current Position
 
-XVatsim V2 development is on branch `v2-development`. Steps 1, 2, and 3 are
-accepted and complete. Step 4 implementation continues: its latest correction
-is offline-proven through 700 scenarios but is not controlled-live-proven.
+XVatsim V2 development is on branch `v2-development`. Steps 1 through 4 are
+accepted and complete. The Director classification for Step 4 is:
 
-The accepted Step 4 implementation/evidence commit is
-`55dd147476f0da786eae4a27dde26912a6227d26`, and its receipt-only commit is
-`43d5776d2991167c89772afa0b80907759390c78`. The authorized handoff
-documentation commit becomes current `HEAD`; its parent must be
-`43d5776d2991167c89772afa0b80907759390c78`, its subject must be
-`docs: update Step 4 next-session handoff`, and its scope must be exactly the
-three existing handoff documentation files. Its final SHA must be resolved
-from Git because it cannot embed its own identity.
+`STEP 4 METAR ORB AND DRAWER — OFFLINE-PROVEN, CONTROLLED-LIVE ACCEPTED`
 
-The current regression baseline is 700 saved scenarios. The canonical
-release-gate fingerprint is
-`C1367F24170283074D7D7371EFD4EDD1C687D7903F959CC3FA19FE3D807AAE8B`.
-The offline proof passed 26/26 accessory-input corrective, 31/31 Step 3
-focused, 206/206 Step 4 focused, and 700/700 complete scenarios. The
-1,000-click stress had zero drops and a 100-microsecond maximum action time;
-100,000 warm-idle cycles produced zero recurring work; cancellation and real
-WinHTTP loopback maxima were 17 ms; and 43 production-raster PNGs repeated with
-zero differences.
+The accepted Step 4 implementation commit is
+`f381e39c9f8f477ed7b8c1d8b913dbe836374557`. The acceptance and receipt commit
+is `c47b6a3cf71650c4474a197efde3c5406d09c872`. The authorized handoff commit
+becomes current `HEAD`; its parent must be
+`c47b6a3cf71650c4474a197efde3c5406d09c872`, its subject must be
+`docs: advance handoff beyond Step 4`, and its scope must be exactly the three
+existing handoff documents. Its final SHA must be resolved from Git because a
+commit cannot embed its own identity.
 
-The latest controlled-live attempt used the exact offline-proven binary but
-stopped during Phase A before xPilot startup or VATSIM contact. Initial neutral
-presentation command `1` reported `62,906,600 µs` against a blanket `500,000
-µs` command limit. Shutdown and manifest-driven rollback passed. The accessory
-input correction therefore remains neither live-proven nor live-disproven.
+The accepted regression baseline is 776 saved scenarios. The canonical
+fingerprint is
+`521A031E94DE1AA0CFFFCBCE94F0BC82945C4A875D09D4EE2CEB4603AF896CF5`.
+Relevant Step 4 passed `276/276`, complete regression passed `776/776`, the
+1,000-click production path had exact accounting and zero drops, both settled
+and disabled 100,000-cycle idle proofs recorded zero recurring accessory work,
+and 43 current-source production-raster PNGs repeated with zero differences.
 
-The diagnosed issue is presentation-liveness attribution: the initial command
-had no pilot click and accumulated intentionally hidden/not-visible time while
-awaiting a first frame. This was not 62 seconds of CPU work, network delay,
-accessory-input latency, or simulator-thread stall. The next narrow corrective
-audit must separate hidden commitment, visible eligibility-to-first-frame, and
-click-to-terminal timing without loosening the 500 ms click requirement.
+The final Phase E host callback resumed earlier than the intended ten-second
+disabled mark, so that live interval was not literally proven. The original
+procedural-stop report remains unchanged. The Director accepted the combined
+evidence because live suspension recorded `workerRunning=0`, offline disabled
+idle passed 100,000 cycles, resume retained `flightContext=1`, `stage=ENR`,
+`callsign=ASA551`, and `primary=KSAN`, and the first no-input frame showed the
+correct green `KSAN VFR` rail before any new METAR completion. Resume-to-visible
+time was `2,641 µs`; exact accounting and rollback passed.
 
-The latest live evidence root contains 34 physical files and 33 manifest rows;
-its manifest SHA-256 is
-`01D7B8CFB45411237182A7192E6F1923ED396AB4FF59BAEF5BD8ECCBAF440BCA`.
-The corresponding 14-file backup manifest is
-`6BFAB3DE6CDA4184B67B16BBCCF8B9DCD99ECF140F3F872CEB60F67FCD4B545E`.
-Both roots and all earlier evidence remain protected.
+The protected pre-closeout lineage remains `59 manifests / 2,175 rows / 0
+mismatches`. The final Phase E evidence package contains 82 physical files and
+81 manifest rows; its manifest SHA-256 is
+`D8A98FF63D04938A974B64F4B20123211D805B561E504DDC771C88F833F2A8E5`.
+Its backup contains 165 physical files and 164 manifest rows with manifest
+SHA-256 `A2CC5BA499DC47AD406C8FC3B35B66C09A85CBD9A3480C1D240B28F1727B7098`.
 
-The repository was clean before this documentation work, with 391 standard
-untracked files all under `outputs/` and no non-output untracked files. X-Plane
-and xPilot are stopped; active/staged `.xpl` is 0/0; active `win_x64` is
-absent; and protected `V2 Test` remains 50 files and 29 directories.
+X-Plane and xPilot are stopped; active/staged `.xpl` is `0/0`; active
+`win_x64` is absent; and protected `V2 Test` remains 50 files and 29
+directories. Preserved untracked evidence and Contract Gates remain in place
+and must not be cleaned merely to obtain a visually clean status.
 
 XVatsim V1.2.3 remains the closed public freeware Windows/X-Plane 12/xPilot
 baseline. V2 work must not reopen it. V2 remains Windows-only; Mac and Linux are
@@ -133,14 +128,15 @@ work and X-Plane frame cadence. The maximum fixture-ON preparation wait was
 2,227,032 microseconds, and the fixture-OFF cold wait was 256,838 microseconds.
 Neither produced a visible UI failure or recurring idle work.
 
-## Step 4 - VATSIM METAR Offline-Proven Candidate
+## Step 4 - METAR ORB And Drawer
 
-- Status: implementation continues; current code is offline-proven through
-  700 scenarios but controlled-live proof remains incomplete.
-- Implementation/evidence:
-  `55dd147476f0da786eae4a27dde26912a6227d26`.
-- Receipt-only:
-  `43d5776d2991167c89772afa0b80907759390c78`.
+- Status: accepted and complete.
+- Classification:
+  `STEP 4 METAR ORB AND DRAWER — OFFLINE-PROVEN, CONTROLLED-LIVE ACCEPTED`.
+- Implementation:
+  `f381e39c9f8f477ed7b8c1d8b913dbe836374557`.
+- Acceptance and receipts:
+  `c47b6a3cf71650c4474a197efde3c5406d09c872`.
 - The removable production weather source is restricted to VATSIM's official
   single-airport METAR endpoint. No alternate weather source is permitted.
 - The Brain is the sole product and semantic decision-maker. It owns request
@@ -156,40 +152,31 @@ Neither produced a visible UI failure or recurring idle work.
 - The METAR ORB is neutral `METAR` before usable weather, then exact
   ICAO/category with the approved readable type and category tone. Detailed raw
   weather and truthful newest-first history remain in the drawer.
-- Corrected WinHTTP send completion, VATSIM-only sourcing, minimal ORB content,
-  readable typography, repeated identical-lookup spotlight expiration,
-  automatic primary ORB publication, hidden preparation identity, one overlay
-  commit coordinator, Brain-exclusive accessory ownership, and truthful
-  terminal publication facts.
-- The latest correction moved accessory click consumption out of the X-Plane
-  mouse callback. The callback now captures one immutable FIFO fact, requests
-  bounded next-cycle service from the existing flight loop, and returns. Brain
+- Completed hidden commitment and visible publication timing, independent
+  command/attempt queue ordering, one publication coordinator, lossless
+  terminal delivery, single-snapshot presentation and generic preparation,
+  Brain-owned visible invalidation, repeated-lookup viewport ownership, and
+  Plugin Admin suspend/resume flight-context preservation.
+- The mouse callback captures one immutable FIFO fact, requests bounded
+  next-cycle service from the existing flight loop, and returns. Brain
   selection occurs on the next safe plugin cycle; there is no render-dependent
   input lock or competing completion authority.
-- Corrective proof: 26/26; Step 3 focused: 31/31; Step 4 focused: 206/206;
-  complete suite: 700/700; fingerprint
-  `C1367F24170283074D7D7371EFD4EDD1C687D7903F959CC3FA19FE3D807AAE8B`.
-- 1,000-click stress recorded zero drops and complete terminal accounting with
-  a 100-microsecond maximum action time. Warm idle recorded 100,000 cycles with
-  zero recurring work. Cancellation and loopback maxima were 17 ms. Forty-three
-  production-raster PNGs repeated with zero differences.
-- Latest fixture-off normal plugin:
+- Relevant Step 4: `276/276`; complete regression: `776/776`; fingerprint
+  `521A031E94DE1AA0CFFFCBCE94F0BC82945C4A875D09D4EE2CEB4603AF896CF5`.
+- Latest accepted fixture-off normal plugin:
   `build/v2-step4-accessory-input-boundary-release-normal/dist/XVatsim/win_x64/XVatsim.xpl`;
-  size `2,293,248` bytes; SHA-256
-  `694D1B70E40ACEB8F033D6985D3517CB20A76E3981D2165FDCABED4E90950CD3`.
-- The latest controlled-live attempt failed in Phase A when startup command `1`
-  reported `62,906,600 µs` against a blanket 500 ms command limit. xPilot never
-  started, no VATSIM request occurred, and the input correction received no live
-  exercise. Rollback passed.
-- Engineering conclusion: the diagnostic included intentionally hidden or
-  not-visible time for the initial no-click neutral command. It was not a
-  62-second CPU stall, network delay, or input latency. The next correction must
-  separate hidden commitment, visible eligibility-to-first-frame, and strict
-  click-to-terminal timing.
-- KABQ lookup and KSAN Enroute behavior have not been re-exercised after the
-  latest architectural corrections. Arrival remains
+  size `2,303,488` bytes; SHA-256
+  `9BA85C86347B80607CD875E2EA7F52443CF0217F6E9F29FF4B646DEF4F0D2A03`.
+- Controlled-live evidence accepted neutral startup, automatic KDFW primary,
+  exact METAR/ATIS/PDC switching, repeated KABQ lookup and viewport ownership,
+  manual drawer ownership, scheduling isolation, automatic Enroute KSAN
+  primary, and final-payload suspend/resume state retention.
+- The original final Phase E procedural-stop report remains preserved; the
+  separate Director acceptance records why no additional live execution is
+  required.
+- Arrival remains
   `OUT OF SCOPE — UNCHANGED AND OFFLINE-PROVEN`.
-- Production deployment and another controlled-live proof are not authorized.
+- Production deployment and release are not authorized by Step 4 acceptance.
 - Initial-plan audit disposition:
   `INITIAL-PLAN WORKLOAD ACCEPTED AS CURRENT BASELINE — NO SAFE NARROW CHANGE PROPOSED`.
 
@@ -220,13 +207,18 @@ pretest state.
 Latest rollback evidence:
 
 - Evidence root:
-  `outputs/v2_step_04_accessory_input_boundary_controlled_live_reproof_evidence`.
+  `outputs/v2_step_04_final_payload_phase_e_plugin_suspend_resume_controlled_live_reproof_evidence`.
+- Physical files / manifest rows: `82 / 81`.
 - Evidence manifest:
-  `01D7B8CFB45411237182A7192E6F1923ED396AB4FF59BAEF5BD8ECCBAF440BCA`.
+  `D8A98FF63D04938A974B64F4B20123211D805B561E504DDC771C88F833F2A8E5`.
 - Backup root:
-  `outputs/v2_step_04_accessory_input_boundary_controlled_live_reproof_backup`.
+  `outputs/v2_step_04_final_payload_phase_e_plugin_suspend_resume_controlled_live_reproof_backup`.
+- Physical files / manifest rows: `165 / 164`.
 - Backup manifest:
-  `6BFAB3DE6CDA4184B67B16BBCCF8B9DCD99ECF140F3F872CEB60F67FCD4B545E`.
+  `A2CC5BA499DC47AD406C8FC3B35B66C09A85CBD9A3480C1D240B28F1727B7098`.
+
+The earlier `59 / 2,175 / 0` protected-manifest lineage also remains
+byte-exact. No protected evidence was rewritten for closeout.
 
 ## Working Arrangement
 
@@ -248,22 +240,28 @@ Darron's explicit approval.
 
 ## Next Authorized Action
 
-The next session begins with a read-only audit and Contract Gate preparation:
+The next project Contract Gate to prepare is:
 
-1. Verify that the documentation-only handoff commit is current `HEAD`, has
-   parent `43d5776d2991167c89772afa0b80907759390c78`, and changes exactly the
-   three handoff documents.
-2. Read `docs/NEXT_SESSION_START_PROMPT.txt`,
-   `docs/NEXT_SESSION_HANDOFF.md`, the latest accessory-input correction
-   brief/receipt/offline proof, and the latest controlled-live failure and
-   rollback evidence.
-3. Audit current `OverlayWindow.cpp` and `BrainOwnedRuntime.cpp` handling of
-   hidden commitment, visible eligibility, awaiting-first-frame state,
-   terminal publication, and liveness timing.
-4. Prepare a corrective Contract Gate for Darron and ChatGPT Director review.
-5. Do not implement until Darron explicitly approves that gate. The first gate
-   may authorize implementation and offline proof only; any later live reproof
-   requires another separately approved gate.
+`XVatsim V2 — Step 5 VATSIM ATIS Architecture Review Contract Gate`
+
+The next session begins with read-only preparation only:
+
+1. Verify the handoff commit has parent
+   `c47b6a3cf71650c4474a197efde3c5406d09c872`, subject
+   `docs: advance handoff beyond Step 4`, and exactly the three handoff files.
+2. Read the Step 4 Director acceptance, closeout receipt, final offline proof,
+   and preserved final live evidence summary.
+3. Read the Step 5 section of `docs/V2_0_0_ROADMAP.md` and audit the existing
+   VATSIM feed facts, Brain ownership, ATIS placeholder presentation, and
+   lifecycle boundaries without changing source.
+4. Prepare the Step 5 architecture-review Contract Gate for Darron and the
+   Project Director. ATIS must extend the existing VATSIM feed; it must not add
+   a second ATIS network poll.
+5. Do not implement Step 5, deploy a payload, start applications, or make a
+   live request until Darron explicitly approves the applicable gate.
+
+Step 4 is frozen. Reopening it requires a separately approved corrective gate.
+Its acceptance does not grant production deployment authority.
 
 ## V1.2.3 Patch Release
 
