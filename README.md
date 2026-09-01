@@ -70,17 +70,57 @@ must not be papered over with guessed substitutions.
 - `assets/`: package assets such as transition audio
 - `releases/`: release/checkpoint packaging materials
 
-## V2.0.0 Direction
+## V2.0.0 Feature-Complete Beta
 
-V2.0.0 remains a Windows/X-Plane 12/xPilot plugin. The locked V2 workstreams are
-dedicated VFR operation plus METAR, VATSIM ATIS, and approved PDC/private-message
-ORBs attached to the existing UI. Mac and Linux support are deferred until the
-project has native test resources capable of proving those releases.
+Steps 1 through 6 are accepted, complete, and frozen as the V2.0.0 feature
+baseline. The existing main card now has three completed Brain-owned ORBs:
+METAR, VATSIM ATIS, and a one-shot xPilot waiting-message PDC drawer.
+V2.0.0 remains a Windows/X-Plane 12/xPilot plugin. Mac and Linux support remain
+deferred until native proof resources exist.
 
-V2 changes still require the brain-owned runtime contract: modules produce
-facts, the brain decides, and the UI displays brain-approved facts. Work proceeds
-one approved, proven, and committed slice at a time under
-`docs/V2_0_0_ROADMAP.md` and `docs/V2_EXECUTION_PROTOCOL.md`.
+The PDC feature retains exactly one bounded snapshot: after a complete
+Brain-owned flight identity exists, the first stable-connected,
+positive-sequence xPilot waiting message with a non-empty bounded body is
+captured, and further private-source sampling stops for that flight. The drawer
+warns `CAPTURED SNAPSHOT — CHECK XPILOT FOR REVISIONS`; xPilot remains
+authoritative for later amendments. XVatsim does not reproduce a general
+private-message inbox or classify text by sender, controller roster, wording,
+IFR/VFR mode, or workflow stage.
+
+The governing contract remains Rule One: modules report bounded mechanical
+facts, the Brain makes every semantic and product decision, the plugin obeys,
+and the overlay mechanically renders Brain-approved projections. METAR, ATIS,
+and PDC share one accessory snapshot/preparation/presentation/publication
+architecture rather than parallel UI systems.
+
+The feature commit is
+`94825f07248dafc038d4c29e06ea61e40f49cfc3`; the proof and closeout commit is
+`380039a4494f0b373542eced807345471f214036`. The final Step 6 baseline passed
+visual `14/14`, focused `61/61`, and complete `861/861` regression twice. Its
+canonical scenario fingerprint is
+`227121979F59CB3BB359B96DE57AC7DF601E0BE3736F82F38C19EE08437431D9`.
+The Product Owner normal-use live proof passed. The exact live-proven candidate
+remains installed as the extended-beta baseline with:
+
+- `XVatsim.xpl`: `2,572,288` bytes /
+  `CA2840F6FE61124E37881124DF78E4B0A0049FD47C5BF4FA6EE179D9A6E77934`;
+- `authority_source_registry.json`: `40,340` bytes /
+  `3676CA43E5AFB8A5E443FDE6D04616918029E004E17EFAA022695D91E23DB60B`;
+- `ui_transition.mp3`: `27,116` bytes /
+  `C7BBE97DAD356C68FDFE40F9E8C1CF4EADEBCCD125463214F963F66356F8D9F1`.
+
+This is not a public V2.0.0 release or release certification.
+
+The accepted IFR/VFR selection foundation remains. A dedicated VFR evidence
+engine or live VFR controller model is not a V2.0.0 requirement and is only an
+optional Version 3 product decision, with no commitment to build it. Extended
+multi-flight beta will monitor bounded startup preparation, including the one
+observed nonblocking `1,713 ms` route/authority refresh warning, and verify that
+settled operation remains calm and low-churn.
+
+V1.2.3 remains the current public release and all embedded version metadata
+remains `1.2.3` until a separately approved beta-packaging gate builds and
+smoke-tests different bytes.
 
 ## Build
 

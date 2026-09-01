@@ -1,53 +1,53 @@
 # Milestone Status
 
-Updated: 2026-08-30
+Updated: 2026-08-31
 
 ## Current Position
 
-XVatsim V2 development is on branch `v2-development`. Steps 1 through 5 are
-accepted and complete. The Director classification for Step 5 is:
+XVatsim V2 development is on branch `v2-development`. Steps 1 through 6 are
+accepted, complete, and frozen as the V2.0.0 feature baseline. The Director and
+Product Owner classification is:
 
-`STEP 5 VATSIM ATIS — OFFLINE-PROVEN, FOCUSED CONTROLLED-LIVE ACCEPTED`
+`STEP 6 PDC ORB — OFFLINE-PROVEN, NORMAL-USE LIVE ACCEPTED; V2.0.0 FEATURE-COMPLETE BETA ENTRY`
 
-The accepted Step 5 implementation commit is
-`598a8c993bdaad43bf5ec0fff5e230a4cb746857`. The acceptance and receipt commit
-is `aca5304b7fc2922b6a7918dcd4c027439b02e053`. The authorized handoff commit
-becomes current `HEAD`; its parent must be
-`aca5304b7fc2922b6a7918dcd4c027439b02e053`, its subject must be
-`docs: advance handoff beyond Step 5`, and its scope must be exactly the three
-existing handoff documents. Its final SHA must be resolved from Git because a
-commit cannot embed its own identity.
+The final Step 6 implementation commit is
+`94825f07248dafc038d4c29e06ea61e40f49cfc3` (`feat: complete Step 6 one-shot
+PDC ORB`, exactly 84 files). The proof and closeout commit is
+`380039a4494f0b373542eced807345471f214036` (`docs: close out Step 6 PDC ORB
+proof`, exactly three files).
 
-The accepted regression baseline is 800 saved scenarios. The canonical
-fingerprint is
-`609BE47845CE65F16B2478716439B9330A895BDF7AB9B06EF47D6BD51CEDAF8A`.
-Step 5 passed `24/24`, Step 3 passed `31/31`, relevant Step 4 passed `276/276`,
-and complete regression passed `800/800` twice. The 48-image current-source
-ATIS visual proof repeated with zero differences. The 1,000-click proof had
-exact accounting and zero drops, and settled/background 100,000-cycle proofs
-recorded zero product or recurring accessory work.
+The accepted regression baseline is `861` saved scenarios with canonical
+fingerprint
+`227121979F59CB3BB359B96DE57AC7DF601E0BE3736F82F38C19EE08437431D9`.
+Step 6 passed production-renderer visual `14/14`, focused `61/61`, and complete
+regression `861/861` twice. Protected evidence revalidated at `80 manifests /
+4,695 rows / 0 mismatches`.
 
-All ten focused controlled-live checkpoints passed in the first approved
-roster attempt. KDEN Departure advanced from unread amber `NEW U` to its exact
-drawer and read cyan `INFO U`; natural Enroute selected KIND Combined and
-advanced from `NEW C` to `INFO C`; cached KDEN lookup displayed split Departure
-and Arrival records, retained KIND primary ownership, and restored KIND after
-eight seconds. Exact accounting, shutdown, and rollback passed.
+The Product Owner's normal-use UAL300 KDEN-to-KMSP flight passed without Plugin
+Admin manipulation, reset, recovery, artificial ordering, retry, private-text
+disclosure, perceived lag, or visual defect. The PDC ORB progressed
+`IDLE -> NEW 1 -> OPEN -> MSG 1`; reopening showed the same retained snapshot,
+accounting was exact, and both applications shut down normally.
 
-The protected pre-live lineage remains `68 manifests / 3,002 rows / 0
-mismatches`. The focused-live evidence manifest contains 110 rows with SHA-256
-`F322CB5A43DFA4E9AE98F55C45982EDF47E9963C8B99B5D723D4A3F87CC41275`.
-Its backup manifest contains 164 rows with SHA-256
-`A2CC5BA499DC47AD406C8FC3B35B66C09A85CBD9A3480C1D240B28F1727B7098`.
+The exact three-file candidate remains installed as the feature-complete beta
+baseline with `3/3` parity and no rollback. X-Plane and xPilot are stopped at
+`0/0`, and protected `V2 Test` remains `50` files / `29` directories. The
+preparation backup and all untracked proof, gates, logs, screenshots, and
+evidence remain protected and must not be cleaned.
 
-X-Plane and xPilot are stopped; active/staged `.xpl` is `0/0`; active
-`win_x64` is absent; and protected `V2 Test` remains 50 files and 29
-directories. Preserved untracked evidence and Contract Gates remain in place
-and must not be cleaned merely to obtain a visually clean status.
+V2.0.0 is feature-complete and entering extended multi-flight beta. It is not a
+public release or release certification. Initial route/authority preparation
+will be monitored for bounded startup work and calm, low-churn settled
+operation; the one observed `1,713 ms` refresh warning remains a nonblocking
+beta observation because it followed successful capture, was unrelated to PDC
+sampling/rendering, caused no perceived lag, and tripped no accessory threshold.
 
-XVatsim V1.2.3 remains the closed public freeware Windows/X-Plane 12/xPilot
-baseline. V2 work must not reopen it. V2 remains Windows-only; Mac and Linux are
-deferred until native validation resources are available.
+The Step 2 IFR/VFR selection foundation remains. A dedicated VFR evidence engine
+or live controller projection is no longer a V2.0.0 requirement and is only an
+optional Version 3 product decision, with no promise to build it. XVatsim
+V1.2.3 remains the current public freeware Windows/X-Plane 12/xPilot release;
+embedded version metadata remains `1.2.3` until a separately approved beta
+packaging gate proves different bytes.
 
 ## V2 Accepted Milestones
 
@@ -221,38 +221,73 @@ diagnostic spam.
   `BDBBB8475CC9A9ED6BE58E3AC87FF7B59BF6D9810254C9AA767FB515FD109642`.
 - Production deployment and release are not authorized by Step 5 acceptance.
 
-## Restored External State
+## Step 6 - One-Shot PDC ORB
 
-The latest manifest-driven rollback passed and restored the complete verified
-pretest state.
+- Status: accepted, complete, and frozen.
+- Classification:
+  `STEP 6 PDC ORB — OFFLINE-PROVEN, NORMAL-USE LIVE ACCEPTED; V2.0.0 FEATURE-COMPLETE BETA ENTRY`.
+- Implementation:
+  `94825f07248dafc038d4c29e06ea61e40f49cfc3`.
+- Proof and closeout:
+  `380039a4494f0b373542eced807345471f214036`.
+- Rule One remains binding. The qualified xPilot bridge reports bounded
+  mechanical facts, the plugin supplies flight context and transports facts,
+  the Brain alone arms, accepts, retains, closes, acknowledges, resets, and
+  projects, and the overlay mechanically renders and returns visible identities.
+- Acquisition begins only for a complete Brain-owned flight identity. The
+  Brain accepts the first stable-connected positive-sequence observation with
+  a successfully read non-empty bounded body. Sender, controller roster,
+  wording, labels, IFR/VFR selection, and workflow stage do not classify or
+  veto the waiting message.
+- Exactly one flight-bound snapshot is retained. Acceptance atomically marks it
+  unread and closes all further private-source sampling for that flight. Later
+  revisions remain xPilot's responsibility; XVatsim is not a combined inbox or
+  amendment monitor.
+- PDC projections are exact `IDLE`, `SOURCE`, `CHECK`, `NEW 1`, `OPEN`, and
+  `MSG 1`. The drawer title is `PDC — <DEPARTURE ICAO>` and the warning is
+  `CAPTURED SNAPSHOT — CHECK XPILOT FOR REVISIONS`.
+- Visual proof: `14/14`; focused Step 6: `61/61`; complete regression:
+  `861/861` twice; scenario fingerprint:
+  `227121979F59CB3BB359B96DE57AC7DF601E0BE3736F82F38C19EE08437431D9`.
+- Protected evidence: `80 manifests / 4,695 rows / 0 mismatches`.
+- Preparation backup: `6/6`, manifest SHA-256
+  `6AB7CBC5CB1374AF39FED20CB41E2B14382928D06BB37D1E4B5C2900F89336C7`.
+- Readiness evidence: `5/5`, manifest SHA-256
+  `B528C16E9CCFA6E6655ECD6AA23D3A710F9D5CA385DF5FD150ABDB886C2A729A`.
+- Closeout evidence: `6/6`, manifest SHA-256
+  `3687213853EE39B5231A49D1DC3AD5AD486805C2DB0F36EF6A48B346C9FD4498`.
+- Product Owner normal-use live proof accepted the unmanipulated
+  `IDLE -> NEW 1 -> OPEN -> MSG 1` sequence, immutable reopen, exact
+  accounting, normal shutdown, and private-safe records.
+
+## Retained Feature-Complete Beta State
+
+The Product Owner superseded the earlier rollback plan. The exact live-proven
+candidate remains installed as the beta baseline, and the preparation backup
+remains the recovery point.
 
 - X-Plane/xPilot processes: `0/0`.
-- Active/staged `.xpl`: `0/0`.
-- Active `win_x64`: absent.
-- Protected `V2 Test`: `50` files and `29` directories, unchanged.
-- `XVatsim.prf` SHA-256:
-  `830ABE79983B244D6280EBBA62A99E54601A6927C928B7332B0F2FA0CCCDF006`.
-- X-Plane `Log.txt` SHA-256:
-  `6E049A3B0BF02A141EB4D44F44A501EA2D6B5C1788CB9EC805740196AB16E65F`.
-- Active plugin content outside `V2 Test`: only the `logs` directory and four
-  restored historical diagnostic logs.
-- V1.2.3: untouched.
+- Candidate and active `win_x64`: exact `3/3` parity, zero subdirectories.
+- `XVatsim.xpl`: `2,572,288` bytes / SHA-256
+  `CA2840F6FE61124E37881124DF78E4B0A0049FD47C5BF4FA6EE179D9A6E77934`.
+- `authority_source_registry.json`: `40,340` bytes / SHA-256
+  `3676CA43E5AFB8A5E443FDE6D04616918029E004E17EFAA022695D91E23DB60B`.
+- `ui_transition.mp3`: `27,116` bytes / SHA-256
+  `C7BBE97DAD356C68FDFE40F9E8C1CF4EADEBCCD125463214F963F66356F8D9F1`.
+- Protected `V2 Test`: `50` files / `29` directories.
+- Post-test `XVatsim.prf`: `232` bytes / SHA-256
+  `118FA9430AC7B63A774770481705C9B681EE78AE13394320ABFB84E1F4837B10`.
+- Post-test X-Plane `Log.txt`: `315,094` bytes / SHA-256
+  `B630A0BCD4621CC38B4C41C32B75D223535B77C5D0AD37FB59C7ED1C425575C1`.
+- Post-test diagnostics: `225,940` bytes / SHA-256
+  `5A21476EF76BE35416B55508FFE8C957D2679CBB3D4E2898305BDCB9299B8AF8`.
+- Final canonical untracked inventory after closeout: `5,207` paths / SHA-256
+  `4EC19C3E3E4971697B6E0BB325BD2D4DA2C49DFBFAA92B8EB014B6BA979C5455`.
 
-Latest rollback evidence:
-
-- Evidence root:
-  `outputs/v2_step_05_vatsim_atis_focused_controlled_live_evidence`.
-- Manifest rows: `110`.
-- Evidence manifest:
-  `F322CB5A43DFA4E9AE98F55C45982EDF47E9963C8B99B5D723D4A3F87CC41275`.
-- Backup root:
-  `outputs/v2_step_05_vatsim_atis_focused_controlled_live_backup`.
-- Manifest rows: `164`.
-- Backup manifest:
-  `A2CC5BA499DC47AD406C8FC3B35B66C09A85CBD9A3480C1D240B28F1727B7098`.
-
-The `68 / 3,002 / 0` protected-manifest lineage also remains byte-exact. No
-protected evidence was rewritten for closeout.
+Do not clean, move, normalize, overwrite, or delete the preparation backup,
+detailed proof, Contract Gates, logs, screenshots, preferences, candidate,
+deployed payload, failed historical campaigns, or other untracked evidence.
+V1.2.3 remains the current public release and is untouched by beta closeout.
 
 ## Working Arrangement
 
@@ -271,31 +306,19 @@ overlay renders Brain commands mechanically. No implementation, deployment,
 application startup, live request, or controlled-live proof occurs without
 Darron's explicit approval.
 
-## Next Authorized Action
+## Next Authorized Project State
 
-The next project Contract Gate to prepare is:
+The next state is extended multi-flight beta observation of the exact retained
+candidate. Verify the durable handoff and all locks before any action. Preserve
+the beta payload and preparation backup; do not rebuild or redeploy merely to
+begin observation.
 
-`XVatsim V2 — Step 6 PDC and Private Messages Architecture Review Contract Gate`
-
-The next session begins with read-only preparation only:
-
-1. Verify the handoff commit has parent
-   `aca5304b7fc2922b6a7918dcd4c027439b02e053`, subject
-   `docs: advance handoff beyond Step 5`, and exactly the three handoff files.
-2. Read the Step 5 Director acceptance, closeout receipt, implementation brief,
-   offline proof receipt, and preserved focused-live final summary.
-3. Read the Step 6 section of `docs/V2_0_0_ROADMAP.md` and audit existing PDC,
-   private-message, Brain, shared accessory, and lifecycle boundaries without
-   changing source.
-4. Prepare the Step 6 architecture-review Contract Gate for Darron and the
-   Project Director. Rule One remains binding, and no parallel presentation or
-   publication architecture is permitted.
-5. Do not implement Step 6, deploy a payload, start applications, make a live
-   request, or perform release work until Darron explicitly approves the
-   applicable gate.
-
-Step 5 is frozen. Reopening it requires a separately approved corrective gate.
-Its acceptance grants no production deployment, release, or Step 6 authority.
+Any simulator/xPilot start or beta observation must have explicit Product Owner
+authority under the execution protocol. Any defect correction, beta version or
+package change, release certification, public release, update-manifest change,
+or Version 3/VFR roadmap requires a new approved Contract Gate. Steps 1 through
+6 remain frozen unless a separately approved correction gate explicitly reopens
+the affected scope.
 
 ## V1.2.3 Patch Release
 
@@ -375,10 +398,11 @@ Its acceptance grants no production deployment, release, or Step 6 authority.
 - Updated the public update manifest to advertise V1.0.4 as a notify-only
   update.
 The X-Plane.org Store submission path is superseded because the store requested
-a Mac version. Future major product work starts as Windows-only XVatsim V2.0.0
-with dedicated VFR plus METAR, VATSIM ATIS, and approved PDC/private-message
-ORBs. Mac and Linux support are deferred until native validation resources
-exist.
+a Mac version. The Windows-only XVatsim V2.0.0 feature-complete beta now
+contains METAR, VATSIM ATIS, and one-shot PDC ORBs. The existing IFR/VFR mode
+foundation remains, while any dedicated VFR evidence/live model is only an
+optional Version 3 decision. Mac and Linux support are deferred until native
+validation resources exist.
 
 The live plugin uses the offline regression harness, fail-closed source
 handling, true route geometry, typed route grammar, deterministic nav-graph

@@ -1,6 +1,6 @@
 # XVatsim V2.0.0 Roadmap
 
-Status: locked for execution
+Status: **FEATURE-COMPLETE — ENTERING EXTENDED BETA; NOT PUBLICLY RELEASED**
 
 Approved: 2026-08-26
 
@@ -13,6 +13,11 @@ commit `e4a6269` and tag `v1.2.3` on the `v2-development` branch.
 V1.2.3 passed its Release plugin and regression-harness builds, eight focused
 route/update guardrails, all `451 / 451` saved regression scenarios, package
 smoke validation, and user-guide review.
+
+V1.2.3 remains the current public release. The live-proven V2 beta candidate
+deliberately retains embedded `1.2.3` metadata so extended beta observes the
+same bytes that passed offline and live proof. Version assignment, packaging,
+release certification, and publication require a later approved gate.
 
 ## V2 Product Boundary
 
@@ -27,21 +32,32 @@ because the project does not currently have the native hardware and live-test
 resources required to prove those releases. Future work should avoid needless
 platform coupling, but V2 must not spend product risk on untestable ports.
 
-## Primary V2 Objectives
+## Accepted V2.0.0 Feature Baseline
 
-1. Add an explicit, dedicated VFR operating mode that does not require a
-   VATSIM flight plan.
-2. Add a METAR ORB with flight-category state, automatic IFR airport targeting,
-   manual airport targeting, caching, and an expandable information drawer.
-3. Add a VATSIM-only ATIS ORB with departure/destination targeting, change
-   indication, and an expandable information drawer.
-4. Add a PDC/private-message ORB that accepts the approved subset of xPilot
-   private-message facts without reproducing general xPilot chat.
-5. Preserve the current main XVatsim card design while adding the three-ORB
-   accessory rail and one expandable information drawer.
-6. Protect simulator frame time through brain-owned scheduling, bounded caches,
-   asynchronous network work, render-on-change behavior, and measurable
-   performance gates.
+Steps 1 through 6 are accepted, complete, and frozen. The feature-complete
+baseline provides:
+
+1. the accepted persistent Brain-owned IFR/VFR mode-selection foundation;
+2. the three-ORB accessory rail and one shared expandable drawer;
+3. the completed METAR ORB and drawer;
+4. the completed shared-feed VATSIM ATIS ORB and drawer;
+5. the completed one-shot xPilot waiting-message PDC ORB and drawer; and
+6. bounded scheduling, asynchronous source work, render-on-change presentation,
+   visible-publication acknowledgement, and measurable performance gates.
+
+The accepted Step 6 implementation is
+`94825f07248dafc038d4c29e06ea61e40f49cfc3`; proof and closeout is
+`380039a4494f0b373542eced807345471f214036`. Final proof is visual `14/14`,
+focused `61/61`, complete regression `861/861` twice, and protected evidence
+`80 manifests / 4,695 rows / 0 mismatches`. The accepted corpus is `861`
+scenarios with fingerprint
+`227121979F59CB3BB359B96DE57AC7DF601E0BE3736F82F38C19EE08437431D9`.
+
+The Product Owner normal-use live flight passed `IDLE -> NEW 1 -> OPEN ->
+MSG 1`, immutable reopen, exact accounting, normal shutdown, and private-safe
+records without Plugin Admin manipulation, reset, recovery, artificial
+ordering, retry, perceived lag, or visual defect. The exact `3/3` candidate
+remains installed without rollback as the extended-beta baseline.
 
 ## Non-Goals For V2.0
 
@@ -62,17 +78,17 @@ source-of-truth, test resources, Contract Gate, and release proof.
 
 V2 does not loosen the governing runtime rule:
 
-`Brain decides. Modules produce facts. UI displays brain-approved facts.`
+`Brain decides. Modules produce bounded mechanical facts. UI displays brain-approved facts.`
 
 The plugin host may sample X-Plane/xPilot facts, execute brain-approved X-Plane
 side effects, and render the final view model. It must not become the owner of
-VFR authority, METAR/ATIS targeting, message classification, feature cadence,
-or display policy.
+VFR authority, METAR/ATIS targeting, PDC admission, feature cadence, or display
+policy.
 
-## Locked Implementation Sequence
+## Accepted Implementation Sequence
 
-Work proceeds through one bounded, approved, proven, and committed slice at a
-time. A later step does not begin until the current step is accepted.
+Steps 1 through 6 were completed through bounded, approved, proven, and
+committed slices. They now form one frozen feature baseline.
 
 ### Step 1 - Windows V2 Proof Baseline
 
@@ -111,45 +127,48 @@ Extend the existing VATSIM feed facts to include the dedicated ATIS records,
 then add brain-owned departure/destination targeting, freshness/change state,
 and ATIS ORB/drawer publication. Do not add a second ATIS network poll.
 
-### Step 6 - PDC And Private Messages
+### Step 6 - One-Shot PDC ORB
 
-Recover the existing disabled xPilot private-message prototype behind a new
-approved classification contract. Define controller-PDC, pilot-private, and
-VATSIM-system acceptance rules; retain bounded message state; reject general
-chat; and prove long-message layout and sequence behavior.
+The qualified xPilot bridge reports bounded mechanical facts only while the
+Brain commands acquisition for a complete flight identity. The Brain accepts
+the first stable-connected positive-sequence observation with a successfully
+read non-empty bounded body, atomically retains one flight-bound snapshot,
+marks it unread, and closes all further private-source sampling for that
+flight. Sender, controller roster, message wording, labels, IFR/VFR selection,
+and workflow stage do not classify or veto the mechanically valid observation.
 
-### Step 7 - VFR Evidence Engine Preview
+PDC projects exact `IDLE`, `SOURCE`, `CHECK`, `NEW 1`, `OPEN`, and `MSG 1`
+states. The drawer title is `PDC — <DEPARTURE ICAO>` and the warning is
+`CAPTURED SNAPSHOT — CHECK XPILOT FOR REVISIONS`. xPilot remains authoritative
+for later amendments. XVatsim has no general private-message inbox or amendment
+monitor.
 
-Build VFR controller evidence and decisions in diagnostic-only preview mode.
-Use aircraft position, AGL/MSL altitude, groundspeed, stable track, reachable
-transceivers, center/terminal geometry, and source freshness. Prove current and
-projected Center choices, terminal traversal, uncertainty, hysteresis, and
-accepted-but-not-visible accounting before changing live output.
+### Optional Version 3 - Dedicated VFR Model
 
-### Step 8 - VFR Live Projection
+The Step 2 IFR/VFR mode foundation remains, but a dedicated VFR evidence engine
+and live VFR controller projection are not part of V2.0.0. They are an optional
+Version 3 decision only, and Version 3 is not promised. Any proposal must first
+justify pilot value against geometry, prediction, CPU, testing, and maintenance
+cost and requires its own roadmap decision and Contract Gate.
 
-Promote the proven VFR preview decisions to live brain-owned controller output.
-Retain explicit fail-soft behavior: ambiguous evidence should prefer an extra
-plausible controller over silently hiding one that may belong to the pilot.
+### Future Windows V2 Release Certification
 
-### Step 9 - Windows V2 Release Certification
-
-Complete focused and full regression proof, visual-output review, performance
-comparison, live Windows/X-Plane/xPilot battle tests, package smoke validation,
-hash capture, user-guide updates, and public release closeout.
+V2.0.0 is feature-complete and entering extended multi-flight beta. Public
+release certification is future work, not accomplished by feature closeout. A
+separate gate must authorize version assignment, exact-binary build and smoke
+proof, focused/full regression, visual and performance review, multi-flight
+live evidence, packaging, user-guide updates, hashes, and publication.
 
 ## Feature Boundaries
 
 ### VFR
 
 - VFR mode is explicitly selected; absence of a flight plan does not select it.
-- Current containing authority and the safely projected next authority are
-  brain-owned decisions.
-- Track projection is bounded, cached, and protected by hysteresis.
-- Altitude and distance rank evidence but must not become careless hard hides.
-- APP/DEP and Tower candidates require reachable/source facts plus geographic
-  evidence appropriate to low-altitude terminal traversal.
-- Missing, stale, or conflicting evidence remains visible in a decision ledger.
+- The accepted mode-selection and persistence foundation remains in V2.0.0.
+- V2.0.0 makes no promise to create dedicated VFR evidence, prediction, current
+  or projected authority, or live controller projection.
+- Any such model is an optional Version 3 decision requiring separate product,
+  architecture, performance, proof, and live-test authority.
 
 ### METAR
 
@@ -171,13 +190,22 @@ hash capture, user-guide updates, and public release closeout.
 - Information letter, changed/unread state, freshness, and unavailable state
   are brain-owned display facts.
 
-### PDC And Private Messages
+### One-Shot PDC
 
-- xPilot private-message sequence, sender, and body are source facts.
-- The brain owns acceptance, classification, unread/cache state, and display.
-- General xPilot/VATSIM chat is not reproduced.
-- Controller-origin messages require the separately approved PDC policy because
-  the xPilot facts do not provide a structured PDC message type.
+- xPilot connection, sequence, sender bytes, body bytes, and read outcomes are
+  bounded mechanical source facts; no module classifies their meaning.
+- Acquisition requires a complete Brain-owned flight identity and stable xPilot
+  connection.
+- The Brain accepts the first positive-sequence non-empty bounded observation
+  exactly once, independent of sender, roster, wording, labels, operating mode,
+  and workflow stage.
+- Exactly one immutable flight-bound snapshot is retained. Capture stops all
+  further private-source sampling for that flight.
+- A rare first administrative message is an accepted truthful limitation.
+- Later PDC revisions are intentionally ignored by XVatsim; xPilot is
+  authoritative and the exact drawer warning tells the pilot to check xPilot.
+- There is no general xPilot/VATSIM chat reproduction, combined inbox, semantic
+  message classifier, or private-message history.
 
 ### UI
 
@@ -213,7 +241,16 @@ scope, and clean commit history.
 - No broad/world geometry scan may run from an ordinary UI refresh.
 - Heavy proof is brain-scheduled and bounded.
 - Source generations, stable keys, and input hashes control recomputation.
-- METAR, ATIS, and message caches are bounded and reset at defined boundaries.
+- METAR and ATIS histories are bounded; PDC retains one bounded flight-bound
+  snapshot and resets only at defined Brain-owned lifecycle boundaries.
 - Overlay textures rerender only when their content or appearance changes.
 - A new feature must identify its idle cost, refresh cost, worst observed cost,
   and failure/backoff behavior before acceptance.
+
+Extended beta will monitor initial flight/route/authority preparation across
+multiple flights and require stable, calm, low-churn settled operation. The one
+observed `1,713 ms` route/authority refresh warning is a nonblocking beta
+observation: it occurred after successful PDC capture, was unrelated to PDC
+sampling or rendering, caused no Product Owner-perceived lag, and tripped no
+accessory threshold. Any correction, beta version/package work, release
+certification, public release, or Version 3 roadmap requires a new Contract Gate.

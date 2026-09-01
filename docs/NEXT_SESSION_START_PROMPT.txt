@@ -1,146 +1,140 @@
-Continue XVatsim V2 using the repository as the authoritative shared memory.
+We are resuming XVatsim V2 after accepted Step 6 closeout and entry into
+V2.0.0 feature-complete beta.
 
 Repository:
+
 C:\Users\DARRON\OneDrive\Documents\XVatsim-V2
 
-PROJECT ROLES AND AUTHORITY
+Before doing anything else, read completely:
 
-- Darron is Product Owner and final approval authority.
-- ChatGPT is Project Director and prepares Contract Gates with Darron.
-- Codex is the Engineering Agent and acts only under an explicitly approved
-  Contract Gate.
-- No implementation, deployment, release, application startup, live request,
-  or controlled-live proof may occur without Darron's explicit approval.
+1. docs/NEXT_SESSION_HANDOFF.md
+2. docs/MILESTONE_STATUS.md
+3. docs/ARCHITECTURE.md
+4. docs/ROADMAP_BOUNDARIES.md
+5. docs/V2_0_0_ROADMAP.md
+6. docs/V2_STEP_06_PDC_ORB_ONE_SHOT_WAITING_MESSAGE_FINAL_ENGINEERING_BRIEF.md
+7. outputs/v2_step_06_pdc_orb_product_owner_live_test_director_acceptance.md
+8. outputs/v2_step_06_pdc_orb_v2_0_0_beta_entry_closeout_receipt.md
 
-LOCKED STARTING STATE
+Begin read-only.
 
-- Branch: v2-development
-- Step 5 implementation commit:
-  598a8c993bdaad43bf5ec0fff5e230a4cb746857
-- Step 5 acceptance and receipt commit:
-  aca5304b7fc2922b6a7918dcd4c027439b02e053
-- The documentation-only handoff commit is current HEAD. Resolve its SHA and
-  verify:
-  - parent: aca5304b7fc2922b6a7918dcd4c027439b02e053
-  - subject: docs: advance handoff beyond Step 5
-  - scope: exactly docs/MILESTONE_STATUS.md,
-    docs/NEXT_SESSION_HANDOFF.md, and docs/NEXT_SESSION_START_PROMPT.txt
-- Tracked/staged changes after the handoff commit: 0/0.
-- Standard untracked files: 2,577. Preserve them; do not clean them.
-- Saved scenarios: 800.
-- Canonical scenario fingerprint:
-  609BE47845CE65F16B2478716439B9330A895BDF7AB9B06EF47D6BD51CEDAF8A
-- Protected pre-live evidence: 68 manifests / 3,002 rows / 0 mismatches.
-- Focused-live evidence manifest: 110 rows, SHA-256:
-  F322CB5A43DFA4E9AE98F55C45982EDF47E9963C8B99B5D723D4A3F87CC41275
-- Focused-live backup manifest: 164 rows, SHA-256:
-  A2CC5BA499DC47AD406C8FC3B35B66C09A85CBD9A3480C1D240B28F1727B7098
-- X-Plane/xPilot processes: 0/0.
-- Active/staged .xpl: 0/0.
-- Active win_x64: absent.
-- Protected V2 Test: 50 files / 29 directories.
-- XVatsim.prf SHA-256:
-  830ABE79983B244D6280EBBA62A99E54601A6927C928B7332B0F2FA0CCCDF006
-- X-Plane Log.txt SHA-256:
-  6E049A3B0BF02A141EB4D44F44A501EA2D6B5C1788CB9EC805740196AB16E65F
-- V1.2.3 remains closed and untouched.
+REQUIRED BRANCH
 
-Do not clean, delete, move, normalize, stage, rewrite, or regenerate preserved
-untracked evidence to make Git status shorter. A Windows filename-length
-warning while enumerating a protected backup is not authority to change it.
+v2-development
 
-FIRST VERIFY
+RECORDED CLOSEOUT COMMITS
 
-git status --short --branch
-git log -6 --oneline --decorate
-git rev-parse HEAD
-git rev-parse HEAD^
-git show -s --format=%s HEAD
-git diff-tree --no-commit-id --name-only -r HEAD
+Commit 1:
 
-Independently verify the handoff parent, subject, exact three-file scope,
-tracked/staged state, untracked inventory, 800 scenarios, canonical
-fingerprint, protected and live manifests, stopped processes, absent
-deployment, V2 Test inventory, and restored preference/log hashes.
+94825f07248dafc038d4c29e06ea61e40f49cfc3
+feat: complete Step 6 one-shot PDC ORB
+84 files
 
-READ IN THIS ORDER
+Commit 2:
 
-1. docs/NEXT_SESSION_START_PROMPT.txt
-2. docs/NEXT_SESSION_HANDOFF.md
-3. docs/MILESTONE_STATUS.md
-4. docs/V2_0_0_ROADMAP.md, especially Step 6 and PDC/private-message boundaries
-5. outputs/v2_step_05_vatsim_atis_director_acceptance.md
-6. outputs/v2_step_05_vatsim_atis_closeout_receipt.md
-7. docs/V2_STEP_05_VATSIM_ATIS_IMPLEMENTATION_ENGINEERING_BRIEF.md
-8. outputs/v2_step_05_vatsim_atis_implementation_offline_proof_receipt.md
-9. outputs/v2_step_05_vatsim_atis_focused_controlled_live_evidence/31_final_controlled_live_summary.md
-10. Current PDC/private-message, Brain, accessory snapshot, overlay, and plugin
-    binding paths found during the read-only audit
+380039a4494f0b373542eced807345471f214036
+docs: close out Step 6 PDC ORB proof
+3 files
 
-STEP 5 ACCEPTED STATUS
+Do not expect this prompt to contain Commit 3's SHA. This prompt is part of
+Commit 3. Resolve current HEAD locally and verify:
 
-STEP 5 VATSIM ATIS — OFFLINE-PROVEN, FOCUSED CONTROLLED-LIVE ACCEPTED
+- HEAD^ is exactly 380039a4494f0b373542eced807345471f214036.
+- HEAD subject is exactly:
+  docs: enter V2.0.0 feature-complete beta
+- HEAD changes exactly these seven files:
+  README.md
+  docs/ARCHITECTURE.md
+  docs/MILESTONE_STATUS.md
+  docs/NEXT_SESSION_HANDOFF.md
+  docs/NEXT_SESSION_START_PROMPT.txt
+  docs/ROADMAP_BOUNDARIES.md
+  docs/V2_0_0_ROADMAP.md
 
-- Steps 1 through 5 are accepted and complete.
-- Step 5 focused: 24/24.
-- Step 3 focused: 31/31.
-- Relevant Step 4: 276/276.
-- Complete regression: 800/800 twice.
-- Canonical fingerprint:
-  609BE47845CE65F16B2478716439B9330A895BDF7AB9B06EF47D6BD51CEDAF8A
-- Visual proof: 48/48 current-source images twice with zero differences.
-- The accepted fixture-off XVatsim.xpl is 2,513,920 bytes with SHA-256:
-  BDBBB8475CC9A9ED6BE58E3AC87FF7B59BF6D9810254C9AA767FB515FD109642
-- The payload is not deployed and is not authorized for production deployment.
+EXPECTED POST-CLOSEOUT LOCKS
 
-All ten focused controlled-live checkpoints passed in the first approved roster
-attempt. KDEN Departure changed from unread amber NEW U to its exact drawer and
-read cyan INFO U. Natural Enroute selected KIND Combined, which changed from
-unread amber NEW C to its exact drawer and read cyan INFO C. Cached KDEN lookup
-displayed split Departure and Arrival records, retained KIND primary ownership,
-and restored KIND after eight seconds. Exact accounting, shutdown, and rollback
-passed.
+- Modified tracked / staged / unmerged: 0/0/0
+- Canonical untracked inventory: 5,207
+- Untracked inventory SHA-256:
+  4EC19C3E3E4971697B6E0BB325BD2D4DA2C49DFBFAA92B8EB014B6BA979C5455
+- Accepted scenario count: 861
+- Accepted scenario fingerprint:
+  227121979F59CB3BB359B96DE57AC7DF601E0BE3736F82F38C19EE08437431D9
+- X-Plane/xPilot processes: 0/0
+- Protected V2 Test: 50 files / 29 directories
 
-GOVERNING ARCHITECTURE
+Steps 1 through 6 are accepted, complete, and frozen. The completed V2
+accessory product contains exactly three ORBs:
 
-The Brain is the sole product and semantic decision-maker.
+- METAR
+- VATSIM ATIS
+- one-shot PDC presentation using mechanically neutral first-waiting-message
+  admission
 
-- The VATSIM module only decodes, sanitizes, bounds, and returns immutable raw
-  facts. It does not interpret ATIS meaning or make product decisions.
-- ATIS uses the existing shared VATSIM feed and cadence. There is no second ATIS
-  endpoint, request, scheduler, worker, cache authority, selector, snapshot,
-  queue, renderer, or fallback path.
-- The plugin transports facts and commands. The overlay mechanically prepares,
-  renders, and publishes exact immutable Brain commands.
-- Mouse callbacks capture bounded immutable facts and return; the Brain consumes
-  them on a safe simulator cycle.
-- One accessory snapshot, one generic mechanical preparation path, one overlay
-  coordinator, and one publication-fact return path remain governing.
+There is no combined private-message inbox. After stable connection and
+complete Brain-owned flight context, the Brain admits the first
+positive-sequence, non-empty, bounded waiting xPilot private record exactly
+once, without sender, wording, roster, IFR/VFR, or workflow-stage
+classification. Capture stops further private-source payload sampling for that
+flight, including identity, capability, sequence, sender, and body reads. xPilot
+remains authoritative for later revisions.
 
-NEXT PROJECT CONTRACT GATE
+Rule One is binding:
 
-Prepare, but do not execute without Darron's explicit approval:
+- modules report bounded mechanical facts;
+- the Brain owns every product and semantic decision;
+- modules act or render only from Brain-owned decisions;
+- no bridge or overlay content classification is permitted; and
+- no second inbox, semantic owner, dispatcher, renderer, route, runner, or
+  proof architecture is permitted.
 
-XVatsim V2 — Step 6 PDC and Private Messages Architecture Review Contract Gate
+ACCEPTED PROOF LOCKS
 
-The read-only Step 6 audit must identify existing private-message facts, PDC
-placeholder behavior, Brain ownership and lifecycle, and reuse of the existing
-single-snapshot accessory presentation and publication path. Rule One remains
-binding.
+- Focused Step 6 probe: 61/61
+- Production-renderer visual proof: 14/14
+- Complete regression: 861/861 twice
+- Protected evidence: 80 manifests / 4,695 rows / 0 mismatches
+- Product Owner normal-use controlled-live test: PASS
 
-Do not add a second semantic owner, per-ORB UI worker, scheduler, polling loop,
-snapshot, queue, renderer, or presentation/publication path.
+The exact live-proven candidate remains installed at:
 
-EXACT NEXT ACTION
+C:\X-Plane 12\Resources\plugins\XVatsim\win_x64
 
-1. Verify every locked starting-state value.
-2. Read the required documents and accepted Step 5 records.
-3. Perform a narrow read-only audit of PDC/private-message facts, Brain state,
-   placeholder drawer projection, accessory presentation, lifecycle, and plugin
-   bindings.
-4. Prepare the Step 6 PDC and Private Messages Architecture Review Contract
-   Gate for Darron and the Project Director.
-5. Stop. Do not implement until Darron explicitly approves the resulting gate.
+It contains exactly:
 
-Step 5 is frozen. Its acceptance grants no production deployment, release, or
-Step 6 implementation authority.
+- XVatsim.xpl: 2,572,288 bytes
+  CA2840F6FE61124E37881124DF78E4B0A0049FD47C5BF4FA6EE179D9A6E77934
+- authority_source_registry.json: 40,340 bytes
+  3676CA43E5AFB8A5E443FDE6D04616918029E004E17EFAA022695D91E23DB60B
+- ui_transition.mp3: 27,116 bytes
+  C7BBE97DAD356C68FDFE40F9E8C1CF4EADEBCCD125463214F963F66356F8D9F1
+
+This is the retained beta baseline. Do not roll it back, rebuild it, overwrite
+it, or redeploy it without a new gate.
+
+The preparation backup and every untracked proof, live record, screenshot,
+log, receipt, manifest, Contract Gate, and candidate artifact are protected.
+Do not run git clean. Do not delete, move, normalize, regenerate, rewrite, or
+restore anything. Do not access or reuse quarantine material. An ignored .log
+may still be required by a protected manifest.
+
+The current public release remains V1.2.3. The retained beta candidate
+deliberately still contains 1.2.3 metadata so it remains byte-identical to the
+live-proven binary. Version assignment, packaging, smoke testing, release
+certification, and publication require a later gate.
+
+V2.0.0 is feature-complete and entering extended multi-flight beta. The next
+ordinary project state is Product Owner-operated normal-use beta observation of
+this exact installed candidate. The one observed 1,713 ms route/authority
+refresh warning is a nonblocking beta-monitoring item, not a Step 6 failure.
+
+A dedicated VFR evidence engine or live VFR controller projection is outside
+V2.0.0 and is only an optional Version 3 decision. No Version 3 commitment
+exists.
+
+No implementation, correction, test change, build, deployment, evidence
+mutation, packaging, release, or Version 3 authority is granted by this prompt.
+Any such work requires a new explicit Contract Gate.
+
+Report the read-only entry verification and stop unless the Product Owner
+supplies new authority.
