@@ -17,6 +17,8 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Data.Json.h>
 
+#include "XVatsim/brain/BrainOwnedWorkerTypes.h"
+
 namespace xvatsim::modules::vatsim_data_feed {
 
 namespace {
@@ -815,6 +817,20 @@ VatsimDataFeedSnapshot ParseFeed(const std::string& payload) {
 
             snapshot.controllers.push_back(std::move(controller));
         }
+        snapshot.controllerContentDigest =
+            brain::HashBrainControllerEvidenceContent(snapshot.controllers);
+        auto authorityControllers =
+            brain::BuildBrainAuthorityControllerEvidence(
+                snapshot.controllers);
+        snapshot.authorityControllerContentDigest =
+            brain::HashBrainAuthorityControllerEvidenceContent(
+                authorityControllers);
+        snapshot.immutableAuthorityControllers = std::make_shared<
+            const std::vector<brain::AuthorityControllerSnapshot>>(
+                std::move(authorityControllers));
+        snapshot.immutableControllers = std::make_shared<
+            const std::vector<brain::ControllerSnapshot>>(
+                snapshot.controllers);
 
         const auto pilots = root.GetNamedArray(L"pilots", JsonArray{});
         for (uint32_t index = 0; index < pilots.Size(); ++index) {
@@ -968,7 +984,7 @@ bool VatsimDataFeedClient::StartAsyncFetch(long long nowSeconds) {
 
             try {
                 std::lock_guard<std::mutex> lock(fetchMutex_);
-                pendingSnapshot_ = fetchedSnapshot;
+                pendingSnapshot_ = std::move(fetchedSnapshot);
                 hasPendingSnapshot_ = true;
             } catch (...) {
             }
@@ -1005,7 +1021,7 @@ void VatsimDataFeedClient::HarvestPendingFetch() {
     }
 
     lastFetchSucceeded_ = true;
-    cachedSnapshot_ = pendingSnapshot_;
+    cachedSnapshot_ = std::move(pendingSnapshot_);
     cachedSnapshot_.stale = false;
     cachedSnapshot_.fetchInProgress = false;
     cachedSnapshot_.generation = ++lastGeneration_;

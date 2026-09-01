@@ -1,0 +1,2 @@
+GATE_A_CALM_1_PROBE slowP99Us=0 slowMaxUs=1 slowBurstUs=462 slowDropped=4996 slowMaxDepth=5 unavailableP99Us=0 unavailableFailures=594 formattingFailures=1
+PERFORMANCE_CONTRACT_GATE_A_CALM_1_PASSED

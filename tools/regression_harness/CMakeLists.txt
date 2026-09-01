@@ -1,5 +1,8 @@
 add_executable(XVatsimRegressionHarness
     src/main.cpp
+    src/PerformanceContractGateACalm1Probe.cpp
+    src/PerformanceContractGateACalm2Probe.cpp
+    src/PerformanceContractGateAProbe.cpp
     src/Step6PdcContractProbe.cpp
 )
 
@@ -23,6 +26,7 @@ target_link_libraries(XVatsimRegressionHarness PRIVATE
     XVatsimHarnessLegacyEnroute
     XVatsimOverlayAccessoryCore
     XVatsimRouteSector
+    XVatsimRuntimeWorkers
     XVatsimSettingsStore
     XVatsimTerminalAuthority
     XVatsimTransceiverResolver

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -237,6 +238,100 @@ struct BrainOwnedRoutePolygonRuntimeOutput {
 std::uint64_t HashBrainRouteSectorSnapshot(
     const RouteSectorSnapshot& snapshot);
 
+// Full worker identity for authority evaluation. Unlike routePolygonHash this
+// includes waypoint geometry and therefore protects asynchronous completion
+// publication after late FMS enrichment or route-shape changes.
+std::uint64_t HashBrainAuthorityRouteSnapshot(
+    const RouteSectorSnapshot& snapshot);
+
+std::uint64_t HashBrainControllerEvidence(
+    const std::vector<ControllerSnapshot>& controllers,
+    bool available,
+    bool stale,
+    std::uint64_t generation,
+    int connectedControllers);
+
+std::uint64_t HashBrainControllerEvidenceContent(
+    const std::vector<ControllerSnapshot>& controllers);
+
+std::uint64_t HashBrainControllerEvidenceFromContentDigest(
+    std::uint64_t controllerContentDigest,
+    bool available,
+    bool stale,
+    std::uint64_t generation,
+    int connectedControllers);
+
+// Authority-only semantic controller identity. Feed generation, aggregate
+// counts, visual range, and input order do not affect authority decisions.
+std::vector<AuthorityControllerSnapshot> BuildBrainAuthorityControllerEvidence(
+    const std::vector<ControllerSnapshot>& controllers);
+
+std::vector<ControllerSnapshot> ExpandBrainAuthorityControllerEvidence(
+    const std::vector<AuthorityControllerSnapshot>& controllers);
+
+std::uint64_t HashBrainAuthorityControllerEvidenceContent(
+    const std::vector<ControllerSnapshot>& controllers);
+
+std::uint64_t HashBrainAuthorityControllerEvidenceContent(
+    const std::vector<AuthorityControllerSnapshot>& controllers);
+
+std::uint64_t HashBrainAuthorityControllerEvidence(
+    const std::vector<ControllerSnapshot>& controllers,
+    bool available,
+    bool stale);
+
+std::uint64_t HashBrainAuthorityControllerEvidenceFromContentDigest(
+    std::uint64_t controllerContentDigest,
+    bool available,
+    bool stale);
+
+std::uint64_t HashBrainTransceiverEvidence(
+    const TransceiverResolutionSnapshot& snapshot);
+
+AuthorityTransceiverEvidenceSnapshot BuildBrainAuthorityTransceiverEvidence(
+    const TransceiverResolutionSnapshot& snapshot);
+
+std::uint64_t HashBrainAuthorityTransceiverEvidence(
+    const AuthorityTransceiverEvidenceSnapshot& snapshot);
+
+TransceiverResolutionSnapshot ExpandBrainAuthorityTransceiverEvidence(
+    const AuthorityTransceiverEvidenceSnapshot& snapshot);
+
+std::uint64_t HashBrainAuthorityRelevanceSnapshot(
+    const AuthorityRelevanceSnapshot& snapshot);
+
+struct BrainAuthorityCompletionIdentity {
+    std::uint64_t requestId = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::string planKey;
+    std::uint64_t routeDigest = 0;
+    std::uint64_t controllerDigest = 0;
+    std::uint64_t transceiverDigest = 0;
+    std::uint64_t datasetIdentity = 0;
+};
+
+struct BrainAuthorityCompletionValidationInput {
+    BrainAuthorityCompletionIdentity expected;
+    BrainAuthorityCompletionIdentity completed;
+    AircraftStateSnapshot currentAircraft;
+    AircraftStateSnapshot dispatchedAircraft;
+    long long nowMonotonicMs = 0;
+    long long completedMonotonicMs = 0;
+    long long maximumAgeMs = 5000;
+    double maximumDisplacementNm = 25.0;
+};
+
+struct BrainAuthorityCompletionDecision {
+    bool accepted = false;
+    bool staleRejected = false;
+    std::string reason;
+    long long ageMs = 0;
+    double displacementNm = 0.0;
+};
+
+BrainAuthorityCompletionDecision DecideBrainAuthorityCompletion(
+    const BrainAuthorityCompletionValidationInput& input);
+
 BrainRoutePolygonWorkerOutput BuildBrainRoutePolygonWorkerOutput(
     const RouteSectorSnapshot& route);
 
@@ -267,7 +362,7 @@ struct BrainControllerRelevanceWorkerInput {
     std::uint64_t airportFrequencyHash = 0;
     BrainAirportFrequencyWorkerOutput airportFrequencies;
     std::uint64_t authorityRelevanceHash = 0;
-    AuthorityRelevanceSnapshot authorityRelevance;
+    std::shared_ptr<const AuthorityRelevanceSnapshot> authorityRelevance;
     std::uint64_t radioTuningHash = 0;
     RadioStateSnapshot radios;
     std::vector<RouteSectorMatchSnapshot> currentSectors;
@@ -281,7 +376,7 @@ struct BrainOwnedControllerRelevanceInputRequest {
     std::string departureIcao;
     std::string arrivalIcao;
     std::uint64_t authorityRelevanceHash = 0;
-    AuthorityRelevanceSnapshot authorityRelevance;
+    std::shared_ptr<const AuthorityRelevanceSnapshot> authorityRelevance;
     RadioStateSnapshot radios;
 };
 

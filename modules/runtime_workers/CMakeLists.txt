@@ -1,4 +1,5 @@
 add_library(XVatsimRuntimeWorkers STATIC
+    src/AsyncDiagnosticsWriter.cpp
     src/AsyncFactWorkerHost.cpp
 )
 

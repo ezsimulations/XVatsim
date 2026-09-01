@@ -923,6 +923,8 @@ struct BrainOwnedRuntimeState {
     bool hasRoutePolygonSnapshot = false;
     RouteSectorSnapshot routePolygonSnapshot;
     std::uint64_t routePolygonHash = 0;
+    std::uint64_t authorityRouteDigest = 0;
+    std::shared_ptr<const RouteSectorSnapshot> authorityRouteSnapshot;
     long long lastRoutePolygonRefreshSeconds = 0;
     std::string routePlanKey;
     int currentPolygonIndex = 0;
@@ -937,7 +939,11 @@ struct BrainOwnedRuntimeState {
     bool hasRadioBoard = false;
     long long lastRadioBoardRefreshSeconds = 0;
     std::uint64_t lastControllerGeneration = 0;
-    TransceiverResolutionSnapshot transceiverSnapshot;
+    std::shared_ptr<const TransceiverResolutionSnapshot> transceiverSnapshot;
+    std::shared_ptr<const AuthorityTransceiverEvidenceSnapshot>
+        authorityTransceiverEvidence;
+    std::uint64_t authorityTransceiverEvidenceDigest = 0;
+    std::uint64_t transceiverObservationGeneration = 0;
     RadioReachableControllerSnapshot radioSnapshot;
     RadioReachableControllerSnapshot gatedRadioSnapshot;
     RadioReachableCandidateDiff radioDiff;
@@ -2298,7 +2304,7 @@ BrainOwnedRadioBoardReuseOutput TryReuseBrainOwnedRadioBoard(
 
 BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
     BrainOwnedRuntimeState* state,
-    const BrainOwnedRadioBoardCommitInput& input);
+    BrainOwnedRadioBoardCommitInput input);
 
 BrainTerminalAuthorityWorkerOutput RefreshBrainOwnedDepartureTerminalAuthority(
     BrainOwnedRuntimeState* state,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -148,6 +149,17 @@ struct ControllerSnapshot {
     std::string textAtis;
 };
 
+// Canonical authority-only controller input. Radio-range presentation fields
+// such as visual range are intentionally absent.
+struct AuthorityControllerSnapshot {
+    std::string callsign;
+    std::string frequency;
+    int facility = 0;
+    bool actionable = true;
+    bool atis = false;
+    std::string textAtis;
+};
+
 struct ControllerFeedSnapshot {
     bool available = false;
     bool stale = true;
@@ -155,6 +167,16 @@ struct ControllerFeedSnapshot {
     int connectedControllers = 0;
     std::string statusLine;
     const std::vector<ControllerSnapshot>* controllers = nullptr;
+    // When present, this is the immutable owner behind controllers and may be
+    // safely retained by background requests.
+    std::shared_ptr<const std::vector<ControllerSnapshot>> ownedControllers;
+    std::uint64_t controllerContentDigest = 0;
+    // Authority identity deliberately excludes fetch generations, aggregate
+    // controller counts, visual range, and feed presentation text. It is
+    // compiled with the immutable controller vector on the fetch thread.
+    std::uint64_t authorityControllerContentDigest = 0;
+    std::shared_ptr<const std::vector<AuthorityControllerSnapshot>>
+        ownedAuthorityControllers;
 
     const std::vector<ControllerSnapshot>& Controllers() const {
         static const std::vector<ControllerSnapshot> kEmptyControllers;
@@ -325,6 +347,23 @@ struct TransceiverResolutionSnapshot {
     std::vector<ReceivableControllerSnapshot> candidates;
     TransceiverSourceEvidenceSnapshot sourceEvidence;
     std::vector<TransceiverControllerEvidenceSnapshot> controllerEvidence;
+};
+
+// Immutable authority-only projection of the radio resolver output. Distance,
+// feed-health diagnostics, parser counters, cache age, and presentation text
+// are intentionally absent because they cannot change authority membership.
+struct AuthorityTransceiverCandidateSnapshot {
+    std::string callsign;
+    std::string frequency;
+    double latitudeDeg = 0.0;
+    double longitudeDeg = 0.0;
+};
+
+struct AuthorityTransceiverEvidenceSnapshot {
+    bool available = false;
+    bool stale = true;
+    int receivableControllers = 0;
+    std::vector<AuthorityTransceiverCandidateSnapshot> candidates;
 };
 
 struct RouteWaypointSnapshot {

@@ -3,14 +3,14 @@
 #include <cmath>
 #include <cstdint>
 #include <cctype>
-#include <ctime>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <unordered_set>
 #include <utility>
@@ -34,6 +34,7 @@
 #include "XVatsim/modules/pilot_identity/PilotIdentityResolver.h"
 #include "XVatsim/modules/radio_state/RadioStateSampler.h"
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
+#include "XVatsim/modules/runtime_workers/AsyncDiagnosticsWriter.h"
 #include "XVatsim/modules/runtime_workers/AsyncFactWorkerHost.h"
 #include "XVatsim/modules/settings_store/SettingsStore.h"
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
@@ -125,8 +126,6 @@ constexpr long long kDiagnosticsSlowRefreshThresholdMs = 33;
 constexpr long long kDiagnosticsSlowRefreshLogIntervalSeconds = 10;
 constexpr long long kDiagnosticsSummaryIntervalSeconds = 30;
 constexpr int kDiagnosticsRetainedDateLogCount = 3;
-constexpr char kDiagnosticsLogFilePrefix[] = "xvatsim_diagnostics_";
-constexpr char kDiagnosticsLogFileSuffix[] = ".log";
 constexpr long long kRadioBoardSnapshotCadenceSeconds = 1;
 constexpr long long kRadioBoardPendingRouteRetrySeconds = 2;
 constexpr long long kActiveFlightPlanSampleCadenceSeconds = 15;
@@ -168,6 +167,8 @@ struct RefreshDiagnosticsFrame {
     int authorityCount = 0;
     int enrouteStationCount = 0;
     std::string authorityProofSummary;
+    std::shared_ptr<const xvatsim::brain::AuthorityRelevanceSnapshot>
+        authoritySnapshotForDiagnostics;
     bool hasAuthorityProofHash = false;
     std::size_t authorityProofHash = 0;
     long long xpilotPollMs = 0;
@@ -261,6 +262,8 @@ xvatsim::modules::overlay::OverlayWindow gOverlayWindow;
 xvatsim::modules::pilot_identity::PilotIdentityResolver gPilotIdentityResolver;
 xvatsim::modules::radio_state::RadioStateSampler gRadioStateSampler;
 xvatsim::modules::route_sector::RouteSectorResolver gRouteSectorResolver;
+xvatsim::modules::route_sector::AuthorityRelevanceWorker gAuthorityRelevanceWorker;
+xvatsim::modules::runtime_workers::AsyncDiagnosticsWriter gDiagnosticsWriter;
 xvatsim::modules::runtime_workers::AsyncFactWorkerHost gAsyncFactWorkerHost;
 xvatsim::modules::settings_store::SettingsStore gSettingsStore;
 xvatsim::modules::terminal_authority::TerminalAuthorityResolver
@@ -295,6 +298,33 @@ xvatsim::plugin::step3_live_proof::Step3LiveProofFixtureSession
 #endif
 PluginDiagnosticsState gDiagnosticsState;
 AccessoryInputRuntimeAccounting gAccessoryInputAccounting;
+std::uint64_t gFlightLoopTimingSequence = 0;
+
+struct AuthorityAsyncRuntimeState {
+    std::uint64_t lifecycleEpoch = 1;
+    std::uint64_t nextRequestId = 1;
+    bool hasExpectedIdentity = false;
+    xvatsim::brain::BrainAuthorityCompletionIdentity expectedIdentity;
+    long long lastDispatchMonotonicMs = 0;
+    std::shared_ptr<const xvatsim::brain::AuthorityRelevanceSnapshot>
+        acceptedSnapshot;
+    std::shared_ptr<xvatsim::modules::route_sector::AuthoritySnapshotLease>
+        acceptedSnapshotLease;
+    std::uint64_t acceptedSnapshotDigest = 0;
+    xvatsim::brain::BrainAuthorityCompletionIdentity acceptedIdentity;
+    std::uint64_t dispatchCount = 0;
+    std::uint64_t acceptedCount = 0;
+    std::uint64_t staleRejectedCount = 0;
+    std::uint64_t invalidationCount = 0;
+    bool hasControllerDigest = false;
+    std::uint64_t observedControllerGeneration = 0;
+    std::uint64_t observedTransceiverGeneration = 0;
+    std::uint64_t controllerGenerationOnlyRefreshCount = 0;
+    std::uint64_t transceiverUnchangedRefreshCount = 0;
+    std::uint64_t controllerDigest = 0;
+};
+
+AuthorityAsyncRuntimeState gAuthorityAsyncRuntime;
 xvatsim::brain::BrainOwnedAccessoryProjectionCounters
     gAccessoryProjectionCounters;
 std::uint64_t gLastAccessorySemanticPresentationGeneration = 0;
@@ -310,8 +340,15 @@ void RefreshOverlayFromBrainEngineer3();
 void ResetPresentationStateForColdDark();
 void ClearFlightRecoveryState();
 void ResetDiagnosticsTraceState();
-std::string CurrentDiagnosticsDateToken();
-void AppendDiagnosticsLogLine(const std::string& line);
+void AppendDiagnosticsLogLine(
+    std::string line,
+    xvatsim::modules::runtime_workers::DiagnosticsImportance importance =
+        xvatsim::modules::runtime_workers::DiagnosticsImportance::Routine);
+void AppendDeferredDiagnosticsLogLine(
+    xvatsim::modules::runtime_workers::AsyncDiagnosticsWriter::DeferredFormatter
+        formatter,
+    xvatsim::modules::runtime_workers::DiagnosticsImportance importance =
+        xvatsim::modules::runtime_workers::DiagnosticsImportance::Routine);
 std::string SanitizeLogText(std::string value, std::size_t maxChars);
 void LogMetarAsyncDiagnostics(
     const xvatsim::brain::BrainOwnedAsyncFactCycleOutput& output);
@@ -338,6 +375,7 @@ void LogCandidateCompletionTrace(
     xvatsim::brain::WorkflowStage workflowStage,
     const std::string& planKey);
 long long CurrentTickMilliseconds();
+void InvalidateAuthorityAsyncRuntime(const char* reason);
 
 std::string SummarizeRouteAuthorityPlan(
     const xvatsim::brain::RouteAuthorityPlan& plan);
@@ -536,45 +574,6 @@ void HashCombineString(std::size_t* seed, const std::string& value) {
     HashCombine(seed, std::hash<std::string>{}(value));
 }
 
-void HashCombineDouble(std::size_t* seed, double value) {
-    HashCombine(seed, std::hash<double>{}(value));
-}
-
-std::size_t HashRelevantAuthority(
-    const xvatsim::brain::RelevantAuthoritySnapshot& authority) {
-    std::size_t hash = 0;
-    HashCombineString(&hash, authority.callsign);
-    HashCombineString(&hash, authority.frequency);
-    HashCombineString(&hash, authority.authorityId);
-    HashCombineString(&hash, authority.polygonId);
-    HashCombineString(&hash, authority.polygonKey);
-    HashCombineString(&hash, authority.matchedPattern);
-    HashCombineString(&hash, authority.proofSource);
-    HashCombineString(&hash, authority.proofDetail);
-    HashCombine(&hash, static_cast<std::size_t>(authority.kind));
-    HashCombineBool(&hash, authority.aircraftInside);
-    HashCombineBool(&hash, authority.routeIntersects);
-    HashCombineDouble(&hash, authority.routeEntryDistanceNm);
-    return hash;
-}
-
-std::size_t HashAuthorityRelevanceSnapshot(
-    const xvatsim::brain::AuthorityRelevanceSnapshot& snapshot) {
-    std::size_t hash = 0;
-    HashCombineBool(&hash, snapshot.available);
-    HashCombineBool(&hash, snapshot.stale);
-    HashCombineString(&hash, snapshot.statusLine);
-    HashCombine(&hash, snapshot.diagnostics.size());
-    for (const auto& diagnostic : snapshot.diagnostics) {
-        HashCombineString(&hash, diagnostic);
-    }
-    HashCombine(&hash, snapshot.relevantAuthorities.size());
-    for (const auto& authority : snapshot.relevantAuthorities) {
-        HashCombine(&hash, HashRelevantAuthority(authority));
-    }
-    return hash;
-}
-
 std::size_t HashControllerFeedIdentity(const xvatsim::brain::ControllerFeedSnapshot& snapshot) {
     std::size_t hash = 0;
     HashCombineBool(&hash, snapshot.available);
@@ -626,6 +625,8 @@ void DiscardPendingTextEntryState() {
 void ResetSessionRuntimeCaches(
     bool resetVatsimFeed,
     bool preserveAccessory = false) {
+    InvalidateAuthorityAsyncRuntime(
+        resetVatsimFeed ? "session-runtime-reset" : "runtime-cache-reset");
     gAircraftStateSampler.Reset();
     gCtafLookupService.Reset();
     gXPilotBridge.Reset();
@@ -1865,19 +1866,19 @@ xvatsim::brain::RadioReachableControllerSnapshot BuildEngineer3RadioSnapshot(
     workerInput.aircraft = aircraftState;
     workerInput.controllerFeed = controllerFeedSnapshot;
     workerInput.planKey = planKey;
-    const auto workerOutput =
+    auto workerOutput =
         RunBrainRadioRangeWorker(workerInput, diagnostics);
     const auto radioSnapshot = workerOutput.radioBoard;
 
     xvatsim::brain::BrainOwnedRadioBoardCommitInput commitInput;
     commitInput.nowSeconds = nowSeconds;
     commitInput.controllerGeneration = controllerFeedSnapshot.generation;
-    commitInput.transceiverSnapshot = workerOutput.transceivers;
+    commitInput.transceiverSnapshot = std::move(workerOutput.transceivers);
     commitInput.radioSnapshot = radioSnapshot;
     const auto commitOutput =
         xvatsim::brain::CommitBrainOwnedRadioBoardRefresh(
             &gBrainOwnedRuntimeState,
-            commitInput);
+            std::move(commitInput));
 
     std::ostringstream result;
     result << commitOutput.radioSnapshot.statusLine << ","
@@ -2012,7 +2013,99 @@ xvatsim::brain::BrainRoutePolygonWorkerOutput RefreshBrainRoutePolygonSnapshot(
     return runtimeOutput.route;
 }
 
-xvatsim::brain::AuthorityRelevanceSnapshot RefreshBrainAuthorityRelevanceSnapshot(
+bool SameAuthorityCompletionInputs(
+    const xvatsim::brain::BrainAuthorityCompletionIdentity& left,
+    const xvatsim::brain::BrainAuthorityCompletionIdentity& right) {
+    return left.lifecycleEpoch == right.lifecycleEpoch &&
+           left.planKey == right.planKey &&
+           left.routeDigest == right.routeDigest &&
+           left.controllerDigest == right.controllerDigest &&
+           left.transceiverDigest == right.transceiverDigest &&
+           left.datasetIdentity == right.datasetIdentity;
+}
+
+xvatsim::brain::BrainAuthorityCompletionIdentity ToBrainAuthorityIdentity(
+    const xvatsim::modules::route_sector::AuthorityWorkerIdentity& identity) {
+    xvatsim::brain::BrainAuthorityCompletionIdentity output;
+    output.requestId = identity.requestId;
+    output.lifecycleEpoch = identity.lifecycleEpoch;
+    output.planKey = identity.planKey;
+    output.routeDigest = identity.routeDigest;
+    output.controllerDigest = identity.controllerDigest;
+    output.transceiverDigest = identity.transceiverDigest;
+    output.datasetIdentity = identity.datasetIdentity;
+    return output;
+}
+
+xvatsim::modules::route_sector::AuthorityWorkerIdentity ToWorkerAuthorityIdentity(
+    const xvatsim::brain::BrainAuthorityCompletionIdentity& identity) {
+    xvatsim::modules::route_sector::AuthorityWorkerIdentity output;
+    output.requestId = identity.requestId;
+    output.lifecycleEpoch = identity.lifecycleEpoch;
+    output.planKey = identity.planKey;
+    output.routeDigest = identity.routeDigest;
+    output.controllerDigest = identity.controllerDigest;
+    output.transceiverDigest = identity.transceiverDigest;
+    output.datasetIdentity = identity.datasetIdentity;
+    return output;
+}
+
+void InvalidateAuthorityAsyncRuntime(const char* reason) {
+    gAuthorityRelevanceWorker.CancelPending();
+    gAuthorityAsyncRuntime.hasExpectedIdentity = false;
+    gAuthorityAsyncRuntime.expectedIdentity = {};
+    if (gAuthorityAsyncRuntime.acceptedSnapshotLease != nullptr) {
+        gAuthorityAsyncRuntime.acceptedSnapshotLease->retired.store(
+            true, std::memory_order_release);
+    }
+    gAuthorityAsyncRuntime.acceptedSnapshot.reset();
+    gAuthorityAsyncRuntime.acceptedSnapshotLease.reset();
+    gAuthorityRelevanceWorker.NotifyRetirement();
+    gAuthorityAsyncRuntime.acceptedSnapshotDigest = 0;
+    gAuthorityAsyncRuntime.acceptedIdentity = {};
+    gAuthorityAsyncRuntime.lastDispatchMonotonicMs = 0;
+    gAuthorityAsyncRuntime.hasControllerDigest = false;
+    gAuthorityAsyncRuntime.observedControllerGeneration = 0;
+    gAuthorityAsyncRuntime.observedTransceiverGeneration = 0;
+    ++gAuthorityAsyncRuntime.lifecycleEpoch;
+    if (gAuthorityAsyncRuntime.lifecycleEpoch == 0) {
+        gAuthorityAsyncRuntime.lifecycleEpoch = 1;
+    }
+    ++gAuthorityAsyncRuntime.invalidationCount;
+    std::ostringstream line;
+    line << "event=authority-invalidate"
+         << " lifecycleEpoch=" << gAuthorityAsyncRuntime.lifecycleEpoch
+         << " reason=" << (reason == nullptr ? "unspecified" : reason);
+    AppendDiagnosticsLogLine(line.str());
+}
+
+std::shared_ptr<const xvatsim::brain::AuthorityRelevanceSnapshot>
+UnavailableAuthoritySnapshot(const char* reason) {
+    const auto build = [](const char* cacheStatus, const char* detail) {
+        auto snapshot =
+            std::make_shared<xvatsim::brain::AuthorityRelevanceSnapshot>();
+        snapshot->available = false;
+        snapshot->stale = true;
+        snapshot->diagnosticCacheStatus = cacheStatus;
+        snapshot->diagnosticReason = detail;
+        snapshot->statusLine = "AUTHORITY verification pending";
+        return std::shared_ptr<const xvatsim::brain::AuthorityRelevanceSnapshot>(
+            std::move(snapshot));
+    };
+    static const auto datasetUnavailable = build(
+        "authority-dataset-unavailable",
+        "immutable-dataset-unavailable");
+    static const auto workerPending = build(
+        "authority-async-pending",
+        "worker-pending-fail-closed");
+    return reason != nullptr &&
+                   std::string_view(reason) == "immutable-dataset-unavailable"
+               ? datasetUnavailable
+               : workerPending;
+}
+
+std::shared_ptr<const xvatsim::brain::AuthorityRelevanceSnapshot>
+RefreshBrainAuthorityRelevanceSnapshot(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     const xvatsim::brain::ControllerFeedSnapshot& controllerFeedSnapshot,
     const xvatsim::brain::RouteSectorSnapshot& routeSectorSnapshot,
@@ -2020,40 +2113,342 @@ xvatsim::brain::AuthorityRelevanceSnapshot RefreshBrainAuthorityRelevanceSnapsho
     const std::string& planKey,
     RefreshDiagnosticsFrame* diagnostics) {
     const auto timingStarted = std::chrono::steady_clock::now();
-    auto snapshot =
-        gRouteSectorResolver.ResolveBrainScheduledAuthorityVerification(
-            aircraftState,
-            controllerFeedSnapshot,
-            routeSectorSnapshot,
-            "controller-relevance-evidence-ledger",
-            &transceiverSnapshot);
+    const auto datasetPublication =
+        gRouteSectorResolver.GetAuthoritySourceDatasetPublication();
+    const auto* dataset = datasetPublication.dataset;
+    const auto& controllers = controllerFeedSnapshot.Controllers();
+    auto authorityControllers =
+        controllerFeedSnapshot.ownedAuthorityControllers;
+    if (authorityControllers == nullptr &&
+        controllerFeedSnapshot.controllers != nullptr) {
+        authorityControllers = std::make_shared<
+            const std::vector<xvatsim::brain::AuthorityControllerSnapshot>>(
+                xvatsim::brain::BuildBrainAuthorityControllerEvidence(
+                    controllers));
+    }
+    xvatsim::brain::BrainAuthorityCompletionIdentity currentIdentity;
+    currentIdentity.lifecycleEpoch = gAuthorityAsyncRuntime.lifecycleEpoch;
+    currentIdentity.planKey = planKey;
+    currentIdentity.routeDigest =
+        gBrainOwnedRuntimeState.authorityRouteDigest != 0
+            ? gBrainOwnedRuntimeState.authorityRouteDigest
+            : xvatsim::brain::HashBrainAuthorityRouteSnapshot(
+                  routeSectorSnapshot);
+    const auto authorityControllerContentDigest =
+        authorityControllers != nullptr &&
+                controllerFeedSnapshot.authorityControllerContentDigest != 0
+            ? controllerFeedSnapshot.authorityControllerContentDigest
+            : authorityControllers != nullptr
+                ? xvatsim::brain::HashBrainAuthorityControllerEvidenceContent(
+                      *authorityControllers)
+                : xvatsim::brain::HashBrainAuthorityControllerEvidenceContent(
+                      controllers);
+    const auto controllerDigest =
+        xvatsim::brain::HashBrainAuthorityControllerEvidenceFromContentDigest(
+            authorityControllerContentDigest,
+            controllerFeedSnapshot.available,
+            controllerFeedSnapshot.stale);
+    const auto controllerGenerationObserved =
+        gAuthorityAsyncRuntime.observedControllerGeneration !=
+            controllerFeedSnapshot.generation;
+    if (controllerGenerationObserved &&
+        gAuthorityAsyncRuntime.hasControllerDigest &&
+        gAuthorityAsyncRuntime.controllerDigest == controllerDigest) {
+        ++gAuthorityAsyncRuntime.controllerGenerationOnlyRefreshCount;
+    }
+    gAuthorityAsyncRuntime.observedControllerGeneration =
+        controllerFeedSnapshot.generation;
+    if (!gAuthorityAsyncRuntime.hasControllerDigest ||
+        gAuthorityAsyncRuntime.controllerDigest != controllerDigest) {
+        gAuthorityAsyncRuntime.controllerDigest = controllerDigest;
+        gAuthorityAsyncRuntime.hasControllerDigest = true;
+    }
+    currentIdentity.controllerDigest = gAuthorityAsyncRuntime.controllerDigest;
+    auto authorityTransceiverEvidence =
+        gBrainOwnedRuntimeState.authorityTransceiverEvidence;
+    if (authorityTransceiverEvidence == nullptr) {
+        authorityTransceiverEvidence = std::make_shared<
+            const xvatsim::brain::AuthorityTransceiverEvidenceSnapshot>(
+                xvatsim::brain::BuildBrainAuthorityTransceiverEvidence(
+                    transceiverSnapshot));
+    }
+    currentIdentity.transceiverDigest =
+        gBrainOwnedRuntimeState.authorityTransceiverEvidence != nullptr
+            ? gBrainOwnedRuntimeState.authorityTransceiverEvidenceDigest
+            : xvatsim::brain::HashBrainAuthorityTransceiverEvidence(
+                  *authorityTransceiverEvidence);
+    const auto transceiverGenerationObserved =
+        gAuthorityAsyncRuntime.observedTransceiverGeneration !=
+            gBrainOwnedRuntimeState.transceiverObservationGeneration;
+    if (transceiverGenerationObserved &&
+        gAuthorityAsyncRuntime.hasExpectedIdentity &&
+        gAuthorityAsyncRuntime.expectedIdentity.transceiverDigest ==
+            currentIdentity.transceiverDigest) {
+        ++gAuthorityAsyncRuntime.transceiverUnchangedRefreshCount;
+    }
+    gAuthorityAsyncRuntime.observedTransceiverGeneration =
+        gBrainOwnedRuntimeState.transceiverObservationGeneration;
+    currentIdentity.datasetIdentity = datasetPublication.identity;
+
+    const auto currentInputsUs = ElapsedMicrosecondsSince(timingStarted);
+    const auto expectedInputsChanged =
+        gAuthorityAsyncRuntime.hasExpectedIdentity &&
+        !SameAuthorityCompletionInputs(
+            gAuthorityAsyncRuntime.expectedIdentity,
+            currentIdentity);
+    const auto acceptedInputsChanged =
+        gAuthorityAsyncRuntime.acceptedSnapshot != nullptr &&
+        !SameAuthorityCompletionInputs(
+            gAuthorityAsyncRuntime.acceptedIdentity,
+            currentIdentity);
+    if (acceptedInputsChanged) {
+        if (gAuthorityAsyncRuntime.acceptedSnapshotLease != nullptr) {
+            gAuthorityAsyncRuntime.acceptedSnapshotLease->retired.store(
+                true, std::memory_order_release);
+        }
+        gAuthorityAsyncRuntime.acceptedSnapshot.reset();
+        gAuthorityAsyncRuntime.acceptedSnapshotLease.reset();
+        gAuthorityRelevanceWorker.NotifyRetirement();
+        gAuthorityAsyncRuntime.acceptedSnapshotDigest = 0;
+        gAuthorityAsyncRuntime.acceptedIdentity = {};
+        ++gAuthorityAsyncRuntime.invalidationCount;
+    }
+    const auto authorityInputsUsable =
+        dataset != nullptr && currentIdentity.datasetIdentity != 0 &&
+        !planKey.empty() && routeSectorSnapshot.available &&
+        !routeSectorSnapshot.stale && routeSectorSnapshot.routeResolved;
+    if (expectedInputsChanged && !authorityInputsUsable) {
+        gAuthorityRelevanceWorker.CancelPending();
+        gAuthorityAsyncRuntime.hasExpectedIdentity = false;
+        gAuthorityAsyncRuntime.expectedIdentity = {};
+        gAuthorityAsyncRuntime.lastDispatchMonotonicMs = 0;
+    }
+
+    xvatsim::modules::route_sector::AuthorityWorkerFact harvested;
+    const auto harvestStarted = std::chrono::steady_clock::now();
+    if (gAuthorityRelevanceWorker.TryHarvest(&harvested)) {
+        xvatsim::brain::BrainAuthorityCompletionValidationInput validation;
+        validation.expected = currentIdentity;
+        validation.expected.requestId =
+            gAuthorityAsyncRuntime.expectedIdentity.requestId;
+        validation.completed = ToBrainAuthorityIdentity(harvested.identity);
+        validation.currentAircraft = aircraftState;
+        validation.dispatchedAircraft = harvested.dispatchedAircraft;
+        validation.nowMonotonicMs = CurrentTickMilliseconds();
+        validation.completedMonotonicMs = harvested.completedMonotonicMs;
+        const auto decision =
+            xvatsim::brain::DecideBrainAuthorityCompletion(validation);
+        const auto publishable =
+            decision.accepted && harvested.completed &&
+            !harvested.cancelled && harvested.snapshotLease != nullptr &&
+            harvested.snapshotLease->snapshot != nullptr;
+        const auto terminalRequestId = harvested.identity.requestId;
+        const auto terminalWorkerUs = harvested.workerElapsedUs;
+        const auto terminalCompleted = harvested.completed;
+        const auto terminalCancelled = harvested.cancelled;
+        const auto terminalAccepted = decision.accepted;
+        const auto terminalAgeMs = decision.ageMs;
+        const auto terminalDisplacementNm = decision.displacementNm;
+        const auto terminalReason = decision.reason;
+        AppendDeferredDiagnosticsLogLine(
+            [terminalRequestId,
+             terminalWorkerUs,
+             terminalCompleted,
+             terminalCancelled,
+             terminalAccepted,
+             terminalAgeMs,
+             terminalDisplacementNm,
+             terminalReason]() {
+                std::ostringstream terminal;
+                terminal << "event=authority-terminal"
+                         << " requestId=" << terminalRequestId
+                         << " workerUs=" << terminalWorkerUs
+                         << " completed=" << (terminalCompleted ? 1 : 0)
+                         << " cancelled=" << (terminalCancelled ? 1 : 0)
+                         << " accepted=" << (terminalAccepted ? 1 : 0)
+                         << " ageMs=" << terminalAgeMs
+                         << " displacementNm=" << terminalDisplacementNm
+                         << " reason=" << terminalReason;
+                return terminal.str();
+            });
+        AppendDeferredDiagnosticsLogLine(
+            [terminalRequestId, publishable, terminalReason]() {
+                std::ostringstream disposition;
+                disposition << "event=authority-disposition"
+                            << " requestId=" << terminalRequestId
+                            << " disposition="
+                            << (publishable ? "published" : "rejected")
+                            << " reason=" << terminalReason;
+                return disposition.str();
+            });
+        if (publishable) {
+            if (gAuthorityAsyncRuntime.acceptedSnapshotLease != nullptr) {
+                gAuthorityAsyncRuntime.acceptedSnapshotLease->retired.store(
+                    true, std::memory_order_release);
+            }
+            gAuthorityAsyncRuntime.acceptedSnapshot.reset();
+            gAuthorityAsyncRuntime.acceptedSnapshotLease.reset();
+            gAuthorityAsyncRuntime.acceptedSnapshotLease =
+                harvested.snapshotLease;
+            gAuthorityAsyncRuntime.acceptedSnapshot =
+                harvested.snapshotLease != nullptr
+                ? harvested.snapshotLease->snapshot
+                : nullptr;
+            gAuthorityRelevanceWorker.NotifyRetirement();
+            gAuthorityAsyncRuntime.acceptedSnapshotDigest =
+                harvested.snapshotDigest;
+            gAuthorityAsyncRuntime.acceptedIdentity = validation.completed;
+            ++gAuthorityAsyncRuntime.acceptedCount;
+        } else {
+            if (harvested.snapshotLease != nullptr) {
+                harvested.snapshotLease->retired.store(
+                    true, std::memory_order_release);
+                gAuthorityRelevanceWorker.NotifyRetirement();
+            }
+            ++gAuthorityAsyncRuntime.staleRejectedCount;
+        }
+    }
+    const auto harvestUs = ElapsedMicrosecondsSince(harvestStarted);
+
+    const auto nowMs = CurrentTickMilliseconds();
+    const auto acceptedHasCenter =
+        gAuthorityAsyncRuntime.acceptedSnapshot != nullptr &&
+        std::any_of(
+            gAuthorityAsyncRuntime.acceptedSnapshot->relevantAuthorities.begin(),
+            gAuthorityAsyncRuntime.acceptedSnapshot->relevantAuthorities.end(),
+            [](const auto& authority) {
+                return authority.kind ==
+                    xvatsim::brain::AuthorityRelevanceKind::Center;
+            });
+    const auto routineCadenceMs = acceptedHasCenter ? 60'000LL : 15'000LL;
+    const auto routineDue =
+        gAuthorityAsyncRuntime.lastDispatchMonotonicMs == 0 ||
+        (nowMs - gAuthorityAsyncRuntime.lastDispatchMonotonicMs) >=
+            routineCadenceMs;
+    const auto needsDispatch =
+        authorityInputsUsable &&
+        (expectedInputsChanged || !gAuthorityAsyncRuntime.hasExpectedIdentity ||
+         (routineDue && !gAuthorityRelevanceWorker.IsRunning()));
+    if (needsDispatch) {
+        currentIdentity.requestId = gAuthorityAsyncRuntime.nextRequestId++;
+        if (gAuthorityAsyncRuntime.nextRequestId == 0) {
+            gAuthorityAsyncRuntime.nextRequestId = 1;
+        }
+        xvatsim::modules::route_sector::AuthorityWorkerRequest request;
+        request.identity = ToWorkerAuthorityIdentity(currentIdentity);
+        request.aircraft = aircraftState;
+        request.route =
+            gBrainOwnedRuntimeState.authorityRouteSnapshot != nullptr &&
+                    gBrainOwnedRuntimeState.authorityRouteDigest ==
+                        currentIdentity.routeDigest
+                ? gBrainOwnedRuntimeState.authorityRouteSnapshot
+                : std::make_shared<
+                      const xvatsim::brain::RouteSectorSnapshot>(
+                          routeSectorSnapshot);
+        request.controllers = authorityControllers;
+        request.hasControllerEvidence =
+            controllerFeedSnapshot.controllers != nullptr &&
+            authorityControllers != nullptr;
+        request.controllerFeedAvailable = controllerFeedSnapshot.available;
+        request.controllerFeedStale = controllerFeedSnapshot.stale;
+        request.controllerFeedGeneration = controllerFeedSnapshot.generation;
+        request.controllerFeedConnectedControllers =
+            controllerFeedSnapshot.connectedControllers;
+        request.terminalBoundaryGeneration =
+            datasetPublication.terminalBoundaryGeneration;
+        request.scheduleReason = "controller-relevance-evidence-ledger";
+        request.transceivers = authorityTransceiverEvidence;
+        request.dataset = dataset;
+        request.dispatchedMonotonicMs = nowMs;
+        if (gAuthorityRelevanceWorker.StartLatest(std::move(request))) {
+            gAuthorityAsyncRuntime.expectedIdentity = currentIdentity;
+            gAuthorityAsyncRuntime.hasExpectedIdentity = true;
+            gAuthorityAsyncRuntime.lastDispatchMonotonicMs = nowMs;
+            ++gAuthorityAsyncRuntime.dispatchCount;
+            const auto workerSnapshot = gAuthorityRelevanceWorker.Snapshot();
+            const auto dispatchIdentity = currentIdentity;
+            const auto dispatchSimulatorThreadUs =
+                ElapsedMicrosecondsSince(timingStarted);
+            const auto controllerGenerationOnlyRefreshes =
+                gAuthorityAsyncRuntime.controllerGenerationOnlyRefreshCount;
+            const auto transceiverUnchangedRefreshes =
+                gAuthorityAsyncRuntime.transceiverUnchangedRefreshCount;
+            AppendDeferredDiagnosticsLogLine(
+                [dispatchIdentity,
+                 workerRunning = workerSnapshot.running,
+                 workerPending = workerSnapshot.pending,
+                 maximumPendingDepth = workerSnapshot.maximumPendingDepth,
+                 controllerGenerationOnlyRefreshes,
+                 transceiverUnchangedRefreshes,
+                 dispatchSimulatorThreadUs]() {
+                    std::ostringstream dispatch;
+                    dispatch << "event=authority-dispatch"
+                             << " requestId=" << dispatchIdentity.requestId
+                             << " lifecycleEpoch="
+                             << dispatchIdentity.lifecycleEpoch
+                             << " routeDigest=" << dispatchIdentity.routeDigest
+                             << " controllerDigest="
+                             << dispatchIdentity.controllerDigest
+                             << " transceiverDigest="
+                             << dispatchIdentity.transceiverDigest
+                             << " datasetIdentity="
+                             << dispatchIdentity.datasetIdentity
+                             << " running=" << (workerRunning ? 1 : 0)
+                             << " pending=" << (workerPending ? 1 : 0)
+                             << " maxPendingDepth=" << maximumPendingDepth
+                             << " controllerGenerationOnlyRefreshes="
+                             << controllerGenerationOnlyRefreshes
+                             << " transceiverUnchangedRefreshes="
+                             << transceiverUnchangedRefreshes
+                             << " simulatorThreadUs="
+                             << dispatchSimulatorThreadUs;
+                    return dispatch.str();
+                });
+        }
+    }
+
+    auto snapshot = gAuthorityAsyncRuntime.acceptedSnapshot;
+    if (snapshot == nullptr ||
+        !SameAuthorityCompletionInputs(
+            gAuthorityAsyncRuntime.acceptedIdentity,
+            currentIdentity)) {
+        snapshot = UnavailableAuthoritySnapshot(
+            dataset == nullptr ? "immutable-dataset-unavailable"
+                               : "worker-pending-fail-closed");
+    }
     const auto elapsedUs = ElapsedMicrosecondsSince(timingStarted);
-    const auto hash = HashAuthorityRelevanceSnapshot(snapshot);
+    const auto hash =
+        snapshot == gAuthorityAsyncRuntime.acceptedSnapshot
+            ? gAuthorityAsyncRuntime.acceptedSnapshotDigest
+            : xvatsim::brain::HashBrainAuthorityRelevanceSnapshot(*snapshot);
 
     if (diagnostics != nullptr) {
         diagnostics->authorityRelevanceUs = elapsedUs;
         diagnostics->authorityRelevanceMs = elapsedUs / 1000;
-        diagnostics->authorityStatus = snapshot.statusLine;
+        diagnostics->authorityStatus = snapshot->statusLine;
         diagnostics->authorityCount =
-            static_cast<int>(snapshot.relevantAuthorities.size());
-        diagnostics->authorityProofSummary = SummarizeAuthorityProofs(snapshot);
+            static_cast<int>(snapshot->relevantAuthorities.size());
+        diagnostics->authoritySnapshotForDiagnostics = snapshot;
         diagnostics->hasAuthorityProofHash = true;
         diagnostics->authorityProofHash = hash;
     }
 
     std::ostringstream result;
-    result << "authorities=" << snapshot.relevantAuthorities.size()
-           << ",status=" << SanitizeLogText(snapshot.statusLine, 72)
-           << ",proofs=" << SanitizeLogText(SummarizeAuthorityProofs(snapshot), 160);
+    result << "authorities=" << snapshot->relevantAuthorities.size()
+           << ",status=" << SanitizeLogText(snapshot->statusLine, 72)
+           << ",proofRecords=" << snapshot->relevantAuthorities.size()
+           << ",identityUs=" << currentInputsUs
+           << ",harvestUs=" << harvestUs
+           << ",running=" << (gAuthorityRelevanceWorker.IsRunning() ? 1 : 0);
     RecordDiagnosticJob(
         "BrainAuthorityRelevanceWorker",
-        snapshot.diagnosticReason.empty()
-            ? snapshot.statusLine
-            : snapshot.diagnosticReason,
+        snapshot->diagnosticReason.empty()
+            ? snapshot->statusLine
+            : snapshot->diagnosticReason,
         elapsedUs / 1000,
-        snapshot.diagnosticCacheStatus,
+        snapshot->diagnosticCacheStatus,
         result.str(),
-        FormatSourceGenerations(snapshot),
+        FormatSourceGenerations(*snapshot),
         planKey);
     return snapshot;
 }
@@ -2153,154 +2548,18 @@ std::filesystem::path ResolvePluginRootPath() {
     return rootPath;
 }
 
-std::filesystem::path ResolveDiagnosticsLogPath() {
-    return ResolvePluginRootPath() / "logs" /
-           (std::string{kDiagnosticsLogFilePrefix} +
-            CurrentDiagnosticsDateToken() +
-            kDiagnosticsLogFileSuffix);
+void AppendDiagnosticsLogLine(
+    std::string line,
+    xvatsim::modules::runtime_workers::DiagnosticsImportance importance) {
+    (void)gDiagnosticsWriter.TryEnqueueLine(std::move(line), importance);
 }
 
-std::string CurrentDiagnosticsDateToken() {
-    const auto now = std::time(nullptr);
-    std::tm localTime{};
-    if (localtime_s(&localTime, &now) != 0) {
-        return "unknown_date";
-    }
-
-    char buffer[16] = {};
-    if (std::strftime(buffer, sizeof(buffer), "%Y_%m_%d", &localTime) == 0) {
-        return "unknown_date";
-    }
-    return buffer;
-}
-
-bool IsDiagnosticsDateToken(const std::string& token) {
-    if (token.size() != 10 || token[4] != '_' || token[7] != '_') {
-        return false;
-    }
-    for (std::size_t index = 0; index < token.size(); ++index) {
-        if (index == 4 || index == 7) {
-            continue;
-        }
-        if (std::isdigit(static_cast<unsigned char>(token[index])) == 0) {
-            return false;
-        }
-    }
-    return true;
-}
-
-std::string ExtractDiagnosticsLogDateToken(const std::filesystem::path& path) {
-    const auto filename = path.filename().string();
-    const std::string prefix = kDiagnosticsLogFilePrefix;
-    const std::string suffix = kDiagnosticsLogFileSuffix;
-    if (filename.size() != prefix.size() + 10 + suffix.size() ||
-        filename.compare(0, prefix.size(), prefix) != 0 ||
-        filename.compare(filename.size() - suffix.size(), suffix.size(), suffix) !=
-            0) {
-        return {};
-    }
-
-    auto token = filename.substr(prefix.size(), 10);
-    return IsDiagnosticsDateToken(token) ? token : std::string{};
-}
-
-void RemoveLegacyDiagnosticsRollingLogs(
-    const std::filesystem::path& logDirectory) {
-    static constexpr const char* kLegacyDiagnosticsLogs[] = {
-        "xvatsim_diagnostics.log",
-        "xvatsim_diagnostics.log.1",
-        "xvatsim_diagnostics.log.2",
-    };
-    std::error_code error;
-    for (const auto* filename : kLegacyDiagnosticsLogs) {
-        std::filesystem::remove(logDirectory / filename, error);
-        error.clear();
-    }
-}
-
-void EnforceDiagnosticsLogRetention(const std::filesystem::path& logDirectory) {
-    std::error_code error;
-    if (!std::filesystem::exists(logDirectory, error) || error) {
-        return;
-    }
-    RemoveLegacyDiagnosticsRollingLogs(logDirectory);
-
-    std::vector<std::pair<std::string, std::filesystem::path>> datedLogs;
-    for (std::filesystem::directory_iterator iterator(logDirectory, error), end;
-         !error && iterator != end;
-         iterator.increment(error)) {
-        if (!iterator->is_regular_file(error) || error) {
-            error.clear();
-            continue;
-        }
-        const auto token = ExtractDiagnosticsLogDateToken(iterator->path());
-        if (!token.empty()) {
-            datedLogs.push_back({token, iterator->path()});
-        }
-    }
-    if (datedLogs.empty()) {
-        return;
-    }
-
-    std::sort(
-        datedLogs.begin(),
-        datedLogs.end(),
-        [](const auto& lhs, const auto& rhs) {
-            if (lhs.first != rhs.first) {
-                return lhs.first > rhs.first;
-            }
-            return lhs.second.filename().string() > rhs.second.filename().string();
-        });
-
-    std::vector<std::string> retainedDates;
-    for (const auto& [dateToken, path] : datedLogs) {
-        if (std::find(retainedDates.begin(), retainedDates.end(), dateToken) ==
-            retainedDates.end()) {
-            if (retainedDates.size() <
-                static_cast<std::size_t>(kDiagnosticsRetainedDateLogCount)) {
-                retainedDates.push_back(dateToken);
-            }
-        }
-
-        if (std::find(retainedDates.begin(), retainedDates.end(), dateToken) ==
-            retainedDates.end()) {
-            std::filesystem::remove(path, error);
-            error.clear();
-        }
-    }
-}
-
-void EnforceDiagnosticsLogRetentionIfNeeded(
-    const std::filesystem::path& logDirectory,
-    const std::string& dateToken) {
-    static std::string lastRetentionDateToken;
-    if (lastRetentionDateToken == dateToken) {
-        return;
-    }
-    EnforceDiagnosticsLogRetention(logDirectory);
-    lastRetentionDateToken = dateToken;
-}
-
-void AppendDiagnosticsLogLine(const std::string& line) {
-    const auto dateToken = CurrentDiagnosticsDateToken();
-    const auto logDirectory = ResolvePluginRootPath() / "logs";
-    const auto logPath =
-        logDirectory /
-        (std::string{kDiagnosticsLogFilePrefix} + dateToken +
-         kDiagnosticsLogFileSuffix);
-    std::error_code error;
-    std::filesystem::create_directories(logDirectory, error);
-    if (error) {
-        return;
-    }
-    EnforceDiagnosticsLogRetentionIfNeeded(logDirectory, dateToken);
-
-    std::ofstream output(logPath, std::ios::app);
-    if (!output) {
-        return;
-    }
-
-    output << "tick=" << CurrentTickSeconds() << " " << line << "\n";
+void AppendDeferredDiagnosticsLogLine(
+    xvatsim::modules::runtime_workers::AsyncDiagnosticsWriter::DeferredFormatter
+        formatter,
+    xvatsim::modules::runtime_workers::DiagnosticsImportance importance) {
+    (void)gDiagnosticsWriter.TryEnqueueDeferred(
+        std::move(formatter), importance);
 }
 
 void ResetDiagnosticsTraceState() {
@@ -2456,15 +2715,14 @@ std::string FormatCompletionTraceList(
     return stream.str();
 }
 
-bool ShouldEmitTraceLine(
-    const std::string& line,
+bool ShouldEmitTraceHash(
+    std::size_t hash,
     bool* hasLastHash,
     std::size_t* lastHash) {
     if (hasLastHash == nullptr || lastHash == nullptr) {
         return true;
     }
 
-    const auto hash = std::hash<std::string>{}(line);
     if (*hasLastHash && *lastHash == hash) {
         return false;
     }
@@ -2488,94 +2746,162 @@ void LogRadioBoardCandidateDiffTrace(
     if (candidateSetUnchanged && !kDiagnosticsVerboseUnchangedCandidateDiff) {
         return;
     }
-
-    std::ostringstream stream;
-    stream << "event=radio-board-candidate-diff"
-           << " phase=" << WorkflowStageToken(workflowStage)
-           << " plan=" << SanitizeLogToken(planKey, 128)
-           << " route=" << SanitizeLogToken(gDiagnosticsState.frame.route, 32)
-           << " currentPolygon="
-           << SanitizeLogToken(state.currentPolygonKey, 64)
-           << " nextPolygon="
-           << SanitizeLogToken(state.nextPolygonKey, 64)
-           << " arrivalPolygon="
-           << SanitizeLogToken(state.arrivalPolygonKey, 64)
-           << " inputHash=" << snapshot.stableHash
-           << "/" << state.routePolygonHash
-           << " rawRadioHash=" << snapshot.stableHash
-           << " routeHash=" << state.routePolygonHash
-           << " generation=" << snapshot.generation
-           << " available=" << (snapshot.available ? 1 : 0)
-           << " stale=" << (snapshot.stale ? 1 : 0)
-           << " source=" << xvatsim::brain::ToString(snapshot.source)
-           << " previousHash=" << diff.previousHash
-           << " currentHash=" << diff.currentHash
-           << " diffMatchesSnapshot=" << (diffMatchesSnapshot ? 1 : 0)
-           << " previousCandidates=" << diff.previousCandidates
-           << " currentCandidates=" << diff.currentCandidates
-           << " added=" << diff.added
-           << " removed=" << diff.removed
-           << " unchanged=" << diff.unchanged
-           << " addedKeys="
-           << JoinTraceTokens(
-                  diff.addedStableKeys,
-                  kDiagnosticsMaxTraceItems,
-                  128)
-           << " removedKeys="
-           << JoinTraceTokens(
-                  diff.removedStableKeys,
-                  kDiagnosticsMaxTraceItems,
-                  128)
-           << " candidates="
-           << FormatRadioCandidateTraceList(snapshot)
-           << " status="
-           << SanitizeLogToken(snapshot.statusLine, 180)
-           << " diffStatus="
-           << SanitizeLogToken(diff.statusLine, 180);
-
-    const auto line = stream.str();
-    if (ShouldEmitTraceLine(
-            line,
+    std::size_t traceHash = 0;
+    HashCombine(&traceHash, static_cast<std::size_t>(workflowStage));
+    HashCombineString(&traceHash, planKey);
+    HashCombine(&traceHash, snapshot.stableHash);
+    HashCombine(&traceHash, state.routePolygonHash);
+    HashCombine(&traceHash, diff.previousHash);
+    HashCombine(&traceHash, diff.currentHash);
+    HashCombine(&traceHash, diff.added);
+    HashCombine(&traceHash, diff.removed);
+    if (!ShouldEmitTraceHash(
+            traceHash,
             &gDiagnosticsState.hasLastRadioBoardTraceHash,
             &gDiagnosticsState.lastRadioBoardTraceHash)) {
-        AppendDiagnosticsLogLine(line);
+        return;
     }
+
+    const auto phase = std::string{WorkflowStageToken(workflowStage)};
+    const auto route = gDiagnosticsState.frame.route;
+    const auto currentPolygon = state.currentPolygonKey;
+    const auto nextPolygon = state.nextPolygonKey;
+    const auto arrivalPolygon = state.arrivalPolygonKey;
+    const auto routePolygonHash = state.routePolygonHash;
+    const auto snapshotForWriter = snapshot;
+    const auto diffForWriter = diff;
+    AppendDeferredDiagnosticsLogLine(
+        [phase,
+         planKey,
+         route,
+         currentPolygon,
+         nextPolygon,
+         arrivalPolygon,
+         routePolygonHash,
+         snapshot = std::move(snapshotForWriter),
+         diff = std::move(diffForWriter),
+         diffMatchesSnapshot]() {
+            std::ostringstream stream;
+            stream << "event=radio-board-candidate-diff"
+                   << " phase=" << phase
+                   << " plan=" << SanitizeLogToken(planKey, 128)
+                   << " route=" << SanitizeLogToken(route, 32)
+                   << " currentPolygon="
+                   << SanitizeLogToken(currentPolygon, 64)
+                   << " nextPolygon=" << SanitizeLogToken(nextPolygon, 64)
+                   << " arrivalPolygon="
+                   << SanitizeLogToken(arrivalPolygon, 64)
+                   << " inputHash=" << snapshot.stableHash
+                   << "/" << routePolygonHash
+                   << " rawRadioHash=" << snapshot.stableHash
+                   << " routeHash=" << routePolygonHash
+                   << " generation=" << snapshot.generation
+                   << " available=" << (snapshot.available ? 1 : 0)
+                   << " stale=" << (snapshot.stale ? 1 : 0)
+                   << " source=" << xvatsim::brain::ToString(snapshot.source)
+                   << " previousHash=" << diff.previousHash
+                   << " currentHash=" << diff.currentHash
+                   << " diffMatchesSnapshot="
+                   << (diffMatchesSnapshot ? 1 : 0)
+                   << " previousCandidates=" << diff.previousCandidates
+                   << " currentCandidates=" << diff.currentCandidates
+                   << " added=" << diff.added
+                   << " removed=" << diff.removed
+                   << " unchanged=" << diff.unchanged
+                   << " addedKeys="
+                   << JoinTraceTokens(
+                          diff.addedStableKeys,
+                          kDiagnosticsMaxTraceItems,
+                          128)
+                   << " removedKeys="
+                   << JoinTraceTokens(
+                          diff.removedStableKeys,
+                          kDiagnosticsMaxTraceItems,
+                          128)
+                   << " candidates="
+                   << FormatRadioCandidateTraceList(snapshot)
+                   << " status="
+                   << SanitizeLogToken(snapshot.statusLine, 180)
+                   << " diffStatus="
+                   << SanitizeLogToken(diff.statusLine, 180);
+            return stream.str();
+        });
 }
 
 void LogCandidateCompletionTrace(
     xvatsim::brain::WorkflowStage workflowStage,
     const std::string& planKey) {
     const auto& state = gBrainOwnedRuntimeState;
-    std::ostringstream stream;
-    stream << "event=candidate-completion-trace"
-           << " phase=" << WorkflowStageToken(workflowStage)
-           << " plan=" << SanitizeLogToken(planKey, 128)
-           << " route=" << SanitizeLogToken(gDiagnosticsState.frame.route, 32)
-           << " currentPolygon="
-           << SanitizeLogToken(state.currentPolygonKey, 64)
-           << " nextPolygon="
-           << SanitizeLogToken(state.nextPolygonKey, 64)
-           << " arrivalPolygon="
-           << SanitizeLogToken(state.arrivalPolygonKey, 64)
-           << " currentIndex=" << state.currentPolygonIndex
-           << " inputHash=" << state.gatedRadioSnapshot.stableHash
-           << "/" << state.routePolygonHash
-           << " rawRadioHash=" << state.radioSnapshot.stableHash
-           << " gatedRadioHash=" << state.gatedRadioSnapshot.stableHash
-           << " routeHash=" << state.routePolygonHash
-           << " candidatesComplete="
-           << (state.candidatesComplete ? 1 : 0)
-           << " completions=" << state.candidateCompletions.size()
-           << " results="
-           << FormatCompletionTraceList(state.candidateCompletions);
-
-    const auto line = stream.str();
-    if (ShouldEmitTraceLine(
-            line,
+    std::size_t traceHash = 0;
+    HashCombine(&traceHash, static_cast<std::size_t>(workflowStage));
+    HashCombineString(&traceHash, planKey);
+    HashCombine(&traceHash, state.gatedRadioSnapshot.stableHash);
+    HashCombine(&traceHash, state.radioSnapshot.stableHash);
+    HashCombine(&traceHash, state.routePolygonHash);
+    HashCombineBool(&traceHash, state.candidatesComplete);
+    HashCombine(&traceHash, state.candidateCompletions.size());
+    for (const auto& completion : state.candidateCompletions) {
+        HashCombineString(&traceHash, completion.stableKey);
+        HashCombine(
+            &traceHash, static_cast<std::size_t>(completion.decision));
+        HashCombineBool(&traceHash, completion.displayed);
+        HashCombineString(&traceHash, completion.currentPolygonKey);
+        HashCombineString(&traceHash, completion.matchedPolygonKey);
+        HashCombineString(&traceHash, completion.reason);
+    }
+    if (!ShouldEmitTraceHash(
+            traceHash,
             &gDiagnosticsState.hasLastCompletionTraceHash,
             &gDiagnosticsState.lastCompletionTraceHash)) {
-        AppendDiagnosticsLogLine(line);
+        return;
     }
+
+    const auto phase = std::string{WorkflowStageToken(workflowStage)};
+    const auto route = gDiagnosticsState.frame.route;
+    const auto currentPolygon = state.currentPolygonKey;
+    const auto nextPolygon = state.nextPolygonKey;
+    const auto arrivalPolygon = state.arrivalPolygonKey;
+    const auto currentPolygonIndex = state.currentPolygonIndex;
+    const auto gatedRadioHash = state.gatedRadioSnapshot.stableHash;
+    const auto rawRadioHash = state.radioSnapshot.stableHash;
+    const auto routePolygonHash = state.routePolygonHash;
+    const auto candidatesComplete = state.candidatesComplete;
+    const auto completions = state.candidateCompletions;
+    AppendDeferredDiagnosticsLogLine(
+        [phase,
+         planKey,
+         route,
+         currentPolygon,
+         nextPolygon,
+         arrivalPolygon,
+         currentPolygonIndex,
+         gatedRadioHash,
+         rawRadioHash,
+         routePolygonHash,
+         candidatesComplete,
+         completions]() {
+            std::ostringstream stream;
+            stream << "event=candidate-completion-trace"
+                   << " phase=" << phase
+                   << " plan=" << SanitizeLogToken(planKey, 128)
+                   << " route=" << SanitizeLogToken(route, 32)
+                   << " currentPolygon="
+                   << SanitizeLogToken(currentPolygon, 64)
+                   << " nextPolygon=" << SanitizeLogToken(nextPolygon, 64)
+                   << " arrivalPolygon="
+                   << SanitizeLogToken(arrivalPolygon, 64)
+                   << " currentIndex=" << currentPolygonIndex
+                   << " inputHash=" << gatedRadioHash
+                   << "/" << routePolygonHash
+                   << " rawRadioHash=" << rawRadioHash
+                   << " gatedRadioHash=" << gatedRadioHash
+                   << " routeHash=" << routePolygonHash
+                   << " candidatesComplete="
+                   << (candidatesComplete ? 1 : 0)
+                   << " completions=" << completions.size()
+                   << " results=" << FormatCompletionTraceList(completions);
+            return stream.str();
+        });
 }
 
 long long SumTrackedRefreshMicroseconds(const RefreshDiagnosticsFrame& frame) {
@@ -2612,8 +2938,6 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
     }
 
     auto& frame = gDiagnosticsState.frame;
-    frame.authorityProofSummary =
-        SanitizeLogText(frame.authorityProofSummary, 1200);
     const auto nowSeconds = CurrentTickSeconds();
     const auto authorityHash =
         frame.hasAuthorityProofHash
@@ -2646,77 +2970,100 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
         gDiagnosticsState.lastSummarySeconds = nowSeconds;
     }
 
-    std::ostringstream stream;
-    const auto trackedRefreshUs = SumTrackedRefreshMicroseconds(frame);
-    const auto untrackedRefreshUs =
-        totalRefreshUs > trackedRefreshUs ? totalRefreshUs - trackedRefreshUs : 0;
-    stream << "event="
-           << (authorityChanged ? "authority-proof" : (slowRefresh ? "slow-refresh" : "summary"))
-           << " totalMs=" << totalRefreshMs
-           << " totalUs=" << totalRefreshUs
-           << " stage=" << SanitizeLogText(frame.stage, 16)
-           << " reason=" << SanitizeLogText(frame.stageReason, 40)
-           << " wake=" << (frame.shouldWake ? 1 : 0)
-           << " wakeReason=" << SanitizeLogText(frame.wakeReason, 40)
-           << " xpilot=" << (frame.xpilotConnected ? 1 : 0)
-           << " battery=" << (frame.batteryOn ? 1 : 0)
-           << " ground=" << (frame.onGround ? 1 : 0)
-           << " callsign=" << SanitizeLogText(frame.callsign, 32)
-           << " route=" << SanitizeLogText(frame.route, 32)
-           << " controllers=" << frame.controllerCount
-           << " routeResolved=" << (frame.routeResolved ? 1 : 0)
-           << " authorities=" << frame.authorityCount
-           << " enrouteStations=" << frame.enrouteStationCount
-           << " timings=xpilot:" << frame.xpilotPollMs
-           << ",vatsim:" << frame.vatsimFeedMs
-           << ",controllers:" << frame.controllerFeedMs
-           << ",flightPlan:" << frame.flightPlanMs
-           << ",networkPlan:" << frame.networkPlanMs
-           << ",radio:" << frame.radioMs
-           << ",ctaf:" << frame.ctafMs
-           << ",depBoard:" << frame.departureBoardMs
-           << ",arrBoard:" << frame.arrivalBoardMs
-           << ",route:" << frame.routeResolveMs
-           << ",routePlan:" << frame.routeAuthorityPlanMs
-           << ",authorityStations:" << frame.authorityStationsMs
-           << ",authorityRelevance:" << frame.authorityRelevanceMs
-           << ",enrBoard:" << frame.enrouteBoardMs
-           << ",workflow:" << frame.workflowMs
-           << ",radioRange:" << frame.radioRangeResolveMs
-           << ",overlayBuild:" << frame.overlayBuildMs
-           << ",overlayUpdate:" << frame.overlayUpdateMs
-           << " usTimings=aircraft:" << frame.aircraftStateUs
-           << ",xpilot:" << frame.xpilotPollUs
-           << ",vatsim:" << frame.vatsimFeedUs
-           << ",controllers:" << frame.controllerFeedUs
-           << ",flightPlan:" << frame.flightPlanUs
-           << ",networkPlan:" << frame.networkPlanUs
-           << ",radio:" << frame.radioUs
-           << ",pdcPrivateSource:" << frame.pdcPrivateSourceUs
-           << ",manualQuery:" << frame.manualQueryUs
-           << ",context:" << frame.flightContextUs
-           << ",ctaf:" << frame.ctafUs
-           << ",route:" << frame.routeResolveUs
-           << ",routePlan:" << frame.routeAuthorityPlanUs
-           << ",authorityStations:" << frame.authorityStationsUs
-           << ",authorityRelevance:" << frame.authorityRelevanceUs
-           << ",departure:" << frame.departureBoardUs
-           << ",arrival:" << frame.arrivalBoardUs
-           << ",enroute:" << frame.enrouteBoardUs
-           << ",workflow:" << frame.workflowUs
-           << ",standbyAssist:" << frame.standbyAssistUs
-           << ",wakeDecision:" << frame.wakeDecisionUs
-           << ",radioRange:" << frame.radioRangeResolveUs
-           << ",overlayBuild:" << frame.overlayBuildUs
-           << ",overlayUpdate:" << frame.overlayUpdateUs
-           << ",displayLog:" << frame.displayLoggingUs
-           << ",tracked:" << trackedRefreshUs
-           << ",untracked:" << untrackedRefreshUs
-           << " routeStatus=\"" << SanitizeLogText(frame.routeStatus, 180)
-           << "\" authorityStatus=\"" << SanitizeLogText(frame.authorityStatus, 180)
-           << "\" authorityProofs=\"" << frame.authorityProofSummary
-           << "\" jobs=\"" << SummarizeDiagnosticJobs(frame, 16) << "\"";
-    AppendDiagnosticsLogLine(stream.str());
+    auto frameForWriter = std::move(frame);
+    AppendDeferredDiagnosticsLogLine(
+        [frame = std::move(frameForWriter),
+         totalRefreshMs,
+         totalRefreshUs,
+         authorityChanged,
+         slowRefresh]() mutable {
+            if (frame.authoritySnapshotForDiagnostics != nullptr) {
+                frame.authorityProofSummary = SummarizeAuthorityProofs(
+                    *frame.authoritySnapshotForDiagnostics);
+            }
+            frame.authorityProofSummary =
+                SanitizeLogText(std::move(frame.authorityProofSummary), 1200);
+            const auto trackedRefreshUs =
+                SumTrackedRefreshMicroseconds(frame);
+            const auto untrackedRefreshUs =
+                totalRefreshUs > trackedRefreshUs
+                    ? totalRefreshUs - trackedRefreshUs
+                    : 0;
+            std::ostringstream stream;
+            stream << "event="
+                   << (authorityChanged
+                           ? "authority-proof"
+                           : (slowRefresh ? "slow-refresh" : "summary"))
+                   << " totalMs=" << totalRefreshMs
+                   << " totalUs=" << totalRefreshUs
+                   << " stage=" << SanitizeLogText(frame.stage, 16)
+                   << " reason=" << SanitizeLogText(frame.stageReason, 40)
+                   << " wake=" << (frame.shouldWake ? 1 : 0)
+                   << " wakeReason=" << SanitizeLogText(frame.wakeReason, 40)
+                   << " xpilot=" << (frame.xpilotConnected ? 1 : 0)
+                   << " battery=" << (frame.batteryOn ? 1 : 0)
+                   << " ground=" << (frame.onGround ? 1 : 0)
+                   << " callsign=" << SanitizeLogText(frame.callsign, 32)
+                   << " route=" << SanitizeLogText(frame.route, 32)
+                   << " controllers=" << frame.controllerCount
+                   << " routeResolved=" << (frame.routeResolved ? 1 : 0)
+                   << " authorities=" << frame.authorityCount
+                   << " enrouteStations=" << frame.enrouteStationCount
+                   << " timings=xpilot:" << frame.xpilotPollMs
+                   << ",vatsim:" << frame.vatsimFeedMs
+                   << ",controllers:" << frame.controllerFeedMs
+                   << ",flightPlan:" << frame.flightPlanMs
+                   << ",networkPlan:" << frame.networkPlanMs
+                   << ",radio:" << frame.radioMs
+                   << ",ctaf:" << frame.ctafMs
+                   << ",depBoard:" << frame.departureBoardMs
+                   << ",arrBoard:" << frame.arrivalBoardMs
+                   << ",route:" << frame.routeResolveMs
+                   << ",routePlan:" << frame.routeAuthorityPlanMs
+                   << ",authorityStations:" << frame.authorityStationsMs
+                   << ",authorityRelevance:" << frame.authorityRelevanceMs
+                   << ",enrBoard:" << frame.enrouteBoardMs
+                   << ",workflow:" << frame.workflowMs
+                   << ",radioRange:" << frame.radioRangeResolveMs
+                   << ",overlayBuild:" << frame.overlayBuildMs
+                   << ",overlayUpdate:" << frame.overlayUpdateMs
+                   << " usTimings=aircraft:" << frame.aircraftStateUs
+                   << ",xpilot:" << frame.xpilotPollUs
+                   << ",vatsim:" << frame.vatsimFeedUs
+                   << ",controllers:" << frame.controllerFeedUs
+                   << ",flightPlan:" << frame.flightPlanUs
+                   << ",networkPlan:" << frame.networkPlanUs
+                   << ",radio:" << frame.radioUs
+                   << ",pdcPrivateSource:" << frame.pdcPrivateSourceUs
+                   << ",manualQuery:" << frame.manualQueryUs
+                   << ",context:" << frame.flightContextUs
+                   << ",ctaf:" << frame.ctafUs
+                   << ",route:" << frame.routeResolveUs
+                   << ",routePlan:" << frame.routeAuthorityPlanUs
+                   << ",authorityStations:" << frame.authorityStationsUs
+                   << ",authorityRelevance:" << frame.authorityRelevanceUs
+                   << ",departure:" << frame.departureBoardUs
+                   << ",arrival:" << frame.arrivalBoardUs
+                   << ",enroute:" << frame.enrouteBoardUs
+                   << ",workflow:" << frame.workflowUs
+                   << ",standbyAssist:" << frame.standbyAssistUs
+                   << ",wakeDecision:" << frame.wakeDecisionUs
+                   << ",radioRange:" << frame.radioRangeResolveUs
+                   << ",overlayBuild:" << frame.overlayBuildUs
+                   << ",overlayUpdate:" << frame.overlayUpdateUs
+                   << ",displayLog:" << frame.displayLoggingUs
+                   << ",tracked:" << trackedRefreshUs
+                   << ",untracked:" << untrackedRefreshUs
+                   << " routeStatus=\""
+                   << SanitizeLogText(frame.routeStatus, 180)
+                   << "\" authorityStatus=\""
+                   << SanitizeLogText(frame.authorityStatus, 180)
+                   << "\" authorityProofs=\""
+                   << frame.authorityProofSummary
+                   << "\" jobs=\""
+                   << SummarizeDiagnosticJobs(frame, 16) << "\"";
+            return stream.str();
+        });
 }
 
 std::string SummarizeRouteSectors(
@@ -3136,30 +3483,43 @@ bool ServicePendingAccessoryInput() {
             ++gAccessoryInputAccounting.synchronousBudgetFailures;
         }
 
-        std::ostringstream line;
-        line << "event=accessory-input-decision"
-             << " clickSequence=" << fact.requestSequence
-             << " notificationSequence=" << fact.notificationSequence
-             << " mouseCallbackEntered="
-             << fact.mouseCallbackEnteredMicroseconds
-             << " mouseCallbackExited="
-             << fact.mouseCallbackExitedMicroseconds
-             << " brainCycle=" << gAccessoryInputAccounting.brainCycles
-             << " brainDecisionStarted=" << brainDecisionStarted
-             << " brainDecisionCompleted=" << brainDecisionCompleted
-             << " capturedDrawer=" << static_cast<int>(fact.drawer)
-             << " decisionAction=" << static_cast<int>(decision.action)
-             << " previousDrawer="
-             << static_cast<int>(decision.previousDrawer)
-             << " resultingDrawer="
-             << static_cast<int>(decision.activeDrawer)
-             << " selectionGeneration=" << decision.selectionGeneration
-             << " presentationCommandIdentity="
-             << (presentation.snapshot == nullptr
-                    ? 0
-                    : presentation.snapshot->commandIdentity)
-             << " synchronousUs=" << synchronousUs;
-        AppendDiagnosticsLogLine(line.str());
+        const auto brainCycle = gAccessoryInputAccounting.brainCycles;
+        const auto presentationCommandIdentity =
+            presentation.snapshot == nullptr
+                ? 0
+                : presentation.snapshot->commandIdentity;
+        AppendDeferredDiagnosticsLogLine(
+            [fact,
+             decision,
+             brainCycle,
+             brainDecisionStarted,
+             brainDecisionCompleted,
+             presentationCommandIdentity,
+             synchronousUs]() {
+                std::ostringstream line;
+                line << "event=accessory-input-decision"
+                     << " clickSequence=" << fact.requestSequence
+                     << " notificationSequence=" << fact.notificationSequence
+                     << " mouseCallbackEntered="
+                     << fact.mouseCallbackEnteredMicroseconds
+                     << " mouseCallbackExited="
+                     << fact.mouseCallbackExitedMicroseconds
+                     << " brainCycle=" << brainCycle
+                     << " brainDecisionStarted=" << brainDecisionStarted
+                     << " brainDecisionCompleted=" << brainDecisionCompleted
+                     << " capturedDrawer=" << static_cast<int>(fact.drawer)
+                     << " decisionAction=" << static_cast<int>(decision.action)
+                     << " previousDrawer="
+                     << static_cast<int>(decision.previousDrawer)
+                     << " resultingDrawer="
+                     << static_cast<int>(decision.activeDrawer)
+                     << " selectionGeneration="
+                     << decision.selectionGeneration
+                     << " presentationCommandIdentity="
+                     << presentationCommandIdentity
+                     << " synchronousUs=" << synchronousUs;
+                return line.str();
+            });
         DrainAccessoryPublicationFacts();
     }
 
@@ -3236,11 +3596,16 @@ void DrainAccessoryPublicationFacts() {
                 ++gAccessoryInputAccounting.livenessFailures;
             }
         }
-        AppendDiagnosticsLogLine(
-            xvatsim::modules::overlay::
-                SerializeAccessoryPublicationDiagnostic(
-                    fact, decision,
-                    &gAccessoryInputAccounting.publication));
+        xvatsim::modules::overlay::
+            RecordAccessoryPublicationDiagnosticAccounting(
+                decision, &gAccessoryInputAccounting.publication);
+        ++gAccessoryInputAccounting.publication.diagnosticsSerialized;
+        AppendDeferredDiagnosticsLogLine(
+            [fact, decision]() {
+                return xvatsim::modules::overlay::
+                    SerializeAccessoryPublicationDiagnostic(
+                        fact, decision, nullptr);
+            });
     }
 }
 
@@ -3255,6 +3620,17 @@ void LogAccessoryPerformanceSnapshot(const char* boundary) {
     if (!gOverlayWindow.ConsumeAccessoryPerformancePublication(&snapshot)) {
         return;
     }
+    const auto preparation = gOverlayWindow.GetAccessoryPreparationCounters();
+    const auto integration = gOverlayWindow.GetAccessoryIntegrationCounters();
+    const auto accounting = gAccessoryInputAccounting;
+    const auto boundaryToken =
+        std::string{boundary == nullptr ? "unknown" : boundary};
+    AppendDeferredDiagnosticsLogLine(
+        [snapshot,
+         preparation,
+         integration,
+         accounting,
+         boundaryToken]() {
     const auto appendTiming = [](
         std::ostringstream* stream,
         const char* label,
@@ -3265,10 +3641,8 @@ void LogAccessoryPerformanceSnapshot(const char* boundary) {
                 << " " << label << "MaxUs=" << timing.maximumMicroseconds;
     };
     std::ostringstream line;
-    const auto preparation = gOverlayWindow.GetAccessoryPreparationCounters();
-    const auto integration = gOverlayWindow.GetAccessoryIntegrationCounters();
     line << "event=step3-accessory-performance"
-         << " boundary=" << (boundary == nullptr ? "unknown" : boundary)
+         << " boundary=" << boundaryToken
          << " epoch=" << snapshot.epoch
          << " measurementRevision=" << snapshot.measurementRevision
          << " thresholdFailure=" << (snapshot.thresholdFailure ? "true" : "false")
@@ -3373,47 +3747,47 @@ void LogAccessoryPerformanceSnapshot(const char* boundary) {
          << " accessoryCallbackExitMarks="
          << integration.clickCallbackExitMarks
          << " accessoryBrainCycles="
-         << gAccessoryInputAccounting.brainCycles
+         << accounting.brainCycles
          << " accessoryBrainFactsConsumed="
-         << gAccessoryInputAccounting.factsConsumed
+         << accounting.factsConsumed
          << " accessoryBrainDecisions="
-         << gAccessoryInputAccounting.brainDecisions
+         << accounting.brainDecisions
          << " accessoryCommandsIssued="
-         << gAccessoryInputAccounting.commandsIssued
+         << accounting.commandsIssued
          << " accessoryTerminalFacts="
-         << gAccessoryInputAccounting.terminalFacts
+         << accounting.terminalFacts
          << " accessoryPublicationFactsDequeued="
-         << gAccessoryInputAccounting.publication.factsDequeued
+         << accounting.publication.factsDequeued
          << " accessoryPublicationFactsAccepted="
-         << gAccessoryInputAccounting.publication.factsAcceptedByBrain
+         << accounting.publication.factsAcceptedByBrain
          << " accessoryPublicationFactsRejected="
-         << gAccessoryInputAccounting.publication.factsRejectedByBrain
+         << accounting.publication.factsRejectedByBrain
          << " accessoryCommandTerminalsAccepted="
-         << gAccessoryInputAccounting.publication.commandTerminalsAccepted
+         << accounting.publication.commandTerminalsAccepted
          << " accessoryVisibleAttemptTerminalsAccepted="
-         << gAccessoryInputAccounting.publication.visibleAttemptTerminalsAccepted
+         << accounting.publication.visibleAttemptTerminalsAccepted
          << " accessoryCombinedTerminalsAccepted="
-         << gAccessoryInputAccounting.publication.combinedTerminalsAccepted
+         << accounting.publication.combinedTerminalsAccepted
          << " accessoryStalePublicationFactsRejected="
-         << gAccessoryInputAccounting.publication.staleFactsRejected
+         << accounting.publication.staleFactsRejected
          << " accessoryClickTerminalFacts="
-         << gAccessoryInputAccounting.clickTerminalFacts
+         << accounting.clickTerminalFacts
          << " accessoryLifecycleDiscards="
-         << gAccessoryInputAccounting.lifecycleDiscards
+         << accounting.lifecycleDiscards
          << " accessoryCallbackOrderFailures="
-         << gAccessoryInputAccounting.callbackOrderFailures
+         << accounting.callbackOrderFailures
          << " accessorySynchronousBudgetFailures="
-         << gAccessoryInputAccounting.synchronousBudgetFailures
+         << accounting.synchronousBudgetFailures
          << " accessoryLivenessFailures="
-         << gAccessoryInputAccounting.livenessFailures
+         << accounting.livenessFailures
          << " accessoryMaximumSynchronousUs="
-         << gAccessoryInputAccounting.maximumSynchronousMicroseconds
+         << accounting.maximumSynchronousMicroseconds
          << " accessoryMaximumClickToTerminalUs="
-         << gAccessoryInputAccounting.maximumClickToTerminalMicroseconds
+         << accounting.maximumClickToTerminalMicroseconds
          << " accessoryActiveCadenceReturns="
-         << gAccessoryInputAccounting.activeCadenceReturns
+         << accounting.activeCadenceReturns
          << " accessoryNormalCadenceReturns="
-         << gAccessoryInputAccounting.normalCadenceReturns
+         << accounting.normalCadenceReturns
          << " accessoryAccountingExact="
          << (integration.clickFactsProduced ==
                     integration.clickFactsConsumed +
@@ -3558,7 +3932,9 @@ void LogAccessoryPerformanceSnapshot(const char* boundary) {
              << ",drawSampleId:" << violation.drawSampleId
              << ",fanOut:" << violation.drawSampleFanOut << "}";
     }
-    AppendDiagnosticsLogLine(line.str());
+    return line.str();
+        },
+        xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
 }
 
 std::string ResolveSettingsPath() {
@@ -5033,7 +5409,9 @@ void RefreshOverlayFromBrainEngineer3() {
 
     HandoffDecision workflowDecision;
     xvatsim::brain::FinalDisplaySnapshot finalDisplaySnapshot;
-    xvatsim::brain::TransceiverResolutionSnapshot transceiverResolutionSnapshot;
+    xvatsim::brain::TransceiverResolutionSnapshot emptyTransceiverSnapshot;
+    const xvatsim::brain::TransceiverResolutionSnapshot*
+        transceiverResolutionSnapshot = &emptyTransceiverSnapshot;
     xvatsim::brain::RadioReachableControllerSnapshot gatedRadioSnapshot;
     xvatsim::brain::BrainOwnedPublisherOutput publisherOutput;
     bool hasPublisherOutput = false;
@@ -5052,14 +5430,16 @@ void RefreshOverlayFromBrainEngineer3() {
                 controllerFeedSnapshot,
                 planKey,
                 &diagnostics);
-        transceiverResolutionSnapshot =
-            gBrainOwnedRuntimeState.transceiverSnapshot;
+        if (gBrainOwnedRuntimeState.transceiverSnapshot != nullptr) {
+            transceiverResolutionSnapshot =
+                gBrainOwnedRuntimeState.transceiverSnapshot.get();
+        }
         const auto authorityRelevanceSnapshot =
             RefreshBrainAuthorityRelevanceSnapshot(
                 aircraftState,
                 controllerFeedSnapshot,
                 routePolygonOutput.route,
-                transceiverResolutionSnapshot,
+                *transceiverResolutionSnapshot,
                 planKey,
                 &diagnostics);
 
@@ -5116,8 +5496,11 @@ void RefreshOverlayFromBrainEngineer3() {
         relevanceRequest.departureIcao = flightContext.departureIcao;
         relevanceRequest.arrivalIcao = flightContext.destinationIcao;
         relevanceRequest.authorityRelevanceHash =
-            static_cast<std::uint64_t>(
-                HashAuthorityRelevanceSnapshot(authorityRelevanceSnapshot));
+            authorityRelevanceSnapshot ==
+                    gAuthorityAsyncRuntime.acceptedSnapshot
+                ? gAuthorityAsyncRuntime.acceptedSnapshotDigest
+                : xvatsim::brain::HashBrainAuthorityRelevanceSnapshot(
+                      *authorityRelevanceSnapshot);
         relevanceRequest.authorityRelevance = authorityRelevanceSnapshot;
         relevanceRequest.radios = radioStateSnapshot;
         const auto relevanceInput =
@@ -5280,7 +5663,7 @@ void RefreshOverlayFromBrainEngineer3() {
         radioStateSnapshot,
         effectiveNetworkPlanSnapshot,
         controllerFeedSnapshot,
-        transceiverResolutionSnapshot,
+        *transceiverResolutionSnapshot,
         finalDisplaySnapshot,
         gBrainOwnedRuntimeState.manualQuerySnapshot,
         updateSnapshot);
@@ -5335,6 +5718,8 @@ float FlightLoopCallback(
     (void)counter;
     (void)refcon;
 
+    const auto callbackStarted = std::chrono::steady_clock::now();
+
     const bool accessoryPendingAtEntry =
         gOverlayWindow.HasPendingAccessoryWork() ||
         gOverlayWindow.GetAccessoryInputNotificationSequence() !=
@@ -5342,15 +5727,27 @@ float FlightLoopCallback(
     if (accessoryPendingAtEntry) {
         (void)ServicePendingAccessoryInput();
         ++gAccessoryInputAccounting.activeCadenceReturns;
-        return xvatsim::modules::overlay::ResolveAccessoryFlightLoopCadence(
-            true, kUpdateIntervalSeconds).intervalSeconds;
+        const auto cadence =
+            xvatsim::modules::overlay::ResolveAccessoryFlightLoopCadence(
+                true, kUpdateIntervalSeconds);
+        xvatsim::modules::runtime_workers::FlightLoopTimingRecord timing;
+        timing.sequence = ++gFlightLoopTimingSequence;
+        timing.completeBeforeTelemetryUs =
+            ElapsedMicrosecondsSince(callbackStarted);
+        timing.accessoryPath = true;
+        timing.activeCadence = true;
+        (void)gDiagnosticsWriter.TryEnqueueFlightLoopTiming(timing);
+        return cadence.intervalSeconds;
     }
 
     const auto refreshStarted = std::chrono::steady_clock::now();
     RefreshOverlayFromBrain();
     const auto refreshElapsedUs = ElapsedMicrosecondsSince(refreshStarted);
     const auto refreshElapsedMs = refreshElapsedUs / 1000;
+    const auto diagnosticsStarted = std::chrono::steady_clock::now();
     MaybeLogRefreshDiagnostics(refreshElapsedMs, refreshElapsedUs);
+    const auto diagnosticsSubmissionUs =
+        ElapsedMicrosecondsSince(diagnosticsStarted);
     if (refreshElapsedMs >= 40) {
         const auto nowSeconds = CurrentTickSeconds();
         if ((nowSeconds -
@@ -5363,14 +5760,25 @@ float FlightLoopCallback(
             XPLMDebugString(stream.str().c_str());
         }
     }
-    if (gOverlayWindow.HasPendingAccessoryWork()) {
+    const auto activeCadence = gOverlayWindow.HasPendingAccessoryWork();
+    if (activeCadence) {
         ++gAccessoryInputAccounting.activeCadenceReturns;
-        return xvatsim::modules::overlay::ResolveAccessoryFlightLoopCadence(
-            true, kUpdateIntervalSeconds).intervalSeconds;
+    } else {
+        ++gAccessoryInputAccounting.normalCadenceReturns;
     }
-    ++gAccessoryInputAccounting.normalCadenceReturns;
-    return xvatsim::modules::overlay::ResolveAccessoryFlightLoopCadence(
-        false, kUpdateIntervalSeconds).intervalSeconds;
+    const auto cadence =
+        xvatsim::modules::overlay::ResolveAccessoryFlightLoopCadence(
+            activeCadence, kUpdateIntervalSeconds);
+    xvatsim::modules::runtime_workers::FlightLoopTimingRecord timing;
+    timing.sequence = ++gFlightLoopTimingSequence;
+    timing.completeBeforeTelemetryUs =
+        ElapsedMicrosecondsSince(callbackStarted);
+    timing.refreshUs = static_cast<std::uint64_t>(refreshElapsedUs);
+    timing.diagnosticsSubmissionUs =
+        static_cast<std::uint64_t>(diagnosticsSubmissionUs);
+    timing.activeCadence = activeCadence;
+    (void)gDiagnosticsWriter.TryEnqueueFlightLoopTiming(timing);
+    return cadence.intervalSeconds;
 }
 
 void RegisterFlightLoop(float initialDelaySeconds = kUpdateIntervalSeconds) {
@@ -5414,11 +5822,26 @@ void LogAccessoryPreparationStartupFailure(
 
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     gPluginRuntimeEnabled = false;
+    if (!gAuthorityRelevanceWorker.Start()) {
+        XPLMDebugString(
+            "[XVatsim] Authority worker startup failed; plugin not loaded.\n");
+        return 0;
+    }
+    XPLMEnableFeature("XPLM_USE_NATIVE_PATHS", 1);
+    xvatsim::modules::runtime_workers::DiagnosticsWriterOptions
+        diagnosticsWriterOptions;
+    diagnosticsWriterOptions.logDirectory = ResolvePluginRootPath() / "logs";
+    diagnosticsWriterOptions.retainedDateLogCount =
+        kDiagnosticsRetainedDateLogCount;
+    if (!gDiagnosticsWriter.Start(std::move(diagnosticsWriterOptions))) {
+        XPLMDebugString(
+            "[XVatsim] Diagnostics writer startup failed; "
+            "diagnostics disabled.\n");
+    }
     gOverlayWindow.SetAccessoryInputWakeCallback(
         RequestAccessoryFlightLoopWake, nullptr);
     gOverlayWindow.SetAccessoryPreparationFailureCallback(
         LogAccessoryPreparationStartupFailure, nullptr);
-    XPLMEnableFeature("XPLM_USE_NATIVE_PATHS", 1);
 
     std::strcpy(outName, kPluginName);
     std::strcpy(outSig, kPluginSig);
@@ -5463,7 +5886,8 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
         kInstalledPluginVersion +
         " logPolicy=date-stamped-daily-retention retainedDates=" +
         std::to_string(kDiagnosticsRetainedDateLogCount) +
-        " activeLogCap=none");
+        " activeLogCap=bounded-1024",
+        xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
     AppendDiagnosticsLogLine(
         std::string{"event=operating-mode-initialized effective="} +
         xvatsim::brain::ToString(
@@ -5510,10 +5934,55 @@ PLUGIN_API void XPluginStop() {
     gXPilotPrivateObservationQueue.Clear();
     (void)ApplyBoundAsyncWorkerLifecycleBoundary(true);
     ResetPluginRuntimeState(true, true);
+    gAuthorityRelevanceWorker.CancelAndJoin();
     gOverlayWindow.Destroy();
     gOverlayWindow.SetAccessoryInputWakeCallback(nullptr, nullptr);
     UnregisterPluginMenu();
     UnregisterPluginCommands();
+    const auto writerSnapshot = gDiagnosticsWriter.Snapshot();
+    {
+        std::ostringstream stream;
+        stream << "event=diagnostics-writer-stop"
+               << " submittedRoutine=" << writerSnapshot.submittedRoutine
+               << " submittedCritical=" << writerSnapshot.submittedCritical
+               << " submittedTiming="
+               << writerSnapshot.submittedFlightLoopTiming
+               << " dequeued=" << writerSnapshot.dequeued
+               << " dequeuedTiming="
+               << writerSnapshot.dequeuedFlightLoopTiming
+               << " written=" << writerSnapshot.written
+               << " writtenTiming="
+               << writerSnapshot.writtenFlightLoopTiming
+               << " droppedContention="
+               << writerSnapshot.droppedContention
+               << " droppedRoutineContention="
+               << writerSnapshot.droppedRoutineContention
+               << " droppedCriticalContention="
+               << writerSnapshot.droppedCriticalContention
+               << " droppedRoutineFull="
+               << writerSnapshot.droppedRoutineFull
+               << " droppedCriticalFull="
+               << writerSnapshot.droppedCriticalFull
+               << " droppedTimingFull="
+               << writerSnapshot.droppedFlightLoopTimingFull
+               << " rejectedTimingNotRunning="
+               << writerSnapshot.rejectedFlightLoopTimingNotRunning
+               << " formattingFailures="
+               << writerSnapshot.formattingFailures
+               << " storageFailures=" << writerSnapshot.storageFailures
+               << " maxDepth=" << writerSnapshot.maximumQueueDepth
+               << " maxTimingDepth="
+               << writerSnapshot.maximumFlightLoopTimingQueueDepth
+               << " producerMaxUs="
+               << writerSnapshot.maximumProducerMicroseconds
+               << " timingProducerMaxUs="
+               << writerSnapshot.maximumFlightLoopTimingProducerMicroseconds
+               << " workerRunning=" << (writerSnapshot.running ? 1 : 0);
+        AppendDiagnosticsLogLine(
+            stream.str(),
+            xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
+    }
+    gDiagnosticsWriter.Stop();
     XPLMDebugString("[XVatsim] Plugin stopped.\n");
 }
 
@@ -5573,6 +6042,7 @@ PLUGIN_API void XPluginDisable() {
             &gBrainOwnedRuntimeState,
             gAsyncFactWorkerHost.Bindings());
     LogMetarLifecycleDiagnostics(suspension.workerShutdown);
+    InvalidateAuthorityAsyncRuntime("plugin-admin-disable");
     gVatsimDataFeedClient.Reset();
     gNetworkPlanLink.Reset();
     gTransceiverResolver.Reset();

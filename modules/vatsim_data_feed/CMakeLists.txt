@@ -19,6 +19,7 @@ target_compile_definitions(XVatsimVatsimDataFeed PRIVATE
 )
 
 target_link_libraries(XVatsimVatsimDataFeed PUBLIC
+    XVatsimBrain
     winhttp
     windowsapp
 )

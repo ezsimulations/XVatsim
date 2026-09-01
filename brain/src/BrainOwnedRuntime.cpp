@@ -4750,7 +4750,7 @@ BrainOwnedRadioBoardReuseOutput TryReuseBrainOwnedRadioBoard(
 
 BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
     BrainOwnedRuntimeState* state,
-    const BrainOwnedRadioBoardCommitInput& input) {
+    BrainOwnedRadioBoardCommitInput input) {
     BrainOwnedRadioBoardCommitOutput output;
     output.radioSnapshot = input.radioSnapshot;
     const auto previousRadioSnapshot =
@@ -4778,7 +4778,26 @@ BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
     state->hasRadioBoard = true;
     state->lastRadioBoardRefreshSeconds = input.nowSeconds;
     state->lastControllerGeneration = input.controllerGeneration;
-    state->transceiverSnapshot = input.transceiverSnapshot;
+    auto authorityEvidence = BuildBrainAuthorityTransceiverEvidence(
+        input.transceiverSnapshot);
+    const auto authorityEvidenceDigest =
+        HashBrainAuthorityTransceiverEvidence(authorityEvidence);
+    if (state->authorityTransceiverEvidence == nullptr ||
+        state->authorityTransceiverEvidenceDigest !=
+            authorityEvidenceDigest) {
+        state->authorityTransceiverEvidence = std::make_shared<
+            const AuthorityTransceiverEvidenceSnapshot>(
+                std::move(authorityEvidence));
+        state->authorityTransceiverEvidenceDigest =
+            authorityEvidenceDigest;
+    }
+    ++state->transceiverObservationGeneration;
+    if (state->transceiverObservationGeneration == 0) {
+        state->transceiverObservationGeneration = 1;
+    }
+    state->transceiverSnapshot = std::make_shared<
+        const TransceiverResolutionSnapshot>(
+            std::move(input.transceiverSnapshot));
     state->radioSnapshot = input.radioSnapshot;
     state->radioDiff = output.diff;
     state->lastWakeReason =

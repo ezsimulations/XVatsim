@@ -63,6 +63,9 @@
 #include "XVatsim/modules/update_checker/UpdateChecker.h"
 
 #include "Step6PdcContractProbe.h"
+#include "PerformanceContractGateACalm1Probe.h"
+#include "PerformanceContractGateACalm2Probe.h"
+#include "PerformanceContractGateAProbe.h"
 
 namespace {
 
@@ -23335,12 +23338,30 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    if (std::string(argv[1]) == "--performance-contract-gate-a") {
+        return xvatsim::tools::performance_contract_gate_a::
+            RunPerformanceContractGateAProbe();
+    }
+
+    if (std::string(argv[1]) == "--performance-contract-gate-a-calm-1") {
+        return xvatsim::tools::performance_contract_gate_a_calm_1::
+            RunPerformanceContractGateACalm1Probe();
+    }
+
+    if (std::string(argv[1]) == "--performance-contract-gate-a-calm-2") {
+        return xvatsim::tools::performance_contract_gate_a_calm_2::
+            RunPerformanceContractGateACalm2Probe();
+    }
+
     ScenarioData scenario;
     std::string error;
     if (!LoadScenario(argv[1], &scenario, &error)) {
         std::cerr << "Failed to load scenario: " << error << "\n";
         return 2;
     }
+    const auto authorityWorkerParityRequested =
+        argc >= 3 &&
+        std::string(argv[2]) == "--authority-worker-parity";
 
     if (!scenario.operatingMode.probe.empty()) {
         return RunOperatingModeProbe(scenario);
@@ -23778,6 +23799,149 @@ int main(int argc, char** argv) {
                  !scenario.transceiverResolutionSnapshot.candidates.empty())
                     ? &scenario.transceiverResolutionSnapshot
                     : nullptr);
+        if (authorityWorkerParityRequested &&
+            routeSectorResolver.GetAuthoritySourceDataset() != nullptr) {
+            xvatsim::modules::route_sector::AuthorityWorkerRequest
+                parityRequest;
+            parityRequest.identity.requestId = 1;
+            parityRequest.identity.lifecycleEpoch = 1;
+            parityRequest.identity.planKey = scenario.name;
+            parityRequest.identity.routeDigest =
+                xvatsim::brain::HashBrainAuthorityRouteSnapshot(
+                    resolverRouteSectorSnapshot);
+            parityRequest.identity.controllerDigest =
+                xvatsim::brain::HashBrainAuthorityControllerEvidence(
+                    controllerFeedSnapshot.Controllers(),
+                    controllerFeedSnapshot.available,
+                    controllerFeedSnapshot.stale);
+            const auto parityAuthorityTransceivers =
+                xvatsim::brain::BuildBrainAuthorityTransceiverEvidence(
+                    scenario.transceiverResolutionSnapshot);
+            parityRequest.identity.transceiverDigest =
+                xvatsim::brain::HashBrainAuthorityTransceiverEvidence(
+                    parityAuthorityTransceivers);
+            parityRequest.identity.datasetIdentity =
+                routeSectorResolver.GetAuthoritySourceDatasetIdentity();
+            parityRequest.aircraft = scenario.aircraftState;
+            parityRequest.route = std::make_shared<
+                const xvatsim::brain::RouteSectorSnapshot>(
+                    resolverRouteSectorSnapshot);
+            if (controllerFeedSnapshot.controllers != nullptr) {
+                parityRequest.controllers = std::make_shared<
+                    const std::vector<
+                        xvatsim::brain::AuthorityControllerSnapshot>>(
+                            xvatsim::brain::
+                                BuildBrainAuthorityControllerEvidence(
+                                    *controllerFeedSnapshot.controllers));
+            }
+            parityRequest.hasControllerEvidence =
+                controllerFeedSnapshot.controllers != nullptr;
+            parityRequest.controllerFeedAvailable =
+                controllerFeedSnapshot.available;
+            parityRequest.controllerFeedStale = controllerFeedSnapshot.stale;
+            parityRequest.controllerFeedGeneration =
+                controllerFeedSnapshot.generation;
+            parityRequest.controllerFeedConnectedControllers =
+                controllerFeedSnapshot.connectedControllers;
+            parityRequest.terminalBoundaryGeneration =
+                routeSectorResolver.GetTerminalBoundaryGeneration();
+            parityRequest.scheduleReason =
+                "regression-harness-authority-verifier";
+            parityRequest.hasTransceiverEvidence =
+                scenario.transceiverResolutionSnapshot.available ||
+                !scenario.transceiverResolutionSnapshot.candidates.empty();
+            parityRequest.transceivers = std::make_shared<
+                const xvatsim::brain::AuthorityTransceiverEvidenceSnapshot>(
+                    parityAuthorityTransceivers);
+            parityRequest.dataset =
+                routeSectorResolver.GetAuthoritySourceDataset();
+            xvatsim::modules::route_sector::AuthorityRelevanceWorker
+                parityWorker;
+            if (!parityWorker.Start() ||
+                !parityWorker.StartLatest(std::move(parityRequest))) {
+                std::cerr << "GATE_A_PARITY_DISPATCH_FAILED: "
+                          << scenario.name << "\n";
+                return 1;
+            }
+            xvatsim::modules::route_sector::AuthorityWorkerFact parityFact;
+            const auto parityDeadline =
+                std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            bool parityHarvested = false;
+            while (std::chrono::steady_clock::now() < parityDeadline) {
+                if (parityWorker.TryHarvest(&parityFact)) {
+                    parityHarvested = true;
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            const auto synchronousDigest =
+                xvatsim::brain::HashBrainAuthorityRelevanceSnapshot(
+                    resolverAuthorityRelevanceSnapshot);
+            auto paritySnapshot = parityFact.snapshotLease != nullptr
+                ? parityFact.snapshotLease->snapshot
+                : nullptr;
+            if (!parityHarvested || !parityFact.completed ||
+                paritySnapshot == nullptr ||
+                parityFact.snapshotDigest != synchronousDigest ||
+                parityFact.snapshotDigest !=
+                    xvatsim::brain::HashBrainAuthorityRelevanceSnapshot(
+                        *paritySnapshot)) {
+                std::cerr << "GATE_A_PARITY_MISMATCH: " << scenario.name
+                          << " syncDigest=" << synchronousDigest
+                          << " workerDigest=" << parityFact.snapshotDigest
+                          << " harvested=" << (parityHarvested ? 1 : 0)
+                          << " syncCache="
+                          << resolverAuthorityRelevanceSnapshot
+                                 .diagnosticCacheStatus
+                          << "/"
+                          << resolverAuthorityRelevanceSnapshot
+                                 .diagnosticReason
+                          << " workerCache="
+                          << (paritySnapshot == nullptr
+                                  ? std::string("<none>")
+                                  : paritySnapshot->diagnosticCacheStatus +
+                                        "/" +
+                                        paritySnapshot->diagnosticReason)
+                          << " syncStatus="
+                          << resolverAuthorityRelevanceSnapshot.statusLine
+                          << " workerStatus="
+                          << (paritySnapshot == nullptr
+                                  ? std::string("<none>")
+                                  : paritySnapshot->statusLine)
+                          << " syncEvidence="
+                          << resolverAuthorityRelevanceSnapshot.evidence
+                                 .controllerEvidence.size()
+                          << "/"
+                          << resolverAuthorityRelevanceSnapshot.evidence
+                                 .polygonEvidence.size()
+                          << " workerEvidence="
+                          << (paritySnapshot == nullptr
+                                  ? 0
+                                  : paritySnapshot->evidence
+                                        .controllerEvidence.size())
+                          << "/"
+                          << (paritySnapshot == nullptr
+                                  ? 0
+                                  : paritySnapshot->evidence
+                                        .polygonEvidence.size())
+                          << "\n";
+                if (parityFact.snapshotLease != nullptr) {
+                    parityFact.snapshotLease->retired.store(
+                        true, std::memory_order_release);
+                    parityFact.snapshotLease.reset();
+                    parityWorker.NotifyRetirement();
+                }
+                paritySnapshot.reset();
+                parityWorker.CancelAndJoin();
+                return 1;
+            }
+            parityFact.snapshotLease->retired.store(
+                true, std::memory_order_release);
+            parityFact.snapshotLease.reset();
+            paritySnapshot.reset();
+            parityWorker.NotifyRetirement();
+            parityWorker.CancelAndJoin();
+        }
         if (scenario.resolverAuthorityRepeatControllerFeedGeneration > 0 ||
             scenario.resolverAuthorityRepeatCacheAgeSeconds > 0 ||
             !scenario.resolverAuthorityRepeatControllers.empty() ||
@@ -23974,7 +24138,10 @@ int main(int argc, char** argv) {
         airportFrequencyOutput;
     if (authorityRelevanceSnapshot.available) {
         controllerRelevanceInput.authorityRelevanceHash = 1;
-        controllerRelevanceInput.authorityRelevance = authorityRelevanceSnapshot;
+        controllerRelevanceInput.authorityRelevance =
+            std::make_shared<
+                const xvatsim::brain::AuthorityRelevanceSnapshot>(
+                authorityRelevanceSnapshot);
     }
     controllerRelevanceInput.radios = scenario.radioStateSnapshot;
     controllerRelevanceInput.candidates =

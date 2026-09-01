@@ -7238,17 +7238,20 @@ std::size_t BuildAuthorityScopeCacheSignature(
     return hash;
 }
 
-const AuthorityRelevanceScopeArtifacts& GetCachedAuthorityRelevanceScopeArtifacts(
-    const std::vector<unsigned char>& vatspyPayload,
-    const std::vector<unsigned char>& boundaryPayload,
-    const std::vector<unsigned char>& terminalBoundaryPayload,
-    const std::vector<unsigned char>& ownershipPayload,
+const AuthorityRelevanceScopeArtifacts& ResolveAuthorityRelevanceScopeArtifacts(
+    AuthorityRelevanceScopeArtifacts* cachedArtifacts,
+    const xvatsim::core::authority::ControllerAuthorityCatalog&
+        sourceControllerAuthorityCatalog,
+    const xvatsim::core::authority::AuthorityPolygonCatalog&
+        sourceAuthorityPolygonCatalog,
     const brain::AircraftStateSnapshot& aircraftState,
     const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
     const AuthorityRelevanceWorkScope& workScope,
     std::uint64_t terminalBoundaryGeneration) {
-    static std::mutex cacheMutex;
-    static AuthorityRelevanceScopeArtifacts cachedArtifacts;
+    if (cachedArtifacts == nullptr) {
+        static const AuthorityRelevanceScopeArtifacts emptyArtifacts;
+        return emptyArtifacts;
+    }
 
     const auto scopeSignature =
         BuildAuthorityScopeCacheSignature(
@@ -7257,9 +7260,9 @@ const AuthorityRelevanceScopeArtifacts& GetCachedAuthorityRelevanceScopeArtifact
             workScope,
             terminalBoundaryGeneration);
 
-    std::lock_guard<std::mutex> lock(cacheMutex);
-    if (cachedArtifacts.valid && cachedArtifacts.signature == scopeSignature) {
-        return cachedArtifacts;
+    if (cachedArtifacts->valid &&
+        cachedArtifacts->signature == scopeSignature) {
+        return *cachedArtifacts;
     }
 
     AuthorityRelevanceScopeArtifacts rebuilt;
@@ -7267,11 +7270,7 @@ const AuthorityRelevanceScopeArtifacts& GetCachedAuthorityRelevanceScopeArtifact
     rebuilt.routeAuthorityPolygonKeys =
         BuildRouteAuthorityPolygonKeys(workScope.routeSectorSnapshot);
 
-    rebuilt.controllerAuthorityCatalog =
-        GetCachedCoreControllerAuthorityCatalog(
-            vatspyPayload,
-            terminalBoundaryPayload,
-            ownershipPayload);
+    rebuilt.controllerAuthorityCatalog = sourceControllerAuthorityCatalog;
     rebuilt.controllerAuthorityCatalog =
         xvatsim::core::authority::MergeControllerAuthorityCatalogs(
             rebuilt.controllerAuthorityCatalog,
@@ -7282,11 +7281,7 @@ const AuthorityRelevanceScopeArtifacts& GetCachedAuthorityRelevanceScopeArtifact
                     workScope.includeDepartureEndpoint,
                     workScope.includeDestinationEndpoint)));
 
-    rebuilt.authorityPolygonCatalog =
-        GetCachedCoreAuthorityPolygonCatalog(
-            boundaryPayload,
-            terminalBoundaryPayload,
-            ownershipPayload);
+    rebuilt.authorityPolygonCatalog = sourceAuthorityPolygonCatalog;
     rebuilt.authorityPolygonCatalog = MergeAuthorityPolygonCatalogs(
         rebuilt.authorityPolygonCatalog,
         xvatsim::core::authority::CompileAuthorityPolygons(
@@ -7345,8 +7340,8 @@ const AuthorityRelevanceScopeArtifacts& GetCachedAuthorityRelevanceScopeArtifact
             routePoints);
     rebuilt.valid = true;
 
-    cachedArtifacts = std::move(rebuilt);
-    return cachedArtifacts;
+    *cachedArtifacts = std::move(rebuilt);
+    return *cachedArtifacts;
 }
 
 bool IsBetterTransceiverAuthorityProof(
@@ -11040,6 +11035,117 @@ void AppendStaleSuffixIfNeeded(std::string* statusLine) {
 
 }  // namespace
 
+struct AuthoritySourceDataset {
+    std::uint64_t identity = 0;
+    std::uint64_t terminalBoundaryGeneration = 0;
+    xvatsim::core::authority::ControllerAuthorityCatalog
+        controllerAuthorityCatalog;
+    xvatsim::core::authority::AuthorityPolygonCatalog authorityPolygonCatalog;
+};
+
+namespace {
+
+void HashDatasetBytes(std::uint64_t* hash, const std::vector<unsigned char>& bytes) {
+    if (hash == nullptr) {
+        return;
+    }
+    for (const auto value : bytes) {
+        *hash ^= static_cast<std::uint64_t>(value);
+        *hash *= 1099511628211ULL;
+    }
+    *hash ^= static_cast<std::uint64_t>(bytes.size());
+    *hash *= 1099511628211ULL;
+}
+
+std::shared_ptr<AuthoritySourceDataset> BuildAuthoritySourceDataset(
+    const std::vector<unsigned char>& boundaryPayload,
+    const std::vector<unsigned char>& terminalBoundaryPayload,
+    const std::vector<unsigned char>& authorityCatalogPayload,
+    const std::vector<unsigned char>& ownershipPayload) {
+    if (boundaryPayload.empty() || authorityCatalogPayload.empty()) {
+        return {};
+    }
+
+    auto dataset = std::make_shared<AuthoritySourceDataset>();
+    std::uint64_t identity = 1469598103934665603ULL;
+    HashDatasetBytes(&identity, boundaryPayload);
+    HashDatasetBytes(&identity, terminalBoundaryPayload);
+    HashDatasetBytes(&identity, authorityCatalogPayload);
+    HashDatasetBytes(&identity, ownershipPayload);
+    dataset->identity = identity == 0 ? 1 : identity;
+
+    // Compilation/warm-up deliberately occurs on the caller. Production calls
+    // this from the existing background source-fetch thread.
+    (void)GetCachedSectorFeatures(boundaryPayload);
+    (void)GetCachedTerminalSectorFeatures(terminalBoundaryPayload);
+    dataset->controllerAuthorityCatalog = GetCachedCoreControllerAuthorityCatalog(
+        authorityCatalogPayload,
+        terminalBoundaryPayload,
+        ownershipPayload);
+    dataset->authorityPolygonCatalog = GetCachedCoreAuthorityPolygonCatalog(
+        boundaryPayload,
+        terminalBoundaryPayload,
+        ownershipPayload);
+    return dataset;
+}
+
+}  // namespace
+
+class AuthorityRelevanceEngine {
+public:
+    brain::AuthorityRelevanceSnapshot Evaluate(
+        const AuthoritySourceDataset& dataset,
+        std::uint64_t terminalBoundaryGeneration,
+        const brain::AircraftStateSnapshot& aircraftState,
+        const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+        const brain::RouteSectorSnapshot& routeSectorSnapshot,
+        const std::string& scheduleReason,
+        const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot,
+        const std::atomic<bool>* cancelRequested = nullptr);
+
+    void Reset() {
+        hasAuthorityRelevanceCache_ = false;
+        lastAuthorityRelevanceBuildTickSeconds_ = 0;
+        lastAuthorityRelevanceLatitudeDeg_ = 0.0;
+        lastAuthorityRelevanceLongitudeDeg_ = 0.0;
+        lastAuthorityRelevanceSignature_ = 0;
+        lastAuthorityOperationalScopeSignature_ = 0;
+        lastAuthorityWatchInputSignature_ = 0;
+        lastAuthorityRelevanceProgressRouteSignature_ = 0;
+        lastAuthorityRelevanceProgressWindowNm_ = 0.0;
+        cachedAuthorityRelevanceSnapshot_ = {};
+        scopeArtifacts_ = {};
+        authorityProgressRouteSignature_ = 0;
+        authorityProgressWindowNm_ = 0.0;
+        lastAuthorityProgressTickSeconds_ = 0;
+    }
+
+    void Age(long long ageSeconds) {
+        if (ageSeconds > 0 && lastAuthorityRelevanceBuildTickSeconds_ > 0) {
+            lastAuthorityRelevanceBuildTickSeconds_ -= ageSeconds;
+        }
+    }
+
+private:
+    bool hasAuthorityRelevanceCache_ = false;
+    long long lastAuthorityRelevanceBuildTickSeconds_ = 0;
+    double lastAuthorityRelevanceLatitudeDeg_ = 0.0;
+    double lastAuthorityRelevanceLongitudeDeg_ = 0.0;
+    std::size_t lastAuthorityRelevanceSignature_ = 0;
+    std::size_t lastAuthorityOperationalScopeSignature_ = 0;
+    std::size_t lastAuthorityWatchInputSignature_ = 0;
+    std::size_t lastAuthorityRelevanceProgressRouteSignature_ = 0;
+    double lastAuthorityRelevanceProgressWindowNm_ = 0.0;
+    brain::AuthorityRelevanceSnapshot cachedAuthorityRelevanceSnapshot_{};
+    std::size_t authorityProgressRouteSignature_ = 0;
+    double authorityProgressWindowNm_ = 0.0;
+    long long lastAuthorityProgressTickSeconds_ = 0;
+    AuthorityRelevanceScopeArtifacts scopeArtifacts_;
+};
+
+RouteSectorResolver::RouteSectorResolver()
+    : authorityEngine_(std::make_unique<AuthorityRelevanceEngine>()) {}
+
 RouteSectorResolver::~RouteSectorResolver() {
     if (fetchThread_.joinable()) {
         fetchThread_.join();
@@ -11071,6 +11177,15 @@ void RouteSectorResolver::LoadBoundaryPayloadsForTesting(
     terminalBoundaryPayload_.assign(terminalGeoJson.begin(), terminalGeoJson.end());
     vatspyPayload_.assign(authorityCatalogDat.begin(), authorityCatalogDat.end());
     ownershipPayload_.assign(ownershipJson.begin(), ownershipJson.end());
+    authorityDataset_ = BuildAuthoritySourceDataset(
+        boundaryPayload_,
+        terminalBoundaryPayload_,
+        vatspyPayload_,
+        ownershipPayload_);
+    if (authorityDataset_ != nullptr) {
+        authorityDatasetRetention_.push_back(authorityDataset_);
+    }
+    pendingAuthorityDataset_.reset();
     pendingBoundaryPayload_.clear();
     pendingTerminalBoundaryPayload_.clear();
     pendingVatspyPayload_.clear();
@@ -11092,6 +11207,14 @@ void RouteSectorResolver::LoadBoundaryPayloadsForTesting(
     if (hasTerminalBoundaryCache_ && terminalBoundaryGeneration_ == 0) {
         terminalBoundaryGeneration_ = 1;
     }
+    if (authorityDataset_ != nullptr) {
+        authorityDataset_->terminalBoundaryGeneration =
+            terminalBoundaryGeneration_;
+    }
+    publishedTerminalBoundaryGeneration_.store(
+        terminalBoundaryGeneration_, std::memory_order_release);
+    publishedAuthorityDataset_.store(
+        authorityDataset_.get(), std::memory_order_release);
     lastFetchSucceeded_ =
         hasBoundaryCache_ && hasAuthorityCatalogCache_ && hasTerminalBoundaryCache_;
     lastFetchTickSeconds_ = CurrentTickSeconds();
@@ -11103,6 +11226,9 @@ void RouteSectorResolver::LoadBoundaryPayloadsForTesting(
     cachedSnapshot_ = {};
     hasAuthorityRelevanceCache_ = false;
     cachedAuthorityRelevanceSnapshot_ = {};
+    if (authorityEngine_ != nullptr) {
+        authorityEngine_->Reset();
+    }
     lastAuthorityRelevanceBuildTickSeconds_ = 0;
     lastAuthorityRelevanceLatitudeDeg_ = 0.0;
     lastAuthorityRelevanceLongitudeDeg_ = 0.0;
@@ -11149,6 +11275,9 @@ void RouteSectorResolver::QueueBoundaryPayloadsForTesting(
 
 void RouteSectorResolver::AgeAuthorityRelevanceCacheForTesting(
     long long ageSeconds) const {
+    if (authorityEngine_ != nullptr) {
+        authorityEngine_->Age(ageSeconds);
+    }
     if (ageSeconds <= 0 || lastAuthorityRelevanceBuildTickSeconds_ <= 0) {
         return;
     }
@@ -11165,6 +11294,9 @@ void RouteSectorResolver::SetPreflightRouteCache(
     lastSnapshotRouteKey_.clear();
     hasAuthorityRelevanceCache_ = false;
     cachedAuthorityRelevanceSnapshot_ = {};
+    if (authorityEngine_ != nullptr) {
+        authorityEngine_->Reset();
+    }
     lastAuthorityRelevanceSignature_ = 0;
     lastAuthorityOperationalScopeSignature_ = 0;
     lastAuthorityWatchInputSignature_ = 0;
@@ -11182,6 +11314,9 @@ void RouteSectorResolver::ClearPreflightRouteCache() {
     lastSnapshotRouteKey_.clear();
     hasAuthorityRelevanceCache_ = false;
     cachedAuthorityRelevanceSnapshot_ = {};
+    if (authorityEngine_ != nullptr) {
+        authorityEngine_->Reset();
+    }
     lastAuthorityRelevanceSignature_ = 0;
     lastAuthorityOperationalScopeSignature_ = 0;
     lastAuthorityWatchInputSignature_ = 0;
@@ -11210,6 +11345,9 @@ void RouteSectorResolver::ResetRuntimeState() {
     cachedSnapshot_ = {};
     hasAuthorityRelevanceCache_ = false;
     cachedAuthorityRelevanceSnapshot_ = {};
+    if (authorityEngine_ != nullptr) {
+        authorityEngine_->Reset();
+    }
     lastAuthorityRelevanceBuildTickSeconds_ = 0;
     lastAuthorityRelevanceLatitudeDeg_ = 0.0;
     lastAuthorityRelevanceLongitudeDeg_ = 0.0;
@@ -11234,6 +11372,8 @@ void RouteSectorResolver::ResetSourceCaches() {
     ResetRuntimeState();
 
     std::lock_guard<std::mutex> lock(fetchMutex_);
+    publishedAuthorityDataset_.store(nullptr, std::memory_order_release);
+    publishedTerminalBoundaryGeneration_.store(0, std::memory_order_release);
     hasBoundaryCache_ = false;
     hasAuthorityCatalogCache_ = false;
     hasTerminalBoundaryCache_ = false;
@@ -11241,6 +11381,8 @@ void RouteSectorResolver::ResetSourceCaches() {
     terminalBoundaryPayload_.clear();
     vatspyPayload_.clear();
     ownershipPayload_.clear();
+    authorityDataset_.reset();
+    pendingAuthorityDataset_.reset();
     centerBoundaryGeneration_ = 0;
     authorityCatalogGeneration_ = 0;
     terminalBoundaryGeneration_ = 0;
@@ -11248,6 +11390,36 @@ void RouteSectorResolver::ResetSourceCaches() {
 
 void RouteSectorResolver::Reset() {
     ResetRuntimeState();
+}
+
+const AuthoritySourceDataset*
+RouteSectorResolver::GetAuthoritySourceDataset() const {
+    return publishedAuthorityDataset_.load(std::memory_order_acquire);
+}
+
+AuthorityDatasetPublication
+RouteSectorResolver::GetAuthoritySourceDatasetPublication() const {
+    AuthorityDatasetPublication publication;
+    publication.dataset = GetAuthoritySourceDataset();
+    if (publication.dataset != nullptr) {
+        publication.identity = publication.dataset->identity;
+        publication.terminalBoundaryGeneration =
+            publication.dataset->terminalBoundaryGeneration;
+    }
+    return publication;
+}
+
+std::uint64_t RouteSectorResolver::GetAuthoritySourceDatasetIdentity() const {
+    return GetAuthoritySourceDatasetPublication().identity;
+}
+
+std::uint64_t RouteSectorResolver::GetTerminalBoundaryGeneration() const {
+    const auto publication = GetAuthoritySourceDatasetPublication();
+    if (publication.dataset != nullptr) {
+        return publication.terminalBoundaryGeneration;
+    }
+    return publishedTerminalBoundaryGeneration_.load(
+        std::memory_order_acquire);
 }
 
 brain::RouteSectorSnapshot RouteSectorResolver::Resolve(
@@ -11354,13 +11526,37 @@ brain::RouteSectorSnapshot RouteSectorResolver::Resolve(
     return snapshot;
 }
 
-brain::AuthorityRelevanceSnapshot RouteSectorResolver::ResolveBrainScheduledAuthorityVerification(
+brain::AuthorityRelevanceSnapshot AuthorityRelevanceEngine::Evaluate(
+    const AuthoritySourceDataset& dataset,
+    std::uint64_t terminalBoundaryGeneration,
     const brain::AircraftStateSnapshot& aircraftState,
     const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
     const brain::RouteSectorSnapshot& routeSectorSnapshot,
     const std::string& scheduleReason,
-    const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot) const {
+    const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot,
+    const std::atomic<bool>* cancelRequested) {
+    const auto terminalBoundaryGeneration_ = terminalBoundaryGeneration;
     brain::AuthorityRelevanceSnapshot snapshot;
+    const auto cancellationRequested = [&]() {
+        return cancelRequested != nullptr &&
+               cancelRequested->load(std::memory_order_relaxed);
+    };
+    const auto cancelledSnapshot = [&]() {
+        brain::AuthorityRelevanceSnapshot cancelled;
+        cancelled.available = false;
+        cancelled.stale = true;
+        cancelled.controllerFeedGeneration = controllerFeedSnapshot.generation;
+        cancelled.centerBoundaryGeneration = routeSectorSnapshot.centerBoundaryGeneration;
+        cancelled.authorityCatalogGeneration = routeSectorSnapshot.authorityCatalogGeneration;
+        cancelled.terminalCoverageGeneration = terminalBoundaryGeneration_;
+        cancelled.diagnosticCacheStatus = "authority-worker-cancelled";
+        cancelled.diagnosticReason = "cooperative-cancellation";
+        cancelled.statusLine = "AUTHORITY worker cancelled";
+        return cancelled;
+    };
+    if (cancellationRequested()) {
+        return cancelledSnapshot();
+    }
     InitializeAuthorityRelevanceSourceEvidence(
         &snapshot,
         controllerFeedSnapshot,
@@ -11403,7 +11599,6 @@ brain::AuthorityRelevanceSnapshot RouteSectorResolver::ResolveBrainScheduledAuth
         snapshot.evidence.source.cacheStatus = snapshot.diagnosticCacheStatus;
         snapshot.evidence.source.cacheReason = snapshot.diagnosticReason;
         FinalizeAuthorityRelevanceEvidenceGuardrails(&snapshot);
-        LogAuthorityDiagnosticsIfChanged(snapshot);
         return snapshot;
     }
 
@@ -11477,15 +11672,17 @@ brain::AuthorityRelevanceSnapshot RouteSectorResolver::ResolveBrainScheduledAuth
         BuildAuthorityStationCandidateIndex(authorityTransceiverSnapshot);
 
     const auto& scopeArtifacts =
-        GetCachedAuthorityRelevanceScopeArtifacts(
-            vatspyPayload_,
-            boundaryPayload_,
-            terminalBoundaryPayload_,
-            ownershipPayload_,
+        ResolveAuthorityRelevanceScopeArtifacts(
+            &scopeArtifacts_,
+            dataset.controllerAuthorityCatalog,
+            dataset.authorityPolygonCatalog,
             aircraftState,
             controllerFeedSnapshot,
             workScope,
             terminalBoundaryGeneration_);
+    if (cancellationRequested()) {
+        return cancelledSnapshot();
+    }
     const auto& controllerAuthorityCatalog = scopeArtifacts.controllerAuthorityCatalog;
     const auto& authorityPolygonCatalog = scopeArtifacts.authorityPolygonCatalog;
     const auto& authorityPolygonExactIndexesByKey =
@@ -11710,6 +11907,9 @@ brain::AuthorityRelevanceSnapshot RouteSectorResolver::ResolveBrainScheduledAuth
     int candidateControllers = 0;
     int activationDataGaps = 0;
     for (const auto& controller : controllerFeedSnapshot.Controllers()) {
+        if (cancellationRequested()) {
+            return cancelledSnapshot();
+        }
         const auto isAirportLocalCandidate =
             IsAirportLocalControllerCandidate(controller);
         const auto isAirspaceAuthorityCandidate =
@@ -12099,7 +12299,6 @@ brain::AuthorityRelevanceSnapshot RouteSectorResolver::ResolveBrainScheduledAuth
         brain::BuildBrainOwnedAuthorityRelevanceSnapshot(
             std::move(snapshot),
             brainAuthorityPreview);
-    LogAuthorityDiagnosticsIfChanged(snapshot);
     cachedAuthorityRelevanceSnapshot_ = snapshot;
     hasAuthorityRelevanceCache_ = true;
     lastAuthorityRelevanceBuildTickSeconds_ = CurrentTickSeconds();
@@ -12110,6 +12309,61 @@ brain::AuthorityRelevanceSnapshot RouteSectorResolver::ResolveBrainScheduledAuth
     lastAuthorityWatchInputSignature_ = watchInputSignature;
     lastAuthorityRelevanceProgressRouteSignature_ = routeProgressSignature;
     lastAuthorityRelevanceProgressWindowNm_ = authorityProgressWindowNm_;
+    return snapshot;
+}
+
+brain::AuthorityRelevanceSnapshot
+RouteSectorResolver::ResolveBrainScheduledAuthorityVerification(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
+    const brain::RouteSectorSnapshot& routeSectorSnapshot,
+    const std::string& scheduleReason,
+    const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot) const {
+    if (authorityDataset_ == nullptr || authorityEngine_ == nullptr) {
+        brain::AuthorityRelevanceSnapshot snapshot;
+        snapshot.available = false;
+        snapshot.stale = true;
+        snapshot.controllerFeedGeneration = controllerFeedSnapshot.generation;
+        snapshot.centerBoundaryGeneration = routeSectorSnapshot.centerBoundaryGeneration;
+        snapshot.authorityCatalogGeneration = routeSectorSnapshot.authorityCatalogGeneration;
+        snapshot.terminalCoverageGeneration = terminalBoundaryGeneration_;
+        snapshot.diagnosticCacheStatus = "authority-dataset-unavailable";
+        snapshot.diagnosticReason = "immutable-source-dataset-missing";
+        snapshot.statusLine = "AUTHORITY source dataset unavailable";
+        return snapshot;
+    }
+    const auto authorityControllerProjection =
+        brain::BuildBrainAuthorityControllerEvidence(
+            controllerFeedSnapshot.Controllers());
+    const auto authorityControllers =
+        brain::ExpandBrainAuthorityControllerEvidence(
+            authorityControllerProjection);
+    auto canonicalControllerFeed = controllerFeedSnapshot;
+    canonicalControllerFeed.controllers =
+        controllerFeedSnapshot.controllers != nullptr
+            ? &authorityControllers
+            : nullptr;
+    canonicalControllerFeed.ownedControllers.reset();
+
+    brain::TransceiverResolutionSnapshot canonicalTransceivers;
+    const brain::TransceiverResolutionSnapshot* canonicalTransceiverSnapshot =
+        nullptr;
+    if (authorityTransceiverSnapshot != nullptr) {
+        canonicalTransceivers =
+            brain::ExpandBrainAuthorityTransceiverEvidence(
+                brain::BuildBrainAuthorityTransceiverEvidence(
+                    *authorityTransceiverSnapshot));
+        canonicalTransceiverSnapshot = &canonicalTransceivers;
+    }
+    auto snapshot = authorityEngine_->Evaluate(
+        *authorityDataset_,
+        terminalBoundaryGeneration_,
+        aircraftState,
+        canonicalControllerFeed,
+        routeSectorSnapshot,
+        scheduleReason,
+        canonicalTransceiverSnapshot);
+    LogAuthorityDiagnosticsIfChanged(snapshot);
     return snapshot;
 }
 
@@ -12614,11 +12868,38 @@ void RouteSectorResolver::StageFetchedPayloads(
     std::vector<unsigned char> terminalBoundaryPayload,
     std::vector<unsigned char> authorityCatalogPayload,
     std::vector<unsigned char> ownershipPayload) const {
+    std::vector<unsigned char> effectiveBoundaryPayload = boundaryPayload;
+    std::vector<unsigned char> effectiveTerminalBoundaryPayload =
+        terminalBoundaryPayload;
+    std::vector<unsigned char> effectiveAuthorityCatalogPayload =
+        authorityCatalogPayload;
+    std::vector<unsigned char> effectiveOwnershipPayload = ownershipPayload;
+    {
+        std::lock_guard<std::mutex> lock(fetchMutex_);
+        if (effectiveBoundaryPayload.empty()) {
+            effectiveBoundaryPayload = boundaryPayload_;
+        }
+        if (effectiveTerminalBoundaryPayload.empty()) {
+            effectiveTerminalBoundaryPayload = terminalBoundaryPayload_;
+        }
+        if (effectiveAuthorityCatalogPayload.empty()) {
+            effectiveAuthorityCatalogPayload = vatspyPayload_;
+        }
+        if (effectiveOwnershipPayload.empty()) {
+            effectiveOwnershipPayload = ownershipPayload_;
+        }
+    }
+    const auto compiledDataset = BuildAuthoritySourceDataset(
+        effectiveBoundaryPayload,
+        effectiveTerminalBoundaryPayload,
+        effectiveAuthorityCatalogPayload,
+        effectiveOwnershipPayload);
     std::lock_guard<std::mutex> lock(fetchMutex_);
     pendingBoundaryPayload_.clear();
     pendingVatspyPayload_.clear();
     pendingTerminalBoundaryPayload_.clear();
     pendingOwnershipPayload_.clear();
+    pendingAuthorityDataset_.reset();
 
     if (!boundaryPayload.empty() && !authorityCatalogPayload.empty()) {
         pendingBoundaryPayload_ = std::move(boundaryPayload);
@@ -12628,6 +12909,7 @@ void RouteSectorResolver::StageFetchedPayloads(
     if (!terminalBoundaryPayload.empty()) {
         pendingTerminalBoundaryPayload_ = std::move(terminalBoundaryPayload);
     }
+    pendingAuthorityDataset_ = compiledDataset;
     hasPendingPayload_ = true;
 }
 
@@ -12679,15 +12961,32 @@ void RouteSectorResolver::HarvestPendingFetch() const {
         }
         lastSuccessfulTerminalFetchTickSeconds_ = CurrentTickSeconds();
     }
+    if (pendingAuthorityDataset_ != nullptr) {
+        pendingAuthorityDataset_->terminalBoundaryGeneration =
+            terminalBoundaryGeneration_;
+        authorityDataset_ = pendingAuthorityDataset_;
+        authorityDatasetRetention_.push_back(authorityDataset_);
+        publishedTerminalBoundaryGeneration_.store(
+            terminalBoundaryGeneration_, std::memory_order_release);
+        publishedAuthorityDataset_.store(
+            authorityDataset_.get(), std::memory_order_release);
+    } else {
+        publishedTerminalBoundaryGeneration_.store(
+            terminalBoundaryGeneration_, std::memory_order_release);
+    }
     pendingBoundaryPayload_.clear();
     pendingVatspyPayload_.clear();
     pendingTerminalBoundaryPayload_.clear();
     pendingOwnershipPayload_.clear();
+    pendingAuthorityDataset_.reset();
     lastFetchSucceeded_ = hasPendingCenterPackage && hasPendingTerminalPackage;
     hasSnapshotCache_ = false;
     lastSnapshotRouteKey_.clear();
     hasAuthorityRelevanceCache_ = false;
     cachedAuthorityRelevanceSnapshot_ = {};
+    if (authorityEngine_ != nullptr) {
+        authorityEngine_->Reset();
+    }
     lastAuthorityRelevanceBuildTickSeconds_ = 0;
     lastAuthorityRelevanceLatitudeDeg_ = 0.0;
     lastAuthorityRelevanceLongitudeDeg_ = 0.0;
@@ -12756,6 +13055,456 @@ bool RouteSectorResolver::RefreshBoundariesIfNeeded() const {
 
     return IsCenterAuthorityCacheFresh(nowSeconds) ||
            IsTerminalBoundaryCacheFresh(nowSeconds);
+}
+
+struct AuthorityRelevanceWorker::Implementation {
+    static_assert(
+        std::atomic<AuthorityWorkerRequest*>::is_always_lock_free,
+        "Gate A request mailbox requires lock-free pointer atomics");
+    static_assert(
+        std::atomic<AuthorityWorkerFact*>::is_always_lock_free,
+        "Gate A completion mailbox requires lock-free pointer atomics");
+
+    HANDLE wakeEvent = nullptr;
+    std::thread worker;
+    std::atomic<AuthorityWorkerRequest*> pending{nullptr};
+    std::atomic<AuthorityWorkerFact*> completed{nullptr};
+    std::atomic<AuthorityWorkerRequest*> retiredRequests{nullptr};
+    std::atomic<AuthorityWorkerFact*> retiredFacts{nullptr};
+    // Worker-thread-only retention. Main-thread releases can only decrement a
+    // non-final reference after setting AuthoritySnapshotLease::retired.
+    std::vector<std::shared_ptr<AuthoritySnapshotLease>> retainedLeases;
+    AuthorityRelevanceEngine engine;
+    std::atomic<bool> cancelRequested{false};
+    std::atomic<bool> running{false};
+    std::atomic<bool> started{false};
+    std::atomic<bool> stopping{false};
+    std::atomic<bool> resetEngineBeforeNext{false};
+    std::atomic<std::uint64_t> latestMailboxSequence{0};
+    std::atomic<std::uint64_t> activeMailboxSequence{0};
+    std::atomic<std::uint64_t> starts{0};
+    std::atomic<std::uint64_t> replacements{0};
+    std::atomic<std::uint64_t> completions{0};
+    std::atomic<std::uint64_t> cancellations{0};
+    std::atomic<std::uint64_t> maximumPendingDepth{0};
+    std::atomic<std::uint64_t> workerThreadSnapshotRetirements{0};
+
+    Implementation() = default;
+
+    ~Implementation() {
+        Stop();
+    }
+
+    static long long MonotonicMilliseconds() {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    }
+
+    static void PushRetiredRequest(
+        std::atomic<AuthorityWorkerRequest*>* stack,
+        AuthorityWorkerRequest* request) {
+        if (stack == nullptr || request == nullptr) {
+            return;
+        }
+        auto* head = stack->load(std::memory_order_relaxed);
+        do {
+            request->retirementNext = head;
+        } while (!stack->compare_exchange_weak(
+            head,
+            request,
+            std::memory_order_release,
+            std::memory_order_relaxed));
+    }
+
+    static void PushRetiredFact(
+        std::atomic<AuthorityWorkerFact*>* stack,
+        AuthorityWorkerFact* fact) {
+        if (stack == nullptr || fact == nullptr) {
+            return;
+        }
+        auto* head = stack->load(std::memory_order_relaxed);
+        do {
+            fact->retirementNext = head;
+        } while (!stack->compare_exchange_weak(
+            head,
+            fact,
+            std::memory_order_release,
+            std::memory_order_relaxed));
+    }
+
+    void Signal() const {
+        if (wakeEvent != nullptr) {
+            SetEvent(wakeEvent);
+        }
+    }
+
+    void RetireFactOnWorker(AuthorityWorkerFact* fact) {
+        if (fact == nullptr) {
+            return;
+        }
+        if (fact->snapshotLease != nullptr) {
+            fact->snapshotLease->retired.store(
+                true, std::memory_order_release);
+        }
+        delete fact;
+    }
+
+    void DrainRetiredObjects() {
+        auto* request = retiredRequests.exchange(
+            nullptr, std::memory_order_acquire);
+        while (request != nullptr) {
+            auto* next = request->retirementNext;
+            delete request;
+            request = next;
+        }
+
+        auto* fact = retiredFacts.exchange(
+            nullptr, std::memory_order_acquire);
+        while (fact != nullptr) {
+            auto* next = fact->retirementNext;
+            RetireFactOnWorker(fact);
+            fact = next;
+        }
+
+        for (auto lease = retainedLeases.begin();
+             lease != retainedLeases.end();) {
+            if (*lease == nullptr ||
+                (*lease)->retired.load(std::memory_order_acquire)) {
+                lease = retainedLeases.erase(lease);
+                workerThreadSnapshotRetirements.fetch_add(
+                    1, std::memory_order_relaxed);
+            } else {
+                ++lease;
+            }
+        }
+    }
+
+    bool StartThread() {
+        if (started.load(std::memory_order_acquire)) {
+            return true;
+        }
+        if (stopping.load(std::memory_order_acquire)) {
+            return false;
+        }
+        wakeEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        if (wakeEvent == nullptr) {
+            return false;
+        }
+        try {
+            worker = std::thread([this]() { Run(); });
+        } catch (...) {
+            CloseHandle(wakeEvent);
+            wakeEvent = nullptr;
+            return false;
+        }
+        started.store(true, std::memory_order_release);
+        return true;
+    }
+
+    void Run() {
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+        for (;;) {
+            WaitForSingleObject(wakeEvent, INFINITE);
+            DrainRetiredObjects();
+            if (stopping.load(std::memory_order_acquire)) {
+                auto* abandoned = pending.exchange(
+                    nullptr, std::memory_order_acq_rel);
+                delete abandoned;
+                RetireFactOnWorker(completed.exchange(
+                    nullptr, std::memory_order_acq_rel));
+                DrainRetiredObjects();
+                retainedLeases.clear();
+                running.store(false, std::memory_order_release);
+                activeMailboxSequence.store(0, std::memory_order_release);
+                return;
+            }
+
+            auto* request = pending.exchange(
+                nullptr, std::memory_order_acq_rel);
+            if (request == nullptr) {
+                continue;
+            }
+            running.store(true, std::memory_order_release);
+            activeMailboxSequence.store(
+                request->mailboxSequence, std::memory_order_release);
+            cancelRequested.store(false, std::memory_order_release);
+            if (resetEngineBeforeNext.exchange(
+                    false, std::memory_order_acq_rel)) {
+                engine.Reset();
+            }
+
+            const auto supersededBeforeStart =
+                request->mailboxSequence !=
+                latestMailboxSequence.load(std::memory_order_acquire);
+
+            AuthorityWorkerFact fact;
+            fact.identity = request->identity;
+            fact.dispatchedAircraft = request->aircraft;
+            brain::AuthorityRelevanceSnapshot snapshot;
+            const auto started = std::chrono::steady_clock::now();
+            auto remainingDelayMs = request->cooperativeDelayForTestingMs;
+            while (remainingDelayMs > 0 &&
+                   !cancelRequested.load(std::memory_order_relaxed)) {
+                const auto delaySliceMs =
+                    std::min<std::uint32_t>(remainingDelayMs, 10);
+                std::this_thread::sleep_for(
+                    std::chrono::milliseconds(delaySliceMs));
+                remainingDelayMs -= delaySliceMs;
+            }
+            if (supersededBeforeStart ||
+                cancelRequested.load(std::memory_order_acquire)) {
+                snapshot.available = false;
+                snapshot.stale = true;
+                snapshot.diagnosticCacheStatus =
+                    "authority-worker-cancelled";
+                snapshot.diagnosticReason = "cooperative-cancellation";
+                fact.reason = "cooperative-cancellation";
+                fact.cancelled = true;
+            } else if (request->dataset == nullptr ||
+                       request->route == nullptr) {
+                snapshot.available = false;
+                snapshot.stale = true;
+                fact.reason = "authority-dataset-unavailable";
+            } else {
+                std::vector<brain::ControllerSnapshot> authorityControllers;
+                brain::ControllerFeedSnapshot controllerFeed;
+                controllerFeed.available = request->controllerFeedAvailable;
+                controllerFeed.stale = request->controllerFeedStale;
+                controllerFeed.generation = request->controllerFeedGeneration;
+                controllerFeed.connectedControllers =
+                    request->controllerFeedConnectedControllers;
+                if (request->hasControllerEvidence &&
+                    request->controllers != nullptr) {
+                    authorityControllers =
+                        brain::ExpandBrainAuthorityControllerEvidence(
+                            *request->controllers);
+                    controllerFeed.controllers = &authorityControllers;
+                }
+                brain::TransceiverResolutionSnapshot authorityTransceivers;
+                const brain::TransceiverResolutionSnapshot*
+                    authorityTransceiverSnapshot = nullptr;
+                if (request->hasTransceiverEvidence &&
+                    request->transceivers != nullptr) {
+                    authorityTransceivers =
+                        brain::ExpandBrainAuthorityTransceiverEvidence(
+                            *request->transceivers);
+                    authorityTransceiverSnapshot = &authorityTransceivers;
+                }
+                snapshot = engine.Evaluate(
+                    *request->dataset,
+                    request->terminalBoundaryGeneration,
+                    request->aircraft,
+                    controllerFeed,
+                    *request->route,
+                    request->scheduleReason,
+                    authorityTransceiverSnapshot,
+                    &cancelRequested);
+                fact.snapshotDigest =
+                    brain::HashBrainAuthorityRelevanceSnapshot(snapshot);
+                fact.cancelled = cancelRequested.load(std::memory_order_relaxed) ||
+                    snapshot.diagnosticCacheStatus ==
+                        "authority-worker-cancelled";
+                fact.reason = fact.cancelled
+                    ? "cooperative-cancellation"
+                    : snapshot.diagnosticReason;
+            }
+            fact.workerElapsedUs =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - started)
+                    .count();
+            fact.completedMonotonicMs = MonotonicMilliseconds();
+            fact.completed = !fact.cancelled;
+
+            fact.cancelled =
+                fact.cancelled ||
+                cancelRequested.load(std::memory_order_acquire) ||
+                request->mailboxSequence !=
+                    latestMailboxSequence.load(std::memory_order_acquire);
+            fact.completed = !fact.cancelled;
+            activeMailboxSequence.store(0, std::memory_order_release);
+            running.store(false, std::memory_order_release);
+            if (fact.cancelled) {
+                cancellations.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                auto lease = std::make_shared<AuthoritySnapshotLease>();
+                lease->snapshot = std::make_shared<
+                    const brain::AuthorityRelevanceSnapshot>(
+                        std::move(snapshot));
+                fact.snapshotLease = lease;
+                retainedLeases.push_back(std::move(lease));
+                auto* published = new AuthorityWorkerFact(std::move(fact));
+                auto* obsolete = completed.exchange(
+                    published, std::memory_order_acq_rel);
+                RetireFactOnWorker(obsolete);
+                completions.fetch_add(1, std::memory_order_relaxed);
+            }
+            delete request;
+            DrainRetiredObjects();
+        }
+    }
+
+    void Stop() {
+        if (!started.load(std::memory_order_acquire) ||
+            stopping.exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        latestMailboxSequence.fetch_add(1, std::memory_order_acq_rel);
+        cancelRequested.store(true, std::memory_order_release);
+        PushRetiredRequest(
+            &retiredRequests,
+            pending.exchange(nullptr, std::memory_order_acq_rel));
+        auto* abandonedFact = completed.exchange(
+            nullptr, std::memory_order_acq_rel);
+        if (abandonedFact != nullptr &&
+            abandonedFact->snapshotLease != nullptr) {
+            abandonedFact->snapshotLease->retired.store(
+                true, std::memory_order_release);
+        }
+        PushRetiredFact(&retiredFacts, abandonedFact);
+        Signal();
+        if (worker.joinable()) {
+            worker.join();
+        }
+        if (wakeEvent != nullptr) {
+            CloseHandle(wakeEvent);
+            wakeEvent = nullptr;
+        }
+    }
+};
+
+AuthorityRelevanceWorker::AuthorityRelevanceWorker()
+    : implementation_(std::make_unique<Implementation>()) {}
+
+AuthorityRelevanceWorker::~AuthorityRelevanceWorker() = default;
+
+bool AuthorityRelevanceWorker::Start() {
+    return implementation_ != nullptr && implementation_->StartThread();
+}
+
+bool AuthorityRelevanceWorker::StartLatest(AuthorityWorkerRequest request) {
+    if (implementation_ == nullptr || request.dataset == nullptr ||
+        request.route == nullptr ||
+        !implementation_->started.load(std::memory_order_acquire) ||
+        implementation_->stopping.load(std::memory_order_acquire)) {
+        return false;
+    }
+    AuthorityWorkerRequest* packaged = nullptr;
+    try {
+        packaged = new AuthorityWorkerRequest(std::move(request));
+    } catch (...) {
+        return false;
+    }
+    packaged->mailboxSequence =
+        implementation_->latestMailboxSequence.fetch_add(
+            1, std::memory_order_acq_rel) + 1;
+    auto* replaced = implementation_->pending.exchange(
+        packaged, std::memory_order_acq_rel);
+    if (replaced != nullptr) {
+        implementation_->replacements.fetch_add(
+            1, std::memory_order_relaxed);
+        Implementation::PushRetiredRequest(
+            &implementation_->retiredRequests, replaced);
+    }
+    if (implementation_->activeMailboxSequence.load(
+            std::memory_order_acquire) != 0 ||
+        implementation_->running.load(std::memory_order_acquire)) {
+        implementation_->cancelRequested.store(
+            true, std::memory_order_release);
+        implementation_->resetEngineBeforeNext.store(
+            true, std::memory_order_release);
+    }
+    implementation_->maximumPendingDepth.store(1, std::memory_order_relaxed);
+    implementation_->starts.fetch_add(1, std::memory_order_relaxed);
+    implementation_->Signal();
+    return true;
+}
+
+bool AuthorityRelevanceWorker::TryHarvest(AuthorityWorkerFact* fact) {
+    if (implementation_ == nullptr || fact == nullptr) {
+        return false;
+    }
+    auto* completed = implementation_->completed.exchange(
+        nullptr, std::memory_order_acq_rel);
+    if (completed == nullptr) {
+        return false;
+    }
+    if (fact->snapshotLease != nullptr) {
+        fact->snapshotLease->retired.store(true, std::memory_order_release);
+        implementation_->Signal();
+    }
+    *fact = std::move(*completed);
+    delete completed;
+    return true;
+}
+
+bool AuthorityRelevanceWorker::IsRunning() const {
+    if (implementation_ == nullptr) {
+        return false;
+    }
+    return implementation_->running.load(std::memory_order_acquire) ||
+           implementation_->pending.load(std::memory_order_acquire) != nullptr;
+}
+
+void AuthorityRelevanceWorker::NotifyRetirement() {
+    if (implementation_ != nullptr) {
+        implementation_->Signal();
+    }
+}
+
+void AuthorityRelevanceWorker::CancelPending() {
+    if (implementation_ == nullptr) {
+        return;
+    }
+    implementation_->latestMailboxSequence.fetch_add(
+        1, std::memory_order_acq_rel);
+    implementation_->cancelRequested.store(true, std::memory_order_release);
+    implementation_->resetEngineBeforeNext.store(
+        true, std::memory_order_release);
+    Implementation::PushRetiredRequest(
+        &implementation_->retiredRequests,
+        implementation_->pending.exchange(
+            nullptr, std::memory_order_acq_rel));
+    auto* completed = implementation_->completed.exchange(
+        nullptr, std::memory_order_acq_rel);
+    if (completed != nullptr && completed->snapshotLease != nullptr) {
+        completed->snapshotLease->retired.store(
+            true, std::memory_order_release);
+    }
+    Implementation::PushRetiredFact(
+        &implementation_->retiredFacts, completed);
+    implementation_->Signal();
+}
+
+void AuthorityRelevanceWorker::CancelAndJoin() {
+    if (implementation_ != nullptr) {
+        implementation_->Stop();
+    }
+}
+
+AuthorityWorkerSnapshot AuthorityRelevanceWorker::Snapshot() const {
+    if (implementation_ == nullptr) {
+        return {};
+    }
+    AuthorityWorkerSnapshot snapshot;
+    snapshot.running = implementation_->running.load(std::memory_order_acquire);
+    snapshot.pending =
+        implementation_->pending.load(std::memory_order_acquire) != nullptr;
+    snapshot.completed =
+        implementation_->completed.load(std::memory_order_acquire) != nullptr;
+    snapshot.starts = implementation_->starts.load(std::memory_order_relaxed);
+    snapshot.replacements =
+        implementation_->replacements.load(std::memory_order_relaxed);
+    snapshot.completions =
+        implementation_->completions.load(std::memory_order_relaxed);
+    snapshot.cancellations =
+        implementation_->cancellations.load(std::memory_order_relaxed);
+    snapshot.maximumPendingDepth =
+        implementation_->maximumPendingDepth.load(std::memory_order_relaxed);
+    snapshot.workerThreadSnapshotRetirements =
+        implementation_->workerThreadSnapshotRetirements.load(
+            std::memory_order_relaxed);
+    return snapshot;
 }
 
 }  // namespace xvatsim::modules::route_sector

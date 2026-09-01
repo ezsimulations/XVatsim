@@ -888,13 +888,16 @@ std::string TerminalDecisionVoteSuffix(
 const RelevantAuthoritySnapshot* FindRelevantSourceAuthority(
     const BrainControllerRelevanceWorkerInput& input,
     const RadioReachableControllerCandidate& candidate) {
-    if (!input.authorityRelevance.available || input.authorityRelevance.stale) {
+    if (!input.authorityRelevance ||
+        !input.authorityRelevance->available ||
+        input.authorityRelevance->stale) {
         return nullptr;
     }
 
     const auto candidateCallsign = NormalizeCallsign(candidate.callsign);
     const auto candidateFrequency = NormalizeFrequency(candidate.frequency);
-    for (const auto& authority : input.authorityRelevance.relevantAuthorities) {
+    for (const auto& authority :
+         input.authorityRelevance->relevantAuthorities) {
         if (authority.kind == AuthorityRelevanceKind::Center) {
             continue;
         }

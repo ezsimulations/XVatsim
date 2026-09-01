@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -14,9 +15,115 @@
 
 namespace xvatsim::modules::route_sector {
 
+struct AuthoritySourceDataset;
+class AuthorityRelevanceEngine;
+struct AuthoritySnapshotLease;
+
+struct AuthorityDatasetPublication {
+    const AuthoritySourceDataset* dataset = nullptr;
+    std::uint64_t identity = 0;
+    std::uint64_t terminalBoundaryGeneration = 0;
+};
+
+struct AuthorityWorkerIdentity {
+    std::uint64_t requestId = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::string planKey;
+    std::uint64_t routeDigest = 0;
+    std::uint64_t controllerDigest = 0;
+    std::uint64_t transceiverDigest = 0;
+    std::uint64_t datasetIdentity = 0;
+};
+
+struct AuthorityWorkerRequest {
+    AuthorityWorkerIdentity identity;
+    brain::AircraftStateSnapshot aircraft;
+    std::shared_ptr<const brain::RouteSectorSnapshot> route;
+    std::shared_ptr<const std::vector<brain::AuthorityControllerSnapshot>>
+        controllers;
+    bool hasControllerEvidence = false;
+    bool controllerFeedAvailable = false;
+    bool controllerFeedStale = true;
+    std::uint64_t controllerFeedGeneration = 0;
+    int controllerFeedConnectedControllers = 0;
+    std::uint64_t terminalBoundaryGeneration = 0;
+    std::string scheduleReason;
+    bool hasTransceiverEvidence = true;
+    std::shared_ptr<const brain::AuthorityTransceiverEvidenceSnapshot>
+        transceivers;
+    // The resolver retains every published immutable dataset until teardown,
+    // which is ordered after the authority worker. This raw handle keeps the
+    // flight-loop read and mailbox package lock-free.
+    const AuthoritySourceDataset* dataset = nullptr;
+    long long dispatchedMonotonicMs = 0;
+    // Deterministic proof seam. Production requests leave this at zero.
+    std::uint32_t cooperativeDelayForTestingMs = 0;
+    // Intrusive mailbox metadata. Owned exclusively by AuthorityRelevanceWorker.
+    std::uint64_t mailboxSequence = 0;
+    AuthorityWorkerRequest* retirementNext = nullptr;
+};
+
+// The worker retains every lease until the main thread marks it retired.
+// Consequently, releasing accepted or rejected evidence on the main thread
+// cannot run the large snapshot destructor there.
+struct AuthoritySnapshotLease {
+    std::shared_ptr<const brain::AuthorityRelevanceSnapshot> snapshot;
+    std::atomic<bool> retired{false};
+};
+
+struct AuthorityWorkerFact {
+    AuthorityWorkerIdentity identity;
+    brain::AircraftStateSnapshot dispatchedAircraft;
+    std::shared_ptr<AuthoritySnapshotLease> snapshotLease;
+    bool completed = false;
+    bool cancelled = false;
+    std::uint64_t snapshotDigest = 0;
+    long long workerElapsedUs = 0;
+    long long completedMonotonicMs = 0;
+    std::string reason;
+    AuthorityWorkerFact* retirementNext = nullptr;
+};
+
+struct AuthorityWorkerSnapshot {
+    bool running = false;
+    bool pending = false;
+    bool completed = false;
+    std::uint64_t starts = 0;
+    std::uint64_t replacements = 0;
+    std::uint64_t completions = 0;
+    std::uint64_t cancellations = 0;
+    std::uint64_t maximumPendingDepth = 0;
+    std::uint64_t workerThreadSnapshotRetirements = 0;
+};
+
+class AuthorityRelevanceWorker {
+public:
+    AuthorityRelevanceWorker();
+    ~AuthorityRelevanceWorker();
+    AuthorityRelevanceWorker(const AuthorityRelevanceWorker&) = delete;
+    AuthorityRelevanceWorker& operator=(const AuthorityRelevanceWorker&) = delete;
+
+    // Lifecycle-only initialization. Call before registering the flight loop;
+    // request submission never creates or joins a thread.
+    bool Start();
+    bool StartLatest(AuthorityWorkerRequest request);
+    bool TryHarvest(AuthorityWorkerFact* fact);
+    bool IsRunning() const;
+    // Wakes the worker after the caller atomically marks a snapshot lease
+    // retired. This operation never waits.
+    void NotifyRetirement();
+    void CancelPending();
+    void CancelAndJoin();
+    AuthorityWorkerSnapshot Snapshot() const;
+
+private:
+    struct Implementation;
+    std::unique_ptr<Implementation> implementation_;
+};
+
 class RouteSectorResolver {
 public:
-    RouteSectorResolver() = default;
+    RouteSectorResolver();
     ~RouteSectorResolver();
 
     brain::RouteSectorSnapshot Resolve(
@@ -67,6 +174,10 @@ public:
     void ResetSourceCaches();
     void Reset();
     void AgeAuthorityRelevanceCacheForTesting(long long ageSeconds) const;
+    const AuthoritySourceDataset* GetAuthoritySourceDataset() const;
+    AuthorityDatasetPublication GetAuthoritySourceDatasetPublication() const;
+    std::uint64_t GetAuthoritySourceDatasetIdentity() const;
+    std::uint64_t GetTerminalBoundaryGeneration() const;
 
 private:
     brain::RouteSectorSnapshot BuildSnapshot(
@@ -129,8 +240,18 @@ private:
     mutable std::uint64_t centerBoundaryGeneration_ = 0;
     mutable std::uint64_t authorityCatalogGeneration_ = 0;
     mutable std::uint64_t terminalBoundaryGeneration_ = 0;
+    mutable std::atomic<const AuthoritySourceDataset*>
+        publishedAuthorityDataset_{nullptr};
+    mutable std::atomic<std::uint64_t>
+        publishedTerminalBoundaryGeneration_{0};
     mutable std::optional<core::preflight::PreflightRouteCache> preflightRouteCache_;
     mutable std::string preflightRouteCacheReason_;
+    mutable std::shared_ptr<AuthoritySourceDataset> authorityDataset_;
+    mutable std::shared_ptr<AuthoritySourceDataset> pendingAuthorityDataset_;
+    // Published raw dataset handles remain valid through worker teardown.
+    mutable std::vector<std::shared_ptr<const AuthoritySourceDataset>>
+        authorityDatasetRetention_;
+    mutable std::unique_ptr<AuthorityRelevanceEngine> authorityEngine_;
 };
 
 }  // namespace xvatsim::modules::route_sector

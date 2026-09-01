@@ -27,7 +27,15 @@ brain::ControllerFeedSnapshot ControllerFeedClient::BuildSnapshot(
 
     snapshot.available = true;
     snapshot.connectedControllers = feedSnapshot.connectedControllers;
-    snapshot.controllers = &feedSnapshot.controllers;
+    snapshot.ownedControllers = feedSnapshot.immutableControllers;
+    snapshot.controllerContentDigest = feedSnapshot.controllerContentDigest;
+    snapshot.authorityControllerContentDigest =
+        feedSnapshot.authorityControllerContentDigest;
+    snapshot.ownedAuthorityControllers =
+        feedSnapshot.immutableAuthorityControllers;
+    snapshot.controllers = snapshot.ownedControllers != nullptr
+        ? snapshot.ownedControllers.get()
+        : &feedSnapshot.controllers;
     snapshot.statusLine = "ATC " + std::to_string(snapshot.connectedControllers) + " online";
     return snapshot;
 }

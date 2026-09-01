@@ -1,0 +1,1 @@
+PERFORMANCE_CONTRACT_GATE_A_PASSED syncDigest=3400885169175711558 dispatchP99Us=4 packageAndSubmitP99Us=4 worstCaseControllers=5000 harvestP99Us=1 maxPendingDepth=1 starts=518 replacements=506 completions=5 cancellations=7 workerSnapshotRetirements=3 cancelUs=0 forcedDelaysMs=500,2000 stalePublications=0

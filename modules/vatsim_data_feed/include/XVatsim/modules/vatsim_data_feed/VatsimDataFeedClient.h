@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -29,6 +30,12 @@ struct VatsimDataFeedSnapshot {
     std::uint64_t generation = 0;
     int connectedControllers = 0;
     std::vector<xvatsim::brain::ControllerSnapshot> controllers;
+    std::shared_ptr<const std::vector<xvatsim::brain::ControllerSnapshot>>
+        immutableControllers;
+    std::uint64_t controllerContentDigest = 0;
+    std::uint64_t authorityControllerContentDigest = 0;
+    std::shared_ptr<const std::vector<xvatsim::brain::AuthorityControllerSnapshot>>
+        immutableAuthorityControllers;
     std::vector<PilotPlanEntry> pilotPlans;
     bool atisRootPresent = false;
     bool atisRootArray = false;
