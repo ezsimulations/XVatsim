@@ -110,14 +110,6 @@ struct XPilotSessionSnapshot {
     std::string statusLine;
 };
 
-struct XPilotPrivateMessageSnapshot {
-    bool loaded = false;
-    bool available = false;
-    int sequence = 0;
-    std::string from;
-    std::string body;
-};
-
 struct PilotIdentitySnapshot {
     bool connected = false;
     bool ready = false;
@@ -171,6 +163,39 @@ struct ControllerFeedSnapshot {
         }
         return *controllers;
     }
+};
+
+enum class BrainPdcSourceConnectionStatus {
+    Unknown,
+    Disconnected,
+    Connecting,
+    Connected,
+};
+
+struct BrainPdcMechanicalObservation {
+    bool sourceQualified = false;
+    bool capabilitiesQualified = false;
+    bool tupleMechanicallyComplete = false;
+    bool senderBodyRead = false;
+    bool sequenceOnlyFastPath = false;
+    std::uint64_t pluginInstanceIdentity = 0;
+    std::uint64_t capabilityGeneration = 0;
+    std::uint64_t mechanicalIssueMask = 0;
+    std::uint64_t observedMonotonicMicroseconds = 0;
+    std::uint64_t samplerElapsedMicroseconds = 0;
+    std::size_t senderByteCount = 0;
+    std::size_t bodyByteCount = 0;
+    std::uint64_t sessionLocalDigest = 0;
+    std::int64_t sequenceBefore = 0;
+    std::int64_t sequenceAfter = 0;
+    BrainPdcSourceConnectionStatus statusBefore =
+        BrainPdcSourceConnectionStatus::Unknown;
+    BrainPdcSourceConnectionStatus statusAfter =
+        BrainPdcSourceConnectionStatus::Unknown;
+    std::string callsignBefore;
+    std::string callsignAfter;
+    std::string sender;
+    std::string body;
 };
 
 enum class BrainRawVatsimAtisMechanicalIssue : std::uint32_t {

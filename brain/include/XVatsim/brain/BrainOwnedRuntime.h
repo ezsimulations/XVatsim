@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "XVatsim/brain/BrainDisplayIntent.h"
+#include "XVatsim/brain/BrainPdcRuntime.h"
 #include "XVatsim/brain/BrainTypes.h"
 #include "XVatsim/brain/BrainWorkflow.h"
 #include "XVatsim/brain/PhaseSnapshotPublisher.h"
@@ -344,6 +345,7 @@ struct BrainOwnedAccessoryPublicationFact {
     bool commandTerminal = true;
     std::string mechanicalFailureReason;
     std::string atisVisibleRevisionIdentity;
+    std::vector<std::string> pdcVisibleRevisionIdentities;
 };
 
 struct BrainOwnedAccessoryPublicationDecision {
@@ -832,15 +834,6 @@ struct BrainOwnedCandidateCompletion {
     std::string stableKey;
 };
 
-struct BrainOwnedControllerMessageState {
-    bool primed = false;
-    int lastSequence = 0;
-    bool visible = false;
-    bool cachedAvailable = false;
-    std::string from;
-    std::string body;
-};
-
 struct BrainTerminalAuthorityWorkerInput {
     std::string airportIcao;
     bool hasAirportCoordinates = false;
@@ -926,6 +919,7 @@ struct BrainOwnedRuntimeState {
     BrainOwnedAccessoryRuntimeState accessory;
     BrainOwnedMetarRuntimeState metar;
     BrainOwnedAtisRuntimeState atis;
+    BrainPdcRuntimeState pdc;
     bool hasRoutePolygonSnapshot = false;
     RouteSectorSnapshot routePolygonSnapshot;
     std::uint64_t routePolygonHash = 0;
@@ -995,7 +989,6 @@ struct BrainOwnedRuntimeState {
         BrainOwnedTextEntryMode::None;
     ManualQuerySnapshot manualQuerySnapshot;
     long long manualQueryVisibleUntilSeconds = 0;
-    BrainOwnedControllerMessageState controllerMessageState;
     bool departureReleasedThisFlight = false;
     bool arrivalAwakeThisFlight = false;
     double airborneSinceSeconds = -1.0;
@@ -1115,7 +1108,6 @@ struct BrainOwnedOverlayWakeInput {
         BrainOwnedDisplayOverrideMode::Auto;
     bool manualQueryVisible = false;
     bool textEntryActive = false;
-    bool controllerMessageVisible = false;
     bool sawXPilotConnectedThisFlight = false;
     bool enrouteInitialHoldActive = false;
 };
@@ -2274,17 +2266,6 @@ BrainMetarWorkerShutdownSnapshot ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
     BrainOwnedRuntimeState* state,
     const BrainOwnedAsyncWorkerBindings& workers,
     bool clearAcceptedState);
-
-void ResetBrainOwnedControllerMessageState(BrainOwnedRuntimeState* state);
-
-void ClearBrainOwnedControllerMessage(BrainOwnedRuntimeState* state);
-
-void RecallBrainOwnedControllerMessage(BrainOwnedRuntimeState* state);
-
-void UpdateBrainOwnedControllerMessageState(
-    BrainOwnedRuntimeState* state,
-    const XPilotPrivateMessageSnapshot& messageSnapshot,
-    bool controllerMessageUiEnabled);
 
 BrainOwnedPreflightRouteCacheDecision BeginBrainOwnedPreflightRouteCacheApplication(
     BrainOwnedRuntimeState* state,

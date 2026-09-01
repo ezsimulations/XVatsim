@@ -1,8 +1,18 @@
 add_executable(XVatsimRegressionHarness
     src/main.cpp
+    src/Step6PdcContractProbe.cpp
 )
 
 target_compile_features(XVatsimRegressionHarness PRIVATE cxx_std_17)
+
+target_compile_definitions(XVatsimRegressionHarness PRIVATE
+    IBM=1
+    XPLM200=1
+    XPLM210=1
+    XPLM300=1
+    XPLM301=1
+    XPLM400=1
+)
 
 target_link_libraries(XVatsimRegressionHarness PRIVATE
     XVatsimBrain
@@ -19,6 +29,7 @@ target_link_libraries(XVatsimRegressionHarness PRIVATE
     XVatsimUpdateChecker
     XVatsimVatsimDataFeed
     XVatsimWorkflowCore
+    XVatsimXPilotBridge
 )
 
 if (WIN32)

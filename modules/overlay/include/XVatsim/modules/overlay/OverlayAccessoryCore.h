@@ -1138,6 +1138,7 @@ struct AccessoryPresentationState {
 
 struct AccessoryDrawerRenderLine {
     std::string text;
+    std::string entryRevisionIdentity;
     bool title = false;
     bool finalMarker = false;
 };
@@ -1244,6 +1245,10 @@ AccessoryWheelResult ApplyAccessoryWheel(const AccessoryWheelInput& input);
 AccessoryDrawerRenderPlan BuildAccessoryDrawerRenderPlan(
     const AccessoryPresentationState& state,
     const AccessoryLayoutResult& layout);
+
+std::vector<std::string> CollectVisiblePdcRevisionIdentities(
+    const AccessoryDrawerRenderPlan& renderPlan,
+    std::size_t limit = 16);
 AccessoryPresentationUpdateResult UpdateAccessoryPresentation(
     AccessoryPresentationState* state,
     const AccessoryPresentationUpdateInput& input);

@@ -1882,20 +1882,23 @@ AccessoryDrawerRenderPlan BuildAccessoryDrawerRenderPlan(
              entry < prepared.renderedTitleLines.size() &&
              entry < prepared.renderedBodyLines.size();
              ++entry) {
+            const std::string revisionIdentity =
+                entry < prepared.renderedEntryKeys.size()
+                ? prepared.renderedEntryKeys[entry] : std::string{};
             for (const auto& line : prepared.renderedTitleLines[entry]) {
-                allLines.push_back({line, true, false});
+                allLines.push_back({line, revisionIdentity, true, false});
             }
             for (const auto& line : prepared.renderedBodyLines[entry]) {
-                allLines.push_back({line, false, false});
+                allLines.push_back({line, revisionIdentity, false, false});
             }
         }
         if (!state.finalHistoryMarker.empty()) {
-            allLines.push_back({state.finalHistoryMarker, true, true});
+            allLines.push_back({state.finalHistoryMarker, {}, true, true});
         }
     } else if (!state.activeSnapshot->drawerStateText.empty()) {
-        allLines.push_back({state.activeSnapshot->drawerStateText, false, false});
+        allLines.push_back({state.activeSnapshot->drawerStateText, {}, false, false});
     } else if (!state.activeSnapshot->emptyStateText.empty()) {
-        allLines.push_back({state.activeSnapshot->emptyStateText, false, false});
+        allLines.push_back({state.activeSnapshot->emptyStateText, {}, false, false});
     }
     result.totalLineCount = static_cast<int>(allLines.size());
     result.firstVisibleLine = std::clamp(
@@ -1916,6 +1919,21 @@ AccessoryDrawerRenderPlan BuildAccessoryDrawerRenderPlan(
         renderableBottom <= layout.drawerContentBottom &&
         static_cast<int>(result.visibleLines.size()) <=
             result.visibleLineCapacity;
+    return result;
+}
+
+std::vector<std::string> CollectVisiblePdcRevisionIdentities(
+    const AccessoryDrawerRenderPlan& renderPlan,
+    std::size_t limit) {
+    std::vector<std::string> result;
+    if (limit == 0) return result;
+    for (const auto& line : renderPlan.visibleLines) {
+        if (line.entryRevisionIdentity.empty() ||
+            std::find(result.begin(), result.end(),
+                line.entryRevisionIdentity) != result.end()) continue;
+        result.push_back(line.entryRevisionIdentity);
+        if (result.size() >= limit) break;
+    }
     return result;
 }
 

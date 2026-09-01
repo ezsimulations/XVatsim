@@ -18,3 +18,7 @@ target_compile_definitions(XVatsimXPilotBridge PRIVATE
     XPLM301=1
     XPLM400=1
 )
+
+if (WIN32)
+    target_link_libraries(XVatsimXPilotBridge PUBLIC bcrypt)
+endif()

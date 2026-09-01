@@ -4191,6 +4191,7 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     const auto accessory = state->accessory;
     const auto metar = state->metar;
     const auto atis = state->atis;
+    const auto pdc = state->pdc;
     const auto flightContext = state->flightContext;
     const auto displayOverrideMode = state->displayOverrideMode;
     const auto pendingTextEntryMode = state->pendingTextEntryMode;
@@ -4203,6 +4204,7 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     state->accessory = accessory;
     state->metar = metar;
     state->atis = atis;
+    state->pdc = pdc;
     state->flightContext = flightContext;
     state->displayOverrideMode = displayOverrideMode;
     state->pendingTextEntryMode = pendingTextEntryMode;
@@ -4606,71 +4608,6 @@ void ExpireBrainOwnedManualQuery(
         return;
     }
     ClearBrainOwnedManualQuery(state);
-}
-
-void ResetBrainOwnedControllerMessageState(BrainOwnedRuntimeState* state) {
-    if (state == nullptr) {
-        return;
-    }
-    state->controllerMessageState = {};
-}
-
-void ClearBrainOwnedControllerMessage(BrainOwnedRuntimeState* state) {
-    if (state == nullptr) {
-        return;
-    }
-    state->controllerMessageState.visible = false;
-}
-
-void RecallBrainOwnedControllerMessage(BrainOwnedRuntimeState* state) {
-    if (state == nullptr ||
-        !state->controllerMessageState.cachedAvailable) {
-        return;
-    }
-    state->controllerMessageState.visible = true;
-}
-
-void UpdateBrainOwnedControllerMessageState(
-    BrainOwnedRuntimeState* state,
-    const XPilotPrivateMessageSnapshot& messageSnapshot,
-    bool controllerMessageUiEnabled) {
-    if (state == nullptr) {
-        return;
-    }
-    if (!controllerMessageUiEnabled || !messageSnapshot.loaded) {
-        ResetBrainOwnedControllerMessageState(state);
-        return;
-    }
-
-    auto& pendingMessage = state->controllerMessageState;
-    if (!pendingMessage.primed) {
-        pendingMessage.primed = true;
-        pendingMessage.lastSequence = messageSnapshot.sequence;
-        return;
-    }
-
-    if (messageSnapshot.sequence < pendingMessage.lastSequence) {
-        pendingMessage.lastSequence = messageSnapshot.sequence;
-        pendingMessage.visible = false;
-        pendingMessage.cachedAvailable = false;
-        pendingMessage.from.clear();
-        pendingMessage.body.clear();
-        return;
-    }
-
-    if (messageSnapshot.sequence == pendingMessage.lastSequence) {
-        return;
-    }
-
-    pendingMessage.lastSequence = messageSnapshot.sequence;
-    if (!messageSnapshot.available) {
-        return;
-    }
-
-    pendingMessage.cachedAvailable = true;
-    pendingMessage.visible = true;
-    pendingMessage.from = messageSnapshot.from;
-    pendingMessage.body = messageSnapshot.body;
 }
 
 BrainOwnedPreflightRouteCacheDecision BeginBrainOwnedPreflightRouteCacheApplication(
@@ -5285,9 +5222,6 @@ BrainOwnedOverlayWakeDecision DecideBrainOwnedOverlayWake(
         autoWake = true;
     }
 
-    const auto controllerMessageWake =
-        input.controllerMessageVisible &&
-        input.displayOverrideMode != BrainOwnedDisplayOverrideMode::ForcedSleep;
     const auto criticalWake =
         input.manualQueryVisible ||
         input.textEntryActive ||
@@ -5300,7 +5234,7 @@ BrainOwnedOverlayWakeDecision DecideBrainOwnedOverlayWake(
                BrainOwnedDisplayOverrideMode::ForcedSleep) {
         decision.shouldWake = false;
     }
-    if (criticalWake || controllerMessageWake) {
+    if (criticalWake) {
         decision.shouldWake = true;
     }
 
@@ -5321,8 +5255,6 @@ BrainOwnedOverlayWakeDecision DecideBrainOwnedOverlayWake(
         decision.reason = "manual-query";
     } else if (input.textEntryActive) {
         decision.reason = "text-entry";
-    } else if (input.controllerMessageVisible) {
-        decision.reason = "controller-message";
     } else if (decision.hideUntilXpilotConnect) {
         decision.reason = "xpilot-waiting";
     } else if (decision.xPilotDisconnectedAlert) {
@@ -6813,6 +6745,98 @@ void ProjectBrainOwnedMetarOrbPresentation(
     orb->neutral = !usable;
 }
 
+void ProjectBrainOwnedPdcOrbPresentation(
+    const BrainOwnedRuntimeState& state,
+    BrainOwnedAccessoryOrbPresentation* orb) {
+    if (orb == nullptr || !state.pdc.initialized) return;
+    orb->label = "PDC";
+    orb->airportIcao.clear();
+    orb->selectedIndicator = orb->selected ? "OPEN" : "";
+    orb->neutral = true;
+    orb->tone = BrainOwnedAccessoryOrbPresentation::Tone::Gray;
+    if (state.pdc.captureComplete && state.pdc.capturedArtifact.has_value()) {
+        const bool unread = state.pdc.capturedArtifact->unread;
+        orb->neutral = false;
+        orb->categoryText = unread ? "NEW 1" : "MSG 1";
+        orb->stateText = unread ? "captured-unread" : "captured-viewed";
+        orb->tone = unread
+            ? BrainOwnedAccessoryOrbPresentation::Tone::Amber
+            : BrainOwnedAccessoryOrbPresentation::Tone::Cyan;
+    } else if (state.pdc.preCaptureUncertain) {
+        orb->neutral = false;
+        orb->categoryText = "CHECK";
+        orb->stateText = "pre-capture-source-uncertain";
+        orb->tone = BrainOwnedAccessoryOrbPresentation::Tone::Amber;
+    } else if (state.pdc.availability == BrainPdcAvailability::SourceUnavailable) {
+        orb->categoryText = "SOURCE";
+        orb->stateText = "source-unavailable";
+    } else {
+        orb->categoryText = "IDLE";
+        orb->stateText = state.pdc.acquisitionArmed
+            ? "waiting-for-departure-pdc" : "not-armed";
+    }
+}
+
+std::vector<BrainOwnedAccessoryHistoryEntry>
+ProjectBrainOwnedPdcDrawerPresentation(
+    const BrainOwnedRuntimeState& state,
+    BrainOwnedAccessoryDrawerState* drawerState,
+    std::string* drawerTitle,
+    std::string* drawerStateText,
+    std::string* emptyStateText) {
+    std::vector<BrainOwnedAccessoryHistoryEntry> entries;
+    if (drawerTitle != nullptr) *drawerTitle = "PDC";
+    if (drawerStateText != nullptr) drawerStateText->clear();
+    if (emptyStateText != nullptr) emptyStateText->clear();
+    if (!state.pdc.captureComplete || !state.pdc.capturedArtifact.has_value()) {
+        if (state.pdc.preCaptureUncertain) {
+            if (drawerState != nullptr) *drawerState = BrainOwnedAccessoryDrawerState::Empty;
+            if (drawerStateText != nullptr) {
+                *drawerStateText = "PDC CHECK — CHECK XPILOT";
+            }
+        } else if (state.pdc.availability == BrainPdcAvailability::SourceUnavailable) {
+            if (drawerState != nullptr) {
+                *drawerState = BrainOwnedAccessoryDrawerState::Unavailable;
+            }
+            if (drawerStateText != nullptr) {
+                *drawerStateText = "PDC SOURCE UNAVAILABLE — USE XPILOT";
+            }
+        } else {
+            if (drawerState != nullptr) *drawerState = BrainOwnedAccessoryDrawerState::Empty;
+            if (emptyStateText != nullptr) {
+                *emptyStateText = "PDC IDLE — WAITING FOR DEPARTURE PDC";
+            }
+        }
+        return entries;
+    }
+
+    const auto& artifact = *state.pdc.capturedArtifact;
+    if (drawerState != nullptr) *drawerState = BrainOwnedAccessoryDrawerState::Ready;
+    if (drawerTitle != nullptr) *drawerTitle = "PDC — " + artifact.departureIcao;
+
+    BrainOwnedAccessoryHistoryEntry warning;
+    warning.stableKey = "pdc-captured-snapshot-warning";
+    warning.title = "CAPTURED SNAPSHOT — CHECK XPILOT FOR REVISIONS";
+    warning.retainedBytes = warning.stableKey.size() + warning.title.size();
+    entries.push_back(std::move(warning));
+
+    BrainOwnedAccessoryHistoryEntry entry;
+    entry.stableKey = artifact.revisionIdentity;
+    entry.title = "PDC — " + artifact.sender;
+    entry.body = artifact.body;
+    entry.acceptedSequence = static_cast<std::uint64_t>(
+        std::max<std::int64_t>(0, artifact.sourceSequence));
+    entry.chronological = true;
+    entry.chronologyKey = static_cast<std::int64_t>(
+        std::min<std::uint64_t>(artifact.acceptedMonotonicMicroseconds,
+            static_cast<std::uint64_t>(
+                std::numeric_limits<std::int64_t>::max())));
+    entry.retainedBytes = entry.stableKey.size() + entry.title.size() +
+        entry.body.size();
+    entries.push_back(std::move(entry));
+    return entries;
+}
+
 std::vector<BrainOwnedAccessoryOrbPresentation>
 ProjectBrainOwnedAccessoryRailSemantics(
     const BrainOwnedRuntimeState& state) {
@@ -6835,6 +6859,8 @@ ProjectBrainOwnedAccessoryRailSemantics(
             ProjectBrainOwnedMetarOrbPresentation(state, &orb);
         } else if (drawer == BrainOwnedAccessoryDrawerId::Atis) {
             ProjectBrainOwnedAtisOrbPresentation(state, &orb);
+        } else if (drawer == BrainOwnedAccessoryDrawerId::Pdc) {
+            ProjectBrainOwnedPdcOrbPresentation(state, &orb);
         }
         orbs.push_back(std::move(orb));
     }
@@ -7188,11 +7214,14 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
     const std::uint64_t historyGeneration = drawerOpen
         ? accessory.histories[activeIndex].generation
         : 0;
-    const std::uint64_t contentGeneration =
-        accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Metar &&
-            state->metar.initialized
-        ? state->metar.presentationGeneration
-        : 0;
+    std::uint64_t contentGeneration = 0;
+    if (accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Metar &&
+        state->metar.initialized) {
+        contentGeneration = state->metar.presentationGeneration;
+    } else if (accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Pdc &&
+               state->pdc.initialized) {
+        contentGeneration = state->pdc.semanticGeneration;
+    }
     const bool cacheMatches =
         accessory.cachedPresentationSnapshot != nullptr &&
         accessory.cachedSemanticPresentationGeneration ==
@@ -7242,6 +7271,11 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
                 &snapshot->drawerTitle, &snapshot->drawerStateText,
                 &snapshot->emptyStateText,
                 &snapshot->atisVisibleRevisionIdentity);
+        } else if (accessory.activeDrawer ==
+                   BrainOwnedAccessoryDrawerId::Pdc && state->pdc.initialized) {
+            snapshot->entries = ProjectBrainOwnedPdcDrawerPresentation(
+                *state, &snapshot->drawerState, &snapshot->drawerTitle,
+                &snapshot->drawerStateText, &snapshot->emptyStateText);
         } else {
             snapshot->entries = history.entries;
         }
@@ -7249,7 +7283,9 @@ BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
             counters->historyVisits = history.entries.size();
             counters->entriesCopied = history.entries.size();
         }
-        if (accessory.activeDrawer != BrainOwnedAccessoryDrawerId::Atis) {
+        if (accessory.activeDrawer != BrainOwnedAccessoryDrawerId::Atis &&
+            !(accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Pdc &&
+              state->pdc.initialized)) {
             snapshot->drawerState = snapshot->entries.empty()
                 ? BrainOwnedAccessoryDrawerState::Empty
                 : BrainOwnedAccessoryDrawerState::Ready;
@@ -7391,6 +7427,14 @@ ConsumeBrainOwnedAccessoryPublicationFact(
         (void)AcknowledgeBrainOwnedAtisVisibleRevision(
             state, fact.atisVisibleRevisionIdentity);
     }
+    if (decision.visibleAttemptTerminalAccepted &&
+        fact.disposition ==
+            BrainOwnedAccessoryPublicationDisposition::FirstFrameDisplayed &&
+        fact.activeDrawerRendered == BrainOwnedAccessoryDrawerId::Pdc &&
+        !fact.pdcVisibleRevisionIdentities.empty()) {
+        (void)AcknowledgeBrainOwnedPdcVisibleEntries(
+            state, fact.pdcVisibleRevisionIdentities);
+    }
     return decision;
 }
 
@@ -7465,6 +7509,7 @@ SuspendBrainOwnedRuntimeForPluginAdmin(
 
     decision.accessory = DisableBrainOwnedAccessoryRuntime(state);
     MarkBrainOwnedAtisSourceUnknownPreservingAcceptedState(state);
+    SuspendBrainOwnedPdcRuntime(state);
     decision.workerShutdown = ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
         state, workers, false);
     state->pluginAdminSuspended = true;
@@ -7490,6 +7535,7 @@ ResumeBrainOwnedRuntimeFromPluginAdmin(BrainOwnedRuntimeState* state) {
         return decision;
     }
     state->pluginAdminSuspended = false;
+    ResumeBrainOwnedPdcRuntime(state);
     decision.stateChanged = true;
     decision.resumed = true;
     return decision;
@@ -7502,18 +7548,21 @@ BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForSessionReset(
     BrainOwnedRuntimeState* state) {
     auto decision = ClearAccessorySessionHistory(state);
     ResetBrainOwnedAtisProductState(state);
+    ResetBrainOwnedPdcProductState(state, false);
     return decision;
 }
 BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForConfirmedNewFlight(
     BrainOwnedRuntimeState* state) {
     auto decision = ClearAccessorySessionHistory(state);
     ResetBrainOwnedAtisProductState(state);
+    ResetBrainOwnedPdcProductState(state, false);
     return decision;
 }
 BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForConfirmedColdDark(
     BrainOwnedRuntimeState* state) {
     auto decision = ClearAccessorySessionHistory(state);
     ResetBrainOwnedAtisProductState(state);
+    ResetBrainOwnedPdcProductState(state, false);
     return decision;
 }
 BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForCallsignChange(
@@ -7522,6 +7571,7 @@ BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForCallsignChange(
     const std::string& nextCallsign) {
     auto decision = ClearAccessorySessionHistory(state);
     ResetBrainOwnedAtisProductState(state);
+    ResetBrainOwnedPdcProductState(state, false);
     if (state == nullptr) {
         return decision;
     }
@@ -7538,6 +7588,7 @@ BrainOwnedAccessoryBoundaryDecision StopBrainOwnedAccessoryRuntime(
     BrainOwnedRuntimeState* state) {
     auto decision = ClearAccessorySessionHistory(state);
     ResetBrainOwnedAtisProductState(state);
+    StopBrainOwnedPdcRuntime(state);
     return decision;
 }
 

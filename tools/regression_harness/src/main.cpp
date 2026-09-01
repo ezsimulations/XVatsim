@@ -62,6 +62,8 @@
 #include "XVatsim/modules/transceiver_resolver/TransceiverResolver.h"
 #include "XVatsim/modules/update_checker/UpdateChecker.h"
 
+#include "Step6PdcContractProbe.h"
+
 namespace {
 
 using xvatsim::brain::BoardSource;
@@ -10764,7 +10766,7 @@ void ExecuteHarnessColdDarkPresentationReset(
     xvatsim::brain::ClearBrainOwnedXPilotConnectionTracking(state);
     xvatsim::brain::ClearBrainOwnedFlightRecoveryRequests(state);
     xvatsim::brain::ClearBrainOwnedAircraftStateInvalidBoundary(state);
-    xvatsim::brain::ResetBrainOwnedControllerMessageState(state);
+    xvatsim::brain::ResetBrainOwnedPdcProductState(state, false);
     xvatsim::brain::ClearBrainOwnedManualQuery(state);
     xvatsim::brain::ResetBrainOwnedDisplayPublisherState(state);
     xvatsim::brain::ResetBrainOwnedStandbyAssistLatch(state);
@@ -23351,6 +23353,10 @@ int main(int argc, char** argv) {
     }
     if (!scenario.step5.probe.empty()) {
         return RunStep5ContractProbe(scenario);
+    }
+    if (scenario.name.rfind("v2_step6_pdc_private_messages_", 0) == 0) {
+        return xvatsim::tools::step6_pdc_proof::RunStep6PdcContractProbe(
+            scenario.name);
     }
 
     auto workflowState = scenario.workflowState;

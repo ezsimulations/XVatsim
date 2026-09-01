@@ -49,10 +49,6 @@
 #include "XPLMProcessing.h"
 #include "XPLMUtilities.h"
 
-#ifndef XVATSIM_ENABLE_CONTROLLER_MESSAGES
-#define XVATSIM_ENABLE_CONTROLLER_MESSAGES 0
-#endif
-
 namespace xvatsim::modules::overlay {
 std::string DescribeLastOverlayUpdateTiming();
 }
@@ -124,7 +120,6 @@ constexpr float kEnrouteInitialDisplaySeconds = 180.0f;
 constexpr float kOpacityStep = 0.10f;
 constexpr float kScaleStep = 0.05f;
 constexpr float kAnimationSpeedStep = 0.10f;
-constexpr bool kControllerMessageUiEnabled = XVATSIM_ENABLE_CONTROLLER_MESSAGES != 0;
 constexpr std::size_t kMaxLogFieldChars = 80;
 constexpr long long kDiagnosticsSlowRefreshThresholdMs = 33;
 constexpr long long kDiagnosticsSlowRefreshLogIntervalSeconds = 10;
@@ -200,7 +195,7 @@ struct RefreshDiagnosticsFrame {
     long long flightPlanUs = 0;
     long long networkPlanUs = 0;
     long long radioUs = 0;
-    long long controllerMessageUs = 0;
+    long long pdcPrivateSourceUs = 0;
     long long manualQueryUs = 0;
     long long flightContextUs = 0;
     long long ctafUs = 0;
@@ -274,6 +269,10 @@ xvatsim::modules::transceiver_resolver::TransceiverResolver gTransceiverResolver
 xvatsim::modules::update_checker::UpdateChecker gUpdateChecker;
 xvatsim::modules::vatsim_data_feed::VatsimDataFeedClient gVatsimDataFeedClient;
 xvatsim::modules::xpilot_bridge::XPilotBridge gXPilotBridge;
+xvatsim::modules::xpilot_bridge::XPilotPrivateObservationQueue
+    gXPilotPrivateObservationQueue;
+xvatsim::modules::xpilot_bridge::XPilotPrivateQualificationEventLatch
+    gXPilotPrivateQualificationEventLatch;
 xvatsim::modules::settings_store::PluginSettings gPluginSettings;
 XPLMCommandRef gManualCtafCommand = nullptr;
 XPLMCommandRef gDisplayOpenCommand = nullptr;
@@ -630,6 +629,7 @@ void ResetSessionRuntimeCaches(
     gAircraftStateSampler.Reset();
     gCtafLookupService.Reset();
     gXPilotBridge.Reset();
+    gXPilotPrivateQualificationEventLatch.Reset();
     if (resetVatsimFeed) {
         gVatsimDataFeedClient.Reset();
     }
@@ -649,6 +649,7 @@ void ResetPluginRuntimeState(
     bool resetVatsimFeed,
     bool resetColdDarkLatch,
     bool preserveAccessory = false) {
+    gXPilotPrivateObservationQueue.Clear();
     DiscardPendingTextEntryState();
     xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
     ClearFlightRecoveryState();
@@ -667,116 +668,6 @@ void ShowTransientStatusLine(const std::string& line) {
         &gBrainOwnedRuntimeState,
         line,
         CurrentTickSeconds() + kManualQueryVisibleSeconds);
-}
-
-void ClearControllerMessage() {
-    xvatsim::brain::ClearBrainOwnedControllerMessage(
-        &gBrainOwnedRuntimeState);
-}
-
-void ResetControllerMessageState() {
-    xvatsim::brain::ResetBrainOwnedControllerMessageState(
-        &gBrainOwnedRuntimeState);
-}
-
-void AcknowledgeControllerMessage() {
-    ClearControllerMessage();
-}
-
-void RecallControllerMessage() {
-    xvatsim::brain::RecallBrainOwnedControllerMessage(
-        &gBrainOwnedRuntimeState);
-}
-
-void UpdateControllerMessageState(
-    const xvatsim::brain::XPilotPrivateMessageSnapshot& messageSnapshot) {
-    xvatsim::brain::UpdateBrainOwnedControllerMessageState(
-        &gBrainOwnedRuntimeState,
-        messageSnapshot,
-        kControllerMessageUiEnabled);
-}
-
-std::vector<std::string> WrapOverlayMessageText(
-    const std::string& text,
-    std::size_t maxColumns = 38) {
-    std::vector<std::string> lines;
-    std::istringstream stream(text);
-    std::string paragraph;
-
-    while (std::getline(stream, paragraph)) {
-        paragraph.erase(
-            std::remove(paragraph.begin(), paragraph.end(), '\r'),
-            paragraph.end());
-
-        if (paragraph.empty()) {
-            lines.emplace_back();
-            continue;
-        }
-
-        std::istringstream wordStream(paragraph);
-        std::string word;
-        std::string currentLine;
-        while (wordStream >> word) {
-            while (word.size() > maxColumns) {
-                if (!currentLine.empty()) {
-                    lines.push_back(currentLine);
-                    currentLine.clear();
-                }
-
-                lines.push_back(word.substr(0, maxColumns));
-                word.erase(0, maxColumns);
-            }
-
-            if (currentLine.empty()) {
-                currentLine = word;
-                continue;
-            }
-
-            if ((currentLine.size() + 1 + word.size()) <= maxColumns) {
-                currentLine += " " + word;
-                continue;
-            }
-
-            lines.push_back(currentLine);
-            currentLine = word;
-        }
-
-        if (!currentLine.empty()) {
-            lines.push_back(currentLine);
-        }
-    }
-
-    if (lines.empty()) {
-        lines.push_back(text);
-    }
-
-    return lines;
-}
-
-void ApplyControllerMessageCard(
-    const xvatsim::brain::BrainOwnedControllerMessageState& pendingMessage,
-    xvatsim::brain::OverlayViewModel* overlayModel) {
-    if (overlayModel == nullptr || overlayModel->bodyLines.empty()) {
-        return;
-    }
-
-    std::vector<xvatsim::brain::OverlayTextLine> lines;
-    lines.reserve(overlayModel->bodyLines.size() + 8);
-    lines.push_back(overlayModel->bodyLines.front());
-    lines.push_back({"CONTROLLER MESSAGE", xvatsim::brain::OverlayTone::Active});
-
-    if (!pendingMessage.from.empty()) {
-        lines.push_back(
-            {"FROM " + pendingMessage.from, xvatsim::brain::OverlayTone::Next});
-    }
-
-    for (const auto& wrappedLine : WrapOverlayMessageText(pendingMessage.body)) {
-        lines.push_back({wrappedLine, xvatsim::brain::OverlayTone::Normal});
-    }
-
-    const auto footerLine = overlayModel->bodyLines.back();
-    lines.push_back(footerLine);
-    overlayModel->bodyLines = std::move(lines);
 }
 
 void ResetStandbyAssistLatch() {
@@ -1334,6 +1225,88 @@ std::string SanitizeLogText(std::string value, std::size_t maxChars = kMaxLogFie
         }
     }
     return sanitized;
+}
+
+xvatsim::brain::BrainPdcEvaluationContext BuildPdcEvaluationContext() {
+    xvatsim::brain::BrainPdcEvaluationContext context;
+    const auto& flight = gBrainOwnedRuntimeState.flightContext;
+    context.flightContextActive = flight.active;
+    context.aircraftCallsign = flight.callsign;
+    context.departureIcao = flight.departureIcao;
+    context.destinationIcao = flight.destinationIcao;
+    return context;
+}
+
+void ServicePdcPrivateSource() {
+    if (!gBrainOwnedRuntimeState.pdc.initialized ||
+        gBrainOwnedRuntimeState.pdc.pluginAdminSuspended) return;
+    const auto context = BuildPdcEvaluationContext();
+    const auto acquisition = xvatsim::brain::EvaluateBrainOwnedPdcAcquisition(
+        &gBrainOwnedRuntimeState, context);
+    if (acquisition.clearQueuedFacts || !acquisition.samplePrivatePayload) {
+        gXPilotPrivateObservationQueue.Clear();
+    }
+    if (!acquisition.samplePrivatePayload) return;
+
+    xvatsim::modules::xpilot_bridge::XPilotPrivateObservationRequest request;
+    if (acquisition.useSequenceOnlyFastPath) {
+        request.fastPathToken.applicable = true;
+        request.fastPathToken.pluginInstanceIdentity =
+            acquisition.pluginInstanceIdentity;
+        request.fastPathToken.capabilityGeneration =
+            acquisition.capabilityGeneration;
+        request.fastPathToken.brainOwnedSequence = acquisition.brainOwnedSequence;
+    }
+    const auto sampled = gXPilotBridge.SamplePrivateMessage(request);
+    const bool qualificationEvent =
+        gXPilotPrivateQualificationEventLatch.Observe(sampled);
+    const auto nowUs = static_cast<std::uint64_t>(
+        std::max(0.0f, XPLMGetElapsedTime()) * 1'000'000.0f);
+    const auto observation =
+        xvatsim::modules::xpilot_bridge::ToBrainPdcMechanicalObservation(
+            sampled, nowUs);
+    if (!gXPilotPrivateObservationQueue.Produce(observation)) {
+        xvatsim::brain::RecordBrainOwnedPdcTransportCapacityLoss(
+            &gBrainOwnedRuntimeState, 1);
+    }
+    xvatsim::brain::BrainPdcMechanicalObservation fact;
+    while (gXPilotPrivateObservationQueue.Consume(&fact)) {
+        const auto decision = xvatsim::brain::EvaluateBrainOwnedPdcObservation(
+            &gBrainOwnedRuntimeState, fact, context, nowUs);
+        if (decision.productChanged || decision.gapDetected ||
+            !decision.mechanicallyAccepted) {
+            std::ostringstream line;
+            line << "event=pdc-private-observation"
+                 << " reason=" << SanitizeLogText(decision.reason, 64)
+                 << " mechanical=" << (decision.mechanicallyAccepted ? 1 : 0)
+                 << " captured=" << (decision.captureCompleted ? 1 : 0)
+                 << " uncertainty=" << (decision.gapDetected ? 1 : 0)
+                 << " samplerUs=" << fact.samplerElapsedMicroseconds
+                 << " issueMask=0x" << std::hex << fact.mechanicalIssueMask
+                 << std::dec
+                 << " "
+                 << xvatsim::brain::BrainOwnedPdcDiagnosticSummary(
+                        gBrainOwnedRuntimeState.pdc);
+            AppendDiagnosticsLogLine(line.str());
+        }
+        if (decision.captureCompleted) {
+            gXPilotPrivateObservationQueue.Clear();
+            break;
+        }
+    }
+    if (qualificationEvent) {
+        AppendDiagnosticsLogLine(
+            xvatsim::modules::xpilot_bridge::
+                FormatXPilotPrivateQualificationEvent(
+                    sampled,
+                    gBrainOwnedRuntimeState.pdc.lastObservedSequence,
+                    gBrainOwnedRuntimeState.pdc.hasConnectedDisposition
+                        ? gBrainOwnedRuntimeState.pdc.connectedDispositionedSequence
+                        : 0));
+    }
+    if (!gBrainOwnedRuntimeState.pdc.captureComplete) {
+        (void)gXPilotPrivateObservationQueue.ServiceRetained();
+    }
 }
 
 const char* MetarRequestPurposeToken(
@@ -2613,7 +2586,7 @@ long long SumTrackedRefreshMicroseconds(const RefreshDiagnosticsFrame& frame) {
            frame.flightPlanUs +
            frame.networkPlanUs +
            frame.radioUs +
-           frame.controllerMessageUs +
+           frame.pdcPrivateSourceUs +
            frame.manualQueryUs +
            frame.flightContextUs +
            frame.ctafUs +
@@ -2719,7 +2692,7 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
            << ",flightPlan:" << frame.flightPlanUs
            << ",networkPlan:" << frame.networkPlanUs
            << ",radio:" << frame.radioUs
-           << ",messages:" << frame.controllerMessageUs
+           << ",pdcPrivateSource:" << frame.pdcPrivateSourceUs
            << ",manualQuery:" << frame.manualQueryUs
            << ",context:" << frame.flightContextUs
            << ",ctaf:" << frame.ctafUs
@@ -2841,8 +2814,8 @@ void ResetPresentationStateForColdDark() {
     ClearFlightRecoveryState();
     xvatsim::brain::ClearBrainOwnedAircraftStateInvalidBoundary(
         &gBrainOwnedRuntimeState);
-    xvatsim::brain::ResetBrainOwnedControllerMessageState(
-        &gBrainOwnedRuntimeState);
+    xvatsim::brain::ResetBrainOwnedPdcProductState(
+        &gBrainOwnedRuntimeState, false);
     xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
     ResetBrainDisplayPublisherCache();
     ResetStandbyAssistLatch();
@@ -5013,21 +4986,9 @@ void RefreshOverlayFromBrainEngineer3() {
     radioStateSnapshot.standbyAssistEnabled = gPluginSettings.standbyAssistEnabled;
 
     timingStarted = std::chrono::steady_clock::now();
-    if (kControllerMessageUiEnabled) {
-        const auto xPilotPrivateMessageSnapshot = gXPilotBridge.PollPrivateMessage();
-        UpdateControllerMessageState(xPilotPrivateMessageSnapshot);
-        if (gOverlayWindow.ConsumeAcknowledgeRequest()) {
-            AcknowledgeControllerMessage();
-        }
-        if (gOverlayWindow.ConsumeRecallRequest()) {
-            RecallControllerMessage();
-        }
-    } else {
-        ResetControllerMessageState();
-        (void)gOverlayWindow.ConsumeAcknowledgeRequest();
-        (void)gOverlayWindow.ConsumeRecallRequest();
-    }
-    diagnostics.controllerMessageUs = ElapsedMicrosecondsSince(timingStarted);
+    (void)gOverlayWindow.ConsumeAcknowledgeRequest();
+    (void)gOverlayWindow.ConsumeRecallRequest();
+    diagnostics.pdcPrivateSourceUs = ElapsedMicrosecondsSince(timingStarted);
 
     timingStarted = std::chrono::steady_clock::now();
     RefreshManualQueryState();
@@ -5193,6 +5154,9 @@ void RefreshOverlayFromBrainEngineer3() {
         diagnostics.stage = WorkflowStageToken(workflowStage);
         diagnostics.stageReason = workflowDecision.reason;
     }
+    timingStarted = std::chrono::steady_clock::now();
+    ServicePdcPrivateSource();
+    diagnostics.pdcPrivateSourceUs += ElapsedMicrosecondsSince(timingStarted);
     const auto atisDecision = RunAtisCycleFromSharedFeed(
         vatsimDataFeedSnapshot,
         xPilotSessionSnapshot.connected,
@@ -5228,11 +5192,6 @@ void RefreshOverlayFromBrainEngineer3() {
     UpdateOverlayWakeTracking(
         aircraftState,
         xPilotSessionSnapshot);
-    const auto controllerMessageVisible =
-        kControllerMessageUiEnabled &&
-        gBrainOwnedRuntimeState.controllerMessageState.visible &&
-        !gBrainOwnedRuntimeState.manualQuerySnapshot.visible &&
-        !xvatsim::brain::HasBrainOwnedPendingTextEntry(gBrainOwnedRuntimeState);
     const auto textEntryActive =
         xvatsim::brain::HasBrainOwnedPendingTextEntry(gBrainOwnedRuntimeState);
     xvatsim::brain::BrainOwnedOverlayWakeInput wakeInput;
@@ -5244,7 +5203,6 @@ void RefreshOverlayFromBrainEngineer3() {
     wakeInput.manualQueryVisible =
         gBrainOwnedRuntimeState.manualQuerySnapshot.visible;
     wakeInput.textEntryActive = textEntryActive;
-    wakeInput.controllerMessageVisible = controllerMessageVisible;
     wakeInput.sawXPilotConnectedThisFlight =
         gBrainOwnedRuntimeState.sawXPilotConnectedThisFlight;
     wakeInput.enrouteInitialHoldActive = enrouteInitialHoldActive;
@@ -5342,19 +5300,8 @@ void RefreshOverlayFromBrainEngineer3() {
     if (!cruiseHeaderText.empty()) {
         overlayModel.headerRightText = cruiseHeaderText;
     }
-    overlayModel.showMessageAcknowledge =
-        kControllerMessageUiEnabled && controllerMessageVisible;
-    overlayModel.showMessageRecall =
-        kControllerMessageUiEnabled &&
-        !controllerMessageVisible &&
-        gBrainOwnedRuntimeState.controllerMessageState.cachedAvailable &&
-        !gBrainOwnedRuntimeState.manualQuerySnapshot.visible &&
-        !xvatsim::brain::HasBrainOwnedPendingTextEntry(gBrainOwnedRuntimeState);
-    if (kControllerMessageUiEnabled && controllerMessageVisible) {
-        ApplyControllerMessageCard(
-            gBrainOwnedRuntimeState.controllerMessageState,
-            &overlayModel);
-    }
+    overlayModel.showMessageAcknowledge = false;
+    overlayModel.showMessageRecall = false;
 
     timingStarted = std::chrono::steady_clock::now();
     UpdateOverlayWindow(overlayModel);
@@ -5500,6 +5447,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
             gPluginSettings.windowTop);
     }
     ResetPluginRuntimeState(true, true);
+    xvatsim::brain::InitializeBrainOwnedPdcRuntime(&gBrainOwnedRuntimeState);
 #if defined(XVATSIM_STEP3_LIVE_PROOF_FIXTURES)
     const auto fixtureSeed =
         xvatsim::plugin::step3_live_proof::SeedStep3LiveProofFixturesOnce(
@@ -5559,6 +5507,7 @@ PLUGIN_API void XPluginStop() {
     LogAccessoryPerformanceSnapshot("plugin-stop");
     xvatsim::brain::StopBrainOwnedAccessoryRuntime(
         &gBrainOwnedRuntimeState);
+    gXPilotPrivateObservationQueue.Clear();
     (void)ApplyBoundAsyncWorkerLifecycleBoundary(true);
     ResetPluginRuntimeState(true, true);
     gOverlayWindow.Destroy();
@@ -5577,6 +5526,7 @@ PLUGIN_API int XPluginEnable() {
     const auto resume =
         xvatsim::brain::ResumeBrainOwnedRuntimeFromPluginAdmin(
             &gBrainOwnedRuntimeState);
+    ServicePdcPrivateSource();
     LoadPreflightRouteCacheCandidate();
     xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
         &gBrainOwnedRuntimeState,
@@ -5610,6 +5560,7 @@ PLUGIN_API int XPluginEnable() {
 PLUGIN_API void XPluginDisable() {
     gPluginRuntimeEnabled = false;
     UnregisterFlightLoop();
+    gXPilotPrivateObservationQueue.Clear();
     PersistOverlayGeometryIfChanged();
     DiscardPendingAccessoryClickFacts();
     gOverlayWindow.Hide();

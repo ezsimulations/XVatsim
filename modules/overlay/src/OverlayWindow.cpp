@@ -1128,7 +1128,26 @@ RasterImage RenderAccessoryRailImage(
             !presentation.airportIcao.empty() &&
             !presentation.categoryText.empty();
         const auto labelHeight = std::max(8.0f, 11.0f * layout.scale);
-        if (detailedOrb) {
+        if (presentation.drawer ==
+            brain::BrainOwnedAccessoryDrawerId::Pdc) {
+            const auto& pdcStatus = presentation.selected
+                ? presentation.selectedIndicator : presentation.categoryText;
+            DrawAccessoryText(
+                &graphics,
+                RectF(left, top + diameter * 0.25f, diameter, labelHeight),
+                presentation.label,
+                &labelFont,
+                labelColor,
+                StringAlignmentCenter);
+            DrawAccessoryText(
+                &graphics,
+                RectF(left, top + diameter * 0.56f, diameter,
+                      std::max(8.0f, 11.0f * layout.scale)),
+                pdcStatus,
+                &indicatorFont,
+                indicatorColor,
+                StringAlignmentCenter);
+        } else if (detailedOrb) {
             DrawAccessoryText(
                 &graphics,
                 RectF(left + 2.0f * layout.scale, top + diameter * 0.20f,
@@ -2187,6 +2206,11 @@ void OverlayWindow::ApplyAccessoryViewportDiagnostic(
             brain::BrainOwnedAccessoryOperationStatus::Available) {
             fact->firstVisibleLineApplicable = true;
             fact->firstVisibleLine = renderPlan.firstVisibleLine;
+            if (fact->activeDrawerRendered ==
+                brain::BrainOwnedAccessoryDrawerId::Pdc) {
+                fact->pdcVisibleRevisionIdentities =
+                    CollectVisiblePdcRevisionIdentities(renderPlan);
+            }
         }
     }
 }
