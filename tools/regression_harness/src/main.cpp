@@ -66,6 +66,7 @@
 #include "PerformanceContractGateACalm1Probe.h"
 #include "PerformanceContractGateACalm2Probe.h"
 #include "PerformanceContractGateAProbe.h"
+#include "ProductCalm1Probe.h"
 
 namespace {
 
@@ -23351,6 +23352,10 @@ int main(int argc, char** argv) {
     if (std::string(argv[1]) == "--performance-contract-gate-a-calm-2") {
         return xvatsim::tools::performance_contract_gate_a_calm_2::
             RunPerformanceContractGateACalm2Probe();
+    }
+
+    if (std::string(argv[1]) == "--product-calm-1") {
+        return xvatsim::tools::product_calm_1::RunProductCalm1Probe();
     }
 
     ScenarioData scenario;

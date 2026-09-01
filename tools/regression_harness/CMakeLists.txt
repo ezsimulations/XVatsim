@@ -3,6 +3,7 @@ add_executable(XVatsimRegressionHarness
     src/PerformanceContractGateACalm1Probe.cpp
     src/PerformanceContractGateACalm2Probe.cpp
     src/PerformanceContractGateAProbe.cpp
+    src/ProductCalm1Probe.cpp
     src/Step6PdcContractProbe.cpp
 )
 
@@ -19,6 +20,7 @@ target_compile_definitions(XVatsimRegressionHarness PRIVATE
 
 target_link_libraries(XVatsimRegressionHarness PRIVATE
     XVatsimBrain
+    XVatsimFlightPlan
     XVatsimMetarProof
     XVatsimAirportFrequencyCatalog
     XVatsimHarnessLegacyArrival
