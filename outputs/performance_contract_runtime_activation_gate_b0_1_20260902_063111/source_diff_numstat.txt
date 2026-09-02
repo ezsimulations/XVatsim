@@ -1,0 +1,5 @@
+81	0	brain/include/XVatsim/brain/BrainOwnedRuntime.h
+150	0	brain/src/BrainOwnedRuntime.cpp
+191	11	plugin/src/XVatsimPlugin.cpp
+1	0	tools/regression_harness/CMakeLists.txt
+6	0	tools/regression_harness/src/main.cpp

@@ -4171,6 +4171,156 @@ bool AircraftWithinCruiseTargetBand(
 
 }  // namespace
 
+BrainOwnedOperationalActivationDecision DecideBrainOwnedOperationalActivation(
+    const BrainOwnedOperationalActivationState& state,
+    const BrainOwnedOperationalActivationInput& input) {
+    BrainOwnedOperationalActivationDecision decision;
+    decision.initialObservation = !state.initialized;
+    if (!input.aircraftStateValid) {
+        decision.reason =
+            BrainOwnedOperationalActivationReason::AircraftStateInvalid;
+    } else if (!input.batteryOn) {
+        decision.reason = BrainOwnedOperationalActivationReason::BatteryOff;
+    } else if (!input.xPilotConnected) {
+        decision.reason =
+            BrainOwnedOperationalActivationReason::XPilotDisconnected;
+    } else {
+        decision.reason = BrainOwnedOperationalActivationReason::Operational;
+        decision.operational = true;
+    }
+
+    decision.activationRisingEdge =
+        decision.operational && (!state.initialized || !state.operational);
+    decision.deactivationFallingEdge =
+        state.initialized && state.operational && !decision.operational;
+    decision.disconnectFallingEdge =
+        decision.deactivationFallingEdge && !input.xPilotConnected;
+    return decision;
+}
+
+void CommitBrainOwnedOperationalActivationDecision(
+    BrainOwnedOperationalActivationState* state,
+    const BrainOwnedOperationalActivationDecision& decision) {
+    if (state == nullptr) {
+        return;
+    }
+    ++state->callbacks;
+    if (decision.operational) {
+        ++state->operationalCallbacks;
+    } else {
+        ++state->dormantCallbacks;
+    }
+    if (state->enableImmediateWakePending) {
+        ++state->enableImmediateCallbacks;
+        if (decision.operational) {
+            ++state->enableImmediateOperationalCallbacks;
+        } else {
+            ++state->enableImmediateDormantCallbacks;
+        }
+        state->enableImmediateWakePending = false;
+    }
+    if (decision.activationRisingEdge) {
+        ++state->activationRisingEdges;
+    }
+    if (decision.deactivationFallingEdge) {
+        ++state->deactivationFallingEdges;
+    }
+    if (decision.disconnectFallingEdge) {
+        ++state->disconnectFallingEdges;
+    }
+    state->initialized = true;
+    state->operational = decision.operational;
+}
+
+void RecordBrainOwnedOperationalEnableWakeRequest(
+    BrainOwnedOperationalActivationState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    ++state->enableImmediateWakeRequests;
+    state->enableImmediateWakePending = true;
+}
+
+void RecordBrainOwnedOperationalServiceCall(
+    BrainOwnedOperationalActivationState* state,
+    const BrainOwnedOperationalActivationDecision& decision,
+    BrainOwnedOperationalServiceStage stage) {
+    if (state == nullptr) {
+        return;
+    }
+    const auto index = static_cast<std::size_t>(stage);
+    if (index >= kBrainOwnedOperationalServiceStageCount) {
+        return;
+    }
+    if (decision.operational) {
+        ++state->operationalServiceCalls[index];
+        return;
+    }
+    ++state->dormantOperationalAttempts[index];
+    ++state->dormantOperationalAttemptCount;
+}
+
+void SetBrainOwnedOperationalActivationSuspended(
+    BrainOwnedOperationalActivationState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->initialized = true;
+    state->operational = false;
+    state->enableImmediateWakePending = false;
+}
+
+const char* ToString(BrainOwnedOperationalActivationReason reason) {
+    switch (reason) {
+        case BrainOwnedOperationalActivationReason::Operational:
+            return "operational";
+        case BrainOwnedOperationalActivationReason::AircraftStateInvalid:
+            return "aircraft-state-invalid";
+        case BrainOwnedOperationalActivationReason::BatteryOff:
+            return "battery-off";
+        case BrainOwnedOperationalActivationReason::XPilotDisconnected:
+            return "xpilot-disconnected";
+        default:
+            return "unknown";
+    }
+}
+
+const char* ToString(BrainOwnedOperationalServiceStage stage) {
+    switch (stage) {
+        case BrainOwnedOperationalServiceStage::VatsimFeed:
+            return "vatsim-feed";
+        case BrainOwnedOperationalServiceStage::ControllerSnapshot:
+            return "controller-snapshot";
+        case BrainOwnedOperationalServiceStage::FlightPlan:
+            return "flight-plan";
+        case BrainOwnedOperationalServiceStage::NetworkPlan:
+            return "network-plan";
+        case BrainOwnedOperationalServiceStage::Radio:
+            return "radio";
+        case BrainOwnedOperationalServiceStage::PdcPrivateSource:
+            return "pdc-private-source";
+        case BrainOwnedOperationalServiceStage::Atis:
+            return "atis";
+        case BrainOwnedOperationalServiceStage::Metar:
+            return "metar";
+        case BrainOwnedOperationalServiceStage::Ctaf:
+            return "ctaf";
+        case BrainOwnedOperationalServiceStage::Route:
+            return "route";
+        case BrainOwnedOperationalServiceStage::Authority:
+            return "authority";
+        case BrainOwnedOperationalServiceStage::ControllerRelevance:
+            return "controller-relevance";
+        case BrainOwnedOperationalServiceStage::WorkflowPublication:
+            return "workflow-publication";
+        case BrainOwnedOperationalServiceStage::StandbyAssist:
+            return "standby-assist";
+        case BrainOwnedOperationalServiceStage::Count:
+        default:
+            return "unknown";
+    }
+}
+
 void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state) {
     if (state == nullptr) {
         return;

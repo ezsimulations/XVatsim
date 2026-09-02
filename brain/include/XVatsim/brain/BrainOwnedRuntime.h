@@ -48,6 +48,71 @@ enum class BrainOwnedOperatingModeLoadStatus {
     Unavailable,
 };
 
+enum class BrainOwnedOperationalActivationReason {
+    Operational,
+    AircraftStateInvalid,
+    BatteryOff,
+    XPilotDisconnected,
+};
+
+enum class BrainOwnedOperationalServiceStage : std::size_t {
+    VatsimFeed,
+    ControllerSnapshot,
+    FlightPlan,
+    NetworkPlan,
+    Radio,
+    PdcPrivateSource,
+    Atis,
+    Metar,
+    Ctaf,
+    Route,
+    Authority,
+    ControllerRelevance,
+    WorkflowPublication,
+    StandbyAssist,
+    Count,
+};
+
+constexpr std::size_t kBrainOwnedOperationalServiceStageCount =
+    static_cast<std::size_t>(BrainOwnedOperationalServiceStage::Count);
+
+struct BrainOwnedOperationalActivationInput {
+    bool aircraftStateValid = false;
+    bool batteryOn = false;
+    bool xPilotConnected = false;
+};
+
+struct BrainOwnedOperationalActivationDecision {
+    BrainOwnedOperationalActivationReason reason =
+        BrainOwnedOperationalActivationReason::AircraftStateInvalid;
+    bool operational = false;
+    bool initialObservation = false;
+    bool activationRisingEdge = false;
+    bool deactivationFallingEdge = false;
+    bool disconnectFallingEdge = false;
+};
+
+struct BrainOwnedOperationalActivationState {
+    bool initialized = false;
+    bool operational = false;
+    bool enableImmediateWakePending = false;
+    std::uint64_t callbacks = 0;
+    std::uint64_t dormantCallbacks = 0;
+    std::uint64_t operationalCallbacks = 0;
+    std::uint64_t enableImmediateWakeRequests = 0;
+    std::uint64_t enableImmediateCallbacks = 0;
+    std::uint64_t enableImmediateOperationalCallbacks = 0;
+    std::uint64_t enableImmediateDormantCallbacks = 0;
+    std::uint64_t activationRisingEdges = 0;
+    std::uint64_t deactivationFallingEdges = 0;
+    std::uint64_t disconnectFallingEdges = 0;
+    std::uint64_t dormantOperationalAttemptCount = 0;
+    std::array<std::uint64_t, kBrainOwnedOperationalServiceStageCount>
+        operationalServiceCalls{};
+    std::array<std::uint64_t, kBrainOwnedOperationalServiceStageCount>
+        dormantOperationalAttempts{};
+};
+
 struct BrainOwnedOperatingModeState {
     BrainOwnedOperatingMode mode = BrainOwnedOperatingMode::IFR;
     BrainOwnedOperatingModeSource source =
@@ -2061,6 +2126,22 @@ private:
 void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state);
 void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     BrainOwnedRuntimeState* state);
+BrainOwnedOperationalActivationDecision DecideBrainOwnedOperationalActivation(
+    const BrainOwnedOperationalActivationState& state,
+    const BrainOwnedOperationalActivationInput& input);
+void CommitBrainOwnedOperationalActivationDecision(
+    BrainOwnedOperationalActivationState* state,
+    const BrainOwnedOperationalActivationDecision& decision);
+void RecordBrainOwnedOperationalEnableWakeRequest(
+    BrainOwnedOperationalActivationState* state);
+void RecordBrainOwnedOperationalServiceCall(
+    BrainOwnedOperationalActivationState* state,
+    const BrainOwnedOperationalActivationDecision& decision,
+    BrainOwnedOperationalServiceStage stage);
+void SetBrainOwnedOperationalActivationSuspended(
+    BrainOwnedOperationalActivationState* state);
+const char* ToString(BrainOwnedOperationalActivationReason reason);
+const char* ToString(BrainOwnedOperationalServiceStage stage);
 void InitializeBrainOwnedOperatingMode(
     BrainOwnedRuntimeState* state,
     const BrainOwnedOperatingModeInitializationInput& input);

@@ -1,0 +1,46 @@
+MSBuild version 18.8.2+ce25c0108 for .NET Framework
+
+  XVatsimRadioState.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\radio_state\Release\XVatsimRadioState.lib
+  XVatsimUpdateChecker.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\update_checker\Release\XVatsimUpdateChecker.lib
+  XVatsimCtafLookup.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\ctaf_lookup\Release\XVatsimCtafLookup.lib
+  XVatsimOverlayAccessoryCore.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\overlay\Release\XVatsimOverlayAccessoryCore.lib
+  XVatsimXPilotBridge.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\xpilot_bridge\Release\XVatsimXPilotBridge.lib
+  XVatsimSettingsStore.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\settings_store\Release\XVatsimSettingsStore.lib
+  XVatsimFlightPlan.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\flight_plan\Release\XVatsimFlightPlan.lib
+  XVatsimDiversionContext.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\diversion_context\Release\XVatsimDiversionContext.lib
+  XVatsimPilotIdentity.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\pilot_identity\Release\XVatsimPilotIdentity.lib
+  XVatsimTransceiverResolver.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\transceiver_resolver\Release\XVatsimTransceiverResolver.lib
+  XVatsimBrain.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\brain\Release\XVatsimBrain.lib
+  XVatsimAircraftState.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\aircraft_state\Release\XVatsimAircraftState.lib
+  XVatsimOverlay.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\overlay\Release\XVatsimOverlay.lib
+  XVatsimMetar.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\metar\Release\XVatsimMetar.lib
+  XVatsimWorkflowCore.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\core\Release\XVatsimWorkflowCore.lib
+  XVatsimVatsimDataFeed.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\vatsim_data_feed\Release\XVatsimVatsimDataFeed.lib
+  XVatsimTerminalAuthority.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\terminal_authority\Release\XVatsimTerminalAuthority.lib
+  XVatsimNetworkPlanLink.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\network_plan_link\Release\XVatsimNetworkPlanLink.lib
+  XVatsimControllerFeed.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\controller_feed\Release\XVatsimControllerFeed.lib
+  XVatsimRouteSector.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\route_sector\Release\XVatsimRouteSector.lib
+  XVatsimRuntimeWorkers.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\runtime_workers\Release\XVatsimRuntimeWorkers.lib
+  XVatsimPlugin.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\dist\XVatsim\win_x64\XVatsim.xpl
+MSBuild version 18.8.2+ce25c0108 for .NET Framework
+
+  XVatsimAirportFrequencyCatalog.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\airport_frequency_catalog\Release\XVatsimAirportFrequencyCatalog.lib
+  XVatsimCtafLookup.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\ctaf_lookup\Release\XVatsimCtafLookup.lib
+  XVatsimBrain.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\brain\Release\XVatsimBrain.lib
+  XVatsimXPilotBridge.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\xpilot_bridge\Release\XVatsimXPilotBridge.lib
+  XVatsimHarnessLegacyEnroute.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\enroute\Release\XVatsimHarnessLegacyEnroute.lib
+  XVatsimOverlayAccessoryCore.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\overlay\Release\XVatsimOverlayAccessoryCore.lib
+  XVatsimTransceiverResolver.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\transceiver_resolver\Release\XVatsimTransceiverResolver.lib
+  XVatsimUpdateChecker.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\update_checker\Release\XVatsimUpdateChecker.lib
+  XVatsimFlightPlan.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\flight_plan\Release\XVatsimFlightPlan.lib
+  XVatsimSettingsStore.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\settings_store\Release\XVatsimSettingsStore.lib
+  XVatsimHarnessLegacyDeparture.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\departure\Release\XVatsimHarnessLegacyDeparture.lib
+  XVatsimMetar.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\metar\Release\XVatsimMetar.lib
+  XVatsimVatsimDataFeed.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\vatsim_data_feed\Release\XVatsimVatsimDataFeed.lib
+  XVatsimHarnessLegacyArrival.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\arrival\Release\XVatsimHarnessLegacyArrival.lib
+  XVatsimWorkflowCore.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\core\Release\XVatsimWorkflowCore.lib
+  XVatsimMetarProof.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\metar\Release\XVatsimMetarProof.lib
+  XVatsimTerminalAuthority.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\terminal_authority\Release\XVatsimTerminalAuthority.lib
+  XVatsimRuntimeWorkers.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\runtime_workers\Release\XVatsimRuntimeWorkers.lib
+  XVatsimRouteSector.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\modules\route_sector\Release\XVatsimRouteSector.lib
+  XVatsimRegressionHarness.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\build\performance-contract-runtime-activation-gate\tools\XVatsimRegressionHarness.exe

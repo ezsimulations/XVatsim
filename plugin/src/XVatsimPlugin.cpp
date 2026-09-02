@@ -85,7 +85,7 @@ constexpr char kRecoverCurrentFlightCommandDesc[] =
     "Recover XVatsim workflow state for the current flight.";
 constexpr float kUpdateIntervalSeconds = 0.25f;
 constexpr float kInitialFlightLoopDelaySeconds = 10.0f;
-constexpr float kAccessoryActiveFlightLoopInterval = -1.0f;
+constexpr float kNextFlightLoopInterval = -1.0f;
 constexpr std::size_t kAccessoryInputFactsPerCycle = 8;
 constexpr std::uint64_t kAccessorySynchronousBudgetMicroseconds = 16'700;
 constexpr std::uint64_t kAccessoryTerminalBudgetMicroseconds = 500'000;
@@ -296,6 +296,8 @@ int gVfrModeMenuItemIndex = -1;
 bool gFlightLoopRegistered = false;
 bool gPluginRuntimeEnabled = false;
 xvatsim::brain::BrainOwnedRuntimeState gBrainOwnedRuntimeState;
+xvatsim::brain::BrainOwnedOperationalActivationState
+    gOperationalActivationState;
 #if defined(XVATSIM_STEP3_LIVE_PROOF_FIXTURES)
 xvatsim::plugin::step3_live_proof::Step3LiveProofFixtureSession
     gStep3LiveProofFixtureSession;
@@ -417,6 +419,7 @@ SynchronizeAccessoryPresentation(
 void RequestAccessoryFlightLoopWake(
     std::uint64_t notificationSequence,
     void* refcon);
+bool RequestImmediateGatedFlightLoopCallback();
 bool ServicePendingAccessoryInput();
 void DrainAccessoryPublicationFacts();
 void DiscardPendingAccessoryClickFacts();
@@ -3452,6 +3455,91 @@ void AppendDeferredDiagnosticsLogLine(
         std::move(formatter), importance);
 }
 
+void RecordOperationalServiceCall(
+    const xvatsim::brain::BrainOwnedOperationalActivationDecision& decision,
+    xvatsim::brain::BrainOwnedOperationalServiceStage stage) {
+    xvatsim::brain::RecordBrainOwnedOperationalServiceCall(
+        &gOperationalActivationState, decision, stage);
+}
+
+void LogOperationalActivationTransition(
+    const xvatsim::brain::BrainOwnedOperationalActivationDecision& decision,
+    SessionBoundaryResult sessionBoundaryResult) {
+    if (!decision.initialObservation && !decision.activationRisingEdge &&
+        !decision.deactivationFallingEdge) {
+        return;
+    }
+    const auto snapshot = gOperationalActivationState;
+    AppendDeferredDiagnosticsLogLine(
+        [decision, sessionBoundaryResult, snapshot]() {
+            std::ostringstream stream;
+            stream << "event=runtime-activation-transition"
+                   << " reason=" << xvatsim::brain::ToString(decision.reason)
+                   << " operational=" << (decision.operational ? 1 : 0)
+                   << " initial=" << (decision.initialObservation ? 1 : 0)
+                   << " rising="
+                   << (decision.activationRisingEdge ? 1 : 0)
+                   << " falling="
+                   << (decision.deactivationFallingEdge ? 1 : 0)
+                   << " disconnectFalling="
+                   << (decision.disconnectFallingEdge ? 1 : 0)
+                   << " sessionBoundary="
+                   << static_cast<int>(sessionBoundaryResult)
+                   << " callbacks=" << snapshot.callbacks
+                   << " dormantCallbacks=" << snapshot.dormantCallbacks
+                   << " operationalCallbacks="
+                   << snapshot.operationalCallbacks
+                   << " dormantOperationalAttempts="
+                   << snapshot.dormantOperationalAttemptCount;
+            return stream.str();
+        },
+        xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
+}
+
+void LogOperationalActivationSummary() {
+    const auto snapshot = gOperationalActivationState;
+    AppendDeferredDiagnosticsLogLine(
+        [snapshot]() {
+            std::ostringstream stream;
+            stream << "event=runtime-activation-gate-summary"
+                   << " callbacks=" << snapshot.callbacks
+                   << " dormantCallbacks=" << snapshot.dormantCallbacks
+                   << " operationalCallbacks="
+                   << snapshot.operationalCallbacks
+                   << " enableImmediateWakeRequests="
+                   << snapshot.enableImmediateWakeRequests
+                   << " enableImmediateCallbacks="
+                   << snapshot.enableImmediateCallbacks
+                   << " enableImmediateOperationalCallbacks="
+                   << snapshot.enableImmediateOperationalCallbacks
+                   << " enableImmediateDormantCallbacks="
+                   << snapshot.enableImmediateDormantCallbacks
+                   << " enableImmediateWakePending="
+                   << (snapshot.enableImmediateWakePending ? 1 : 0)
+                   << " activationRisingEdges="
+                   << snapshot.activationRisingEdges
+                   << " deactivationFallingEdges="
+                   << snapshot.deactivationFallingEdges
+                   << " disconnectFallingEdges="
+                   << snapshot.disconnectFallingEdges
+                   << " dormantOperationalAttempts="
+                   << snapshot.dormantOperationalAttemptCount;
+            for (std::size_t index = 0;
+                 index < xvatsim::brain::kBrainOwnedOperationalServiceStageCount;
+                 ++index) {
+                const auto stage = static_cast<
+                    xvatsim::brain::BrainOwnedOperationalServiceStage>(index);
+                stream << " " << xvatsim::brain::ToString(stage)
+                       << "Calls=" << snapshot.operationalServiceCalls[index]
+                       << " " << xvatsim::brain::ToString(stage)
+                       << "DormantAttempts="
+                       << snapshot.dormantOperationalAttempts[index];
+            }
+            return stream.str();
+        },
+        xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
+}
+
 void ResetDiagnosticsTraceState() {
     gDiagnosticsState.hasLastRadioBoardTraceHash = false;
     gDiagnosticsState.lastRadioBoardTraceHash = 0;
@@ -4124,6 +4212,8 @@ void PreserveFlightStateForNetworkDisconnect() {
     (void)RunBoundAsyncFactCycle(
         false,
         gBrainOwnedRuntimeState.lastWorkflowStage);
+    InvalidateRouteAsyncRuntime("xpilot-disconnect");
+    InvalidateAuthorityAsyncRuntime("xpilot-disconnect");
     DiscardPendingAccessoryClickFacts();
     xvatsim::brain::CloseBrainOwnedAccessoryForTemporaryXPilotDisconnect(
         &gBrainOwnedRuntimeState);
@@ -4308,9 +4398,23 @@ void RequestAccessoryFlightLoopWake(
     if (!gPluginRuntimeEnabled || !gFlightLoopRegistered) return;
     XPLMSetFlightLoopCallbackInterval(
         FlightLoopCallback,
-        kAccessoryActiveFlightLoopInterval,
+        kNextFlightLoopInterval,
         1,
         nullptr);
+}
+
+bool RequestImmediateGatedFlightLoopCallback() {
+    if (!gPluginRuntimeEnabled || !gFlightLoopRegistered) {
+        return false;
+    }
+    xvatsim::brain::RecordBrainOwnedOperationalEnableWakeRequest(
+        &gOperationalActivationState);
+    XPLMSetFlightLoopCallbackInterval(
+        FlightLoopCallback,
+        kNextFlightLoopInterval,
+        1,
+        nullptr);
+    return true;
 }
 
 bool ServicePendingAccessoryInput() {
@@ -5311,7 +5415,6 @@ void RenderDormantBoundaryFrame(bool hideWindow) {
     } else {
         UpdateOverlayWindow(overlayModel);
     }
-    PersistOverlayGeometryIfChanged();
 }
 
 void RenderSessionBoundaryFrame(
@@ -5357,7 +5460,6 @@ void RenderSessionBoundaryFrame(
         updateSnapshot);
     overlayModel.headerRightText.clear();
     UpdateOverlayWindow(overlayModel);
-    PersistOverlayGeometryIfChanged();
 }
 
 void ForceDisplayOpen() {
@@ -6175,8 +6277,20 @@ void RefreshOverlayFromBrainEngineer3() {
         xvatsim::brain::workflow::ResolveAircraftRuntimeBoundary(
             aircraftBoundaryInput);
     if (aircraftBoundaryDecision.aircraftStateInvalid) {
+        xvatsim::brain::BrainOwnedOperationalActivationInput activationInput;
+        activationInput.aircraftStateValid = false;
+        activationInput.batteryOn = aircraftState.batteryOn;
+        activationInput.xPilotConnected = false;
+        const auto activationDecision =
+            xvatsim::brain::DecideBrainOwnedOperationalActivation(
+                gOperationalActivationState, activationInput);
+        xvatsim::brain::CommitBrainOwnedOperationalActivationDecision(
+            &gOperationalActivationState, activationDecision);
+        LogOperationalActivationTransition(
+            activationDecision, SessionBoundaryResult::None);
         ApplyAircraftRuntimeBoundaryDecision(aircraftBoundaryDecision);
         gOverlayWindow.Hide();
+        diagnostics.valid = false;
         return;
     }
     if (!aircraftBoundaryDecision.coldDarkBoundaryActive) {
@@ -6189,40 +6303,69 @@ void RefreshOverlayFromBrainEngineer3() {
     diagnostics.xpilotPollMs = diagnostics.xpilotPollUs / 1000;
     diagnostics.xpilotConnected = xPilotSessionSnapshot.connected;
     diagnostics.callsign = xPilotSessionSnapshot.callsign;
-    if (aircraftBoundaryDecision.coldDarkBoundaryActive) {
-        ApplyAircraftRuntimeBoundaryDecision(aircraftBoundaryDecision);
-        RenderSessionBoundaryFrame(aircraftState, xPilotSessionSnapshot, false);
-        return;
-    }
 
     const auto pilotIdentitySnapshot =
         gPilotIdentityResolver.Resolve(xPilotSessionSnapshot);
     const auto sessionBoundaryResult =
         HandleXPilotSessionBoundary(xPilotSessionSnapshot, pilotIdentitySnapshot);
-    if (sessionBoundaryResult != SessionBoundaryResult::None) {
+    xvatsim::brain::BrainOwnedOperationalActivationInput activationInput;
+    activationInput.aircraftStateValid = aircraftState.valid;
+    activationInput.batteryOn = aircraftState.batteryOn;
+    activationInput.xPilotConnected = xPilotSessionSnapshot.connected;
+    const auto activationDecision =
+        xvatsim::brain::DecideBrainOwnedOperationalActivation(
+            gOperationalActivationState, activationInput);
+    xvatsim::brain::CommitBrainOwnedOperationalActivationDecision(
+        &gOperationalActivationState, activationDecision);
+    LogOperationalActivationTransition(
+        activationDecision, sessionBoundaryResult);
+
+    if (!activationDecision.operational) {
+        if (aircraftBoundaryDecision.coldDarkBoundaryActive) {
+            ApplyAircraftRuntimeBoundaryDecision(aircraftBoundaryDecision);
+        }
         RenderSessionBoundaryFrame(
             aircraftState,
             xPilotSessionSnapshot,
             sessionBoundaryResult == SessionBoundaryResult::ResetForDisconnect);
+        diagnostics.valid = false;
+        return;
+    }
+    if (sessionBoundaryResult != SessionBoundaryResult::None) {
+        RenderSessionBoundaryFrame(
+            aircraftState, xPilotSessionSnapshot, false);
+        diagnostics.valid = false;
         return;
     }
 
     timingStarted = std::chrono::steady_clock::now();
+    RecordOperationalServiceCall(
+        activationDecision,
+        xvatsim::brain::BrainOwnedOperationalServiceStage::VatsimFeed);
     const auto& vatsimDataFeedSnapshot = gVatsimDataFeedClient.Poll();
     diagnostics.vatsimFeedUs = ElapsedMicrosecondsSince(timingStarted);
     diagnostics.vatsimFeedMs = diagnostics.vatsimFeedUs / 1000;
 
     timingStarted = std::chrono::steady_clock::now();
+    RecordOperationalServiceCall(
+        activationDecision,
+        xvatsim::brain::BrainOwnedOperationalServiceStage::ControllerSnapshot);
     const auto controllerFeedSnapshot =
         gControllerFeedClient.BuildSnapshot(vatsimDataFeedSnapshot);
     diagnostics.controllerFeedUs = ElapsedMicrosecondsSince(timingStarted);
     diagnostics.controllerFeedMs = diagnostics.controllerFeedUs / 1000;
     diagnostics.controllerCount = controllerFeedSnapshot.connectedControllers;
 
+    RecordOperationalServiceCall(
+        activationDecision,
+        xvatsim::brain::BrainOwnedOperationalServiceStage::FlightPlan);
     const auto flightPlanSnapshot =
         SampleFlightPlanForRuntime(aircraftState, &diagnostics);
 
     timingStarted = std::chrono::steady_clock::now();
+    RecordOperationalServiceCall(
+        activationDecision,
+        xvatsim::brain::BrainOwnedOperationalServiceStage::NetworkPlan);
     const auto networkPlanSnapshot =
         gNetworkPlanLink.Poll(pilotIdentitySnapshot, vatsimDataFeedSnapshot);
     diagnostics.networkPlanUs = ElapsedMicrosecondsSince(timingStarted);
@@ -6237,6 +6380,9 @@ void RefreshOverlayFromBrainEngineer3() {
     SyncCruiseTargetFromNetworkPlan(networkPlanSnapshot);
 
     timingStarted = std::chrono::steady_clock::now();
+    RecordOperationalServiceCall(
+        activationDecision,
+        xvatsim::brain::BrainOwnedOperationalServiceStage::Radio);
     auto radioStateSnapshot = gRadioStateSampler.Sample();
     diagnostics.radioUs = ElapsedMicrosecondsSince(timingStarted);
     diagnostics.radioMs = diagnostics.radioUs / 1000;
@@ -6276,6 +6422,9 @@ void RefreshOverlayFromBrainEngineer3() {
     xvatsim::modules::ctaf_lookup::CtafLookupEntry arrivalCtafLookup;
     timingStarted = std::chrono::steady_clock::now();
     if (flightContext.active) {
+        RecordOperationalServiceCall(
+            activationDecision,
+            xvatsim::brain::BrainOwnedOperationalServiceStage::Ctaf);
         if (!flightContext.departureIcao.empty()) {
             departureCtafLookup =
                 gCtafLookupService.Lookup(flightContext.departureIcao);
@@ -6299,6 +6448,9 @@ void RefreshOverlayFromBrainEngineer3() {
     const auto planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(effectiveNetworkPlanSnapshot);
 
     if (flightContext.active) {
+        RecordOperationalServiceCall(
+            activationDecision,
+            xvatsim::brain::BrainOwnedOperationalServiceStage::Route);
         const auto routePolygonOutput =
             RefreshBrainRoutePolygonSnapshot(
                 aircraftState,
@@ -6315,6 +6467,9 @@ void RefreshOverlayFromBrainEngineer3() {
             transceiverResolutionSnapshot =
                 gBrainOwnedRuntimeState.transceiverSnapshot.get();
         }
+        RecordOperationalServiceCall(
+            activationDecision,
+            xvatsim::brain::BrainOwnedOperationalServiceStage::Authority);
         const auto authorityRelevanceSnapshot =
             RefreshBrainAuthorityRelevanceSnapshot(
                 aircraftState,
@@ -6388,11 +6543,17 @@ void RefreshOverlayFromBrainEngineer3() {
             xvatsim::brain::BuildBrainOwnedControllerRelevanceInput(
                 gBrainOwnedRuntimeState,
                 relevanceRequest);
+        RecordOperationalServiceCall(
+            activationDecision,
+            xvatsim::brain::BrainOwnedOperationalServiceStage::ControllerRelevance);
         auto relevanceOutput =
             RefreshBrainControllerRelevance(
                 relevanceInput,
                 planKey,
                 true);
+        RecordOperationalServiceCall(
+            activationDecision,
+            xvatsim::brain::BrainOwnedOperationalServiceStage::WorkflowPublication);
         publisherOutput = RunBrainPublisher(
             workflowDecision.stage,
             relevanceOutput,
@@ -6419,13 +6580,22 @@ void RefreshOverlayFromBrainEngineer3() {
         diagnostics.stageReason = workflowDecision.reason;
     }
     timingStarted = std::chrono::steady_clock::now();
+    RecordOperationalServiceCall(
+        activationDecision,
+        xvatsim::brain::BrainOwnedOperationalServiceStage::PdcPrivateSource);
     ServicePdcPrivateSource();
     diagnostics.pdcPrivateSourceUs += ElapsedMicrosecondsSince(timingStarted);
+    RecordOperationalServiceCall(
+        activationDecision,
+        xvatsim::brain::BrainOwnedOperationalServiceStage::Atis);
     const auto atisDecision = RunAtisCycleFromSharedFeed(
         vatsimDataFeedSnapshot,
         xPilotSessionSnapshot.connected,
         workflowStage);
     (void)atisDecision;
+    RecordOperationalServiceCall(
+        activationDecision,
+        xvatsim::brain::BrainOwnedOperationalServiceStage::Metar);
     const auto asyncFactOutput = RunBoundAsyncFactCycle(
         xPilotSessionSnapshot.connected,
         workflowStage);
@@ -6434,6 +6604,9 @@ void RefreshOverlayFromBrainEngineer3() {
         UpdateEnrouteInitialDisplayHold(workflowStage);
 
     timingStarted = std::chrono::steady_clock::now();
+    RecordOperationalServiceCall(
+        activationDecision,
+        xvatsim::brain::BrainOwnedOperationalServiceStage::StandbyAssist);
     ApplyStandbyRecommendation(
         workflowStage,
         effectiveNetworkPlanSnapshot,
@@ -6703,6 +6876,7 @@ void LogAccessoryPreparationStartupFailure(
 
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     gPluginRuntimeEnabled = false;
+    gOperationalActivationState = {};
     if (!gAuthorityRelevanceWorker.Start()) {
         XPLMDebugString(
             "[XVatsim] Authority worker startup failed; plugin not loaded.\n");
@@ -6906,6 +7080,7 @@ PLUGIN_API void XPluginStop() {
             stream.str(),
             xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
     }
+    LogOperationalActivationSummary();
     const auto diagnosticsDrainedBeforeStop =
         gDiagnosticsWriter.WaitUntilIdle(std::chrono::seconds(5));
     const auto writerSnapshot = gDiagnosticsWriter.Snapshot();
@@ -6984,7 +7159,6 @@ PLUGIN_API int XPluginEnable() {
     const auto resume =
         xvatsim::brain::ResumeBrainOwnedRuntimeFromPluginAdmin(
             &gBrainOwnedRuntimeState);
-    ServicePdcPrivateSource();
     LoadPreflightRouteCacheCandidate();
     // Source refresh may create or harvest its compiler thread.  Keep that
     // lifecycle work ahead of flight-loop registration so Gate B never moves
@@ -6998,11 +7172,15 @@ PLUGIN_API int XPluginEnable() {
     PreinitializeOverlayWindow();
     SynchronizeAccessoryPresentation();
     RegisterFlightLoop(kInitialFlightLoopDelaySeconds);
+    const auto immediateActivationCheckRequested =
+        RequestImmediateGatedFlightLoopCallback();
     {
         std::ostringstream stream;
         stream << "event=plugin-admin-resume"
                << " changed=" << (resume.stateChanged ? 1 : 0)
                << " generation=" << resume.suspensionGeneration
+               << " immediateActivationCheckRequested="
+               << (immediateActivationCheckRequested ? 1 : 0)
                << " flightContext="
                << (gBrainOwnedRuntimeState.flightContext.active ? 1 : 0)
                << " stage="
@@ -7021,6 +7199,8 @@ PLUGIN_API int XPluginEnable() {
 
 PLUGIN_API void XPluginDisable() {
     gPluginRuntimeEnabled = false;
+    xvatsim::brain::SetBrainOwnedOperationalActivationSuspended(
+        &gOperationalActivationState);
     UnregisterFlightLoop();
     gXPilotPrivateObservationQueue.Clear();
     PersistOverlayGeometryIfChanged();

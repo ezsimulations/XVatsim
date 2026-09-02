@@ -69,6 +69,7 @@
 #include "PerformanceContractGateBProbe.h"
 #include "PerformanceContractGateBTelemetryProbe.h"
 #include "ProductCalm1Probe.h"
+#include "RuntimeActivationGateProbe.h"
 
 namespace {
 
@@ -23369,6 +23370,11 @@ int main(int argc, char** argv) {
         "--performance-contract-gate-b-telemetry") {
         return xvatsim::tools::performance_contract_gate_b_telemetry::
             RunPerformanceContractGateBTelemetryProbe();
+    }
+
+    if (std::string(argv[1]) == "--runtime-activation-gate") {
+        return xvatsim::tools::runtime_activation_gate::
+            RunRuntimeActivationGateProbe();
     }
 
     ScenarioData scenario;

@@ -1,0 +1,20 @@
+Runtime Activation Gate B0.1 hardening
+Date: 2026-09-02
+Branch: v2-development
+Required/verified baseline HEAD: 44e5add57f070fe65a99f146e4be9b952d654ae2
+
+Offline engineering status: PASS
+Deployment status: HOLD pending independent review and separate authorization
+
+B0.1 candidate:
+C4789D682D4A01E75BD0B1D749DF3404F280976A28F796B6681728607D0C0AA7
+
+Installed Gate B candidate was not overwritten:
+CC42CD97A2655C1D8FB445FD128C85833E82BB7D535490EA4B08F310B2C5F512
+
+Product-Calm rollback remains preserved:
+3D8E35CBD3B0FAA96CEB24D5422BD73ECB928F8A7F9B7417249FA994E4CD4E70
+
+No files were staged. No commit or push was created. Gate B remains closed.
+Product-Calm 2 was not started. Unrelated untracked repository content was
+preserved.

@@ -1,0 +1,58 @@
+Runtime Activation Gate B0.1 static/source audit
+Date: 2026-09-02
+Branch: v2-development
+Baseline HEAD: 44e5add57f070fe65a99f146e4be9b952d654ae2
+
+Activation boundary (plugin/src/XVatsimPlugin.cpp):
+- update harvest: line 6260
+- aircraft sampling: line 6265
+- xPilot polling: line 6301
+- session boundary: line 6310
+- Brain activation decision: line 6316
+- dormant return gate: line 6323
+- first operational service: line 6345
+- FMS sample: line 6363
+- PDC service: line 6586
+
+B0.1 enable path:
+- XPluginEnable registers the flight loop with the preserved fallback delay at
+  line 7174.
+- XPluginEnable requests the same callback on the next flight-loop frame at
+  line 7176.
+- RequestImmediateGatedFlightLoopCallback begins at line 4406.
+- The helper records one fixed Brain wake fact and calls only
+  XPLMSetFlightLoopCallbackInterval.
+- XPluginEnable contains no ServicePdcPrivateSource call and no other
+  operational service call.
+- ServicePdcPrivateSource remains below the activation gate at line 6586.
+- Normal settled callback cadence remains 0.25 seconds.
+
+Brain fixed accounting (brain/src/BrainOwnedRuntime.cpp):
+- pure activation decision: line 4174
+- activation commit and enable-wake consumption: line 4201
+- enable-wake request fact: line 4235
+- Plugin Admin suspension/unused-wake clearing: line 4263
+
+Static conclusions:
+- One activation rule remains: the normal callback's Brain decision.
+- Enable schedules that callback but performs no operational work.
+- Disconnected and battery-off enable cannot reach PDC/FMS/network/radio,
+  route, authority, workflow, or standby stages.
+- Connected/powered enable reaches the full operational path on the next
+  X-Plane flight-loop frame instead of waiting for the 10-second fallback.
+- No FlightPlanSampler, Gate A, Gate B, route, authority, PDC algorithm,
+  network, radio, display-product, or callback-cadence source changed.
+- Brain activation and wake accounting uses fixed scalar/array fields only.
+- git diff --check: PASS; only LF-to-CRLF working-copy notices were emitted.
+
+Scoped production/probe files (7):
+- brain/include/XVatsim/brain/BrainOwnedRuntime.h
+- brain/src/BrainOwnedRuntime.cpp
+- plugin/src/XVatsimPlugin.cpp
+- tools/regression_harness/CMakeLists.txt
+- tools/regression_harness/src/main.cpp
+- tools/regression_harness/src/RuntimeActivationGateProbe.h
+- tools/regression_harness/src/RuntimeActivationGateProbe.cpp
+
+No deployment, staging, commit, push, Gate B reopening, or Product-Calm 2 work
+occurred.
