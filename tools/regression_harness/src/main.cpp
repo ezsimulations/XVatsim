@@ -66,6 +66,8 @@
 #include "PerformanceContractGateACalm1Probe.h"
 #include "PerformanceContractGateACalm2Probe.h"
 #include "PerformanceContractGateAProbe.h"
+#include "PerformanceContractGateBProbe.h"
+#include "PerformanceContractGateBTelemetryProbe.h"
 #include "ProductCalm1Probe.h"
 
 namespace {
@@ -23358,15 +23360,35 @@ int main(int argc, char** argv) {
         return xvatsim::tools::product_calm_1::RunProductCalm1Probe();
     }
 
+    if (std::string(argv[1]) == "--performance-contract-gate-b") {
+        return xvatsim::tools::performance_contract_gate_b::
+            RunPerformanceContractGateBProbe();
+    }
+
+    if (std::string(argv[1]) ==
+        "--performance-contract-gate-b-telemetry") {
+        return xvatsim::tools::performance_contract_gate_b_telemetry::
+            RunPerformanceContractGateBTelemetryProbe();
+    }
+
     ScenarioData scenario;
     std::string error;
     if (!LoadScenario(argv[1], &scenario, &error)) {
         std::cerr << "Failed to load scenario: " << error << "\n";
         return 2;
     }
+    const auto hasOption = [&](const char* option) {
+        for (int index = 2; index < argc; ++index) {
+            if (std::string(argv[index]) == option) {
+                return true;
+            }
+        }
+        return false;
+    };
     const auto authorityWorkerParityRequested =
-        argc >= 3 &&
-        std::string(argv[2]) == "--authority-worker-parity";
+        hasOption("--authority-worker-parity");
+    const auto routeWorkerParityRequested =
+        hasOption("--route-worker-parity");
 
     if (!scenario.operatingMode.probe.empty()) {
         return RunOperatingModeProbe(scenario);
@@ -23789,6 +23811,35 @@ int main(int argc, char** argv) {
         }
         resolverRouteSectorSnapshot =
             routeSectorResolver.Resolve(scenario.aircraftState, routePlanSnapshot);
+        if (routeWorkerParityRequested) {
+            const auto frozenOracle =
+                routeSectorResolver.ResolveSynchronousRouteOracleForTesting(
+                    scenario.aircraftState, routePlanSnapshot);
+            xvatsim::modules::route_sector::RoutePreparationRequest
+                parityRequest;
+            parityRequest.routeAnchor = scenario.aircraftState;
+            parityRequest.networkPlan = std::make_shared<
+                const xvatsim::brain::NetworkPlanSnapshot>(routePlanSnapshot);
+            parityRequest.routeSourceDataset =
+                routeSectorResolver.GetRouteSourceDatasetPublication().dataset;
+            if (scenario.resolverUsesPreflightCache && preflightParseResult.ok) {
+                parityRequest.preflightCandidate = std::make_shared<
+                    const xvatsim::core::preflight::PreflightRouteCache>(
+                        preflightRouteCache);
+                parityRequest.preflightValidationReason =
+                    "harness preflight cache";
+            }
+            xvatsim::modules::route_sector::RoutePreparationEngine
+                parityEngine({}, nullptr, false);
+            const auto prepared = parityEngine.Prepare(parityRequest);
+            if (prepared.route == nullptr ||
+                !xvatsim::brain::EqualBrainRouteSectorSnapshotsExact(
+                    frozenOracle, *prepared.route)) {
+                std::cerr << "ROUTE_WORKER_PARITY_FAILED: "
+                          << scenario.name << "\n";
+                return 1;
+            }
+        }
         resolverRouteAuthorityPlan =
             xvatsim::brain::BuildRouteAuthorityPlanFromRouteSectorSnapshot(
                 routePlanSnapshot,

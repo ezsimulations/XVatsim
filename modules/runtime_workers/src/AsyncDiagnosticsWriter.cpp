@@ -166,6 +166,7 @@ struct AsyncDiagnosticsWriter::Implementation {
         Line,
         Deferred,
         FlightLoopTiming,
+        RouteEvidence,
     };
 
     struct Record {
@@ -175,6 +176,7 @@ struct AsyncDiagnosticsWriter::Implementation {
         std::string line;
         DeferredFormatter formatter;
         FlightLoopTimingRecord flightLoopTiming;
+        RouteEvidenceRecord routeEvidence;
     };
 
     struct FixedQueue {
@@ -218,6 +220,12 @@ struct AsyncDiagnosticsWriter::Implementation {
         std::uint64_t tickSeconds = 0;
         std::time_t wallTime = 0;
         FlightLoopTimingRecord timing;
+    };
+
+    struct RouteEvidenceEnvelope {
+        std::uint64_t tickSeconds = 0;
+        std::time_t wallTime = 0;
+        RouteEvidenceRecord evidence;
     };
 
     // Single producer (the X-Plane flight loop), single consumer (the
@@ -274,6 +282,61 @@ struct AsyncDiagnosticsWriter::Implementation {
         }
     };
 
+    // Single producer (the X-Plane flight loop), single consumer (the
+    // diagnostics writer). Route-evidence records are fixed-size and storage
+    // is allocated only during Start().
+    struct FixedSpscRouteEvidenceQueue {
+        static_assert(
+            std::atomic<std::size_t>::is_always_lock_free,
+            "route-evidence lane requires lock-free indexes");
+        std::vector<RouteEvidenceEnvelope> slots;
+        std::atomic<std::size_t> writeIndex{0};
+        std::atomic<std::size_t> readIndex{0};
+
+        void Reset(std::size_t capacity) {
+            slots.clear();
+            slots.resize(capacity + 1);
+            writeIndex.store(0, std::memory_order_relaxed);
+            readIndex.store(0, std::memory_order_relaxed);
+        }
+
+        bool TryPush(const RouteEvidenceEnvelope& envelope) noexcept {
+            const auto write = writeIndex.load(std::memory_order_relaxed);
+            const auto next = (write + 1) % slots.size();
+            if (next == readIndex.load(std::memory_order_acquire)) {
+                return false;
+            }
+            slots[write] = envelope;
+            writeIndex.store(next, std::memory_order_release);
+            return true;
+        }
+
+        bool TryPop(RouteEvidenceEnvelope* envelope) noexcept {
+            const auto read = readIndex.load(std::memory_order_relaxed);
+            if (read == writeIndex.load(std::memory_order_acquire)) {
+                return false;
+            }
+            *envelope = slots[read];
+            readIndex.store(
+                (read + 1) % slots.size(),
+                std::memory_order_release);
+            return true;
+        }
+
+        bool Empty() const noexcept {
+            return readIndex.load(std::memory_order_acquire) ==
+                   writeIndex.load(std::memory_order_acquire);
+        }
+
+        std::size_t Depth() const noexcept {
+            const auto read = readIndex.load(std::memory_order_acquire);
+            const auto write = writeIndex.load(std::memory_order_acquire);
+            return write >= read
+                ? write - read
+                : slots.size() - (read - write);
+        }
+    };
+
     DiagnosticsWriterOptions options;
     mutable std::mutex queueMutex;
     std::condition_variable workReady;
@@ -281,6 +344,7 @@ struct AsyncDiagnosticsWriter::Implementation {
     FixedQueue routineQueue;
     FixedQueue criticalQueue;
     FixedSpscFlightLoopTimingQueue flightLoopTimingQueue;
+    FixedSpscRouteEvidenceQueue routeEvidenceQueue;
     std::thread worker;
     std::atomic<bool> running{false};
     std::atomic<bool> accepting{false};
@@ -298,24 +362,34 @@ struct AsyncDiagnosticsWriter::Implementation {
     std::atomic<std::uint64_t> submittedRoutine{0};
     std::atomic<std::uint64_t> submittedCritical{0};
     std::atomic<std::uint64_t> submittedFlightLoopTiming{0};
+    std::atomic<std::uint64_t> submittedRouteEvidence{0};
     std::atomic<std::uint64_t> dequeued{0};
     std::atomic<std::uint64_t> dequeuedFlightLoopTiming{0};
+    std::atomic<std::uint64_t> dequeuedRouteEvidence{0};
     std::atomic<std::uint64_t> written{0};
     std::atomic<std::uint64_t> writtenFlightLoopTiming{0};
+    std::atomic<std::uint64_t> writtenRouteEvidence{0};
     std::atomic<std::uint64_t> droppedContention{0};
     std::atomic<std::uint64_t> droppedRoutineContention{0};
     std::atomic<std::uint64_t> droppedCriticalContention{0};
     std::atomic<std::uint64_t> droppedRoutineFull{0};
     std::atomic<std::uint64_t> droppedCriticalFull{0};
     std::atomic<std::uint64_t> droppedFlightLoopTimingFull{0};
+    std::atomic<std::uint64_t> droppedRouteEvidenceFull{0};
     std::atomic<std::uint64_t> rejectedNotRunning{0};
     std::atomic<std::uint64_t> rejectedFlightLoopTimingNotRunning{0};
+    std::atomic<std::uint64_t> rejectedRouteEvidenceNotRunning{0};
     std::atomic<std::uint64_t> formattingFailures{0};
     std::atomic<std::uint64_t> storageFailures{0};
     std::atomic<std::uint64_t> maximumQueueDepth{0};
     std::atomic<std::uint64_t> maximumFlightLoopTimingQueueDepth{0};
+    std::atomic<std::uint64_t> maximumRouteEvidenceQueueDepth{0};
     std::atomic<std::uint64_t> maximumProducerMicroseconds{0};
     std::atomic<std::uint64_t> maximumFlightLoopTimingProducerMicroseconds{0};
+    std::atomic<std::uint64_t> maximumRouteEvidenceProducerMicroseconds{0};
+    std::atomic<std::uint64_t> nextRouteEvidenceSequence{0};
+    std::atomic<std::uint64_t> lastSubmittedRouteEvidenceSequence{0};
+    std::atomic<std::uint64_t> lastWrittenRouteEvidenceSequence{0};
     std::atomic<std::uint64_t> workerThreadIdentity{0};
 
     void ResetCounters() {
@@ -324,25 +398,37 @@ struct AsyncDiagnosticsWriter::Implementation {
         submittedRoutine.store(0, std::memory_order_relaxed);
         submittedCritical.store(0, std::memory_order_relaxed);
         submittedFlightLoopTiming.store(0, std::memory_order_relaxed);
+        submittedRouteEvidence.store(0, std::memory_order_relaxed);
         dequeued.store(0, std::memory_order_relaxed);
         dequeuedFlightLoopTiming.store(0, std::memory_order_relaxed);
+        dequeuedRouteEvidence.store(0, std::memory_order_relaxed);
         written.store(0, std::memory_order_relaxed);
         writtenFlightLoopTiming.store(0, std::memory_order_relaxed);
+        writtenRouteEvidence.store(0, std::memory_order_relaxed);
         droppedContention.store(0, std::memory_order_relaxed);
         droppedRoutineContention.store(0, std::memory_order_relaxed);
         droppedCriticalContention.store(0, std::memory_order_relaxed);
         droppedRoutineFull.store(0, std::memory_order_relaxed);
         droppedCriticalFull.store(0, std::memory_order_relaxed);
         droppedFlightLoopTimingFull.store(0, std::memory_order_relaxed);
+        droppedRouteEvidenceFull.store(0, std::memory_order_relaxed);
         rejectedNotRunning.store(0, std::memory_order_relaxed);
         rejectedFlightLoopTimingNotRunning.store(0, std::memory_order_relaxed);
+        rejectedRouteEvidenceNotRunning.store(0, std::memory_order_relaxed);
         formattingFailures.store(0, std::memory_order_relaxed);
         storageFailures.store(0, std::memory_order_relaxed);
         maximumQueueDepth.store(0, std::memory_order_relaxed);
         maximumFlightLoopTimingQueueDepth.store(0, std::memory_order_relaxed);
+        maximumRouteEvidenceQueueDepth.store(0, std::memory_order_relaxed);
         maximumProducerMicroseconds.store(0, std::memory_order_relaxed);
         maximumFlightLoopTimingProducerMicroseconds.store(
             0, std::memory_order_relaxed);
+        maximumRouteEvidenceProducerMicroseconds.store(
+            0, std::memory_order_relaxed);
+        nextRouteEvidenceSequence.store(0, std::memory_order_relaxed);
+        lastSubmittedRouteEvidenceSequence.store(
+            0, std::memory_order_relaxed);
+        lastWrittenRouteEvidenceSequence.store(0, std::memory_order_relaxed);
         workerThreadIdentity.store(0, std::memory_order_relaxed);
     }
 
@@ -439,6 +525,49 @@ struct AsyncDiagnosticsWriter::Implementation {
         return true;
     }
 
+    bool EnqueueRouteEvidence(RouteEvidenceRecord evidence) noexcept {
+        static_assert(
+            std::atomic<std::uint64_t>::is_always_lock_free,
+            "route-evidence sequence requires a lock-free counter");
+        const auto started = std::chrono::steady_clock::now();
+        if (!accepting.load(std::memory_order_acquire)) {
+            rejectedRouteEvidenceNotRunning.fetch_add(
+                1, std::memory_order_relaxed);
+            UpdateMaximum(
+                &maximumRouteEvidenceProducerMicroseconds,
+                ElapsedMicroseconds(started));
+            return false;
+        }
+
+        evidence.sequence =
+            nextRouteEvidenceSequence.fetch_add(
+                1, std::memory_order_relaxed) +
+            1;
+        RouteEvidenceEnvelope envelope;
+        envelope.tickSeconds = CurrentTickSeconds();
+        envelope.wallTime = std::time(nullptr);
+        envelope.evidence = evidence;
+        if (!routeEvidenceQueue.TryPush(envelope)) {
+            droppedRouteEvidenceFull.fetch_add(1, std::memory_order_relaxed);
+            UpdateMaximum(
+                &maximumRouteEvidenceProducerMicroseconds,
+                ElapsedMicroseconds(started));
+            return false;
+        }
+
+        submittedRouteEvidence.fetch_add(1, std::memory_order_relaxed);
+        lastSubmittedRouteEvidenceSequence.store(
+            evidence.sequence, std::memory_order_release);
+        UpdateMaximum(
+            &maximumRouteEvidenceQueueDepth,
+            static_cast<std::uint64_t>(routeEvidenceQueue.Depth()));
+        workReady.notify_one();
+        UpdateMaximum(
+            &maximumRouteEvidenceProducerMicroseconds,
+            ElapsedMicroseconds(started));
+        return true;
+    }
+
     bool EnsureOutput(const Record& record) {
         if (options.forceStorageFailureForTesting) {
             storageFailures.fetch_add(1, std::memory_order_relaxed);
@@ -492,6 +621,100 @@ struct AsyncDiagnosticsWriter::Implementation {
                 ? record->formatter()
                 : std::string{};
         }
+        if (record->kind == RecordKind::RouteEvidence) {
+            const auto& evidence = record->routeEvidence;
+            const auto recordType = [&]() {
+                switch (evidence.recordType) {
+                    case RouteEvidenceRecordType::Dispatch:
+                        return "dispatch";
+                    case RouteEvidenceRecordType::Terminal:
+                        return "terminal";
+                    case RouteEvidenceRecordType::Disposition:
+                        return "disposition";
+                    case RouteEvidenceRecordType::Lifecycle:
+                        return "lifecycle";
+                }
+                return "unknown";
+            }();
+            const auto workKind = [&]() {
+                switch (evidence.workKind) {
+                    case RouteEvidenceWorkKind::None:
+                        return "none";
+                    case RouteEvidenceWorkKind::RoutePreparation:
+                        return "route-preparation";
+                    case RouteEvidenceWorkKind::ExpandedFmsObservation:
+                        return "expanded-fms-observation";
+                }
+                return "unknown";
+            }();
+            const auto disposition = [&]() {
+                switch (evidence.disposition) {
+                    case RouteEvidenceDisposition::None:
+                        return "none";
+                    case RouteEvidenceDisposition::Published:
+                        return "published";
+                    case RouteEvidenceDisposition::Observed:
+                        return "observed";
+                    case RouteEvidenceDisposition::Rejected:
+                        return "rejected";
+                    case RouteEvidenceDisposition::Cancelled:
+                        return "cancelled";
+                }
+                return "unknown";
+            }();
+            std::ostringstream stream;
+            stream << "event=route-evidence"
+                   << " sequence=" << evidence.sequence
+                   << " record=" << recordType
+                   << " kind=" << workKind
+                   << " disposition=" << disposition
+                   << " requestId=" << evidence.requestId
+                   << " lifecycleEpoch=" << evidence.lifecycleEpoch
+                   << " planKey=" << evidence.planKey.data()
+                   << " networkDigest=" << evidence.networkDigest
+                   << " sourceIdentity=" << evidence.sourceIdentity
+                   << " preflightIdentity=" << evidence.preflightIdentity
+                   << " policyIdentity=" << evidence.policyIdentity
+                   << " anchorDigest=" << evidence.anchorDigest
+                   << " fmsObservationIdentity="
+                   << evidence.fmsObservationIdentity
+                   << " resultDigest=" << evidence.resultDigest
+                   << " completeDesiredPackageSubmitUs="
+                   << evidence.completeDesiredPackageSubmitUs
+                   << " mailboxExchangeUs=" << evidence.mailboxExchangeUs
+                   << " running=" << (evidence.running ? 1 : 0)
+                   << " pending=" << (evidence.pending ? 1 : 0)
+                   << " maxPendingDepth=" << evidence.maximumPendingDepth
+                   << " completed=" << (evidence.completed ? 1 : 0)
+                   << " cancelled=" << (evidence.cancelled ? 1 : 0)
+                   << " failed=" << (evidence.failed ? 1 : 0)
+                   << " workerWallUs=" << evidence.workerWallUs
+                   << " workerCpuStatus="
+                   << (evidence.workerCpuAvailable
+                           ? "available"
+                           : "unavailable")
+                   << " workerCpuUs=" << evidence.workerCpuUs
+                   << " sourceUs=" << evidence.sourceUs
+                   << " navUs=" << evidence.navigationUs
+                   << " preflightUs=" << evidence.preflightUs
+                   << " fmsUs=" << evidence.fmsUs
+                   << " procedureUs=" << evidence.procedureUs
+                   << " grammarUs=" << evidence.grammarUs
+                   << " waypointUs=" << evidence.waypointUs
+                   << " traversalPrepUs="
+                   << evidence.traversalPreparationUs
+                   << " polygonUs=" << evidence.polygonUs
+                   << " prefixUs=" << evidence.prefixUs
+                   << " finalizeUs=" << evidence.finalizeUs
+                   << " rebuildDecision=";
+            if (!evidence.rebuildDecisionApplicable) {
+                stream << "not-applicable";
+            } else {
+                stream << (evidence.rebuildDecision ? 1 : 0);
+            }
+            stream << " reason=" << evidence.reason.data();
+            return stream.str();
+        }
         const auto& timing = record->flightLoopTiming;
         std::ostringstream stream;
         stream << "event=flight-loop-complete"
@@ -509,6 +732,11 @@ struct AsyncDiagnosticsWriter::Implementation {
     void Process(Record record) {
         const bool flightLoopTiming =
             record.kind == RecordKind::FlightLoopTiming;
+        const bool routeEvidence =
+            record.kind == RecordKind::RouteEvidence;
+        const auto routeEvidenceSequence = routeEvidence
+            ? record.routeEvidence.sequence
+            : 0;
         if (options.artificialWorkerDelayForTesting.count() > 0 &&
             artificiallyDelayedRecords <
                 options.artificialWorkerDelayRecordCountForTesting) {
@@ -540,6 +768,11 @@ struct AsyncDiagnosticsWriter::Implementation {
         if (flightLoopTiming) {
             writtenFlightLoopTiming.fetch_add(1, std::memory_order_relaxed);
         }
+        if (routeEvidence) {
+            writtenRouteEvidence.fetch_add(1, std::memory_order_relaxed);
+            lastWrittenRouteEvidenceSequence.store(
+                routeEvidenceSequence, std::memory_order_release);
+        }
     }
 
     void WorkerMain() {
@@ -561,10 +794,12 @@ struct AsyncDiagnosticsWriter::Implementation {
                 workReady.wait_for(lock, std::chrono::milliseconds(20), [this]() {
                     return stopRequested || !criticalQueue.Empty() ||
                            !flightLoopTimingQueue.Empty() ||
+                           !routeEvidenceQueue.Empty() ||
                            !routineQueue.Empty();
                 });
                 if (criticalQueue.Empty() &&
                     flightLoopTimingQueue.Empty() &&
+                    routeEvidenceQueue.Empty() &&
                     routineQueue.Empty()) {
                     if (stopRequested) {
                         break;
@@ -584,7 +819,18 @@ struct AsyncDiagnosticsWriter::Implementation {
                         dequeuedFlightLoopTiming.fetch_add(
                             1, std::memory_order_relaxed);
                     } else {
-                        record.emplace(routineQueue.Pop());
+                        RouteEvidenceEnvelope evidence;
+                        if (routeEvidenceQueue.TryPop(&evidence)) {
+                            record.emplace();
+                            record->kind = RecordKind::RouteEvidence;
+                            record->tickSeconds = evidence.tickSeconds;
+                            record->wallTime = evidence.wallTime;
+                            record->routeEvidence = evidence.evidence;
+                            dequeuedRouteEvidence.fetch_add(
+                                1, std::memory_order_relaxed);
+                        } else {
+                            record.emplace(routineQueue.Pop());
+                        }
                     }
                 }
                 recordInFlight = true;
@@ -626,6 +872,9 @@ bool AsyncDiagnosticsWriter::Start(DiagnosticsWriterOptions options) {
         options.flightLoopTimingQueueCapacity == 0 ||
         options.flightLoopTimingQueueCapacity ==
             std::numeric_limits<std::size_t>::max() ||
+        options.routeEvidenceQueueCapacity == 0 ||
+        options.routeEvidenceQueueCapacity ==
+            std::numeric_limits<std::size_t>::max() ||
         options.logDirectory.empty()) {
         return false;
     }
@@ -635,6 +884,8 @@ bool AsyncDiagnosticsWriter::Start(DiagnosticsWriterOptions options) {
     state.criticalQueue.Reset(state.options.criticalQueueCapacity);
     state.flightLoopTimingQueue.Reset(
         state.options.flightLoopTimingQueueCapacity);
+    state.routeEvidenceQueue.Reset(
+        state.options.routeEvidenceQueueCapacity);
     state.stopRequested = false;
     state.recordInFlight = false;
     state.openDateToken.clear();
@@ -695,6 +946,11 @@ bool AsyncDiagnosticsWriter::TryEnqueueFlightLoopTiming(
     return implementation_->EnqueueFlightLoopTiming(timing);
 }
 
+bool AsyncDiagnosticsWriter::TryEnqueueRouteEvidence(
+    RouteEvidenceRecord evidence) noexcept {
+    return implementation_->EnqueueRouteEvidence(std::move(evidence));
+}
+
 DiagnosticsWriterSnapshot AsyncDiagnosticsWriter::Snapshot() const {
     const auto& state = *implementation_;
     DiagnosticsWriterSnapshot snapshot;
@@ -710,12 +966,18 @@ DiagnosticsWriterSnapshot AsyncDiagnosticsWriter::Snapshot() const {
         state.submittedCritical.load(std::memory_order_relaxed);
     snapshot.submittedFlightLoopTiming =
         state.submittedFlightLoopTiming.load(std::memory_order_relaxed);
+    snapshot.submittedRouteEvidence =
+        state.submittedRouteEvidence.load(std::memory_order_relaxed);
     snapshot.dequeued = state.dequeued.load(std::memory_order_relaxed);
     snapshot.dequeuedFlightLoopTiming =
         state.dequeuedFlightLoopTiming.load(std::memory_order_relaxed);
+    snapshot.dequeuedRouteEvidence =
+        state.dequeuedRouteEvidence.load(std::memory_order_relaxed);
     snapshot.written = state.written.load(std::memory_order_relaxed);
     snapshot.writtenFlightLoopTiming =
         state.writtenFlightLoopTiming.load(std::memory_order_relaxed);
+    snapshot.writtenRouteEvidence =
+        state.writtenRouteEvidence.load(std::memory_order_relaxed);
     snapshot.droppedContention =
         state.droppedContention.load(std::memory_order_relaxed);
     snapshot.droppedRoutineContention =
@@ -728,10 +990,15 @@ DiagnosticsWriterSnapshot AsyncDiagnosticsWriter::Snapshot() const {
         state.droppedCriticalFull.load(std::memory_order_relaxed);
     snapshot.droppedFlightLoopTimingFull =
         state.droppedFlightLoopTimingFull.load(std::memory_order_relaxed);
+    snapshot.droppedRouteEvidenceFull =
+        state.droppedRouteEvidenceFull.load(std::memory_order_relaxed);
     snapshot.rejectedNotRunning =
         state.rejectedNotRunning.load(std::memory_order_relaxed);
     snapshot.rejectedFlightLoopTimingNotRunning =
         state.rejectedFlightLoopTimingNotRunning.load(
+            std::memory_order_relaxed);
+    snapshot.rejectedRouteEvidenceNotRunning =
+        state.rejectedRouteEvidenceNotRunning.load(
             std::memory_order_relaxed);
     snapshot.formattingFailures =
         state.formattingFailures.load(std::memory_order_relaxed);
@@ -742,25 +1009,43 @@ DiagnosticsWriterSnapshot AsyncDiagnosticsWriter::Snapshot() const {
     snapshot.maximumFlightLoopTimingQueueDepth =
         state.maximumFlightLoopTimingQueueDepth.load(
             std::memory_order_relaxed);
+    snapshot.maximumRouteEvidenceQueueDepth =
+        state.maximumRouteEvidenceQueueDepth.load(
+            std::memory_order_relaxed);
     snapshot.maximumProducerMicroseconds =
         state.maximumProducerMicroseconds.load(std::memory_order_relaxed);
     snapshot.maximumFlightLoopTimingProducerMicroseconds =
         state.maximumFlightLoopTimingProducerMicroseconds.load(
             std::memory_order_relaxed);
+    snapshot.maximumRouteEvidenceProducerMicroseconds =
+        state.maximumRouteEvidenceProducerMicroseconds.load(
+            std::memory_order_relaxed);
+    snapshot.lastSubmittedRouteEvidenceSequence =
+        state.lastSubmittedRouteEvidenceSequence.load(
+            std::memory_order_acquire);
+    snapshot.lastWrittenRouteEvidenceSequence =
+        state.lastWrittenRouteEvidenceSequence.load(
+            std::memory_order_acquire);
     snapshot.workerThreadIdentity =
         state.workerThreadIdentity.load(std::memory_order_acquire);
     return snapshot;
 }
 
-bool AsyncDiagnosticsWriter::WaitUntilIdleForTesting(
+bool AsyncDiagnosticsWriter::WaitUntilIdle(
     std::chrono::milliseconds timeout) {
     auto& state = *implementation_;
     std::unique_lock<std::mutex> lock(state.queueMutex);
     return state.idleChanged.wait_for(lock, timeout, [&state]() {
         return state.routineQueue.Empty() && state.criticalQueue.Empty() &&
                state.flightLoopTimingQueue.Empty() &&
+               state.routeEvidenceQueue.Empty() &&
                !state.recordInFlight;
     });
+}
+
+bool AsyncDiagnosticsWriter::WaitUntilIdleForTesting(
+    std::chrono::milliseconds timeout) {
+    return WaitUntilIdle(timeout);
 }
 
 }  // namespace xvatsim::modules::runtime_workers

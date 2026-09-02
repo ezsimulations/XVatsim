@@ -1,0 +1,16 @@
+request_id	phase	disposition	worker_wall_us	worker_cpu_status	worker_cpu_us	rebuild_decision	same_second_callback_max_us
+1	initial	changed	1043106	available	1031250	1	402
+3	initial	unchanged	122575	available	109375	0	371
+4	initial	unchanged	26958	available	31250	0	340
+5	initial	unchanged	24968	available	31250	0	331
+6	initial	unchanged	27679	available	15625	0	327
+7	initial	unchanged	23618	available	15625	0	364
+8	initial	unchanged	32500	available	31250	0	316
+9	initial	unchanged	27692	available	31250	0	326
+10	initial	unchanged	25788	available	15625	0	563
+11	initial	unchanged	21980	available	15625	0	536
+12	re-enable	changed	23971	available	15625	1	341
+14	re-enable	unchanged	23613	available	31250	0	315
+15	re-enable	unchanged	25845	available	15625	0	389
+16	re-enable	unchanged	24192	available	15625	0	404
+17	re-enable	unchanged	23606	available	15625	0	326

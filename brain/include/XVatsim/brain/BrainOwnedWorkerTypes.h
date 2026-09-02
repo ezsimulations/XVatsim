@@ -203,7 +203,10 @@ struct BrainRoutePolygonWorkerOutput {
     bool available = false;
     bool stale = true;
     std::string reason;
-    RouteSectorSnapshot route;
+    // Gate B: the prepared route is immutable and shared from the route worker
+    // through Brain consumers. Routine flight-loop reuse must not deep-copy the
+    // waypoint or sector ledgers.
+    std::shared_ptr<const RouteSectorSnapshot> route;
     std::uint64_t routePolygonHash = 0;
     int currentPolygonIndex = 0;
     std::string currentPolygonKey;
@@ -221,6 +224,9 @@ struct BrainOwnedRoutePolygonRefreshInput {
 
 struct BrainOwnedRoutePolygonRuntimeOutput {
     BrainRoutePolygonWorkerOutput route;
+    // When publication replaces a derived immutable route, ownership is
+    // returned to the plugin for bounded worker-thread reclamation.
+    std::shared_ptr<const RouteSectorSnapshot> retiredRoute;
     bool needsWorker = false;
     bool routeChanged = false;
     bool transitionChanged = false;
@@ -237,6 +243,9 @@ struct BrainOwnedRoutePolygonRuntimeOutput {
 
 std::uint64_t HashBrainRouteSectorSnapshot(
     const RouteSectorSnapshot& snapshot);
+bool EqualBrainRouteSectorSnapshotsExact(
+    const RouteSectorSnapshot& left,
+    const RouteSectorSnapshot& right);
 
 // Full worker identity for authority evaluation. Unlike routePolygonHash this
 // includes waypoint geometry and therefore protects asynchronous completion
@@ -332,8 +341,37 @@ struct BrainAuthorityCompletionDecision {
 BrainAuthorityCompletionDecision DecideBrainAuthorityCompletion(
     const BrainAuthorityCompletionValidationInput& input);
 
+struct BrainRouteCompletionIdentity {
+    std::uint64_t requestId = 0;
+    std::uint64_t lifecycleEpoch = 0;
+    std::string planKey;
+    std::uint64_t networkPlanDigest = 0;
+    std::uint64_t routeSourceDatasetIdentity = 0;
+    std::uint64_t preflightCandidateIdentity = 0;
+    std::uint64_t routePolicyIdentity = 0;
+    std::uint64_t routeAnchorDigest = 0;
+    std::uint64_t expandedFmsObservationIdentity = 0;
+};
+
+struct BrainRouteCompletionValidationInput {
+    BrainRouteCompletionIdentity eligible;
+    BrainRouteCompletionIdentity desired;
+    BrainRouteCompletionIdentity completed;
+};
+
+struct BrainRouteCompletionDecision {
+    bool accepted = false;
+    bool staleRejected = false;
+    std::string reason;
+};
+
+BrainRouteCompletionDecision DecideBrainRouteCompletion(
+    const BrainRouteCompletionValidationInput& input);
+
 BrainRoutePolygonWorkerOutput BuildBrainRoutePolygonWorkerOutput(
     const RouteSectorSnapshot& route);
+BrainRoutePolygonWorkerOutput BuildBrainRoutePolygonWorkerOutput(
+    std::shared_ptr<const RouteSectorSnapshot> route);
 
 BrainOwnedRoutePolygonRuntimeOutput BeginBrainOwnedRoutePolygonRefresh(
     BrainOwnedRuntimeState* state,
@@ -365,6 +403,9 @@ struct BrainControllerRelevanceWorkerInput {
     std::shared_ptr<const AuthorityRelevanceSnapshot> authorityRelevance;
     std::uint64_t radioTuningHash = 0;
     RadioStateSnapshot radios;
+    std::shared_ptr<const RouteSectorSnapshot> route;
+    // Compatibility-only fixture inputs. Production populates route above so
+    // the immutable sector vectors are not copied on the flight loop.
     std::vector<RouteSectorMatchSnapshot> currentSectors;
     std::vector<RouteSectorMatchSnapshot> nextSectors;
     std::vector<RadioReachableControllerCandidate> candidates;

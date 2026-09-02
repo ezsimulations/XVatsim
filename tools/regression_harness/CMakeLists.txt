@@ -3,6 +3,8 @@ add_executable(XVatsimRegressionHarness
     src/PerformanceContractGateACalm1Probe.cpp
     src/PerformanceContractGateACalm2Probe.cpp
     src/PerformanceContractGateAProbe.cpp
+    src/PerformanceContractGateBProbe.cpp
+    src/PerformanceContractGateBTelemetryProbe.cpp
     src/ProductCalm1Probe.cpp
     src/Step6PdcContractProbe.cpp
 )

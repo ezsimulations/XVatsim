@@ -691,11 +691,17 @@ CenterRouteMatch MatchCenterToRoutePolygon(
     const BrainControllerRelevanceWorkerInput& input,
     const RadioReachableControllerCandidate& candidate) {
     CenterRouteMatch match;
+    const auto& currentSectors = input.route != nullptr
+        ? input.route->currentSectors
+        : input.currentSectors;
+    const auto& nextSectors = input.route != nullptr
+        ? input.route->nextSectors
+        : input.nextSectors;
     match.hasRouteMetadata =
-        SectorsHaveCenterMetadata(input.currentSectors) ||
-        SectorsHaveCenterMetadata(input.nextSectors);
+        SectorsHaveCenterMetadata(currentSectors) ||
+        SectorsHaveCenterMetadata(nextSectors);
 
-    for (const auto& sector : input.currentSectors) {
+    for (const auto& sector : currentSectors) {
         std::string proof;
         if (SectorMatchesCenterCandidate(sector, candidate, &proof)) {
             match.matched = true;
@@ -709,7 +715,7 @@ CenterRouteMatch MatchCenterToRoutePolygon(
         }
     }
 
-    for (const auto& sector : input.nextSectors) {
+    for (const auto& sector : nextSectors) {
         std::string proof;
         if (SectorMatchesCenterCandidate(sector, candidate, &proof)) {
             match.matched = true;
@@ -1738,8 +1744,7 @@ BrainControllerRelevanceWorkerInput BuildBrainOwnedControllerRelevanceInput(
     input.authorityRelevance = request.authorityRelevance;
     input.radioTuningHash = HashRadioTuningIdentity(request.radios);
     input.radios = request.radios;
-    input.currentSectors = state.routePolygonSnapshot.currentSectors;
-    input.nextSectors = state.routePolygonSnapshot.nextSectors;
+    input.route = state.routePolygonSnapshot;
     input.candidates = request.radioSnapshot.candidates;
     return input;
 }

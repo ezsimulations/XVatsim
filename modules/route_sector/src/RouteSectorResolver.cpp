@@ -1,6 +1,7 @@
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cctype>
@@ -13,6 +14,7 @@
 #include <optional>
 #include <queue>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -130,6 +132,8 @@ const xvatsim::core::authority::AuthorityPolygon* FindAuthorityPolygonById(
     const std::string& polygonId);
 std::string AuthorityProofSourceLabel(
     const xvatsim::core::authority::ActiveAuthorityPolygon& activePolygon);
+bool RouteCancellationRequested(
+    const RouteCancellationToken* cancellation);
 std::string AuthorityRelevanceProofDetail(
     const xvatsim::core::authority::RelevantAuthorityPolygon&
         relevantAuthorityPolygon);
@@ -212,6 +216,97 @@ struct AirwayGraph {
     std::unordered_map<std::string, std::unordered_map<std::size_t, std::vector<AirwayEdge>>>
         adjacencyByAirway;
 };
+
+class LocalRoutePreparationSource final : public RoutePreparationSource {
+public:
+    explicit LocalRoutePreparationSource(
+        bool verifyPreflightSourceFile = true)
+        : verifyPreflightSourceFile_(verifyPreflightSourceFile) {}
+
+    std::string ReadTextFile(
+        const std::filesystem::path& path) const override {
+        std::ifstream stream(path, std::ios::in | std::ios::binary);
+        if (!stream.is_open()) {
+            return {};
+        }
+        std::ostringstream buffer;
+        buffer << stream.rdbuf();
+        return buffer.str();
+    }
+
+    std::vector<std::filesystem::path> ListRegularFiles(
+        const std::filesystem::path& directory) const override {
+        std::vector<std::filesystem::path> paths;
+        std::error_code ec;
+        if (!std::filesystem::exists(directory, ec) ||
+            !std::filesystem::is_directory(directory, ec)) {
+            return paths;
+        }
+        std::filesystem::directory_iterator iterator(directory, ec);
+        const std::filesystem::directory_iterator end;
+        for (; !ec && iterator != end; iterator.increment(ec)) {
+            std::error_code entryError;
+            if (iterator->is_regular_file(entryError)) {
+                paths.push_back(iterator->path());
+            }
+        }
+        return paths;
+    }
+
+    core::preflight::FmsParseResult LoadFmsPlan(
+        const std::filesystem::path& path) const override {
+        return core::preflight::LoadFmsPlanFile(path);
+    }
+
+    core::preflight::CacheValidationResult ValidatePreflightCandidate(
+        const core::preflight::PreflightRouteCache& candidate,
+        const brain::NetworkPlanSnapshot& networkPlan) const override {
+        return core::preflight::ValidatePreflightRouteCacheForNetworkPlan(
+            candidate, networkPlan, verifyPreflightSourceFile_);
+    }
+
+private:
+    bool verifyPreflightSourceFile_ = true;
+};
+
+struct RoutePreparationEngineState {
+    std::string xplaneRootPath;
+    std::shared_ptr<const RoutePreparationSource> source;
+    std::unordered_map<
+        std::string,
+        std::unordered_map<std::string, xvatsim::core::route::ProcedureCatalogEntry>>
+        procedureMetadataByAirport;
+    AirwayGraph airwayGraph;
+    bool airwayGraphInitialized = false;
+};
+
+thread_local RoutePreparationEngineState* gActiveRoutePreparationState = nullptr;
+
+class ScopedRoutePreparationState {
+public:
+    explicit ScopedRoutePreparationState(RoutePreparationEngineState* state)
+        : previous_(gActiveRoutePreparationState) {
+        gActiveRoutePreparationState = state;
+    }
+
+    ~ScopedRoutePreparationState() {
+        gActiveRoutePreparationState = previous_;
+    }
+
+    ScopedRoutePreparationState(const ScopedRoutePreparationState&) = delete;
+    ScopedRoutePreparationState& operator=(
+        const ScopedRoutePreparationState&) = delete;
+
+private:
+    RoutePreparationEngineState* previous_ = nullptr;
+};
+
+RoutePreparationEngineState& ActiveRoutePreparationState() {
+    if (gActiveRoutePreparationState == nullptr) {
+        throw std::logic_error("route-preparation-state-unavailable");
+    }
+    return *gActiveRoutePreparationState;
+}
 
 struct ResolvedRoutePoint {
     std::string ident;
@@ -4527,14 +4622,11 @@ std::string BuildAirportCoverageKey(
 }
 
 std::string ReadTextFile(const std::string& path) {
-    std::ifstream stream(path, std::ios::in | std::ios::binary);
-    if (!stream.is_open()) {
+    const auto& source = ActiveRoutePreparationState().source;
+    if (source == nullptr) {
         return {};
     }
-
-    std::ostringstream buffer;
-    buffer << stream.rdbuf();
-    return buffer.str();
+    return source->ReadTextFile(std::filesystem::path(path));
 }
 
 HMODULE ResolveXPlaneModule() {
@@ -5068,7 +5160,7 @@ LoadAirportProcedureMetadata(
         return proceduresByName;
     }
 
-    const auto root = GetXPlaneRootPath();
+    const auto& root = ActiveRoutePreparationState().xplaneRootPath;
     const auto procPayload = ReadTextFile(
         root + "Custom Data\\navdata\\Proc\\" + normalizedIcao + ".txt");
     if (!procPayload.empty()) {
@@ -5099,11 +5191,6 @@ LoadAirportProcedureMetadata(
 const std::unordered_map<std::string, xvatsim::core::route::ProcedureCatalogEntry>&
 GetCachedAirportProcedureMetadata(
     const std::string& airportIcao) {
-    static std::mutex cacheMutex;
-    static std::unordered_map<
-        std::string,
-        std::unordered_map<std::string, xvatsim::core::route::ProcedureCatalogEntry>>
-        cache;
     static const std::unordered_map<std::string, xvatsim::core::route::ProcedureCatalogEntry>
         empty;
 
@@ -5113,17 +5200,14 @@ GetCachedAirportProcedureMetadata(
         return empty;
     }
 
-    {
-        std::lock_guard<std::mutex> lock(cacheMutex);
-        const auto cached = cache.find(normalizedIcao);
-        if (cached != cache.end()) {
-            return cached->second;
-        }
+    auto& cache = ActiveRoutePreparationState().procedureMetadataByAirport;
+    const auto cached = cache.find(normalizedIcao);
+    if (cached != cache.end()) {
+        return cached->second;
     }
 
     auto loadedMetadata = LoadAirportProcedureMetadata(normalizedIcao);
 
-    std::lock_guard<std::mutex> lock(cacheMutex);
     const auto [iterator, _] =
         cache.emplace(normalizedIcao, std::move(loadedMetadata));
     return iterator->second;
@@ -5225,7 +5309,7 @@ BuildRouteProcedureCatalog(
 }
 
 std::string LoadAirwayDataPayload() {
-    const auto root = GetXPlaneRootPath();
+    const auto& root = ActiveRoutePreparationState().xplaneRootPath;
 
     static constexpr const char* kRelativePaths[] = {
         "Custom Data\\earth_awy.dat",
@@ -5243,7 +5327,7 @@ std::string LoadAirwayDataPayload() {
 }
 
 std::string LoadFixDataPayload() {
-    const auto root = GetXPlaneRootPath();
+    const auto& root = ActiveRoutePreparationState().xplaneRootPath;
 
     static constexpr const char* kRelativePaths[] = {
         "Custom Data\\earth_fix.dat",
@@ -5261,7 +5345,7 @@ std::string LoadFixDataPayload() {
 }
 
 std::string LoadNavDataPayload() {
-    const auto root = GetXPlaneRootPath();
+    const auto& root = ActiveRoutePreparationState().xplaneRootPath;
 
     static constexpr const char* kRelativePaths[] = {
         "Custom Data\\earth_nav.dat",
@@ -5562,17 +5646,13 @@ std::optional<std::size_t> FindExactGraphNodeIndex(
 }
 
 const AirwayGraph& GetAirwayGraph() {
-    static std::mutex cacheMutex;
-    static bool cacheInitialized = false;
-    static AirwayGraph cache;
-
-    std::lock_guard<std::mutex> lock(cacheMutex);
-    if (cacheInitialized) {
-        return cache;
+    auto& state = ActiveRoutePreparationState();
+    if (state.airwayGraphInitialized) {
+        return state.airwayGraph;
     }
 
-    LoadFixNodes(&cache);
-    LoadNavNodes(&cache);
+    LoadFixNodes(&state.airwayGraph);
+    LoadNavNodes(&state.airwayGraph);
 
     std::istringstream stream(LoadAirwayDataPayload());
     std::string line;
@@ -5611,12 +5691,12 @@ const AirwayGraph& GetAirwayGraph() {
         }
 
         const auto startNodeIndex = FindExactGraphNodeIndex(
-            cache,
+            state.airwayGraph,
             startIdent,
             startRegion,
             startNavDataType);
         const auto endNodeIndex = FindExactGraphNodeIndex(
-            cache,
+            state.airwayGraph,
             endIdent,
             endRegion,
             endNavDataType);
@@ -5625,17 +5705,18 @@ const AirwayGraph& GetAirwayGraph() {
         }
 
         const auto edgeDistanceNm = GreatCircleDistanceNm(
-            cache.nodes[*startNodeIndex].latitudeDeg,
-            cache.nodes[*startNodeIndex].longitudeDeg,
-            cache.nodes[*endNodeIndex].latitudeDeg,
-            cache.nodes[*endNodeIndex].longitudeDeg);
+            state.airwayGraph.nodes[*startNodeIndex].latitudeDeg,
+            state.airwayGraph.nodes[*startNodeIndex].longitudeDeg,
+            state.airwayGraph.nodes[*endNodeIndex].latitudeDeg,
+            state.airwayGraph.nodes[*endNodeIndex].longitudeDeg);
 
         const auto direction = fields[6];
         const auto addForward = direction != "B";
         const auto addBackward = direction == "N" || direction == "B";
 
         for (const auto& airwayName : airwayNames) {
-            auto& adjacency = cache.adjacencyByAirway[airwayName];
+            auto& adjacency =
+                state.airwayGraph.adjacencyByAirway[airwayName];
             if (addForward) {
                 adjacency[*startNodeIndex].push_back({*endNodeIndex, edgeDistanceNm});
             }
@@ -5645,8 +5726,8 @@ const AirwayGraph& GetAirwayGraph() {
         }
     }
 
-    cacheInitialized = true;
-    return cache;
+    state.airwayGraphInitialized = true;
+    return state.airwayGraph;
 }
 
 xvatsim::core::route::RouteGrammarCatalog BuildRouteGrammarCatalog(
@@ -9935,7 +10016,7 @@ struct ExpandedFmsRouteCacheResult {
 };
 
 std::filesystem::path BuildXPlaneFmsPlansFolderPath() {
-    const auto xplaneRoot = GetXPlaneRootPath();
+    const auto& xplaneRoot = ActiveRoutePreparationState().xplaneRootPath;
     if (!xplaneRoot.empty()) {
         return std::filesystem::path(xplaneRoot) / "Output" / "FMS plans";
     }
@@ -10012,7 +10093,8 @@ bool ExpandedFmsPlanMatchesFiledRoute(
 }
 
 std::optional<ExpandedFmsRouteCacheResult> TryBuildExpandedFmsRouteCache(
-    const brain::NetworkPlanSnapshot& networkPlanSnapshot) {
+    const brain::NetworkPlanSnapshot& networkPlanSnapshot,
+    const RouteCancellationToken* cancellation = nullptr) {
     const auto departureIcao = NormalizeRouteToken(networkPlanSnapshot.departureIcao);
     const auto destinationIcao = NormalizeRouteToken(networkPlanSnapshot.destinationIcao);
     if (departureIcao.empty() ||
@@ -10022,23 +10104,17 @@ std::optional<ExpandedFmsRouteCacheResult> TryBuildExpandedFmsRouteCache(
     }
 
     const auto fmsPlansFolder = BuildXPlaneFmsPlansFolderPath();
-    std::error_code ec;
-    if (!std::filesystem::exists(fmsPlansFolder, ec) ||
-        !std::filesystem::is_directory(fmsPlansFolder, ec)) {
+    const auto& source = ActiveRoutePreparationState().source;
+    if (source == nullptr) {
         return std::nullopt;
     }
 
     const auto fileStemPrefix = departureIcao + destinationIcao;
     std::optional<ExpandedFmsRouteCacheResult> bestResult;
-    std::filesystem::directory_iterator iterator(fmsPlansFolder, ec);
-    const std::filesystem::directory_iterator end;
-    for (; !ec && iterator != end; iterator.increment(ec)) {
-        const auto& entry = *iterator;
-        std::error_code entryError;
-        if (!entry.is_regular_file(entryError)) {
-            continue;
+    for (const auto& path : source->ListRegularFiles(fmsPlansFolder)) {
+        if (RouteCancellationRequested(cancellation)) {
+            return std::nullopt;
         }
-        const auto path = entry.path();
         if (NormalizeRouteToken(path.extension().string()) != "FMS") {
             continue;
         }
@@ -10047,7 +10123,7 @@ std::optional<ExpandedFmsRouteCacheResult> TryBuildExpandedFmsRouteCache(
             continue;
         }
 
-        const auto parseResult = core::preflight::LoadFmsPlanFile(path);
+        const auto parseResult = source->LoadFmsPlan(path);
         if (!parseResult.ok ||
             !ExpandedFmsPlanMatchesFiledRoute(
                 parseResult.plan,
@@ -10084,7 +10160,9 @@ std::optional<ExpandedFmsRouteCacheResult> TryBuildExpandedFmsRouteCache(
 std::vector<brain::RouteWaypointSnapshot> ResolveRouteWaypoints(
     const brain::AircraftStateSnapshot& aircraftState,
     const brain::NetworkPlanSnapshot& networkPlanSnapshot,
-    RouteResolveDiagnostics* diagnostics) {
+    RouteResolveDiagnostics* diagnostics,
+    RouteWorkerPhaseTimings* timings = nullptr,
+    const RouteCancellationToken* cancellation = nullptr) {
     std::vector<ResolvedRoutePoint> resolvedFiledRoute;
     std::optional<GeoPoint> referencePoint;
     if (!networkPlanSnapshot.hasDestinationCoordinates) {
@@ -10109,14 +10187,31 @@ std::vector<brain::RouteWaypointSnapshot> ResolveRouteWaypoints(
         };
     }
 
+    const auto procedureStarted = std::chrono::steady_clock::now();
     const auto proceduresByName =
         BuildRouteProcedureCatalog(networkPlanSnapshot);
+    if (RouteCancellationRequested(cancellation)) {
+        return {};
+    }
+    if (timings != nullptr) {
+        timings->procedureMetadataUs = std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - procedureStarted)
+                                           .count();
+    }
+    const auto grammarStarted = std::chrono::steady_clock::now();
     const auto grammarCatalog =
         BuildRouteGrammarCatalog(GetAirwayGraph(), &proceduresByName);
     const auto parsedTokens =
         xvatsim::core::route::ParseRouteTokens(
             networkPlanSnapshot.routeText,
             &grammarCatalog);
+    if (timings != nullptr) {
+        timings->grammarParsingUs = std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - grammarStarted)
+                                      .count();
+    }
     for (const auto& parsedToken : parsedTokens) {
         if (diagnostics != nullptr && !parsedToken.rawNormalized.empty()) {
             diagnostics->rawTokens.push_back(parsedToken.rawNormalized);
@@ -10124,6 +10219,9 @@ std::vector<brain::RouteWaypointSnapshot> ResolveRouteWaypoints(
     }
 
     for (std::size_t tokenIndex = 0; tokenIndex < parsedTokens.size(); ++tokenIndex) {
+        if (RouteCancellationRequested(cancellation)) {
+            return {};
+        }
         const auto& parsedToken = parsedTokens[tokenIndex];
         if (parsedToken.kind == xvatsim::core::route::RouteTokenKind::Control ||
             parsedToken.kind == xvatsim::core::route::RouteTokenKind::Empty ||
@@ -11035,6 +11133,31 @@ void AppendStaleSuffixIfNeeded(std::string* statusLine) {
 
 }  // namespace
 
+struct RouteSourceDataset {
+    std::uint64_t identity = 0;
+    std::uint64_t centerBoundaryGeneration = 0;
+    std::uint64_t authorityCatalogGeneration = 0;
+    std::uint64_t retainedBytes = 0;
+    std::vector<xvatsim::core::route::SectorFeature> traversalFeatures;
+    ControllerAuthorityCatalog controllerAuthorityCatalog;
+};
+
+struct RouteDatasetPublicationState {
+    std::shared_ptr<const RouteSourceDataset> dataset;
+    std::uint64_t identity = 0;
+    std::uint64_t contentIdentity = 0;
+    std::uint64_t publicationGeneration = 0;
+    std::uint64_t centerBoundaryGeneration = 0;
+    std::uint64_t authorityCatalogGeneration = 0;
+    bool available = false;
+    bool stale = true;
+};
+
+std::shared_ptr<RouteSourceDataset> BuildRouteSourceDataset(
+    const std::vector<unsigned char>& boundaryPayload,
+    const std::vector<unsigned char>& authorityCatalogPayload,
+    const std::vector<unsigned char>& ownershipPayload);
+
 struct AuthoritySourceDataset {
     std::uint64_t identity = 0;
     std::uint64_t terminalBoundaryGeneration = 0;
@@ -11044,6 +11167,53 @@ struct AuthoritySourceDataset {
 };
 
 namespace {
+
+std::uint64_t BuildRoutePublicationIdentity(
+    std::uint64_t contentIdentity,
+    std::uint64_t publicationGeneration,
+    bool available,
+    bool stale) {
+    std::uint64_t hash = 1469598103934665603ULL;
+    const auto add = [&](std::uint64_t value) {
+        for (int shift = 0; shift < 64; shift += 8) {
+            hash ^= (value >> shift) & 0xffULL;
+            hash *= 1099511628211ULL;
+        }
+    };
+    add(contentIdentity);
+    add(publicationGeneration);
+    add(available ? 1 : 0);
+    add(stale ? 1 : 0);
+    return hash == 0 ? 1 : hash;
+}
+
+std::shared_ptr<const RouteDatasetPublicationState>
+BuildRouteDatasetPublicationState(
+    std::shared_ptr<const RouteSourceDataset> dataset,
+    std::uint64_t publicationGeneration,
+    bool available,
+    bool stale) {
+    auto publication = std::make_shared<RouteDatasetPublicationState>();
+    publication->dataset = std::move(dataset);
+    publication->contentIdentity = publication->dataset != nullptr
+        ? publication->dataset->identity
+        : 0;
+    publication->publicationGeneration = publicationGeneration;
+    publication->centerBoundaryGeneration = publication->dataset != nullptr
+        ? publication->dataset->centerBoundaryGeneration
+        : 0;
+    publication->authorityCatalogGeneration = publication->dataset != nullptr
+        ? publication->dataset->authorityCatalogGeneration
+        : 0;
+    publication->available = available && publication->dataset != nullptr;
+    publication->stale = stale || !publication->available;
+    publication->identity = BuildRoutePublicationIdentity(
+        publication->contentIdentity,
+        publicationGeneration,
+        publication->available,
+        publication->stale);
+    return publication;
+}
 
 void HashDatasetBytes(std::uint64_t* hash, const std::vector<unsigned char>& bytes) {
     if (hash == nullptr) {
@@ -11144,12 +11314,13 @@ private:
 };
 
 RouteSectorResolver::RouteSectorResolver()
-    : authorityEngine_(std::make_unique<AuthorityRelevanceEngine>()) {}
+    : authorityEngine_(std::make_unique<AuthorityRelevanceEngine>()),
+      synchronousRouteOracleEngine_(
+          std::make_unique<RoutePreparationEngine>(
+              GetXPlaneRootPath(), nullptr, false)) {}
 
 RouteSectorResolver::~RouteSectorResolver() {
-    if (fetchThread_.joinable()) {
-        fetchThread_.join();
-    }
+    StopSourceRefreshAfterFlightLoop();
 }
 
 void RouteSectorResolver::LoadBoundaryPayloadsForTesting(
@@ -11168,9 +11339,7 @@ void RouteSectorResolver::LoadBoundaryPayloadsForTesting(
     const std::string& terminalGeoJson,
     const std::string& authorityCatalogDat,
     const std::string& ownershipJson) const {
-    if (fetchThread_.joinable()) {
-        fetchThread_.join();
-    }
+    StopSourceRefreshAfterFlightLoop();
 
     std::lock_guard<std::mutex> lock(fetchMutex_);
     boundaryPayload_.assign(boundaryGeoJson.begin(), boundaryGeoJson.end());
@@ -11180,6 +11349,10 @@ void RouteSectorResolver::LoadBoundaryPayloadsForTesting(
     authorityDataset_ = BuildAuthoritySourceDataset(
         boundaryPayload_,
         terminalBoundaryPayload_,
+        vatspyPayload_,
+        ownershipPayload_);
+    routeDataset_ = BuildRouteSourceDataset(
+        boundaryPayload_,
         vatspyPayload_,
         ownershipPayload_);
     if (authorityDataset_ != nullptr) {
@@ -11211,17 +11384,38 @@ void RouteSectorResolver::LoadBoundaryPayloadsForTesting(
         authorityDataset_->terminalBoundaryGeneration =
             terminalBoundaryGeneration_;
     }
+    if (routeDataset_ != nullptr) {
+        routeDataset_->centerBoundaryGeneration = centerBoundaryGeneration_;
+        routeDataset_->authorityCatalogGeneration =
+            authorityCatalogGeneration_;
+    }
     publishedTerminalBoundaryGeneration_.store(
         terminalBoundaryGeneration_, std::memory_order_release);
     publishedAuthorityDataset_.store(
         authorityDataset_.get(), std::memory_order_release);
+    ++routePublicationGeneration_;
+    if (routePublicationGeneration_ == 0) {
+        routePublicationGeneration_ = 1;
+    }
+    std::atomic_store_explicit(
+        &publishedRoutePublication_,
+        BuildRouteDatasetPublicationState(
+            std::shared_ptr<const RouteSourceDataset>(routeDataset_),
+            routePublicationGeneration_,
+            routeDataset_ != nullptr,
+            routeDataset_ == nullptr),
+        std::memory_order_release);
     lastFetchSucceeded_ =
         hasBoundaryCache_ && hasAuthorityCatalogCache_ && hasTerminalBoundaryCache_;
-    lastFetchTickSeconds_ = CurrentTickSeconds();
+    const auto loadedTickSeconds = CurrentTickSeconds();
+    lastFetchTickSeconds_.store(
+        loadedTickSeconds, std::memory_order_release);
     lastSuccessfulCenterFetchTickSeconds_ =
-        (hasBoundaryCache_ && hasAuthorityCatalogCache_) ? lastFetchTickSeconds_ : 0;
+        (hasBoundaryCache_ && hasAuthorityCatalogCache_)
+            ? loadedTickSeconds
+            : 0;
     lastSuccessfulTerminalFetchTickSeconds_ =
-        hasTerminalBoundaryCache_ ? lastFetchTickSeconds_ : 0;
+        hasTerminalBoundaryCache_ ? loadedTickSeconds : 0;
     hasSnapshotCache_ = false;
     cachedSnapshot_ = {};
     hasAuthorityRelevanceCache_ = false;
@@ -11242,6 +11436,7 @@ void RouteSectorResolver::LoadBoundaryPayloadsForTesting(
     lastAuthorityProgressTickSeconds_ = 0;
     airportCoverageCache_.clear();
     hasPendingPayload_ = false;
+    pendingPublicationReady_.store(false, std::memory_order_release);
     fetchInProgress_ = false;
 }
 
@@ -11261,9 +11456,7 @@ void RouteSectorResolver::QueueBoundaryPayloadsForTesting(
     const std::string& terminalGeoJson,
     const std::string& authorityCatalogDat,
     const std::string& ownershipJson) const {
-    if (fetchThread_.joinable()) {
-        fetchThread_.join();
-    }
+    StopSourceRefreshAfterFlightLoop();
 
     StageFetchedPayloads(
         std::vector<unsigned char>(boundaryGeoJson.begin(), boundaryGeoJson.end()),
@@ -11328,15 +11521,8 @@ void RouteSectorResolver::ClearPreflightRouteCache() {
 }
 
 void RouteSectorResolver::ResetRuntimeState() {
-    if (fetchThread_.joinable()) {
-        fetchThread_.join();
-    }
-
-    std::lock_guard<std::mutex> lock(fetchMutex_);
-    lastFetchTickSeconds_ = 0;
-    lastFetchSucceeded_ = false;
-    lastSuccessfulCenterFetchTickSeconds_ = 0;
-    lastSuccessfulTerminalFetchTickSeconds_ = 0;
+    // Per-flight reset only. Source fetching/publication is independent and
+    // must never be joined or mutex-waited from a lifecycle callback.
     hasSnapshotCache_ = false;
     lastSnapshotBuildTickSeconds_ = 0;
     lastSnapshotLatitudeDeg_ = 0.0;
@@ -11360,12 +11546,6 @@ void RouteSectorResolver::ResetRuntimeState() {
     authorityProgressWindowNm_ = 0.0;
     lastAuthorityProgressTickSeconds_ = 0;
     airportCoverageCache_.clear();
-    pendingBoundaryPayload_.clear();
-    pendingTerminalBoundaryPayload_.clear();
-    pendingVatspyPayload_.clear();
-    pendingOwnershipPayload_.clear();
-    hasPendingPayload_ = false;
-    fetchInProgress_ = false;
 }
 
 void RouteSectorResolver::ResetSourceCaches() {
@@ -11373,6 +11553,10 @@ void RouteSectorResolver::ResetSourceCaches() {
 
     std::lock_guard<std::mutex> lock(fetchMutex_);
     publishedAuthorityDataset_.store(nullptr, std::memory_order_release);
+    std::atomic_store_explicit(
+        &publishedRoutePublication_,
+        std::shared_ptr<const RouteDatasetPublicationState>{},
+        std::memory_order_release);
     publishedTerminalBoundaryGeneration_.store(0, std::memory_order_release);
     hasBoundaryCache_ = false;
     hasAuthorityCatalogCache_ = false;
@@ -11382,7 +11566,17 @@ void RouteSectorResolver::ResetSourceCaches() {
     vatspyPayload_.clear();
     ownershipPayload_.clear();
     authorityDataset_.reset();
+    authorityDatasetRetention_.clear();
     pendingAuthorityDataset_.reset();
+    routeDataset_.reset();
+    pendingRouteDataset_.reset();
+    routePublicationGeneration_ = 0;
+    pendingBoundaryPayload_.clear();
+    pendingTerminalBoundaryPayload_.clear();
+    pendingVatspyPayload_.clear();
+    pendingOwnershipPayload_.clear();
+    hasPendingPayload_ = false;
+    pendingPublicationReady_.store(false, std::memory_order_release);
     centerBoundaryGeneration_ = 0;
     authorityCatalogGeneration_ = 0;
     terminalBoundaryGeneration_ = 0;
@@ -11407,6 +11601,52 @@ RouteSectorResolver::GetAuthoritySourceDatasetPublication() const {
             publication.dataset->terminalBoundaryGeneration;
     }
     return publication;
+}
+
+RouteDatasetPublication
+RouteSectorResolver::GetRouteSourceDatasetPublication() const {
+    RouteDatasetPublication publication;
+    const auto state = std::atomic_load_explicit(
+        &publishedRoutePublication_, std::memory_order_acquire);
+    if (state != nullptr) {
+        publication.dataset = state->dataset;
+        publication.identity = state->identity;
+        publication.contentIdentity = state->contentIdentity;
+        publication.publicationGeneration = state->publicationGeneration;
+        publication.centerBoundaryGeneration =
+            state->centerBoundaryGeneration;
+        publication.authorityCatalogGeneration =
+            state->authorityCatalogGeneration;
+        publication.available = state->available;
+        publication.stale = state->stale;
+    }
+    return publication;
+}
+
+void RouteSectorResolver::StartSourceRefreshBeforeFlightLoop() const {
+    HarvestPendingFetch();
+    if (!sourceRefreshStarted_.load(std::memory_order_acquire)) {
+        StartAsyncBoundaryFetch(CurrentTickSeconds());
+    }
+}
+
+void RouteSectorResolver::StopSourceRefreshAfterFlightLoop() const {
+    sourceRefreshStop_.store(true, std::memory_order_release);
+    sourceRefreshWait_.notify_all();
+    if (fetchThread_.joinable()) {
+        fetchThread_.join();
+    }
+    sourceRefreshStarted_.store(false, std::memory_order_release);
+    fetchInProgress_.store(false, std::memory_order_release);
+}
+
+bool RouteSectorResolver::TryHarvestSourcePublications() const {
+    if (fetchInProgress_.load(std::memory_order_acquire) ||
+        !pendingPublicationReady_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    HarvestPendingFetch();
+    return GetRouteSourceDatasetPublication().dataset != nullptr;
 }
 
 std::uint64_t RouteSectorResolver::GetAuthoritySourceDatasetIdentity() const {
@@ -12312,6 +12552,60 @@ brain::AuthorityRelevanceSnapshot AuthorityRelevanceEngine::Evaluate(
     return snapshot;
 }
 
+brain::RouteSectorSnapshot
+RouteSectorResolver::ResolveSynchronousRouteOracleForTesting(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::NetworkPlanSnapshot& networkPlanSnapshot) const {
+    if (networkPlanSnapshot.stale) {
+        brain::RouteSectorSnapshot snapshot;
+        snapshot.available = false;
+        snapshot.stale = true;
+        snapshot.diagnosticCacheStatus = "input-stale";
+        snapshot.diagnosticReason = "network-plan-stale";
+        snapshot.statusLine = networkPlanSnapshot.statusLine.empty()
+            ? "ROUTE plan stale"
+            : "ROUTE plan stale: " + networkPlanSnapshot.statusLine;
+        return snapshot;
+    }
+    if (!hasBoundaryCache_) {
+        brain::RouteSectorSnapshot snapshot;
+        snapshot.available = false;
+        snapshot.stale = true;
+        snapshot.diagnosticCacheStatus = "source-unavailable";
+        snapshot.diagnosticReason = "boundary-cache-unavailable";
+        snapshot.statusLine = "ROUTE sectors unavailable";
+        return snapshot;
+    }
+    RoutePreparationEngineState frozenOracleState;
+    frozenOracleState.xplaneRootPath = GetXPlaneRootPath();
+    frozenOracleState.source =
+        std::make_shared<const LocalRoutePreparationSource>(false);
+    ScopedRoutePreparationState frozenOracleScope(&frozenOracleState);
+    auto snapshot =
+        BuildSnapshotFrozenOracle(aircraftState, networkPlanSnapshot);
+    if (snapshot.diagnosticCacheStatus.empty()) {
+        if (snapshot.statusLine.find("via preflight cache") !=
+            std::string::npos) {
+            snapshot.diagnosticCacheStatus = "preflight-route-cache-build";
+        } else if (snapshot.statusLine.find("via expanded FMS plan") !=
+                   std::string::npos) {
+            snapshot.diagnosticCacheStatus = "expanded-fms-route-build";
+        } else {
+            snapshot.diagnosticCacheStatus = "route-rebuild";
+        }
+    }
+    if (snapshot.diagnosticReason.empty()) {
+        snapshot.diagnosticReason = "route-key-changed";
+    }
+    snapshot.stale = false;
+    if (snapshot.statusLine.empty()) {
+        snapshot.statusLine = snapshot.routeResolved
+            ? "ROUTE sectors active"
+            : "ROUTE pending";
+    }
+    return snapshot;
+}
+
 brain::AuthorityRelevanceSnapshot
 RouteSectorResolver::ResolveBrainScheduledAuthorityVerification(
     const brain::AircraftStateSnapshot& aircraftState,
@@ -12555,7 +12849,619 @@ void PopulateTraversalControllerPrefixes(
     }
 }
 
+std::shared_ptr<RouteSourceDataset> BuildRouteSourceDataset(
+    const std::vector<unsigned char>& boundaryPayload,
+    const std::vector<unsigned char>& authorityCatalogPayload,
+    const std::vector<unsigned char>& ownershipPayload) {
+    if (boundaryPayload.empty() || authorityCatalogPayload.empty()) {
+        return {};
+    }
+
+    auto dataset = std::make_shared<RouteSourceDataset>();
+    std::uint64_t identity = 1469598103934665603ULL;
+    HashDatasetBytes(&identity, boundaryPayload);
+    HashDatasetBytes(&identity, authorityCatalogPayload);
+    HashDatasetBytes(&identity, ownershipPayload);
+    dataset->identity = identity == 0 ? 1 : identity;
+
+    const auto& features = GetCachedSectorFeatures(boundaryPayload);
+    const auto& authorityCatalog =
+        GetCachedControllerAuthorityCatalog(
+            authorityCatalogPayload,
+            ownershipPayload);
+    dataset->traversalFeatures = ToTraversalFeatures(features);
+    dataset->controllerAuthorityCatalog = authorityCatalog;
+    dataset->retainedBytes = sizeof(RouteSourceDataset);
+    for (auto& feature : dataset->traversalFeatures) {
+        dataset->retainedBytes += sizeof(feature) + feature.label.capacity();
+        for (const auto& token : feature.tokens) {
+            dataset->retainedBytes += token.capacity();
+        }
+        for (const auto& pattern : feature.controllerCallsignPatterns) {
+            dataset->retainedBytes += pattern.capacity();
+        }
+        for (const auto& prefix : feature.controllerPrefixes) {
+            dataset->retainedBytes += prefix.capacity();
+        }
+        for (const auto& polygon : feature.polygons) {
+            dataset->retainedBytes +=
+                sizeof(polygon) + polygon.ring.capacity() * sizeof(
+                    xvatsim::core::route::GeoPoint);
+        }
+    }
+    return dataset;
+}
+
+namespace {
+
+bool RouteCancellationRequested(const RouteCancellationToken* cancellation) {
+    return cancellation != nullptr &&
+           cancellation->IsCancellationRequested();
+}
+
+brain::RouteSectorSnapshot CancelledRouteSnapshot() {
+    brain::RouteSectorSnapshot snapshot;
+    snapshot.available = false;
+    snapshot.stale = true;
+    snapshot.diagnosticCacheStatus = "route-worker-cancelled";
+    snapshot.diagnosticReason = "cooperative-cancellation";
+    snapshot.statusLine = "ROUTE preparation cancelled";
+    return snapshot;
+}
+
+brain::RouteSectorSnapshot PrepareRouteSnapshotCore(
+    RoutePreparationEngineState* state,
+    const RoutePreparationRequest& request,
+    RouteWorkerPhaseTimings* timings,
+    const RouteCancellationToken* cancellation) {
+    const auto totalStarted = std::chrono::steady_clock::now();
+    const auto finish = [&](brain::RouteSectorSnapshot snapshot) {
+        if (timings != nullptr) {
+            timings->totalUs = std::chrono::duration_cast<
+                std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - totalStarted)
+                                   .count();
+        }
+        return snapshot;
+    };
+    if (RouteCancellationRequested(cancellation)) {
+        return finish(CancelledRouteSnapshot());
+    }
+
+    brain::RouteSectorSnapshot snapshot;
+    const auto sourceStarted = std::chrono::steady_clock::now();
+    const auto* dataset = request.routeSourceDataset.get();
+    const auto* networkPlan = request.networkPlan.get();
+    if (timings != nullptr) {
+        timings->sourceAcquisitionUs = std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - sourceStarted)
+                                            .count();
+    }
+    if (dataset == nullptr || networkPlan == nullptr) {
+        snapshot.available = false;
+        snapshot.stale = true;
+        snapshot.diagnosticCacheStatus = "source-unavailable";
+        snapshot.diagnosticReason = "boundary-cache-unavailable";
+        snapshot.statusLine = "ROUTE sectors unavailable";
+        return finish(std::move(snapshot));
+    }
+    if (networkPlan->stale) {
+        snapshot.available = false;
+        snapshot.stale = true;
+        snapshot.diagnosticCacheStatus = "input-stale";
+        snapshot.diagnosticReason = "network-plan-stale";
+        snapshot.statusLine = networkPlan->statusLine.empty()
+                                  ? "ROUTE plan stale"
+                                  : "ROUTE plan stale: " +
+                                        networkPlan->statusLine;
+        return finish(std::move(snapshot));
+    }
+
+    snapshot.available = true;
+    snapshot.stale = false;
+    snapshot.departureIcao = networkPlan->departureIcao;
+    snapshot.destinationIcao = networkPlan->destinationIcao;
+    snapshot.centerBoundaryGeneration = dataset->centerBoundaryGeneration;
+    snapshot.authorityCatalogGeneration =
+        dataset->authorityCatalogGeneration;
+    if (!request.routeAnchor.valid ||
+        !networkPlan->hasDestinationCoordinates) {
+        snapshot.statusLine = "ROUTE waiting for destination";
+        snapshot.diagnosticCacheStatus = "route-rebuild";
+        snapshot.diagnosticReason = "route-key-changed";
+        return finish(std::move(snapshot));
+    }
+    if (dataset->traversalFeatures.empty()) {
+        snapshot.statusLine = "ROUTE sectors unavailable";
+        snapshot.diagnosticCacheStatus = "route-rebuild";
+        snapshot.diagnosticReason = "route-key-changed";
+        return finish(std::move(snapshot));
+    }
+
+    ScopedRoutePreparationState activeState(state);
+    const auto navigationStarted = std::chrono::steady_clock::now();
+    (void)GetAirwayGraph();
+    if (timings != nullptr) {
+        timings->navigationInitializationUs = std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - navigationStarted)
+                                                   .count();
+    }
+    if (RouteCancellationRequested(cancellation)) {
+        return finish(CancelledRouteSnapshot());
+    }
+
+    RouteResolveDiagnostics diagnostics;
+    bool usedPreflightRouteCache = false;
+    bool usedExpandedFmsRouteCache = false;
+    const auto preflightStarted = std::chrono::steady_clock::now();
+    if (request.preflightCandidate != nullptr) {
+        const auto cacheValidation = state != nullptr &&
+                state->source != nullptr
+            ? state->source->ValidatePreflightCandidate(
+                  *request.preflightCandidate, *networkPlan)
+            : core::preflight::CacheValidationResult{};
+        if (cacheValidation.accepted) {
+            snapshot.waypoints =
+                core::preflight::BuildRouteWaypointsFromCache(
+                    *request.preflightCandidate);
+            usedPreflightRouteCache = snapshot.waypoints.size() >= 2;
+            diagnostics.resolvedTokens.push_back(
+                "PREFLIGHT_CACHE:" +
+                request.preflightCandidate->plan.routeIdentityHash);
+            diagnostics.procedureMetadataSources.push_back(
+                cacheValidation.reason.empty()
+                    ? "PREFLIGHT_ROUTE_CACHE"
+                    : "PREFLIGHT_ROUTE_CACHE:" +
+                          cacheValidation.reason);
+        }
+    }
+    if (timings != nullptr) {
+        timings->preflightValidationUs = std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - preflightStarted)
+                                            .count();
+    }
+    if (RouteCancellationRequested(cancellation)) {
+        return finish(CancelledRouteSnapshot());
+    }
+
+    if (!usedPreflightRouteCache) {
+        const auto fmsStarted = std::chrono::steady_clock::now();
+        if (auto expandedFmsRoute =
+                TryBuildExpandedFmsRouteCache(*networkPlan, cancellation);
+            expandedFmsRoute.has_value()) {
+            snapshot.waypoints =
+                core::preflight::BuildRouteWaypointsFromCache(
+                    expandedFmsRoute->cache);
+            usedExpandedFmsRouteCache = snapshot.waypoints.size() >= 2;
+            if (usedExpandedFmsRouteCache) {
+                diagnostics.resolvedTokens.push_back(
+                    "EXPANDED_FMS:" +
+                    expandedFmsRoute->cache.plan.routeIdentityHash);
+                diagnostics.procedureMetadataSources.push_back(
+                    "EXPANDED_FMS:" + expandedFmsRoute->sourceName);
+            }
+        }
+        if (timings != nullptr) {
+            timings->fmsDiscoveryUs = std::chrono::duration_cast<
+                std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - fmsStarted)
+                                          .count();
+        }
+    }
+    if (RouteCancellationRequested(cancellation)) {
+        return finish(CancelledRouteSnapshot());
+    }
+
+    if (!usedPreflightRouteCache && !usedExpandedFmsRouteCache) {
+        const auto waypointStarted = std::chrono::steady_clock::now();
+        snapshot.waypoints = ResolveRouteWaypoints(
+            request.routeAnchor,
+            *networkPlan,
+            &diagnostics,
+            timings,
+            cancellation);
+        if (timings != nullptr) {
+            const auto fullResolutionUs = std::chrono::duration_cast<
+                std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - waypointStarted)
+                                                .count();
+            timings->waypointResolutionUs = std::max<long long>(
+                0,
+                fullResolutionUs - timings->procedureMetadataUs -
+                    timings->grammarParsingUs);
+        }
+    }
+    if (RouteCancellationRequested(cancellation)) {
+        return finish(CancelledRouteSnapshot());
+    }
+
+    snapshot.routeResolved = snapshot.waypoints.size() >= 2;
+    if (snapshot.routeResolved &&
+        !usedPreflightRouteCache &&
+        !usedExpandedFmsRouteCache &&
+        !diagnostics.unresolvedAirwayTokens.empty()) {
+        snapshot.routeResolved = false;
+        snapshot.statusLine = AppendUnsupportedRouteStatus(
+            "ROUTE incomplete unresolved-airways " +
+                std::to_string(diagnostics.unresolvedAirwayTokens.size()),
+            diagnostics);
+        snapshot.diagnosticCacheStatus = "route-rebuild";
+        snapshot.diagnosticReason = "route-key-changed";
+        return finish(std::move(snapshot));
+    }
+    if (!snapshot.routeResolved) {
+        snapshot.statusLine =
+            AppendUnsupportedRouteStatus("ROUTE unresolved", diagnostics);
+        snapshot.diagnosticCacheStatus = "route-rebuild";
+        snapshot.diagnosticReason = "route-key-changed";
+        return finish(std::move(snapshot));
+    }
+
+    const auto traversalPreparationStarted =
+        std::chrono::steady_clock::now();
+    xvatsim::core::route::TraversalTuning traversalTuning;
+    traversalTuning.mode = xvatsim::core::route::TraversalMode::Exact;
+    traversalTuning.routeSectorSanityLimit = kRouteSectorSanityLimit;
+    if (timings != nullptr) {
+        timings->traversalPreparationUs = std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now() -
+                traversalPreparationStarted)
+                                               .count();
+    }
+    const auto traversalStarted = std::chrono::steady_clock::now();
+    auto traversalSnapshot =
+        xvatsim::core::route::BuildRouteSectorSnapshotFromWaypoints(
+            snapshot.waypoints,
+            dataset->traversalFeatures,
+            traversalTuning);
+    if (timings != nullptr) {
+        timings->polygonTraversalUs = std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - traversalStarted)
+                                         .count();
+    }
+    if (RouteCancellationRequested(cancellation)) {
+        return finish(CancelledRouteSnapshot());
+    }
+
+    snapshot.currentSectors = std::move(traversalSnapshot.currentSectors);
+    snapshot.nextSectors = std::move(traversalSnapshot.nextSectors);
+    const auto prefixStarted = std::chrono::steady_clock::now();
+    PopulateTraversalControllerPrefixes(
+        &snapshot.currentSectors,
+        dataset->controllerAuthorityCatalog);
+    PopulateTraversalControllerPrefixes(
+        &snapshot.nextSectors,
+        dataset->controllerAuthorityCatalog);
+    if (timings != nullptr) {
+        timings->controllerPrefixUs = std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - prefixStarted)
+                                          .count();
+    }
+    snapshot.routeResolved = traversalSnapshot.routeResolved;
+    snapshot.statusLine =
+        AppendUnsupportedRouteStatus(traversalSnapshot.statusLine, diagnostics);
+    if (usedPreflightRouteCache) {
+        snapshot.statusLine += " via preflight cache";
+        snapshot.diagnosticCacheStatus = "preflight-route-cache-build";
+    } else if (usedExpandedFmsRouteCache) {
+        snapshot.statusLine += " via expanded FMS plan";
+        snapshot.diagnosticCacheStatus = "expanded-fms-route-build";
+    } else {
+        snapshot.diagnosticCacheStatus = "route-rebuild";
+    }
+    snapshot.statusLine = AppendAuthorityGapStatus(
+        snapshot.statusLine,
+        snapshot.currentSectors,
+        snapshot.nextSectors);
+    snapshot.diagnosticReason = "route-key-changed";
+    if (timings != nullptr) {
+        timings->outputFinalizationUs = std::max<long long>(
+            0,
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - prefixStarted)
+                    .count() - timings->controllerPrefixUs);
+    }
+    return finish(std::move(snapshot));
+}
+
+}  // namespace
+
+struct RoutePreparationEngine::Implementation {
+    Implementation(
+        std::string xplaneRootPath,
+        std::shared_ptr<const RoutePreparationSource> source,
+        bool verifyPreflightSourceFile) {
+        state.xplaneRootPath = std::move(xplaneRootPath);
+        state.source = source != nullptr
+            ? std::move(source)
+            : std::make_shared<const LocalRoutePreparationSource>(
+                  verifyPreflightSourceFile);
+        if (!state.xplaneRootPath.empty() &&
+            state.xplaneRootPath.back() != '\\' &&
+            state.xplaneRootPath.back() != '/') {
+            state.xplaneRootPath.push_back('\\');
+        }
+    }
+
+    RoutePreparationEngineState state;
+};
+
+RoutePreparationEngine::RoutePreparationEngine(
+    std::string xplaneRootPath,
+    std::shared_ptr<const RoutePreparationSource> source,
+    bool verifyPreflightSourceFile)
+    : implementation_(
+          std::make_unique<Implementation>(
+              std::move(xplaneRootPath),
+              std::move(source),
+              verifyPreflightSourceFile)) {}
+
+RoutePreparationEngine::~RoutePreparationEngine() = default;
+
+RoutePreparationResult RoutePreparationEngine::Prepare(
+    const RoutePreparationRequest& request,
+    const RouteCancellationToken* cancellation) {
+    RoutePreparationResult result;
+    if (implementation_ == nullptr) {
+        result.reason = "route-engine-unavailable";
+        return result;
+    }
+    auto route = PrepareRouteSnapshotCore(
+        &implementation_->state,
+        request,
+        &result.timings,
+        cancellation);
+    result.reason = route.diagnosticReason;
+    result.comprehensiveDigest =
+        brain::HashBrainAuthorityRouteSnapshot(route);
+    result.route = std::make_shared<const brain::RouteSectorSnapshot>(
+        std::move(route));
+    return result;
+}
+
+ExpandedFmsObservationResult RoutePreparationEngine::ObserveExpandedFms(
+    const brain::NetworkPlanSnapshot& networkPlan,
+    const RouteCancellationToken* cancellation) {
+    ExpandedFmsObservationResult observation;
+    if (implementation_ == nullptr) {
+        observation.reason = "route-engine-unavailable";
+        return observation;
+    }
+    ScopedRoutePreparationState activeState(&implementation_->state);
+    const auto expanded = TryBuildExpandedFmsRouteCache(
+        networkPlan, cancellation);
+    if (RouteCancellationRequested(cancellation)) {
+        observation.cancelled = true;
+        observation.reason = "cooperative-cancellation";
+        return observation;
+    }
+    std::size_t hash = 0;
+    HashCombineString(&hash, "EXPANDED_FMS_OBSERVATION_V1");
+    HashCombine(&hash, static_cast<std::size_t>(
+        HashRouteNetworkPlan(networkPlan)));
+    if (expanded.has_value()) {
+        observation.hasMatchingPlan = true;
+        HashCombineString(&hash, expanded->sourceName);
+        HashCombine(&hash, static_cast<std::size_t>(
+            HashRoutePreflightCandidate(
+                &expanded->cache, expanded->sourceName)));
+        observation.reason = "expanded-fms-match";
+    } else {
+        HashCombineString(&hash, "NO_MATCHING_EXPANDED_FMS");
+        observation.reason = "expanded-fms-no-match";
+    }
+    observation.identity = static_cast<std::uint64_t>(hash == 0 ? 1 : hash);
+    return observation;
+}
+
+void RoutePreparationEngine::Reset() {
+    if (implementation_ == nullptr) {
+        return;
+    }
+    const auto root = implementation_->state.xplaneRootPath;
+    const auto source = implementation_->state.source;
+    implementation_->state = {};
+    implementation_->state.xplaneRootPath = root;
+    implementation_->state.source = source;
+}
+
+std::uint64_t HashRouteNetworkPlan(
+    const brain::NetworkPlanSnapshot& networkPlan) {
+    std::size_t hash = 0;
+    HashCombine(&hash, networkPlan.feedAvailable ? 1U : 0U);
+    HashCombine(&hash, networkPlan.stale ? 1U : 0U);
+    HashCombine(&hash, networkPlan.matched ? 1U : 0U);
+    HashCombine(&hash, static_cast<std::size_t>(networkPlan.cid));
+    HashCombineString(&hash, networkPlan.matchedCallsign);
+    HashCombineString(&hash, networkPlan.departureIcao);
+    HashCombineDouble(&hash, networkPlan.departureLatDeg);
+    HashCombineDouble(&hash, networkPlan.departureLonDeg);
+    HashCombine(&hash, networkPlan.hasDepartureCoordinates ? 1U : 0U);
+    HashCombineString(&hash, networkPlan.destinationIcao);
+    HashCombineDouble(&hash, networkPlan.destinationLatDeg);
+    HashCombineDouble(&hash, networkPlan.destinationLonDeg);
+    HashCombine(&hash, networkPlan.hasDestinationCoordinates ? 1U : 0U);
+    HashCombineString(&hash, networkPlan.routeText);
+    return static_cast<std::uint64_t>(hash == 0 ? 1 : hash);
+}
+
+std::uint64_t HashRoutePreflightCandidate(
+    const core::preflight::PreflightRouteCache* candidate,
+    std::string_view validationReason) {
+    std::size_t hash = 0;
+    HashCombine(&hash, candidate == nullptr ? 0U : 1U);
+    HashCombineString(&hash, std::string(validationReason));
+    if (candidate == nullptr) {
+        return static_cast<std::uint64_t>(hash == 0 ? 1 : hash);
+    }
+    HashCombine(&hash, static_cast<std::size_t>(candidate->schemaVersion));
+    HashCombineString(&hash, candidate->builderVersion);
+    HashCombineString(&hash, candidate->compatibilityVersion);
+    HashCombineString(&hash, candidate->plan.sourcePath);
+    HashCombine(&hash, static_cast<std::size_t>(
+        candidate->plan.sourceModifiedUnixSeconds));
+    HashCombine(&hash, static_cast<std::size_t>(
+        candidate->plan.sourceSizeBytes));
+    HashCombineString(&hash, candidate->plan.sourceContentHash);
+    HashCombineString(&hash, candidate->plan.departureIcao);
+    HashCombineString(&hash, candidate->plan.destinationIcao);
+    HashCombineString(&hash, candidate->plan.routeIdentityHash);
+    HashCombine(&hash, candidate->plan.waypoints.size());
+    for (const auto& waypoint : candidate->plan.waypoints) {
+        HashCombine(&hash, static_cast<std::size_t>(waypoint.type));
+        HashCombineString(&hash, waypoint.ident);
+        HashCombineString(&hash, waypoint.via);
+        HashCombineDouble(&hash, waypoint.altitudeFt);
+        HashCombineDouble(&hash, waypoint.latitudeDeg);
+        HashCombineDouble(&hash, waypoint.longitudeDeg);
+    }
+    return static_cast<std::uint64_t>(hash == 0 ? 1 : hash);
+}
+
+std::uint64_t HashRouteAnchor(
+    const brain::AircraftStateSnapshot& aircraft,
+    const brain::NetworkPlanSnapshot& networkPlan) {
+    std::size_t hash = 0;
+    HashCombine(&hash, networkPlan.hasDepartureCoordinates ? 1U : 0U);
+    if (!networkPlan.hasDepartureCoordinates) {
+        HashCombine(&hash, aircraft.valid ? 1U : 0U);
+        HashCombineDouble(&hash, aircraft.latitudeDeg);
+        HashCombineDouble(&hash, aircraft.longitudeDeg);
+    }
+    return static_cast<std::uint64_t>(hash == 0 ? 1 : hash);
+}
+
+brain::AircraftStateSnapshot SelectStickyRouteAnchor(
+    RouteAnchorSelectionState* state,
+    const brain::AircraftStateSnapshot& currentAircraft,
+    const brain::NetworkPlanSnapshot& networkPlan,
+    std::uint64_t networkPlanDigest) {
+    if (state == nullptr || networkPlan.hasDepartureCoordinates) {
+        return currentAircraft;
+    }
+    const auto recapture = !state->captured ||
+        state->networkPlanDigest != networkPlanDigest ||
+        (!state->anchor.valid && currentAircraft.valid);
+    if (recapture) {
+        state->captured = true;
+        state->networkPlanDigest = networkPlanDigest;
+        state->anchor = currentAircraft;
+    }
+    return state->anchor;
+}
+
+RouteCoordinatorDecision DecideRouteCoordinatorAction(
+    const RouteCoordinatorDecisionInput& input) {
+    RouteCoordinatorDecision decision;
+    if (!input.sourceUsable) {
+        decision.failClosed = true;
+        decision.reason = "route-source-unusable";
+        return decision;
+    }
+    if (input.hasEligibleRequest) {
+        decision.failClosed = !input.acceptedCurrent;
+        decision.reason = "route-worker-busy";
+        return decision;
+    }
+    if (!input.fmsObservationReady) {
+        decision.action = RouteCoordinatorAction::ObserveExpandedFms;
+        decision.failClosed = true;
+        decision.reason = "expanded-fms-observation-required";
+        return decision;
+    }
+    if ((!input.acceptedCurrent || input.brainNeedsWorker) &&
+        input.retryDue) {
+        decision.action = RouteCoordinatorAction::PrepareRoute;
+        decision.failClosed = true;
+        decision.reason = input.brainNeedsWorker
+            ? "unresolved-route-retry"
+            : "route-preparation-required";
+        return decision;
+    }
+    if (input.acceptedCurrent && input.fmsObservationDue &&
+        !input.workerBusy) {
+        decision.action = RouteCoordinatorAction::ObserveExpandedFms;
+        decision.reason = "expanded-fms-quiet-observation-due";
+        return decision;
+    }
+    decision.failClosed = input.brainNeedsWorker || !input.acceptedCurrent;
+    decision.reason = input.retryDue
+        ? "route-coordinator-stable"
+        : "route-retry-backoff";
+    return decision;
+}
+
+std::uint64_t RoutePreparationPolicyIdentity() {
+    static const std::uint64_t identity = []() {
+        std::size_t hash = 0;
+        HashCombineString(
+            &hash,
+            "GATE_B_B3_1_ROUTE_PREPARATION_V2|EXACT|SANITY_30|EXPANDED_FMS_OBSERVED");
+        return static_cast<std::uint64_t>(hash == 0 ? 1 : hash);
+    }();
+    return identity;
+}
+
+bool SameRouteWorkerSemanticIdentity(
+    const RouteWorkerIdentity& left,
+    const RouteWorkerIdentity& right) {
+    return left.lifecycleEpoch == right.lifecycleEpoch &&
+           left.planKey == right.planKey &&
+           left.networkPlanDigest == right.networkPlanDigest &&
+           left.routeSourceDatasetIdentity ==
+               right.routeSourceDatasetIdentity &&
+           left.preflightCandidateIdentity ==
+               right.preflightCandidateIdentity &&
+           left.routePolicyIdentity == right.routePolicyIdentity &&
+           left.routeAnchorDigest == right.routeAnchorDigest &&
+           left.expandedFmsObservationIdentity ==
+               right.expandedFmsObservationIdentity;
+}
+
 brain::RouteSectorSnapshot RouteSectorResolver::BuildSnapshot(
+    const brain::AircraftStateSnapshot& aircraftState,
+    const brain::NetworkPlanSnapshot& networkPlanSnapshot) const {
+    RoutePreparationRequest request;
+    request.routeAnchor = aircraftState;
+    request.networkPlan =
+        std::make_shared<const brain::NetworkPlanSnapshot>(
+            networkPlanSnapshot);
+    request.routeSourceDataset =
+        GetRouteSourceDatasetPublication().dataset;
+    if (preflightRouteCache_.has_value()) {
+        request.preflightCandidate = std::make_shared<
+            const core::preflight::PreflightRouteCache>(
+                *preflightRouteCache_);
+        request.preflightValidationReason = preflightRouteCacheReason_;
+    }
+    if (synchronousRouteOracleEngine_ == nullptr) {
+        brain::RouteSectorSnapshot unavailable;
+        unavailable.available = false;
+        unavailable.stale = true;
+        unavailable.statusLine = "ROUTE engine unavailable";
+        return unavailable;
+    }
+    auto prepared = synchronousRouteOracleEngine_->Prepare(request);
+    if (prepared.route == nullptr) {
+        brain::RouteSectorSnapshot unavailable;
+        unavailable.available = false;
+        unavailable.stale = true;
+        unavailable.statusLine = "ROUTE engine unavailable";
+        return unavailable;
+    }
+    auto oracleSnapshot = *prepared.route;
+    oracleSnapshot.diagnosticCacheStatus.clear();
+    oracleSnapshot.diagnosticReason.clear();
+    return oracleSnapshot;
+}
+
+brain::RouteSectorSnapshot RouteSectorResolver::BuildSnapshotFrozenOracle(
     const brain::AircraftStateSnapshot& aircraftState,
     const brain::NetworkPlanSnapshot& networkPlanSnapshot) const {
     brain::RouteSectorSnapshot snapshot;
@@ -12807,59 +13713,90 @@ brain::AirportSectorSnapshot RouteSectorResolver::BuildAirportCoverageSnapshot(
 }
 
 void RouteSectorResolver::StartAsyncBoundaryFetch(long long nowSeconds) const {
-    if (fetchThread_.joinable()) {
-        fetchThread_.join();
+    bool expected = false;
+    if (!sourceRefreshStarted_.compare_exchange_strong(
+            expected,
+            true,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire)) {
+        return;
     }
-
-    lastFetchTickSeconds_ = nowSeconds;
-    fetchInProgress_ = true;
+    sourceRefreshStop_.store(false, std::memory_order_release);
+    lastFetchTickSeconds_.store(nowSeconds, std::memory_order_release);
+    fetchInProgress_.store(true, std::memory_order_release);
     fetchThread_ = std::thread([this]() {
-        const auto mapDataManifest = DownloadMapDataManifest();
-        const auto payload = DownloadBoundaryPayload(mapDataManifest);
-        const auto vatspyPayload = DownloadVatSpyDataPayload(mapDataManifest);
-        const auto terminalPayload = DownloadTerminalBoundaryPayload(mapDataManifest);
-        const auto ownershipPayload = DownloadOwnershipPayload(mapDataManifest);
-        std::vector<unsigned char> boundaryPayload(payload.begin(), payload.end());
-        std::vector<unsigned char> authorityCatalogPayload(
-            vatspyPayload.begin(),
-            vatspyPayload.end());
-        std::vector<unsigned char> terminalBoundaryPayload(
-            terminalPayload.begin(),
-            terminalPayload.end());
-        std::vector<unsigned char> ownershipAuthorityPayload(
-            ownershipPayload.begin(),
-            ownershipPayload.end());
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+        while (!sourceRefreshStop_.load(std::memory_order_acquire)) {
+            lastFetchTickSeconds_.store(
+                CurrentTickSeconds(), std::memory_order_release);
+            fetchInProgress_.store(true, std::memory_order_release);
+            const auto mapDataManifest = DownloadMapDataManifest();
+            const auto payload = DownloadBoundaryPayload(mapDataManifest);
+            const auto vatspyPayload =
+                DownloadVatSpyDataPayload(mapDataManifest);
+            const auto terminalPayload =
+                DownloadTerminalBoundaryPayload(mapDataManifest);
+            const auto ownershipPayload =
+                DownloadOwnershipPayload(mapDataManifest);
+            std::vector<unsigned char> boundaryPayload(
+                payload.begin(), payload.end());
+            std::vector<unsigned char> authorityCatalogPayload(
+                vatspyPayload.begin(), vatspyPayload.end());
+            std::vector<unsigned char> terminalBoundaryPayload(
+                terminalPayload.begin(), terminalPayload.end());
+            std::vector<unsigned char> ownershipAuthorityPayload(
+                ownershipPayload.begin(), ownershipPayload.end());
 
-        // Warm the polygon caches off the X-Plane thread so the first sector lookup
-        // does not pay the GeoJSON parse cost during taxi or departure.
-        if (!boundaryPayload.empty()) {
-            (void)GetCachedSectorFeatures(boundaryPayload);
-        }
-        if (!authorityCatalogPayload.empty()) {
-            (void)GetCachedControllerAuthorityCatalog(
-                authorityCatalogPayload,
-                ownershipAuthorityPayload);
-            (void)GetCachedCoreControllerAuthorityCatalog(
-                authorityCatalogPayload,
-                terminalBoundaryPayload,
-                ownershipAuthorityPayload);
-        }
-        if (!terminalBoundaryPayload.empty()) {
-            (void)GetCachedTerminalSectorFeatures(terminalBoundaryPayload);
-        }
-        if (!boundaryPayload.empty() && !authorityCatalogPayload.empty()) {
-            (void)GetCachedCoreAuthorityPolygonCatalog(
-                boundaryPayload,
-                terminalBoundaryPayload,
-                ownershipAuthorityPayload);
-        }
+            // Compile and warm each publication on this coordinator, never
+            // on X-Plane's callback thread.
+            if (!boundaryPayload.empty()) {
+                (void)GetCachedSectorFeatures(boundaryPayload);
+            }
+            if (!authorityCatalogPayload.empty()) {
+                (void)GetCachedControllerAuthorityCatalog(
+                    authorityCatalogPayload,
+                    ownershipAuthorityPayload);
+                (void)GetCachedCoreControllerAuthorityCatalog(
+                    authorityCatalogPayload,
+                    terminalBoundaryPayload,
+                    ownershipAuthorityPayload);
+            }
+            if (!terminalBoundaryPayload.empty()) {
+                (void)GetCachedTerminalSectorFeatures(
+                    terminalBoundaryPayload);
+            }
+            if (!boundaryPayload.empty() &&
+                !authorityCatalogPayload.empty()) {
+                (void)GetCachedCoreAuthorityPolygonCatalog(
+                    boundaryPayload,
+                    terminalBoundaryPayload,
+                    ownershipAuthorityPayload);
+            }
 
-        StageFetchedPayloads(
-            std::move(boundaryPayload),
-            std::move(terminalBoundaryPayload),
-            std::move(authorityCatalogPayload),
-            std::move(ownershipAuthorityPayload));
-        fetchInProgress_ = false;
+            const auto completePackage = !boundaryPayload.empty() &&
+                !authorityCatalogPayload.empty() &&
+                !terminalBoundaryPayload.empty();
+            StageFetchedPayloads(
+                std::move(boundaryPayload),
+                std::move(terminalBoundaryPayload),
+                std::move(authorityCatalogPayload),
+                std::move(ownershipAuthorityPayload));
+            fetchInProgress_.store(false, std::memory_order_release);
+
+            std::unique_lock<std::mutex> waitLock(
+                sourceRefreshWaitMutex_);
+            sourceRefreshWait_.wait_for(
+                waitLock,
+                std::chrono::seconds(
+                    completePackage
+                        ? kRefreshCadenceSeconds
+                        : kFailureBackoffSeconds),
+                [this]() {
+                    return sourceRefreshStop_.load(
+                        std::memory_order_acquire);
+                });
+        }
+        fetchInProgress_.store(false, std::memory_order_release);
     });
 }
 
@@ -12874,8 +13811,20 @@ void RouteSectorResolver::StageFetchedPayloads(
     std::vector<unsigned char> effectiveAuthorityCatalogPayload =
         authorityCatalogPayload;
     std::vector<unsigned char> effectiveOwnershipPayload = ownershipPayload;
+    const auto hasCenterPackage =
+        !boundaryPayload.empty() && !authorityCatalogPayload.empty();
+    bool centerContentChanged = false;
+    bool terminalContentChanged = false;
+    bool authorityDatasetMissing = false;
     {
         std::lock_guard<std::mutex> lock(fetchMutex_);
+        centerContentChanged = hasCenterPackage &&
+            (boundaryPayload != boundaryPayload_ ||
+             authorityCatalogPayload != vatspyPayload_ ||
+             ownershipPayload != ownershipPayload_);
+        terminalContentChanged = !terminalBoundaryPayload.empty() &&
+            terminalBoundaryPayload != terminalBoundaryPayload_;
+        authorityDatasetMissing = authorityDataset_ == nullptr;
         if (effectiveBoundaryPayload.empty()) {
             effectiveBoundaryPayload = boundaryPayload_;
         }
@@ -12889,37 +13838,52 @@ void RouteSectorResolver::StageFetchedPayloads(
             effectiveOwnershipPayload = ownershipPayload_;
         }
     }
-    const auto compiledDataset = BuildAuthoritySourceDataset(
-        effectiveBoundaryPayload,
-        effectiveTerminalBoundaryPayload,
-        effectiveAuthorityCatalogPayload,
-        effectiveOwnershipPayload);
-    std::lock_guard<std::mutex> lock(fetchMutex_);
-    pendingBoundaryPayload_.clear();
-    pendingVatspyPayload_.clear();
-    pendingTerminalBoundaryPayload_.clear();
-    pendingOwnershipPayload_.clear();
-    pendingAuthorityDataset_.reset();
+    const auto compiledDataset =
+        centerContentChanged || terminalContentChanged ||
+                authorityDatasetMissing
+            ? BuildAuthoritySourceDataset(
+                  effectiveBoundaryPayload,
+                  effectiveTerminalBoundaryPayload,
+                  effectiveAuthorityCatalogPayload,
+                  effectiveOwnershipPayload)
+            : std::shared_ptr<AuthoritySourceDataset>{};
+    const auto compiledRouteDataset =
+        centerContentChanged
+            ? BuildRouteSourceDataset(
+                  effectiveBoundaryPayload,
+                  effectiveAuthorityCatalogPayload,
+                  effectiveOwnershipPayload)
+            : std::shared_ptr<RouteSourceDataset>{};
+    {
+        std::lock_guard<std::mutex> lock(fetchMutex_);
+        pendingBoundaryPayload_.clear();
+        pendingVatspyPayload_.clear();
+        pendingTerminalBoundaryPayload_.clear();
+        pendingOwnershipPayload_.clear();
+        pendingAuthorityDataset_.reset();
+        pendingRouteDataset_.reset();
 
-    if (!boundaryPayload.empty() && !authorityCatalogPayload.empty()) {
-        pendingBoundaryPayload_ = std::move(boundaryPayload);
-        pendingVatspyPayload_ = std::move(authorityCatalogPayload);
-        pendingOwnershipPayload_ = std::move(ownershipPayload);
+        if (!boundaryPayload.empty() && !authorityCatalogPayload.empty()) {
+            pendingBoundaryPayload_ = std::move(boundaryPayload);
+            pendingVatspyPayload_ = std::move(authorityCatalogPayload);
+            pendingOwnershipPayload_ = std::move(ownershipPayload);
+        }
+        if (!terminalBoundaryPayload.empty()) {
+            pendingTerminalBoundaryPayload_ =
+                std::move(terminalBoundaryPayload);
+        }
+        pendingAuthorityDataset_ = compiledDataset;
+        pendingRouteDataset_ = compiledRouteDataset;
+        hasPendingPayload_ = true;
     }
-    if (!terminalBoundaryPayload.empty()) {
-        pendingTerminalBoundaryPayload_ = std::move(terminalBoundaryPayload);
-    }
-    pendingAuthorityDataset_ = compiledDataset;
-    hasPendingPayload_ = true;
+    pendingPublicationReady_.store(true, std::memory_order_release);
 }
 
 void RouteSectorResolver::HarvestPendingFetch() const {
-    if (fetchInProgress_) {
+    if (fetchInProgress_.load(std::memory_order_acquire) ||
+        !pendingPublicationReady_.exchange(
+            false, std::memory_order_acq_rel)) {
         return;
-    }
-
-    if (fetchThread_.joinable()) {
-        fetchThread_.join();
     }
 
     std::lock_guard<std::mutex> lock(fetchMutex_);
@@ -12931,37 +13895,53 @@ void RouteSectorResolver::HarvestPendingFetch() const {
     const auto hasPendingCenterPackage =
         !pendingBoundaryPayload_.empty() && !pendingVatspyPayload_.empty();
     const auto hasPendingTerminalPackage = !pendingTerminalBoundaryPayload_.empty();
-    if (!hasPendingCenterPackage && !hasPendingTerminalPackage) {
-        lastFetchSucceeded_ = false;
-        return;
-    }
+    const auto centerContentChanged =
+        hasPendingCenterPackage && pendingRouteDataset_ != nullptr;
+    const auto terminalContentChanged =
+        hasPendingTerminalPackage &&
+        pendingTerminalBoundaryPayload_ != terminalBoundaryPayload_;
+    const auto previousRoutePublication = std::atomic_load_explicit(
+        &publishedRoutePublication_, std::memory_order_acquire);
 
     if (hasPendingCenterPackage) {
-        boundaryPayload_ = std::move(pendingBoundaryPayload_);
-        vatspyPayload_ = std::move(pendingVatspyPayload_);
-        ownershipPayload_ = std::move(pendingOwnershipPayload_);
-        hasBoundaryCache_ = true;
-        hasAuthorityCatalogCache_ = true;
-        ++centerBoundaryGeneration_;
-        ++authorityCatalogGeneration_;
-        if (centerBoundaryGeneration_ == 0) {
-            centerBoundaryGeneration_ = 1;
-        }
-        if (authorityCatalogGeneration_ == 0) {
-            authorityCatalogGeneration_ = 1;
+        if (centerContentChanged || !hasBoundaryCache_ ||
+            !hasAuthorityCatalogCache_) {
+            boundaryPayload_ = std::move(pendingBoundaryPayload_);
+            vatspyPayload_ = std::move(pendingVatspyPayload_);
+            ownershipPayload_ = std::move(pendingOwnershipPayload_);
+            hasBoundaryCache_ = true;
+            hasAuthorityCatalogCache_ = true;
+            ++centerBoundaryGeneration_;
+            ++authorityCatalogGeneration_;
+            if (centerBoundaryGeneration_ == 0) {
+                centerBoundaryGeneration_ = 1;
+            }
+            if (authorityCatalogGeneration_ == 0) {
+                authorityCatalogGeneration_ = 1;
+            }
         }
         lastSuccessfulCenterFetchTickSeconds_ = CurrentTickSeconds();
     }
     if (hasPendingTerminalPackage) {
-        terminalBoundaryPayload_ = std::move(pendingTerminalBoundaryPayload_);
-        hasTerminalBoundaryCache_ = true;
-        ++terminalBoundaryGeneration_;
-        if (terminalBoundaryGeneration_ == 0) {
-            terminalBoundaryGeneration_ = 1;
+        // Preserve the legacy coherent-package generation contract: a real
+        // center/authority replacement advances the terminal generation even
+        // when the terminal bytes happen to be unchanged. A wholly identical
+        // refresh remains quiet across every generation and publication.
+        if (terminalContentChanged || centerContentChanged ||
+            !hasTerminalBoundaryCache_) {
+            terminalBoundaryPayload_ =
+                std::move(pendingTerminalBoundaryPayload_);
+            hasTerminalBoundaryCache_ = true;
+            ++terminalBoundaryGeneration_;
+            if (terminalBoundaryGeneration_ == 0) {
+                terminalBoundaryGeneration_ = 1;
+            }
         }
         lastSuccessfulTerminalFetchTickSeconds_ = CurrentTickSeconds();
     }
-    if (pendingAuthorityDataset_ != nullptr) {
+    if (pendingAuthorityDataset_ != nullptr &&
+        (centerContentChanged || terminalContentChanged ||
+         authorityDataset_ == nullptr)) {
         pendingAuthorityDataset_->terminalBoundaryGeneration =
             terminalBoundaryGeneration_;
         authorityDataset_ = pendingAuthorityDataset_;
@@ -12974,11 +13954,41 @@ void RouteSectorResolver::HarvestPendingFetch() const {
         publishedTerminalBoundaryGeneration_.store(
             terminalBoundaryGeneration_, std::memory_order_release);
     }
+    if (pendingRouteDataset_ != nullptr) {
+        pendingRouteDataset_->centerBoundaryGeneration =
+            centerBoundaryGeneration_;
+        pendingRouteDataset_->authorityCatalogGeneration =
+            authorityCatalogGeneration_;
+        routeDataset_ = pendingRouteDataset_;
+    }
+
+    const auto routeAvailable = routeDataset_ != nullptr;
+    const auto routeStale = !hasPendingCenterPackage || !routeAvailable;
+    const auto routePublicationChanged =
+        previousRoutePublication == nullptr ||
+        centerContentChanged ||
+        previousRoutePublication->available != routeAvailable ||
+        previousRoutePublication->stale != routeStale;
+    if (routePublicationChanged) {
+        ++routePublicationGeneration_;
+        if (routePublicationGeneration_ == 0) {
+            routePublicationGeneration_ = 1;
+        }
+        std::atomic_store_explicit(
+            &publishedRoutePublication_,
+            BuildRouteDatasetPublicationState(
+                std::shared_ptr<const RouteSourceDataset>(routeDataset_),
+                routePublicationGeneration_,
+                routeAvailable,
+                routeStale),
+            std::memory_order_release);
+    }
     pendingBoundaryPayload_.clear();
     pendingVatspyPayload_.clear();
     pendingTerminalBoundaryPayload_.clear();
     pendingOwnershipPayload_.clear();
     pendingAuthorityDataset_.reset();
+    pendingRouteDataset_.reset();
     lastFetchSucceeded_ = hasPendingCenterPackage && hasPendingTerminalPackage;
     hasSnapshotCache_ = false;
     lastSnapshotRouteKey_.clear();
@@ -13034,22 +14044,24 @@ bool RouteSectorResolver::IsTerminalBoundaryCacheFresh(long long nowSeconds) con
 bool RouteSectorResolver::RefreshBoundariesIfNeeded() const {
     const auto nowSeconds = CurrentTickSeconds();
     HarvestPendingFetch();
+    const auto lastFetchTickSeconds =
+        lastFetchTickSeconds_.load(std::memory_order_acquire);
 
     const auto cadenceSeconds =
         lastFetchSucceeded_ ? kRefreshCadenceSeconds : kFailureBackoffSeconds;
     if ((hasBoundaryCache_ || hasTerminalBoundaryCache_) &&
-        (nowSeconds - lastFetchTickSeconds_) < cadenceSeconds) {
+        (nowSeconds - lastFetchTickSeconds) < cadenceSeconds) {
         return lastFetchSucceeded_;
     }
 
     if (!hasBoundaryCache_ &&
         !hasTerminalBoundaryCache_ &&
-        lastFetchTickSeconds_ != 0 &&
-        (nowSeconds - lastFetchTickSeconds_) < cadenceSeconds) {
+        lastFetchTickSeconds != 0 &&
+        (nowSeconds - lastFetchTickSeconds) < cadenceSeconds) {
         return false;
     }
 
-    if (!fetchInProgress_) {
+    if (!sourceRefreshStarted_.load(std::memory_order_acquire)) {
         StartAsyncBoundaryFetch(nowSeconds);
     }
 

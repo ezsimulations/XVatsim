@@ -87,8 +87,10 @@ BrainRoutePolygonWorkerOutput RouteOutputFromState(
     const BrainOwnedRuntimeState& state,
     std::string reason) {
     BrainRoutePolygonWorkerOutput output;
-    output.available = state.routePolygonSnapshot.available;
-    output.stale = state.routePolygonSnapshot.stale;
+    output.available = state.routePolygonSnapshot != nullptr &&
+        state.routePolygonSnapshot->available;
+    output.stale = state.routePolygonSnapshot == nullptr ||
+        state.routePolygonSnapshot->stale;
     output.route = state.routePolygonSnapshot;
     output.routePolygonHash = state.routePolygonHash;
     output.currentPolygonIndex = state.currentPolygonIndex;
@@ -106,7 +108,7 @@ void ResetRoutePolygonState(BrainOwnedRuntimeState* state) {
     }
     state->hasRoutePolygonSnapshot = false;
     state->routePlanKey.clear();
-    state->routePolygonSnapshot = {};
+    state->routePolygonSnapshot.reset();
     state->routePolygonHash = 0;
     state->authorityRouteDigest = 0;
     state->authorityRouteSnapshot.reset();
@@ -125,8 +127,9 @@ RoutePolygonTransitionWorkerOutput ApplyRoutePolygonTransition(
     const AircraftStateSnapshot& aircraft,
     BrainRoutePolygonWorkerOutput* output) {
     RoutePolygonTransitionWorkerOutput transition;
-    if (state == nullptr || output == nullptr || !output->route.available ||
-        output->route.stale || !output->route.routeResolved) {
+    if (state == nullptr || output == nullptr || output->route == nullptr ||
+        !output->route->available || output->route->stale ||
+        !output->route->routeResolved) {
         return transition;
     }
 
@@ -139,7 +142,7 @@ RoutePolygonTransitionWorkerOutput ApplyRoutePolygonTransition(
     if (transition.available && transition.routeResolved) {
         output->route = transition.route;
         output->routePolygonHash =
-            HashBrainRouteSectorSnapshot(output->route);
+            HashBrainRouteSectorSnapshot(*output->route);
         output->currentPolygonIndex = transition.currentPolygonIndex;
         output->currentPolygonKey = transition.currentPolygonKey;
         output->nextPolygonKey = transition.nextPolygonKey;
@@ -181,7 +184,8 @@ std::string RouteDiagnosticResult(
     std::ostringstream result;
     result << "available=" << (output.available ? 1 : 0)
            << ",stale=" << (output.stale ? 1 : 0)
-           << ",resolved=" << (output.route.routeResolved ? 1 : 0)
+           << ",resolved="
+           << (output.route != nullptr && output.route->routeResolved ? 1 : 0)
            << ",current=" << output.currentPolygonKey
            << ",next=" << output.nextPolygonKey
            << ",final=" << output.finalRoutePolygonKey
@@ -210,10 +214,10 @@ void StoreRoutePolygonOutput(
     state->routePlanKey = routeRuntimeKey;
     state->routePolygonSnapshot = output.route;
     state->routePolygonHash = output.routePolygonHash;
-    state->authorityRouteDigest =
-        HashBrainAuthorityRouteSnapshot(output.route);
-    state->authorityRouteSnapshot =
-        std::make_shared<const RouteSectorSnapshot>(output.route);
+    state->authorityRouteDigest = output.route != nullptr
+        ? HashBrainAuthorityRouteSnapshot(*output.route)
+        : 0;
+    state->authorityRouteSnapshot = output.route;
     state->currentPolygonIndex = output.currentPolygonIndex;
     state->currentPolygonKey = output.currentPolygonKey;
     state->nextPolygonKey = output.nextPolygonKey;
@@ -274,6 +278,56 @@ std::uint64_t HashBrainAuthorityRouteSnapshot(
         HashCombineDouble(&hash, waypoint.longitudeDeg);
     }
     return static_cast<std::uint64_t>(hash);
+}
+
+bool EqualBrainRouteSectorSnapshotsExact(
+    const RouteSectorSnapshot& left,
+    const RouteSectorSnapshot& right) {
+    const auto equalSector = [](const RouteSectorMatchSnapshot& a,
+                                const RouteSectorMatchSnapshot& b) {
+        return a.identifier == b.identifier &&
+               a.entryDistanceNm == b.entryDistanceNm &&
+               a.matchTokens == b.matchTokens &&
+               a.controllerCallsignPatterns == b.controllerCallsignPatterns &&
+               a.controllerPrefixes == b.controllerPrefixes &&
+               a.centerCoverage == b.centerCoverage &&
+               a.terminalCoverage == b.terminalCoverage;
+    };
+    if (left.available != right.available || left.stale != right.stale ||
+        left.routeResolved != right.routeResolved ||
+        left.statusLine != right.statusLine ||
+        left.diagnosticCacheStatus != right.diagnosticCacheStatus ||
+        left.diagnosticReason != right.diagnosticReason ||
+        left.centerBoundaryGeneration != right.centerBoundaryGeneration ||
+        left.authorityCatalogGeneration !=
+            right.authorityCatalogGeneration ||
+        left.departureIcao != right.departureIcao ||
+        left.destinationIcao != right.destinationIcao ||
+        left.waypoints.size() != right.waypoints.size() ||
+        left.currentSectors.size() != right.currentSectors.size() ||
+        left.nextSectors.size() != right.nextSectors.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < left.waypoints.size(); ++index) {
+        const auto& a = left.waypoints[index];
+        const auto& b = right.waypoints[index];
+        if (a.ident != b.ident || a.latitudeDeg != b.latitudeDeg ||
+            a.longitudeDeg != b.longitudeDeg) {
+            return false;
+        }
+    }
+    for (std::size_t index = 0; index < left.currentSectors.size(); ++index) {
+        if (!equalSector(left.currentSectors[index],
+                         right.currentSectors[index])) {
+            return false;
+        }
+    }
+    for (std::size_t index = 0; index < left.nextSectors.size(); ++index) {
+        if (!equalSector(left.nextSectors[index], right.nextSectors[index])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::uint64_t HashBrainControllerEvidence(
@@ -850,21 +904,94 @@ BrainAuthorityCompletionDecision DecideBrainAuthorityCompletion(
     return decision;
 }
 
+BrainRouteCompletionDecision DecideBrainRouteCompletion(
+    const BrainRouteCompletionValidationInput& input) {
+    BrainRouteCompletionDecision decision;
+    const auto reject = [&](const char* reason) {
+        decision.accepted = false;
+        decision.staleRejected = true;
+        decision.reason = reason;
+        return decision;
+    };
+
+    const auto& eligible = input.eligible;
+    const auto& desired = input.desired;
+    const auto& completed = input.completed;
+    if (completed.requestId == 0 ||
+        completed.requestId != eligible.requestId) {
+        return reject("request-id-mismatch");
+    }
+    if (completed.lifecycleEpoch != eligible.lifecycleEpoch ||
+        completed.lifecycleEpoch != desired.lifecycleEpoch) {
+        return reject("lifecycle-epoch-mismatch");
+    }
+    if (completed.planKey != eligible.planKey ||
+        completed.planKey != desired.planKey) {
+        return reject("plan-identity-mismatch");
+    }
+    if (completed.networkPlanDigest != eligible.networkPlanDigest ||
+        completed.networkPlanDigest != desired.networkPlanDigest) {
+        return reject("network-plan-digest-mismatch");
+    }
+    if (completed.routeSourceDatasetIdentity == 0 ||
+        completed.routeSourceDatasetIdentity !=
+            eligible.routeSourceDatasetIdentity ||
+        completed.routeSourceDatasetIdentity !=
+            desired.routeSourceDatasetIdentity) {
+        return reject("route-source-dataset-identity-mismatch");
+    }
+    if (completed.preflightCandidateIdentity !=
+            eligible.preflightCandidateIdentity ||
+        completed.preflightCandidateIdentity !=
+            desired.preflightCandidateIdentity) {
+        return reject("preflight-candidate-identity-mismatch");
+    }
+    if (completed.routePolicyIdentity != eligible.routePolicyIdentity ||
+        completed.routePolicyIdentity != desired.routePolicyIdentity) {
+        return reject("route-policy-identity-mismatch");
+    }
+    if (completed.routeAnchorDigest != eligible.routeAnchorDigest ||
+        completed.routeAnchorDigest != desired.routeAnchorDigest) {
+        return reject("route-anchor-digest-mismatch");
+    }
+    if (completed.expandedFmsObservationIdentity == 0 ||
+        completed.expandedFmsObservationIdentity !=
+            eligible.expandedFmsObservationIdentity ||
+        completed.expandedFmsObservationIdentity !=
+            desired.expandedFmsObservationIdentity) {
+        return reject("expanded-fms-observation-identity-mismatch");
+    }
+
+    decision.accepted = true;
+    decision.reason = "exact-route-completion-identity";
+    return decision;
+}
+
 BrainRoutePolygonWorkerOutput BuildBrainRoutePolygonWorkerOutput(
     const RouteSectorSnapshot& route) {
+    return BuildBrainRoutePolygonWorkerOutput(
+        std::make_shared<const RouteSectorSnapshot>(route));
+}
+
+BrainRoutePolygonWorkerOutput BuildBrainRoutePolygonWorkerOutput(
+    std::shared_ptr<const RouteSectorSnapshot> route) {
     BrainRoutePolygonWorkerOutput output;
-    output.route = route;
-    output.available = output.route.available;
-    output.stale = output.route.stale;
-    output.routePolygonHash = HashBrainRouteSectorSnapshot(output.route);
-    output.currentPolygonIndex = output.route.currentSectors.empty() ? 0 : 1;
-    output.currentPolygonKey = FirstRoutePolygonKey(output.route.currentSectors);
-    output.nextPolygonKey = FirstRoutePolygonKey(output.route.nextSectors);
-    output.arrivalPolygonKey = LastRoutePolygonKey(output.route);
+    output.route = std::move(route);
+    if (output.route == nullptr) {
+        output.reason = "route-polygon-worker-unavailable";
+        return output;
+    }
+    output.available = output.route->available;
+    output.stale = output.route->stale;
+    output.routePolygonHash = HashBrainRouteSectorSnapshot(*output.route);
+    output.currentPolygonIndex = output.route->currentSectors.empty() ? 0 : 1;
+    output.currentPolygonKey = FirstRoutePolygonKey(output.route->currentSectors);
+    output.nextPolygonKey = FirstRoutePolygonKey(output.route->nextSectors);
+    output.arrivalPolygonKey = LastRoutePolygonKey(*output.route);
     output.finalRoutePolygonKey = output.arrivalPolygonKey;
-    output.reason = output.route.diagnosticReason.empty()
+    output.reason = output.route->diagnosticReason.empty()
                         ? "route-polygon-worker"
-                        : output.route.diagnosticReason;
+                        : output.route->diagnosticReason;
     return output;
 }
 
@@ -887,9 +1014,10 @@ BrainOwnedRoutePolygonRuntimeOutput BeginBrainOwnedRoutePolygonRefresh(
         state->routePlanKey == input.routeRuntimeKey;
     const auto cachedRouteUsable =
         sameRoute &&
-        state->routePolygonSnapshot.available &&
-        !state->routePolygonSnapshot.stale &&
-        state->routePolygonSnapshot.routeResolved;
+        state->routePolygonSnapshot != nullptr &&
+        state->routePolygonSnapshot->available &&
+        !state->routePolygonSnapshot->stale &&
+        state->routePolygonSnapshot->routeResolved;
     const auto pendingRetryDue =
         sameRoute &&
         !cachedRouteUsable &&
@@ -927,11 +1055,17 @@ BrainOwnedRoutePolygonRuntimeOutput BeginBrainOwnedRoutePolygonRefresh(
     }
 
     if (output.transitionChanged) {
+        auto retiredRoute = state != nullptr
+            ? state->routePolygonSnapshot
+            : std::shared_ptr<const RouteSectorSnapshot>{};
         StoreRoutePolygonOutput(
             state,
             input.routeRuntimeKey,
             state->lastRoutePolygonRefreshSeconds,
             output.route);
+        if (retiredRoute != output.route.route) {
+            output.retiredRoute = std::move(retiredRoute);
+        }
         InvalidateRelevanceForRouteChange(
             state,
             output.route,
@@ -958,9 +1092,10 @@ BrainOwnedRoutePolygonRuntimeOutput CommitBrainOwnedRoutePolygonRefresh(
     output.route = workerOutput;
 
     const auto shouldEvaluateTransition =
-        output.route.route.available &&
-        !output.route.route.stale &&
-        output.route.route.routeResolved;
+        output.route.route != nullptr &&
+        output.route.route->available &&
+        !output.route.route->stale &&
+        output.route.route->routeResolved;
     RoutePolygonTransitionWorkerOutput transition;
     if (shouldEvaluateTransition) {
         output.transitionEvaluated = true;
@@ -986,11 +1121,17 @@ BrainOwnedRoutePolygonRuntimeOutput CommitBrainOwnedRoutePolygonRefresh(
         state->currentPolygonKey != output.route.currentPolygonKey ||
         output.transitionChanged;
 
+    auto retiredRoute = state != nullptr
+        ? state->routePolygonSnapshot
+        : std::shared_ptr<const RouteSectorSnapshot>{};
     StoreRoutePolygonOutput(
         state,
         input.routeRuntimeKey,
         input.nowSeconds,
         output.route);
+    if (retiredRoute != output.route.route) {
+        output.retiredRoute = std::move(retiredRoute);
+    }
     if (output.routeChanged) {
         InvalidateRelevanceForRouteChange(
             state,
@@ -1000,9 +1141,10 @@ BrainOwnedRoutePolygonRuntimeOutput CommitBrainOwnedRoutePolygonRefresh(
 
     output.reason = output.route.reason;
     output.cacheStatus =
-        output.route.route.diagnosticCacheStatus.empty()
+        output.route.route == nullptr ||
+                output.route.route->diagnosticCacheStatus.empty()
             ? "route-polygon-worker"
-            : output.route.route.diagnosticCacheStatus;
+            : output.route.route->diagnosticCacheStatus;
     output.diagnosticResult =
         RouteDiagnosticResult(
             output.route,

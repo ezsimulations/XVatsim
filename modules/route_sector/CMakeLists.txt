@@ -1,4 +1,5 @@
 add_library(XVatsimRouteSector STATIC
+    src/RoutePreparationWorker.cpp
     src/RouteSectorResolver.cpp
 )
 

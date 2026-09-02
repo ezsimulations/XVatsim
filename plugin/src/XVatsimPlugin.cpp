@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -12,6 +13,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -128,6 +130,7 @@ constexpr long long kDiagnosticsSummaryIntervalSeconds = 30;
 constexpr int kDiagnosticsRetainedDateLogCount = 3;
 constexpr long long kRadioBoardSnapshotCadenceSeconds = 1;
 constexpr long long kRadioBoardPendingRouteRetrySeconds = 2;
+constexpr long long kExpandedFmsObservationIntervalMs = 15000;
 constexpr long long kActiveFlightPlanSampleCadenceSeconds = 15;
 constexpr long long kEngineer3RadioBoardRefreshSeconds = 5;
 constexpr std::size_t kDiagnosticsMaxTraceItems = 24;
@@ -263,6 +266,7 @@ xvatsim::modules::pilot_identity::PilotIdentityResolver gPilotIdentityResolver;
 xvatsim::modules::radio_state::RadioStateSampler gRadioStateSampler;
 xvatsim::modules::route_sector::RouteSectorResolver gRouteSectorResolver;
 xvatsim::modules::route_sector::AuthorityRelevanceWorker gAuthorityRelevanceWorker;
+xvatsim::modules::route_sector::RoutePreparationWorker gRoutePreparationWorker;
 xvatsim::modules::runtime_workers::AsyncDiagnosticsWriter gDiagnosticsWriter;
 xvatsim::modules::runtime_workers::AsyncFactWorkerHost gAsyncFactWorkerHost;
 xvatsim::modules::settings_store::SettingsStore gSettingsStore;
@@ -325,10 +329,60 @@ struct AuthorityAsyncRuntimeState {
 };
 
 AuthorityAsyncRuntimeState gAuthorityAsyncRuntime;
+
+struct RouteAsyncRuntimeState {
+    std::uint64_t lifecycleEpoch = 1;
+    std::uint64_t nextRequestId = 1;
+    bool hasDesiredIdentity = false;
+    xvatsim::modules::route_sector::RouteWorkerIdentity desiredIdentity;
+    bool hasEligibleRequest = false;
+    xvatsim::modules::route_sector::RoutePreparationRequest::Kind eligibleKind =
+        xvatsim::modules::route_sector::RoutePreparationRequest::Kind::PrepareRoute;
+    xvatsim::modules::route_sector::RouteWorkerIdentity eligibleRequest;
+    xvatsim::modules::route_sector::RouteWorkerIdentity acceptedIdentity;
+    std::shared_ptr<const xvatsim::brain::RouteSectorSnapshot> acceptedRoute;
+    std::shared_ptr<xvatsim::modules::route_sector::RouteSnapshotLease>
+        acceptedLease;
+    std::uint64_t acceptedDigest = 0;
+    std::uint64_t dispatchCount = 0;
+    std::uint64_t acceptedCount = 0;
+    std::uint64_t staleRejectedCount = 0;
+    std::uint64_t failureCount = 0;
+    std::uint64_t invalidationCount = 0;
+    std::uint64_t pendingReplacementCount = 0;
+    std::uint64_t observedSourceIdentity = 0;
+    xvatsim::modules::route_sector::RouteAnchorSelectionState anchorSelection;
+    std::uint64_t fmsObservationNetworkPlanDigest = 0;
+    std::uint64_t fmsObservationIdentity = 0;
+    bool fmsObservationReady = false;
+    long long nextFmsObservationMonotonicMs = 0;
+    long long nextRouteRetryMonotonicMs = 0;
+    std::uint64_t fmsObservationDispatchCount = 0;
+    std::uint64_t fmsObservationAcceptedCount = 0;
+    std::uint64_t fmsObservationChangedCount = 0;
+    std::uint64_t unresolvedRetryDispatchCount = 0;
+    std::uint64_t maximumSubmitUs = 0;
+    std::uint64_t maximumMailboxExchangeUs = 0;
+    std::uint64_t maximumHarvestUs = 0;
+    std::uint64_t maximumTransitionUs = 0;
+    std::array<
+        std::shared_ptr<const xvatsim::brain::RouteSectorSnapshot>,
+        64> deferredRouteRetirements;
+    std::shared_ptr<const xvatsim::brain::RouteSectorSnapshot>
+        invariantFailureRetirement;
+    std::uint64_t retirementBacklogPeak = 0;
+};
+
+RouteAsyncRuntimeState gRouteAsyncRuntime;
 xvatsim::brain::BrainOwnedAccessoryProjectionCounters
     gAccessoryProjectionCounters;
 std::uint64_t gLastAccessorySemanticPresentationGeneration = 0;
-std::optional<xvatsim::core::preflight::PreflightRouteCache> gPreflightRouteCacheCandidate;
+std::shared_ptr<const xvatsim::core::preflight::PreflightRouteCache>
+    gPreflightRouteCacheCandidate;
+std::shared_ptr<const xvatsim::core::preflight::PreflightRouteCache>
+    gSelectedPreflightRouteCache;
+std::string gSelectedPreflightPlanKey;
+std::string gSelectedPreflightValidationReason;
 std::string gPreflightRouteCachePath;
 std::optional<xvatsim::modules::update_checker::UpdateCheckResult>
     gUpdateSessionResult;
@@ -376,6 +430,7 @@ void LogCandidateCompletionTrace(
     const std::string& planKey);
 long long CurrentTickMilliseconds();
 void InvalidateAuthorityAsyncRuntime(const char* reason);
+void InvalidateRouteAsyncRuntime(const char* reason);
 
 std::string SummarizeRouteAuthorityPlan(
     const xvatsim::brain::RouteAuthorityPlan& plan);
@@ -625,6 +680,8 @@ void DiscardPendingTextEntryState() {
 void ResetSessionRuntimeCaches(
     bool resetVatsimFeed,
     bool preserveAccessory = false) {
+    InvalidateRouteAsyncRuntime(
+        resetVatsimFeed ? "session-runtime-reset" : "runtime-cache-reset");
     InvalidateAuthorityAsyncRuntime(
         resetVatsimFeed ? "session-runtime-reset" : "runtime-cache-reset");
     gAircraftStateSampler.Reset();
@@ -1895,37 +1952,250 @@ xvatsim::brain::RadioReachableControllerSnapshot BuildEngineer3RadioSnapshot(
 }
 
 
-std::string BuildRadioBoardRouteRuntimeKey(
-    const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
-    const auto planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(networkPlanSnapshot);
-    if (planKey.empty()) {
-        return {};
+std::shared_ptr<const xvatsim::brain::RouteSectorSnapshot>
+UnavailableRouteSnapshot(const char* reason) {
+    const auto build = [](const char* cacheStatus, const char* detail) {
+        auto route = std::make_shared<xvatsim::brain::RouteSectorSnapshot>();
+        route->available = false;
+        route->stale = true;
+        route->diagnosticCacheStatus = cacheStatus;
+        route->diagnosticReason = detail;
+        route->statusLine = "ROUTE preparation pending";
+        return std::shared_ptr<const xvatsim::brain::RouteSectorSnapshot>(
+            std::move(route));
+    };
+    static const auto sourcePending = build(
+        "route-source-unavailable", "immutable-route-source-unavailable");
+    static const auto workerPending = build(
+        "route-async-pending", "route-worker-pending-fail-closed");
+    static const auto planUnavailable = build(
+        "route-input-unavailable", "network-plan-unavailable");
+    const std::string_view token = reason == nullptr ? "" : reason;
+    if (token == "immutable-route-source-unavailable") {
+        return sourcePending;
     }
-    return planKey + "|route=" + networkPlanSnapshot.routeText;
+    if (token == "network-plan-unavailable") {
+        return planUnavailable;
+    }
+    return workerPending;
 }
 
-xvatsim::brain::BrainRoutePolygonWorkerOutput RunBrainRoutePolygonWorker(
-    const xvatsim::brain::BrainRoutePolygonWorkerInput& input,
-    RefreshDiagnosticsFrame* diagnostics) {
-    xvatsim::brain::BrainRoutePolygonWorkerOutput output;
-    if (input.planKey.empty()) {
-        output.reason = "route-plan-key-unavailable";
-        return output;
+void ServiceDeferredRouteRetirements() {
+    if (gRouteAsyncRuntime.invariantFailureRetirement != nullptr) {
+        (void)gRoutePreparationWorker.RetireSharedRoute(
+            &gRouteAsyncRuntime.invariantFailureRetirement);
     }
-
-    ApplyPreflightRouteCacheForPlanIfNeeded(input.networkPlan);
-
-    const auto timingStarted = std::chrono::steady_clock::now();
-    const auto route =
-        gRouteSectorResolver.Resolve(input.aircraft, input.networkPlan);
-    const auto routeResolveUs = ElapsedMicrosecondsSince(timingStarted);
-    output = xvatsim::brain::BuildBrainRoutePolygonWorkerOutput(route);
-    if (diagnostics != nullptr) {
-        diagnostics->routeResolveUs = routeResolveUs;
-        diagnostics->routeResolveMs = routeResolveUs / 1000;
-        diagnostics->routeResolved = output.route.routeResolved;
-        diagnostics->routeStatus = output.route.statusLine;
+    for (auto& route : gRouteAsyncRuntime.deferredRouteRetirements) {
+        if (route != nullptr) {
+            (void)gRoutePreparationWorker.RetireSharedRoute(&route);
+        }
     }
+}
+
+void QueueRouteRetirement(
+    std::shared_ptr<const xvatsim::brain::RouteSectorSnapshot> route) {
+    if (route == nullptr) {
+        return;
+    }
+    ServiceDeferredRouteRetirements();
+    if (gRoutePreparationWorker.RetireSharedRoute(&route)) {
+        return;
+    }
+    for (auto& slot : gRouteAsyncRuntime.deferredRouteRetirements) {
+        if (slot == nullptr) {
+            slot = std::move(route);
+            const auto backlog = static_cast<std::uint64_t>(std::count_if(
+                gRouteAsyncRuntime.deferredRouteRetirements.begin(),
+                gRouteAsyncRuntime.deferredRouteRetirements.end(),
+                [](const auto& item) { return item != nullptr; }));
+            gRouteAsyncRuntime.retirementBacklogPeak = std::max(
+                gRouteAsyncRuntime.retirementBacklogPeak, backlog);
+            return;
+        }
+    }
+    // Sixty-four backlog slots plus sixty-four worker mailbox slots exceed
+    // the exact 30-sector route sanity bound. Reaching this branch indicates
+    // an internal ownership invariant failure. Preserve a final bounded
+    // reference so even that failure cannot destroy the route on the callback.
+    ++gRouteAsyncRuntime.failureCount;
+    if (gRouteAsyncRuntime.invariantFailureRetirement == nullptr) {
+        gRouteAsyncRuntime.invariantFailureRetirement = std::move(route);
+    }
+}
+
+bool HasDeferredRouteRetirements() {
+    return gRouteAsyncRuntime.invariantFailureRetirement != nullptr ||
+        std::any_of(
+            gRouteAsyncRuntime.deferredRouteRetirements.begin(),
+            gRouteAsyncRuntime.deferredRouteRetirements.end(),
+            [](const auto& route) { return route != nullptr; });
+}
+
+void DrainDeferredRouteRetirementsForStop() {
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::seconds(5);
+    while (HasDeferredRouteRetirements() &&
+           std::chrono::steady_clock::now() < deadline) {
+        ServiceDeferredRouteRetirements();
+        gRoutePreparationWorker.NotifyRetirement();
+        std::this_thread::yield();
+    }
+}
+
+void ResetBrainRoutePublication() {
+    auto retiredRoute = gBrainOwnedRuntimeState.routePolygonSnapshot;
+    xvatsim::brain::BrainOwnedRoutePolygonRefreshInput reset;
+    (void)xvatsim::brain::BeginBrainOwnedRoutePolygonRefresh(
+        &gBrainOwnedRuntimeState, reset);
+    QueueRouteRetirement(std::move(retiredRoute));
+}
+
+void RetireAcceptedRoute(bool resetBrain) {
+    if (gRouteAsyncRuntime.acceptedLease != nullptr) {
+        gRouteAsyncRuntime.acceptedLease->retired.store(
+            true, std::memory_order_release);
+    }
+    gRouteAsyncRuntime.acceptedRoute.reset();
+    gRouteAsyncRuntime.acceptedLease.reset();
+    gRouteAsyncRuntime.acceptedDigest = 0;
+    gRouteAsyncRuntime.acceptedIdentity = {};
+    gRoutePreparationWorker.NotifyRetirement();
+    if (resetBrain) {
+        ResetBrainRoutePublication();
+    }
+}
+
+template <std::size_t Size>
+void CopyRouteEvidenceToken(
+    std::array<char, Size>* destination,
+    std::string_view value) noexcept {
+    if (destination == nullptr || Size == 0) {
+        return;
+    }
+    destination->fill('\0');
+    const auto count = std::min(value.size(), Size - 1);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto byte = static_cast<unsigned char>(value[index]);
+        const auto character = value[index];
+        (*destination)[index] =
+            std::isspace(byte) != 0 || character == '"' || character == '\''
+            ? '_'
+            : character;
+    }
+}
+
+xvatsim::modules::runtime_workers::RouteEvidenceWorkKind
+ToRouteEvidenceWorkKind(
+    xvatsim::modules::route_sector::RoutePreparationRequest::Kind kind) {
+    return kind == xvatsim::modules::route_sector::
+                       RoutePreparationRequest::Kind::ObserveExpandedFms
+        ? xvatsim::modules::runtime_workers::
+              RouteEvidenceWorkKind::ExpandedFmsObservation
+        : xvatsim::modules::runtime_workers::
+              RouteEvidenceWorkKind::RoutePreparation;
+}
+
+xvatsim::modules::runtime_workers::RouteEvidenceRecord
+BuildRouteEvidenceRecord(
+    xvatsim::modules::runtime_workers::RouteEvidenceRecordType recordType,
+    xvatsim::modules::route_sector::RoutePreparationRequest::Kind kind,
+    const xvatsim::modules::route_sector::RouteWorkerIdentity& identity,
+    std::string_view reason) {
+    xvatsim::modules::runtime_workers::RouteEvidenceRecord evidence;
+    evidence.recordType = recordType;
+    evidence.workKind = ToRouteEvidenceWorkKind(kind);
+    evidence.requestId = identity.requestId;
+    evidence.lifecycleEpoch = identity.lifecycleEpoch;
+    evidence.networkDigest = identity.networkPlanDigest;
+    evidence.sourceIdentity = identity.routeSourceDatasetIdentity;
+    evidence.preflightIdentity = identity.preflightCandidateIdentity;
+    evidence.policyIdentity = identity.routePolicyIdentity;
+    evidence.anchorDigest = identity.routeAnchorDigest;
+    evidence.fmsObservationIdentity =
+        identity.expandedFmsObservationIdentity;
+    CopyRouteEvidenceToken(&evidence.planKey, identity.planKey);
+    CopyRouteEvidenceToken(&evidence.reason, reason);
+    return evidence;
+}
+
+void SubmitRouteEvidence(
+    xvatsim::modules::runtime_workers::RouteEvidenceRecord evidence) noexcept {
+    (void)gDiagnosticsWriter.TryEnqueueRouteEvidence(std::move(evidence));
+}
+
+void InvalidateRouteAsyncRuntime(const char* reason) {
+    gRoutePreparationWorker.CancelPending();
+    RetireAcceptedRoute(true);
+    gRouteAsyncRuntime.hasDesiredIdentity = false;
+    gRouteAsyncRuntime.desiredIdentity = {};
+    gRouteAsyncRuntime.hasEligibleRequest = false;
+    gRouteAsyncRuntime.eligibleRequest = {};
+    gRouteAsyncRuntime.eligibleKind =
+        xvatsim::modules::route_sector::RoutePreparationRequest::Kind::PrepareRoute;
+    gRouteAsyncRuntime.anchorSelection = {};
+    gRouteAsyncRuntime.fmsObservationNetworkPlanDigest = 0;
+    gRouteAsyncRuntime.fmsObservationIdentity = 0;
+    gRouteAsyncRuntime.fmsObservationReady = false;
+    gRouteAsyncRuntime.nextFmsObservationMonotonicMs = 0;
+    gRouteAsyncRuntime.nextRouteRetryMonotonicMs = 0;
+    ++gRouteAsyncRuntime.lifecycleEpoch;
+    if (gRouteAsyncRuntime.lifecycleEpoch == 0) {
+        gRouteAsyncRuntime.lifecycleEpoch = 1;
+    }
+    ++gRouteAsyncRuntime.invalidationCount;
+    {
+        xvatsim::modules::runtime_workers::RouteEvidenceRecord evidence;
+        evidence.recordType = xvatsim::modules::runtime_workers::
+            RouteEvidenceRecordType::Lifecycle;
+        evidence.disposition = xvatsim::modules::runtime_workers::
+            RouteEvidenceDisposition::Cancelled;
+        evidence.lifecycleEpoch = gRouteAsyncRuntime.lifecycleEpoch;
+        CopyRouteEvidenceToken(
+            &evidence.reason,
+            reason == nullptr ? "unspecified" : reason);
+        SubmitRouteEvidence(std::move(evidence));
+    }
+    AppendDeferredDiagnosticsLogLine(
+        [lifecycleEpoch = gRouteAsyncRuntime.lifecycleEpoch,
+         reasonText = std::string{reason == nullptr ? "unspecified" : reason}]() {
+            std::ostringstream line;
+            line << "event=route-worker-cancelled"
+                 << " lifecycleEpoch=" << lifecycleEpoch
+                 << " reason=" << reasonText;
+            return line.str();
+        });
+}
+
+std::string BuildRouteRuntimeKey(
+    const xvatsim::modules::route_sector::RouteWorkerIdentity& identity) {
+    std::ostringstream key;
+    key << identity.planKey
+        << "|network=" << identity.networkPlanDigest
+        << "|source=" << identity.routeSourceDatasetIdentity
+        << "|preflight=" << identity.preflightCandidateIdentity
+        << "|policy=" << identity.routePolicyIdentity
+        << "|anchor=" << identity.routeAnchorDigest
+        << "|fmsObservation="
+        << identity.expandedFmsObservationIdentity
+        << "|lifecycle=" << identity.lifecycleEpoch;
+    return key.str();
+}
+
+xvatsim::brain::BrainRouteCompletionIdentity ToBrainRouteIdentity(
+    const xvatsim::modules::route_sector::RouteWorkerIdentity& identity) {
+    xvatsim::brain::BrainRouteCompletionIdentity output;
+    output.requestId = identity.requestId;
+    output.lifecycleEpoch = identity.lifecycleEpoch;
+    output.planKey = identity.planKey;
+    output.networkPlanDigest = identity.networkPlanDigest;
+    output.routeSourceDatasetIdentity =
+        identity.routeSourceDatasetIdentity;
+    output.preflightCandidateIdentity =
+        identity.preflightCandidateIdentity;
+    output.routePolicyIdentity = identity.routePolicyIdentity;
+    output.routeAnchorDigest = identity.routeAnchorDigest;
+    output.expandedFmsObservationIdentity =
+        identity.expandedFmsObservationIdentity;
     return output;
 }
 
@@ -1933,31 +2203,166 @@ xvatsim::brain::BrainRoutePolygonWorkerOutput RefreshBrainRoutePolygonSnapshot(
     const xvatsim::brain::AircraftStateSnapshot& aircraftState,
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot,
     RefreshDiagnosticsFrame* diagnostics) {
-    const auto planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(networkPlanSnapshot);
-    const auto routeRuntimeKey = BuildRadioBoardRouteRuntimeKey(networkPlanSnapshot);
+    const auto completeStageStarted = std::chrono::steady_clock::now();
+    ServiceDeferredRouteRetirements();
+    const auto planKey =
+        xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(
+            networkPlanSnapshot);
+    if (planKey.empty() || !networkPlanSnapshot.feedAvailable ||
+        networkPlanSnapshot.stale || !networkPlanSnapshot.matched) {
+        if (gRouteAsyncRuntime.hasDesiredIdentity ||
+            gRouteAsyncRuntime.acceptedRoute != nullptr ||
+            gRoutePreparationWorker.IsRunning()) {
+            InvalidateRouteAsyncRuntime("network-plan-unavailable");
+        }
+        auto output = xvatsim::brain::BuildBrainRoutePolygonWorkerOutput(
+            UnavailableRouteSnapshot("network-plan-unavailable"));
+        if (diagnostics != nullptr) {
+            diagnostics->routeResolved = false;
+            diagnostics->routeStatus = output.route->statusLine;
+            diagnostics->routeResolveUs =
+                ElapsedMicrosecondsSince(completeStageStarted);
+            diagnostics->routeResolveMs = diagnostics->routeResolveUs / 1000;
+        }
+        return output;
+    }
+
+    const auto desiredPathStarted = std::chrono::steady_clock::now();
+    const auto nowMonotonicMs = CurrentTickMilliseconds();
+    ApplyPreflightRouteCacheForPlanIfNeeded(networkPlanSnapshot);
+    (void)gRouteSectorResolver.TryHarvestSourcePublications();
+    const auto datasetPublication =
+        gRouteSectorResolver.GetRouteSourceDatasetPublication();
+    if (datasetPublication.dataset != nullptr &&
+        datasetPublication.contentIdentity !=
+            gRouteAsyncRuntime.observedSourceIdentity &&
+        gRoutePreparationWorker.ObserveSourceDataset(
+            datasetPublication.dataset)) {
+        gRouteAsyncRuntime.observedSourceIdentity =
+            datasetPublication.contentIdentity;
+    }
+
+    xvatsim::modules::route_sector::RouteWorkerIdentity desired;
+    desired.lifecycleEpoch = gRouteAsyncRuntime.lifecycleEpoch;
+    desired.planKey = planKey;
+    desired.networkPlanDigest =
+        xvatsim::modules::route_sector::HashRouteNetworkPlan(
+            networkPlanSnapshot);
+    desired.routeSourceDatasetIdentity = datasetPublication.identity;
+    desired.preflightCandidateIdentity =
+        xvatsim::modules::route_sector::HashRoutePreflightCandidate(
+            gSelectedPreflightPlanKey == planKey
+                ? gSelectedPreflightRouteCache.get()
+                : nullptr,
+            gSelectedPreflightPlanKey == planKey
+                ? gSelectedPreflightValidationReason
+                : "selection-pending");
+    desired.routePolicyIdentity =
+        xvatsim::modules::route_sector::RoutePreparationPolicyIdentity();
+    if (gRouteAsyncRuntime.fmsObservationNetworkPlanDigest !=
+        desired.networkPlanDigest) {
+        gRouteAsyncRuntime.fmsObservationNetworkPlanDigest =
+            desired.networkPlanDigest;
+        gRouteAsyncRuntime.fmsObservationIdentity = 0;
+        gRouteAsyncRuntime.fmsObservationReady = false;
+        gRouteAsyncRuntime.nextFmsObservationMonotonicMs = 0;
+        gRouteAsyncRuntime.anchorSelection = {};
+    }
+    const auto routeAnchor =
+        xvatsim::modules::route_sector::SelectStickyRouteAnchor(
+            &gRouteAsyncRuntime.anchorSelection,
+            aircraftState,
+            networkPlanSnapshot,
+            desired.networkPlanDigest);
+    desired.routeAnchorDigest =
+        xvatsim::modules::route_sector::HashRouteAnchor(
+            routeAnchor, networkPlanSnapshot);
+    desired.expandedFmsObservationIdentity =
+        gRouteAsyncRuntime.fmsObservationReady
+            ? gRouteAsyncRuntime.fmsObservationIdentity
+            : 0;
+
+    xvatsim::modules::route_sector::RouteWorkerFact harvested;
+    const auto harvestStarted = std::chrono::steady_clock::now();
+    const auto harvestedFact = gRoutePreparationWorker.TryHarvest(&harvested);
+    bool publishedThisCycle = false;
+    xvatsim::brain::BrainOwnedRoutePolygonRuntimeOutput runtimeOutput;
+    const auto harvestedObservation = harvestedFact &&
+        harvested.kind == xvatsim::modules::route_sector::
+            RoutePreparationRequest::Kind::ObserveExpandedFms;
+    bool observationAccepted = false;
+    bool observationRebuildDecision = false;
+    std::string observationDispositionReason;
+    if (harvestedObservation) {
+        const auto eligible = gRouteAsyncRuntime.hasEligibleRequest &&
+            gRouteAsyncRuntime.eligibleKind ==
+                xvatsim::modules::route_sector::
+                    RoutePreparationRequest::Kind::ObserveExpandedFms &&
+            harvested.identity.requestId ==
+                gRouteAsyncRuntime.eligibleRequest.requestId &&
+            xvatsim::modules::route_sector::SameRouteWorkerSemanticIdentity(
+                harvested.identity, gRouteAsyncRuntime.eligibleRequest) &&
+            xvatsim::modules::route_sector::SameRouteWorkerSemanticIdentity(
+                harvested.identity, desired);
+        observationAccepted = eligible && harvested.completed &&
+            !harvested.cancelled && !harvested.failed &&
+            harvested.expandedFmsObservationIdentity != 0;
+        if (observationAccepted) {
+            const auto changed = !gRouteAsyncRuntime.fmsObservationReady ||
+                gRouteAsyncRuntime.fmsObservationIdentity !=
+                    harvested.expandedFmsObservationIdentity;
+            gRouteAsyncRuntime.fmsObservationIdentity =
+                harvested.expandedFmsObservationIdentity;
+            gRouteAsyncRuntime.fmsObservationReady = true;
+            gRouteAsyncRuntime.nextFmsObservationMonotonicMs =
+                nowMonotonicMs + kExpandedFmsObservationIntervalMs;
+            ++gRouteAsyncRuntime.fmsObservationAcceptedCount;
+            if (changed) {
+                ++gRouteAsyncRuntime.fmsObservationChangedCount;
+            }
+            observationRebuildDecision = changed;
+            desired.expandedFmsObservationIdentity =
+                harvested.expandedFmsObservationIdentity;
+            observationDispositionReason = changed
+                ? "expanded-fms-observation-changed"
+                : "expanded-fms-observation-unchanged";
+        } else {
+            ++gRouteAsyncRuntime.staleRejectedCount;
+            observationDispositionReason = harvested.failed
+                ? harvested.reason
+                : "stale-expanded-fms-observation";
+        }
+        if (gRouteAsyncRuntime.hasEligibleRequest &&
+            harvested.identity.requestId ==
+                gRouteAsyncRuntime.eligibleRequest.requestId) {
+            gRouteAsyncRuntime.hasEligibleRequest = false;
+            gRouteAsyncRuntime.eligibleRequest = {};
+        }
+    }
+
+    const auto desiredChanged =
+        !gRouteAsyncRuntime.hasDesiredIdentity ||
+        !xvatsim::modules::route_sector::SameRouteWorkerSemanticIdentity(
+            gRouteAsyncRuntime.desiredIdentity, desired);
+    if (desiredChanged) {
+        if (gRoutePreparationWorker.IsRunning()) {
+            ++gRouteAsyncRuntime.pendingReplacementCount;
+        }
+        gRoutePreparationWorker.CancelPending();
+        RetireAcceptedRoute(true);
+        gRouteAsyncRuntime.desiredIdentity = desired;
+        gRouteAsyncRuntime.hasDesiredIdentity = true;
+        gRouteAsyncRuntime.hasEligibleRequest = false;
+        gRouteAsyncRuntime.eligibleRequest = {};
+        gRouteAsyncRuntime.nextRouteRetryMonotonicMs = nowMonotonicMs;
+    }
+    const auto routeRuntimeKey = BuildRouteRuntimeKey(desired);
 
     xvatsim::brain::BrainOwnedRoutePolygonRefreshInput refreshInput;
     refreshInput.aircraft = aircraftState;
     refreshInput.routeRuntimeKey = routeRuntimeKey;
     refreshInput.nowSeconds = CurrentTickSeconds();
     refreshInput.pendingRetrySeconds = kRadioBoardPendingRouteRetrySeconds;
-
-    auto runtimeOutput =
-        xvatsim::brain::BeginBrainOwnedRoutePolygonRefresh(
-            &gBrainOwnedRuntimeState,
-            refreshInput);
-
-    if (runtimeOutput.reset) {
-        RecordDiagnosticJob(
-            "BrainRoutePolygonWorker",
-            runtimeOutput.reason,
-            0,
-            runtimeOutput.cacheStatus,
-            runtimeOutput.diagnosticResult,
-            {},
-            planKey);
-        return runtimeOutput.route;
-    }
 
     const auto recordTransitionDiagnostic =
         [&](const xvatsim::brain::BrainOwnedRoutePolygonRuntimeOutput& record) {
@@ -1974,34 +2379,519 @@ xvatsim::brain::BrainRoutePolygonWorkerOutput RefreshBrainRoutePolygonSnapshot(
                 routeRuntimeKey);
         };
 
-    if (!runtimeOutput.needsWorker) {
-        if (diagnostics != nullptr) {
-            diagnostics->routeResolved = runtimeOutput.route.route.routeResolved;
-            diagnostics->routeStatus = runtimeOutput.route.route.statusLine;
+    if (harvestedFact && !harvestedObservation) {
+        xvatsim::brain::BrainRouteCompletionValidationInput validation;
+        if (gRouteAsyncRuntime.hasEligibleRequest) {
+            validation.eligible = ToBrainRouteIdentity(
+                gRouteAsyncRuntime.eligibleRequest);
         }
-        recordTransitionDiagnostic(runtimeOutput);
-        RecordDiagnosticJob(
-            "BrainRoutePolygonWorker",
-            runtimeOutput.reason,
-            0,
-            runtimeOutput.cacheStatus,
-            runtimeOutput.diagnosticResult,
-            {},
-            routeRuntimeKey);
-        return runtimeOutput.route;
+        if (gRouteAsyncRuntime.hasDesiredIdentity) {
+            validation.desired = ToBrainRouteIdentity(
+                gRouteAsyncRuntime.desiredIdentity);
+        }
+        validation.completed = ToBrainRouteIdentity(harvested.identity);
+        const auto completionDecision =
+            xvatsim::brain::DecideBrainRouteCompletion(validation);
+        const auto publishable =
+            harvested.kind == xvatsim::modules::route_sector::
+                RoutePreparationRequest::Kind::PrepareRoute &&
+            harvested.completed && !harvested.cancelled &&
+            !harvested.failed && harvested.routeLease != nullptr &&
+            harvested.routeLease->route != nullptr &&
+            completionDecision.accepted;
+        const auto terminalIdentity = harvested.identity;
+        const auto terminalDigest = harvested.routeDigest;
+        const auto terminalTimings = harvested.timings;
+        const auto terminalReason = harvested.reason;
+        const auto dispositionReason = publishable
+            ? completionDecision.reason
+            : !completionDecision.accepted
+                ? completionDecision.reason
+                : harvested.failed
+                    ? harvested.reason
+                    : harvested.cancelled
+                        ? std::string{"route-worker-cancelled"}
+                        : std::string{"route-worker-incomplete"};
+        {
+            auto evidence = BuildRouteEvidenceRecord(
+                xvatsim::modules::runtime_workers::
+                    RouteEvidenceRecordType::Terminal,
+                harvested.kind,
+                terminalIdentity,
+                terminalReason);
+            evidence.resultDigest = terminalDigest;
+            evidence.completed = harvested.completed;
+            evidence.cancelled = harvested.cancelled;
+            evidence.failed = harvested.failed;
+            evidence.workerWallUs = static_cast<std::uint64_t>(
+                std::max<long long>(0, terminalTimings.totalUs));
+            evidence.sourceUs = terminalTimings.sourceAcquisitionUs;
+            evidence.navigationUs =
+                terminalTimings.navigationInitializationUs;
+            evidence.preflightUs = terminalTimings.preflightValidationUs;
+            evidence.fmsUs = terminalTimings.fmsDiscoveryUs;
+            evidence.procedureUs = terminalTimings.procedureMetadataUs;
+            evidence.grammarUs = terminalTimings.grammarParsingUs;
+            evidence.waypointUs = terminalTimings.waypointResolutionUs;
+            evidence.traversalPreparationUs =
+                terminalTimings.traversalPreparationUs;
+            evidence.polygonUs = terminalTimings.polygonTraversalUs;
+            evidence.prefixUs = terminalTimings.controllerPrefixUs;
+            evidence.finalizeUs = terminalTimings.outputFinalizationUs;
+            SubmitRouteEvidence(std::move(evidence));
+        }
+        AppendDeferredDiagnosticsLogLine(
+            [terminalIdentity,
+             terminalDigest,
+             terminalTimings,
+             completed = harvested.completed,
+             cancelled = harvested.cancelled,
+             failed = harvested.failed,
+             terminalReason]() {
+                std::ostringstream line;
+                line << "event=route-worker-terminal"
+                     << " requestId=" << terminalIdentity.requestId
+                     << " lifecycleEpoch=" << terminalIdentity.lifecycleEpoch
+                     << " networkDigest="
+                     << terminalIdentity.networkPlanDigest
+                     << " sourceIdentity="
+                     << terminalIdentity.routeSourceDatasetIdentity
+                     << " preflightIdentity="
+                     << terminalIdentity.preflightCandidateIdentity
+                     << " policyIdentity="
+                     << terminalIdentity.routePolicyIdentity
+                     << " anchorDigest="
+                     << terminalIdentity.routeAnchorDigest
+                     << " fmsObservationIdentity="
+                     << terminalIdentity.expandedFmsObservationIdentity
+                     << " resultDigest=" << terminalDigest
+                     << " completed=" << (completed ? 1 : 0)
+                     << " cancelled=" << (cancelled ? 1 : 0)
+                     << " failed=" << (failed ? 1 : 0)
+                     << " totalUs=" << terminalTimings.totalUs
+                     << " sourceUs=" << terminalTimings.sourceAcquisitionUs
+                     << " navUs=" << terminalTimings.navigationInitializationUs
+                     << " preflightUs=" << terminalTimings.preflightValidationUs
+                     << " fmsUs=" << terminalTimings.fmsDiscoveryUs
+                     << " procedureUs=" << terminalTimings.procedureMetadataUs
+                     << " grammarUs=" << terminalTimings.grammarParsingUs
+                     << " waypointUs=" << terminalTimings.waypointResolutionUs
+                     << " traversalPrepUs="
+                     << terminalTimings.traversalPreparationUs
+                     << " polygonUs=" << terminalTimings.polygonTraversalUs
+                     << " prefixUs=" << terminalTimings.controllerPrefixUs
+                     << " finalizeUs=" << terminalTimings.outputFinalizationUs
+                     << " reason=" << terminalReason;
+                return line.str();
+            });
+        if (!publishable && !completionDecision.accepted) {
+            AppendDeferredDiagnosticsLogLine(
+                [terminalIdentity,
+                 reasonText = completionDecision.reason]() {
+                    std::ostringstream line;
+                    line << "event=route-worker-stale-rejected"
+                         << " requestId=" << terminalIdentity.requestId
+                         << " lifecycleEpoch="
+                         << terminalIdentity.lifecycleEpoch
+                         << " networkDigest="
+                         << terminalIdentity.networkPlanDigest
+                         << " sourceIdentity="
+                         << terminalIdentity.routeSourceDatasetIdentity
+                         << " preflightIdentity="
+                         << terminalIdentity.preflightCandidateIdentity
+                         << " policyIdentity="
+                         << terminalIdentity.routePolicyIdentity
+                         << " anchorDigest="
+                         << terminalIdentity.routeAnchorDigest
+                         << " fmsObservationIdentity="
+                         << terminalIdentity.expandedFmsObservationIdentity
+                         << " reason=" << reasonText;
+                    return line.str();
+                });
+        }
+        if (publishable) {
+            RetireAcceptedRoute(false);
+            gRouteAsyncRuntime.acceptedLease = harvested.routeLease;
+            gRouteAsyncRuntime.acceptedRoute = harvested.routeLease->route;
+            gRouteAsyncRuntime.acceptedDigest = harvested.routeDigest;
+            gRouteAsyncRuntime.acceptedIdentity = harvested.identity;
+            ++gRouteAsyncRuntime.acceptedCount;
+            const auto workerOutput =
+                xvatsim::brain::BuildBrainRoutePolygonWorkerOutput(
+                    gRouteAsyncRuntime.acceptedRoute);
+            runtimeOutput =
+                xvatsim::brain::CommitBrainOwnedRoutePolygonRefresh(
+                    &gBrainOwnedRuntimeState, refreshInput, workerOutput);
+            publishedThisCycle = true;
+            gRouteAsyncRuntime.nextRouteRetryMonotonicMs =
+                gRouteAsyncRuntime.acceptedRoute->routeResolved &&
+                        !gRouteAsyncRuntime.acceptedRoute->stale
+                    ? 0
+                    : nowMonotonicMs +
+                        kRadioBoardPendingRouteRetrySeconds * 1000;
+        } else {
+            if (harvested.routeLease != nullptr) {
+                harvested.routeLease->retired.store(
+                    true, std::memory_order_release);
+                gRoutePreparationWorker.NotifyRetirement();
+            }
+            ++gRouteAsyncRuntime.staleRejectedCount;
+            if (harvested.failed) {
+                ++gRouteAsyncRuntime.failureCount;
+            }
+            gRouteAsyncRuntime.nextRouteRetryMonotonicMs =
+                nowMonotonicMs +
+                kRadioBoardPendingRouteRetrySeconds * 1000;
+        }
+        if (gRouteAsyncRuntime.hasEligibleRequest &&
+            harvested.identity.requestId ==
+                gRouteAsyncRuntime.eligibleRequest.requestId) {
+            gRouteAsyncRuntime.hasEligibleRequest = false;
+            gRouteAsyncRuntime.eligibleRequest = {};
+        }
+        AppendDeferredDiagnosticsLogLine(
+            [requestId = terminalIdentity.requestId,
+             publishable,
+             reasonText = dispositionReason]() {
+                std::ostringstream line;
+                line << "event=route-worker-disposition"
+                     << " requestId=" << requestId
+                     << " disposition="
+                     << (publishable ? "published" : "rejected")
+                     << " reason=" << reasonText;
+                return line.str();
+            });
+        {
+            auto evidence = BuildRouteEvidenceRecord(
+                xvatsim::modules::runtime_workers::
+                    RouteEvidenceRecordType::Disposition,
+                harvested.kind,
+                terminalIdentity,
+                dispositionReason);
+            evidence.resultDigest = terminalDigest;
+            evidence.disposition = publishable
+                ? xvatsim::modules::runtime_workers::
+                      RouteEvidenceDisposition::Published
+                : xvatsim::modules::runtime_workers::
+                      RouteEvidenceDisposition::Rejected;
+            SubmitRouteEvidence(std::move(evidence));
+        }
+    }
+    if (harvestedObservation) {
+        const auto terminalIdentity = harvested.identity;
+        const auto terminalObservationIdentity =
+            harvested.expandedFmsObservationIdentity;
+        const auto terminalReason = harvested.reason;
+        {
+            auto evidence = BuildRouteEvidenceRecord(
+                xvatsim::modules::runtime_workers::
+                    RouteEvidenceRecordType::Terminal,
+                harvested.kind,
+                terminalIdentity,
+                terminalReason);
+            evidence.fmsObservationIdentity =
+                terminalObservationIdentity;
+            evidence.completed = harvested.completed;
+            evidence.cancelled = harvested.cancelled;
+            evidence.failed = harvested.failed;
+            evidence.workerWallUs =
+                harvested.expandedFmsObservationWorkerWallUs;
+            evidence.workerCpuUs =
+                harvested.expandedFmsObservationWorkerCpuUs;
+            evidence.workerCpuAvailable =
+                harvested.expandedFmsObservationWorkerCpuAvailable;
+            SubmitRouteEvidence(std::move(evidence));
+        }
+        AppendDeferredDiagnosticsLogLine(
+            [terminalIdentity,
+             terminalObservationIdentity,
+             workerWallUs =
+                 harvested.expandedFmsObservationWorkerWallUs,
+             workerCpuUs =
+                 harvested.expandedFmsObservationWorkerCpuUs,
+             workerCpuAvailable =
+                 harvested.expandedFmsObservationWorkerCpuAvailable,
+             completed = harvested.completed,
+             cancelled = harvested.cancelled,
+             failed = harvested.failed,
+             terminalReason]() {
+                std::ostringstream line;
+                line << "event=route-worker-terminal"
+                     << " kind=expanded-fms-observation"
+                     << " requestId=" << terminalIdentity.requestId
+                     << " lifecycleEpoch=" << terminalIdentity.lifecycleEpoch
+                     << " networkDigest="
+                     << terminalIdentity.networkPlanDigest
+                     << " sourceIdentity="
+                     << terminalIdentity.routeSourceDatasetIdentity
+                     << " preflightIdentity="
+                     << terminalIdentity.preflightCandidateIdentity
+                     << " policyIdentity="
+                     << terminalIdentity.routePolicyIdentity
+                     << " anchorDigest="
+                     << terminalIdentity.routeAnchorDigest
+                     << " fmsObservationIdentity="
+                     << terminalObservationIdentity
+                     << " workerWallUs=" << workerWallUs
+                     << " workerCpuStatus="
+                     << (workerCpuAvailable ? "available" : "unavailable")
+                     << " workerCpuUs=" << workerCpuUs
+                     << " completed=" << (completed ? 1 : 0)
+                     << " cancelled=" << (cancelled ? 1 : 0)
+                     << " failed=" << (failed ? 1 : 0)
+                     << " reason=" << terminalReason;
+                return line.str();
+            });
+        if (!observationAccepted && !harvested.failed &&
+            !harvested.cancelled) {
+            AppendDeferredDiagnosticsLogLine(
+                [terminalIdentity,
+                 reasonText = observationDispositionReason]() {
+                    std::ostringstream line;
+                    line << "event=route-worker-stale-rejected"
+                         << " kind=expanded-fms-observation"
+                         << " requestId=" << terminalIdentity.requestId
+                         << " lifecycleEpoch="
+                         << terminalIdentity.lifecycleEpoch
+                         << " networkDigest="
+                         << terminalIdentity.networkPlanDigest
+                         << " sourceIdentity="
+                         << terminalIdentity.routeSourceDatasetIdentity
+                         << " reason=" << reasonText;
+                    return line.str();
+                });
+        }
+        AppendDeferredDiagnosticsLogLine(
+            [requestId = terminalIdentity.requestId,
+             observationAccepted,
+             reasonText = observationDispositionReason]() {
+                std::ostringstream line;
+                line << "event=route-worker-disposition"
+                     << " kind=expanded-fms-observation"
+                     << " requestId=" << requestId
+                     << " disposition="
+                     << (observationAccepted ? "observed" : "rejected")
+                     << " reason=" << reasonText;
+                return line.str();
+            });
+        {
+            auto evidence = BuildRouteEvidenceRecord(
+                xvatsim::modules::runtime_workers::
+                    RouteEvidenceRecordType::Disposition,
+                harvested.kind,
+                terminalIdentity,
+                observationDispositionReason);
+            evidence.fmsObservationIdentity =
+                terminalObservationIdentity;
+            evidence.disposition = observationAccepted
+                ? xvatsim::modules::runtime_workers::
+                      RouteEvidenceDisposition::Observed
+                : xvatsim::modules::runtime_workers::
+                      RouteEvidenceDisposition::Rejected;
+            evidence.rebuildDecisionApplicable = true;
+            evidence.rebuildDecision =
+                observationAccepted && observationRebuildDecision;
+            SubmitRouteEvidence(std::move(evidence));
+        }
+    }
+    const auto harvestUs = ElapsedMicrosecondsSince(harvestStarted);
+    gRouteAsyncRuntime.maximumHarvestUs = std::max<std::uint64_t>(
+        gRouteAsyncRuntime.maximumHarvestUs,
+        static_cast<std::uint64_t>(std::max<long long>(0, harvestUs)));
+
+    auto acceptedCurrent =
+        gRouteAsyncRuntime.acceptedRoute != nullptr &&
+        xvatsim::modules::route_sector::SameRouteWorkerSemanticIdentity(
+            gRouteAsyncRuntime.acceptedIdentity, desired);
+
+    if (!publishedThisCycle && acceptedCurrent) {
+        const auto transitionStarted = std::chrono::steady_clock::now();
+        runtimeOutput =
+            xvatsim::brain::BeginBrainOwnedRoutePolygonRefresh(
+                &gBrainOwnedRuntimeState, refreshInput);
+        const auto transitionUs =
+            ElapsedMicrosecondsSince(transitionStarted);
+        gRouteAsyncRuntime.maximumTransitionUs = std::max<std::uint64_t>(
+            gRouteAsyncRuntime.maximumTransitionUs,
+            static_cast<std::uint64_t>(
+                std::max<long long>(0, transitionUs)));
     }
 
-    xvatsim::brain::BrainRoutePolygonWorkerInput input;
-    input.aircraft = aircraftState;
-    input.networkPlan = networkPlanSnapshot;
-    input.planKey = planKey;
-    const auto workerOutput = RunBrainRoutePolygonWorker(input, diagnostics);
-    runtimeOutput =
-        xvatsim::brain::CommitBrainOwnedRoutePolygonRefresh(
-            &gBrainOwnedRuntimeState,
-            refreshInput,
-            workerOutput);
+    xvatsim::modules::route_sector::RouteCoordinatorDecisionInput
+        coordinatorInput;
+    coordinatorInput.sourceUsable = datasetPublication.dataset != nullptr &&
+        datasetPublication.available && !datasetPublication.stale;
+    coordinatorInput.fmsObservationReady =
+        gRouteAsyncRuntime.fmsObservationReady;
+    coordinatorInput.acceptedCurrent = acceptedCurrent;
+    coordinatorInput.brainNeedsWorker = runtimeOutput.needsWorker;
+    coordinatorInput.hasEligibleRequest =
+        gRouteAsyncRuntime.hasEligibleRequest;
+    coordinatorInput.workerBusy = gRoutePreparationWorker.IsRunning();
+    coordinatorInput.retryDue =
+        gRouteAsyncRuntime.nextRouteRetryMonotonicMs == 0 ||
+        nowMonotonicMs >= gRouteAsyncRuntime.nextRouteRetryMonotonicMs;
+    coordinatorInput.fmsObservationDue =
+        gRouteAsyncRuntime.nextFmsObservationMonotonicMs == 0 ||
+        nowMonotonicMs >=
+            gRouteAsyncRuntime.nextFmsObservationMonotonicMs;
+    const auto coordinatorDecision =
+        xvatsim::modules::route_sector::DecideRouteCoordinatorAction(
+            coordinatorInput);
+
+    if (coordinatorDecision.action !=
+        xvatsim::modules::route_sector::RouteCoordinatorAction::None) {
+        auto requestIdentity = desired;
+        requestIdentity.requestId = gRouteAsyncRuntime.nextRequestId++;
+        if (gRouteAsyncRuntime.nextRequestId == 0) {
+            gRouteAsyncRuntime.nextRequestId = 1;
+        }
+        xvatsim::modules::route_sector::RoutePreparationRequest request;
+        request.kind = coordinatorDecision.action ==
+                xvatsim::modules::route_sector::
+                    RouteCoordinatorAction::ObserveExpandedFms
+            ? xvatsim::modules::route_sector::
+                RoutePreparationRequest::Kind::ObserveExpandedFms
+            : xvatsim::modules::route_sector::
+                RoutePreparationRequest::Kind::PrepareRoute;
+        request.identity = requestIdentity;
+        request.routeAnchor = routeAnchor;
+        request.networkPlan =
+            std::make_shared<const xvatsim::brain::NetworkPlanSnapshot>(
+                networkPlanSnapshot);
+        request.routeSourceDataset = datasetPublication.dataset;
+        if (request.kind == xvatsim::modules::route_sector::
+                RoutePreparationRequest::Kind::PrepareRoute &&
+            gSelectedPreflightPlanKey == planKey) {
+            request.preflightCandidate = gSelectedPreflightRouteCache;
+            request.preflightValidationReason =
+                gSelectedPreflightValidationReason;
+        }
+        const auto before = gRoutePreparationWorker.Snapshot();
+        const auto requestKind = request.kind;
+        const auto mailboxStarted = std::chrono::steady_clock::now();
+        if (gRoutePreparationWorker.StartLatest(std::move(request))) {
+            const auto mailboxUs =
+                ElapsedMicrosecondsSince(mailboxStarted);
+            gRouteAsyncRuntime.eligibleRequest = requestIdentity;
+            gRouteAsyncRuntime.hasEligibleRequest = true;
+            gRouteAsyncRuntime.eligibleKind = requestKind;
+            if (requestKind == xvatsim::modules::route_sector::
+                    RoutePreparationRequest::Kind::ObserveExpandedFms) {
+                ++gRouteAsyncRuntime.fmsObservationDispatchCount;
+            } else {
+                ++gRouteAsyncRuntime.dispatchCount;
+                if (runtimeOutput.needsWorker) {
+                    ++gRouteAsyncRuntime.unresolvedRetryDispatchCount;
+                }
+                gRouteAsyncRuntime.nextRouteRetryMonotonicMs =
+                    nowMonotonicMs +
+                    kRadioBoardPendingRouteRetrySeconds * 1000;
+            }
+            const auto after = gRoutePreparationWorker.Snapshot();
+            if (after.replacements > before.replacements) {
+                AppendDeferredDiagnosticsLogLine(
+                    [requestId = requestIdentity.requestId]() {
+                        return std::string{"event=route-worker-pending-replaced requestId="} +
+                            std::to_string(requestId);
+                    });
+            }
+            const auto submitUs =
+                ElapsedMicrosecondsSince(desiredPathStarted);
+            gRouteAsyncRuntime.maximumSubmitUs = std::max<std::uint64_t>(
+                gRouteAsyncRuntime.maximumSubmitUs,
+                static_cast<std::uint64_t>(
+                    std::max<long long>(0, submitUs)));
+            gRouteAsyncRuntime.maximumMailboxExchangeUs =
+                std::max<std::uint64_t>(
+                    gRouteAsyncRuntime.maximumMailboxExchangeUs,
+                    static_cast<std::uint64_t>(
+                        std::max<long long>(0, mailboxUs)));
+            {
+                auto evidence = BuildRouteEvidenceRecord(
+                    xvatsim::modules::runtime_workers::
+                        RouteEvidenceRecordType::Dispatch,
+                    requestKind,
+                    requestIdentity,
+                    coordinatorDecision.reason);
+                evidence.running = after.running;
+                evidence.pending = after.pending;
+                evidence.maximumPendingDepth =
+                    after.maximumPendingDepth;
+                evidence.completeDesiredPackageSubmitUs =
+                    static_cast<std::uint64_t>(
+                        std::max<long long>(0, submitUs));
+                evidence.mailboxExchangeUs =
+                    static_cast<std::uint64_t>(
+                        std::max<long long>(0, mailboxUs));
+                SubmitRouteEvidence(std::move(evidence));
+            }
+            AppendDeferredDiagnosticsLogLine(
+                [requestIdentity,
+                 after,
+                 submitUs,
+                 mailboxUs,
+                 kind = gRouteAsyncRuntime.eligibleKind,
+                 reason = std::string{coordinatorDecision.reason}]() {
+                    std::ostringstream line;
+                    line << "event=route-worker-dispatch"
+                         << " kind="
+                         << (kind == xvatsim::modules::route_sector::
+                                    RoutePreparationRequest::Kind::ObserveExpandedFms
+                                 ? "expanded-fms-observation"
+                                 : "route-preparation")
+                         << " requestId=" << requestIdentity.requestId
+                         << " lifecycleEpoch="
+                         << requestIdentity.lifecycleEpoch
+                         << " networkDigest="
+                         << requestIdentity.networkPlanDigest
+                         << " sourceIdentity="
+                         << requestIdentity.routeSourceDatasetIdentity
+                         << " preflightIdentity="
+                         << requestIdentity.preflightCandidateIdentity
+                         << " policyIdentity="
+                         << requestIdentity.routePolicyIdentity
+                         << " anchorDigest="
+                         << requestIdentity.routeAnchorDigest
+                         << " fmsObservationIdentity="
+                         << requestIdentity.expandedFmsObservationIdentity
+                         << " running=" << (after.running ? 1 : 0)
+                         << " pending=" << (after.pending ? 1 : 0)
+                         << " maxPendingDepth=" << after.maximumPendingDepth
+                         << " completeDesiredPackageSubmitUs=" << submitUs
+                         << " mailboxExchangeUs=" << mailboxUs
+                         << " reason=" << reason;
+                    return line.str();
+                });
+        }
+    }
+
+    if (!publishedThisCycle &&
+        (!acceptedCurrent || runtimeOutput.needsWorker ||
+         coordinatorDecision.failClosed)) {
+        runtimeOutput.route =
+            xvatsim::brain::BuildBrainRoutePolygonWorkerOutput(
+                UnavailableRouteSnapshot(
+                    !coordinatorInput.sourceUsable
+                        ? "immutable-route-source-unavailable"
+                        : "route-worker-pending"));
+        runtimeOutput.reason = runtimeOutput.route.reason;
+        runtimeOutput.cacheStatus =
+            runtimeOutput.route.route->diagnosticCacheStatus;
+    }
+
     recordTransitionDiagnostic(runtimeOutput);
+    QueueRouteRetirement(std::move(runtimeOutput.retiredRoute));
+    if (diagnostics != nullptr) {
+        diagnostics->routeResolved = runtimeOutput.route.route != nullptr &&
+            runtimeOutput.route.route->routeResolved;
+        diagnostics->routeStatus = runtimeOutput.route.route != nullptr
+            ? runtimeOutput.route.route->statusLine
+            : "ROUTE preparation pending";
+        diagnostics->routeResolveUs =
+            ElapsedMicrosecondsSince(completeStageStarted);
+        diagnostics->routeResolveMs = diagnostics->routeResolveUs / 1000;
+    }
     RecordDiagnosticJob(
         "BrainRoutePolygonWorker",
         runtimeOutput.reason,
@@ -3956,9 +4846,11 @@ std::string ResolvePreflightRouteCachePath() {
 
 void LoadPreflightRouteCacheCandidate() {
     gPreflightRouteCacheCandidate.reset();
+    gSelectedPreflightRouteCache.reset();
+    gSelectedPreflightPlanKey.clear();
+    gSelectedPreflightValidationReason.clear();
     xvatsim::brain::ClearBrainOwnedPreflightRouteCacheApplication(
         &gBrainOwnedRuntimeState);
-    gRouteSectorResolver.ClearPreflightRouteCache();
 
     gPreflightRouteCachePath = ResolvePreflightRouteCachePath();
     xvatsim::core::preflight::PreflightRouteCache cache;
@@ -3973,7 +4865,9 @@ void LoadPreflightRouteCacheCandidate() {
         return;
     }
 
-    gPreflightRouteCacheCandidate = std::move(cache);
+    gPreflightRouteCacheCandidate =
+        std::make_shared<const xvatsim::core::preflight::PreflightRouteCache>(
+            std::move(cache));
     std::ostringstream stream;
     stream << "[XVatsim] Preflight route cache loaded: "
            << gPreflightRouteCacheCandidate->plan.departureIcao
@@ -3991,14 +4885,16 @@ void ApplyPreflightRouteCacheForPlanIfNeeded(
     const xvatsim::brain::NetworkPlanSnapshot& networkPlanSnapshot) {
     xvatsim::brain::BrainOwnedPreflightRouteCacheInput input;
     input.planKey = xvatsim::brain::BuildBrainOwnedNetworkPlanIdentityKey(networkPlanSnapshot);
-    input.hasCandidate = gPreflightRouteCacheCandidate.has_value();
+    input.hasCandidate = gPreflightRouteCacheCandidate != nullptr;
     const auto decision =
         xvatsim::brain::BeginBrainOwnedPreflightRouteCacheApplication(
             &gBrainOwnedRuntimeState,
             input);
 
     if (decision.shouldClearRouteResolverCache) {
-        gRouteSectorResolver.ClearPreflightRouteCache();
+        gSelectedPreflightRouteCache.reset();
+        gSelectedPreflightPlanKey = input.planKey;
+        gSelectedPreflightValidationReason = "no-candidate";
     }
     if (!decision.logLine.empty()) {
         XPLMDebugString(decision.logLine.c_str());
@@ -4007,30 +4903,15 @@ void ApplyPreflightRouteCacheForPlanIfNeeded(
         return;
     }
 
-    const auto validation =
-        xvatsim::core::preflight::ValidatePreflightRouteCacheForNetworkPlan(
-            *gPreflightRouteCacheCandidate,
-            networkPlanSnapshot,
-            true);
-    xvatsim::brain::BrainOwnedPreflightRouteCacheValidationInput
-        validationInput;
-    validationInput.accepted = validation.accepted;
-    validationInput.reason = validation.reason;
-    const auto validationDecision =
-        xvatsim::brain::DecideBrainOwnedPreflightRouteCacheValidation(
-            validationInput);
-    if (!validationDecision.logLine.empty()) {
-        XPLMDebugString(validationDecision.logLine.c_str());
-    }
-    if (!validationDecision.shouldApplyRouteResolverCache) {
-        return;
-    }
+    gSelectedPreflightRouteCache = gPreflightRouteCacheCandidate;
+    gSelectedPreflightPlanKey = input.planKey;
+    gSelectedPreflightValidationReason = "worker-validation-pending";
 
-    gRouteSectorResolver.SetPreflightRouteCache(
-        *gPreflightRouteCacheCandidate,
-        validation.reason);
+    // Gate B performs source-file verification and application exclusively in
+    // the worker-owned engine. This simulator-thread step only selects the
+    // immutable candidate for the semantic request identity.
     std::ostringstream stream;
-    stream << "[XVatsim] Preflight route cache accepted for "
+    stream << "[XVatsim] Preflight route cache queued for worker validation for "
            << networkPlanSnapshot.departureIcao
            << "->"
            << networkPlanSnapshot.destinationIcao
@@ -5438,7 +6319,7 @@ void RefreshOverlayFromBrainEngineer3() {
             RefreshBrainAuthorityRelevanceSnapshot(
                 aircraftState,
                 controllerFeedSnapshot,
-                routePolygonOutput.route,
+                *routePolygonOutput.route,
                 *transceiverResolutionSnapshot,
                 planKey,
                 &diagnostics);
@@ -5828,6 +6709,15 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
         return 0;
     }
     XPLMEnableFeature("XPLM_USE_NATIVE_PATHS", 1);
+    char xplaneSystemPath[1024] = {};
+    XPLMGetSystemPath(xplaneSystemPath);
+    if (!gRoutePreparationWorker.Start(xplaneSystemPath)) {
+        XPLMDebugString(
+            "[XVatsim] Route worker startup failed; plugin not loaded.\n");
+        gAuthorityRelevanceWorker.CancelAndJoin();
+        return 0;
+    }
+    gRouteSectorResolver.StartSourceRefreshBeforeFlightLoop();
     xvatsim::modules::runtime_workers::DiagnosticsWriterOptions
         diagnosticsWriterOptions;
     diagnosticsWriterOptions.logDirectory = ResolvePluginRootPath() / "logs";
@@ -5924,6 +6814,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
 PLUGIN_API void XPluginStop() {
     gPluginRuntimeEnabled = false;
     UnregisterFlightLoop();
+    InvalidateRouteAsyncRuntime("plugin-stop");
     PersistOverlayGeometryIfChanged();
     DiscardPendingAccessoryClickFacts();
     gOverlayWindow.Hide();
@@ -5933,12 +6824,90 @@ PLUGIN_API void XPluginStop() {
         &gBrainOwnedRuntimeState);
     gXPilotPrivateObservationQueue.Clear();
     (void)ApplyBoundAsyncWorkerLifecycleBoundary(true);
+    DrainDeferredRouteRetirementsForStop();
+    gRoutePreparationWorker.CancelAndJoin();
+    gRouteSectorResolver.StopSourceRefreshAfterFlightLoop();
     ResetPluginRuntimeState(true, true);
     gAuthorityRelevanceWorker.CancelAndJoin();
+    gRouteSectorResolver.ResetSourceCaches();
     gOverlayWindow.Destroy();
     gOverlayWindow.SetAccessoryInputWakeCallback(nullptr, nullptr);
     UnregisterPluginMenu();
     UnregisterPluginCommands();
+    {
+        const auto routeWorkerSnapshot = gRoutePreparationWorker.Snapshot();
+        std::ostringstream stream;
+        stream << "event=route-worker-stop"
+               << " started=" << (routeWorkerSnapshot.started ? 1 : 0)
+               << " running=" << (routeWorkerSnapshot.running ? 1 : 0)
+               << " pending=" << (routeWorkerSnapshot.pending ? 1 : 0)
+               << " completed=" << (routeWorkerSnapshot.completed ? 1 : 0)
+               << " starts=" << routeWorkerSnapshot.starts
+               << " replacements=" << routeWorkerSnapshot.replacements
+               << " completions=" << routeWorkerSnapshot.completions
+               << " cancellations=" << routeWorkerSnapshot.cancellations
+               << " failures=" << routeWorkerSnapshot.failures
+               << " fmsObservations="
+               << routeWorkerSnapshot.fmsObservations
+               << " fmsObservationChanges="
+               << routeWorkerSnapshot.fmsObservationChanges
+               << " staleRetirements="
+               << routeWorkerSnapshot.staleRetirements
+               << " maxPendingDepth="
+               << routeWorkerSnapshot.maximumPendingDepth
+               << " requestNodesInUse="
+               << routeWorkerSnapshot.requestNodesInUse
+               << " requestNodesPeak="
+               << routeWorkerSnapshot.requestNodesPeak
+               << " leasesCreated=" << routeWorkerSnapshot.leasesCreated
+               << " leasesRetired=" << routeWorkerSnapshot.leasesRetired
+               << " leasesDestroyedOnWorker="
+               << routeWorkerSnapshot.leasesDestroyedOnWorker
+               << " outstandingLeases="
+               << routeWorkerSnapshot.outstandingLeases
+               << " peakRetainedRouteItems="
+               << routeWorkerSnapshot.peakRetainedRouteItems
+               << " retainedRouteBytes="
+               << routeWorkerSnapshot.retainedRouteBytes
+               << " peakRetainedRouteBytes="
+               << routeWorkerSnapshot.peakRetainedRouteBytes
+               << " sourceDatasetObservations="
+               << routeWorkerSnapshot.sourceDatasetObservations
+               << " sourceDatasetObservationRejections="
+               << routeWorkerSnapshot.sourceDatasetObservationRejections
+               << " retainedSourceDatasets="
+               << routeWorkerSnapshot.retainedSourceDatasets
+               << " peakRetainedSourceDatasets="
+               << routeWorkerSnapshot.peakRetainedSourceDatasets
+               << " retirementBacklogPeak="
+               << gRouteAsyncRuntime.retirementBacklogPeak
+               << " retirementBacklogRemaining="
+               << (HasDeferredRouteRetirements() ? 1 : 0)
+               << " dispatches=" << gRouteAsyncRuntime.dispatchCount
+               << " fmsObservationDispatches="
+               << gRouteAsyncRuntime.fmsObservationDispatchCount
+               << " fmsObservationAccepted="
+               << gRouteAsyncRuntime.fmsObservationAcceptedCount
+               << " fmsObservationChanged="
+               << gRouteAsyncRuntime.fmsObservationChangedCount
+               << " unresolvedRetryDispatches="
+               << gRouteAsyncRuntime.unresolvedRetryDispatchCount
+               << " accepted=" << gRouteAsyncRuntime.acceptedCount
+               << " staleRejected="
+               << gRouteAsyncRuntime.staleRejectedCount
+               << " invalidations=" << gRouteAsyncRuntime.invalidationCount
+               << " submitMaxUs=" << gRouteAsyncRuntime.maximumSubmitUs
+               << " mailboxExchangeMaxUs="
+               << gRouteAsyncRuntime.maximumMailboxExchangeUs
+               << " harvestMaxUs=" << gRouteAsyncRuntime.maximumHarvestUs
+               << " transitionMaxUs="
+               << gRouteAsyncRuntime.maximumTransitionUs;
+        AppendDiagnosticsLogLine(
+            stream.str(),
+            xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
+    }
+    const auto diagnosticsDrainedBeforeStop =
+        gDiagnosticsWriter.WaitUntilIdle(std::chrono::seconds(5));
     const auto writerSnapshot = gDiagnosticsWriter.Snapshot();
     {
         std::ostringstream stream;
@@ -5947,12 +6916,18 @@ PLUGIN_API void XPluginStop() {
                << " submittedCritical=" << writerSnapshot.submittedCritical
                << " submittedTiming="
                << writerSnapshot.submittedFlightLoopTiming
+               << " submittedRouteEvidence="
+               << writerSnapshot.submittedRouteEvidence
                << " dequeued=" << writerSnapshot.dequeued
                << " dequeuedTiming="
                << writerSnapshot.dequeuedFlightLoopTiming
+               << " dequeuedRouteEvidence="
+               << writerSnapshot.dequeuedRouteEvidence
                << " written=" << writerSnapshot.written
                << " writtenTiming="
                << writerSnapshot.writtenFlightLoopTiming
+               << " writtenRouteEvidence="
+               << writerSnapshot.writtenRouteEvidence
                << " droppedContention="
                << writerSnapshot.droppedContention
                << " droppedRoutineContention="
@@ -5965,18 +6940,32 @@ PLUGIN_API void XPluginStop() {
                << writerSnapshot.droppedCriticalFull
                << " droppedTimingFull="
                << writerSnapshot.droppedFlightLoopTimingFull
+               << " droppedRouteEvidenceFull="
+               << writerSnapshot.droppedRouteEvidenceFull
                << " rejectedTimingNotRunning="
                << writerSnapshot.rejectedFlightLoopTimingNotRunning
+               << " rejectedRouteEvidenceNotRunning="
+               << writerSnapshot.rejectedRouteEvidenceNotRunning
                << " formattingFailures="
                << writerSnapshot.formattingFailures
                << " storageFailures=" << writerSnapshot.storageFailures
                << " maxDepth=" << writerSnapshot.maximumQueueDepth
                << " maxTimingDepth="
                << writerSnapshot.maximumFlightLoopTimingQueueDepth
+               << " maxRouteEvidenceDepth="
+               << writerSnapshot.maximumRouteEvidenceQueueDepth
                << " producerMaxUs="
                << writerSnapshot.maximumProducerMicroseconds
                << " timingProducerMaxUs="
                << writerSnapshot.maximumFlightLoopTimingProducerMicroseconds
+               << " routeEvidenceProducerMaxUs="
+               << writerSnapshot.maximumRouteEvidenceProducerMicroseconds
+               << " lastSubmittedRouteEvidenceSequence="
+               << writerSnapshot.lastSubmittedRouteEvidenceSequence
+               << " lastWrittenRouteEvidenceSequence="
+               << writerSnapshot.lastWrittenRouteEvidenceSequence
+               << " drainedBeforeStop="
+               << (diagnosticsDrainedBeforeStop ? 1 : 0)
                << " workerRunning=" << (writerSnapshot.running ? 1 : 0);
         AppendDiagnosticsLogLine(
             stream.str(),
@@ -5997,6 +6986,10 @@ PLUGIN_API int XPluginEnable() {
             &gBrainOwnedRuntimeState);
     ServicePdcPrivateSource();
     LoadPreflightRouteCacheCandidate();
+    // Source refresh may create or harvest its compiler thread.  Keep that
+    // lifecycle work ahead of flight-loop registration so Gate B never moves
+    // thread creation or joining into an X-Plane callback after re-enable.
+    gRouteSectorResolver.StartSourceRefreshBeforeFlightLoop();
     xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
         &gBrainOwnedRuntimeState,
         ToDisplayOverrideMode(gPluginSettings.displayMode));
@@ -6042,6 +7035,7 @@ PLUGIN_API void XPluginDisable() {
             &gBrainOwnedRuntimeState,
             gAsyncFactWorkerHost.Bindings());
     LogMetarLifecycleDiagnostics(suspension.workerShutdown);
+    InvalidateRouteAsyncRuntime("plugin-admin-disable");
     InvalidateAuthorityAsyncRuntime("plugin-admin-disable");
     gVatsimDataFeedClient.Reset();
     gNetworkPlanLink.Reset();

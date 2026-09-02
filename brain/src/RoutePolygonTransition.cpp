@@ -190,60 +190,86 @@ RoutePolygonTransitionWorkerOutput RunRoutePolygonTransitionWorker(
     RoutePolygonTransitionWorkerOutput output;
     output.previousPolygonKey = input.previousPolygonKey;
     output.route = input.route;
-    output.available = input.route.available;
-    output.stale = input.route.stale;
-    output.routeResolved = input.route.routeResolved;
+    output.available = input.route != nullptr && input.route->available;
+    output.stale = input.route == nullptr || input.route->stale;
+    output.routeResolved = input.route != nullptr && input.route->routeResolved;
 
-    if (!input.route.available || input.route.stale || !input.route.routeResolved) {
+    if (input.route == nullptr || !input.route->available ||
+        input.route->stale || !input.route->routeResolved) {
         output.reason = "route-polygon-transition-route-unavailable";
         return output;
     }
 
-    const auto sequence = BuildOrderedRoutePolygonSequence(input.route);
-    if (sequence.empty()) {
+    output.progressDistanceNm =
+        ComputeRouteProgressNm(input.aircraft, input.route->waypoints);
+    const auto transitionToleranceNm =
+        std::max(0.0, input.transitionToleranceNm);
+    const auto thresholdNm =
+        output.progressDistanceNm + transitionToleranceNm;
+    double firstEntryNm = std::numeric_limits<double>::max();
+    double selectedEntryNm = -1.0;
+    bool hasSector = false;
+    const auto visitSectors = [&](const auto& visitor) {
+        for (const auto& sector : input.route->currentSectors) {
+            visitor(sector);
+        }
+        for (const auto& sector : input.route->nextSectors) {
+            visitor(sector);
+        }
+    };
+    visitSectors([&](const RouteSectorMatchSnapshot& sector) {
+        if (sector.identifier.empty()) {
+            return;
+        }
+        hasSector = true;
+        const auto entryNm = std::max(0.0, sector.entryDistanceNm);
+        firstEntryNm = std::min(firstEntryNm, entryNm);
+        if (entryNm <= thresholdNm) {
+            selectedEntryNm = std::max(selectedEntryNm, entryNm);
+        }
+    });
+    if (!hasSector) {
         output.reason = "route-polygon-transition-no-sequence";
         return output;
     }
-
-    output.progressDistanceNm =
-        ComputeRouteProgressNm(input.aircraft, input.route.waypoints);
-    const auto transitionToleranceNm =
-        std::max(0.0, input.transitionToleranceNm);
-
-    std::size_t selectedIndex = 0;
-    for (std::size_t index = 0; index < sequence.size(); ++index) {
-        if (sequence[index].entryDistanceNm <=
-            output.progressDistanceNm + transitionToleranceNm) {
-            selectedIndex = index;
-        } else {
-            break;
-        }
+    if (selectedEntryNm < 0.0) {
+        selectedEntryNm = firstEntryNm;
     }
 
-    const auto selectedEntryDistanceNm = sequence[selectedIndex].entryDistanceNm;
-    std::vector<RouteSectorMatchSnapshot> currentSectors;
-    std::vector<RouteSectorMatchSnapshot> nextSectors;
-    for (const auto& sector : sequence) {
-        if (std::fabs(sector.entryDistanceNm - selectedEntryDistanceNm) <=
+    double nextEntryNm = std::numeric_limits<double>::max();
+    double finalEntryNm = -1.0;
+    int precedingCount = 0;
+    visitSectors([&](const RouteSectorMatchSnapshot& sector) {
+        if (sector.identifier.empty()) {
+            return;
+        }
+        const auto entryNm = std::max(0.0, sector.entryDistanceNm);
+        if (entryNm < selectedEntryNm - kSameEntryDistanceToleranceNm) {
+            ++precedingCount;
+        }
+        if (std::fabs(entryNm - selectedEntryNm) <=
             kSameEntryDistanceToleranceNm) {
-            currentSectors.push_back(sector);
-            continue;
+            if (output.currentPolygonKey.empty() ||
+                sector.identifier < output.currentPolygonKey) {
+                output.currentPolygonKey = sector.identifier;
+            }
+        } else if (entryNm > selectedEntryNm +
+                       kSameEntryDistanceToleranceNm &&
+                   (entryNm < nextEntryNm ||
+                    (entryNm == nextEntryNm &&
+                     (output.nextPolygonKey.empty() ||
+                      sector.identifier < output.nextPolygonKey)))) {
+            nextEntryNm = entryNm;
+            output.nextPolygonKey = sector.identifier;
         }
-        if (sector.entryDistanceNm > selectedEntryDistanceNm +
-            kSameEntryDistanceToleranceNm) {
-            nextSectors.push_back(sector);
+        if (entryNm > finalEntryNm ||
+            (entryNm == finalEntryNm &&
+             sector.identifier > output.finalRoutePolygonKey)) {
+            finalEntryNm = entryNm;
+            output.finalRoutePolygonKey = sector.identifier;
         }
-    }
-
-    if (currentSectors.empty()) {
-        currentSectors.push_back(sequence[selectedIndex]);
-    }
-
-    output.currentPolygonIndex = static_cast<int>(selectedIndex) + 1;
-    output.currentPolygonKey = currentSectors.front().identifier;
-    output.nextPolygonKey =
-        nextSectors.empty() ? std::string{} : nextSectors.front().identifier;
-    output.finalRoutePolygonKey = sequence.back().identifier;
+    });
+    output.currentPolygonIndex = precedingCount + 1;
     output.enteredFinalRoutePolygon =
         !output.currentPolygonKey.empty() &&
         output.currentPolygonKey == output.finalRoutePolygonKey;
@@ -252,8 +278,26 @@ RoutePolygonTransitionWorkerOutput RunRoutePolygonTransitionWorker(
         output.currentPolygonKey != input.previousPolygonKey;
     output.shouldWakeUi = output.changed && !output.enteredFinalRoutePolygon;
 
-    output.route.currentSectors = std::move(currentSectors);
-    output.route.nextSectors = std::move(nextSectors);
+    // Stable callbacks stop here with the exact shared worker result. The
+    // derived route copy and canonical reordering are paid only on an actual
+    // polygon transition.
+    if (output.changed) {
+        const auto sequence = BuildOrderedRoutePolygonSequence(*input.route);
+        auto transitioned = std::make_shared<RouteSectorSnapshot>(*input.route);
+        transitioned->currentSectors.clear();
+        transitioned->nextSectors.clear();
+        for (const auto& sector : sequence) {
+            if (std::fabs(sector.entryDistanceNm - selectedEntryNm) <=
+                kSameEntryDistanceToleranceNm) {
+                transitioned->currentSectors.push_back(sector);
+            } else if (sector.entryDistanceNm > selectedEntryNm +
+                       kSameEntryDistanceToleranceNm) {
+                transitioned->nextSectors.push_back(sector);
+            }
+        }
+        output.route = std::shared_ptr<const RouteSectorSnapshot>(
+            std::move(transitioned));
+    }
 
     if (output.changed) {
         output.reason = output.enteredFinalRoutePolygon

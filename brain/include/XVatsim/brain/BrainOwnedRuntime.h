@@ -921,7 +921,7 @@ struct BrainOwnedRuntimeState {
     BrainOwnedAtisRuntimeState atis;
     BrainPdcRuntimeState pdc;
     bool hasRoutePolygonSnapshot = false;
-    RouteSectorSnapshot routePolygonSnapshot;
+    std::shared_ptr<const RouteSectorSnapshot> routePolygonSnapshot;
     std::uint64_t routePolygonHash = 0;
     std::uint64_t authorityRouteDigest = 0;
     std::shared_ptr<const RouteSectorSnapshot> authorityRouteSnapshot;
