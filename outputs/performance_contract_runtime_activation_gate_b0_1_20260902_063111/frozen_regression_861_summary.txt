@@ -1,0 +1,6 @@
+Runtime Activation Gate B0.1 frozen regression
+Scenarios enumerated: 861
+Passed: 861
+Failed: 0
+Exact route-oracle parity scenarios: 64/64
+Elapsed seconds: 38.635

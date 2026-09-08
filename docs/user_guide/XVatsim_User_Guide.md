@@ -1,8 +1,8 @@
 # XVatsim Freeware User Guide
 
-Version 1.2.3
+Version 2.0.0
 
-Updated: August 2026
+Updated: September 2026
 
 XVatsim is a Windows plugin for X-Plane 12 and xPilot. It gives VATSIM pilots a clean, route-aware frequency overlay that focuses on the controllers relevant to the current IFR flight.
 
@@ -10,13 +10,25 @@ XVatsim is intended for home flight simulation only. It is not approved for real
 
 ![Clean XVatsim overlay](assets/01_clean_ui.jpg)
 
-## What's New In Version 1.2.3
+## What's New In Version 2.0.0
 
-Version 1.2.3 improves exact route-polygon crossing detection. It fixes a
-live-tested route where the PNG-TXO leg of an MMTO-KCOS flight crossed KZFW but
-the Dallas/Fort Worth Center authority could be missed. The change improves
-route geometry without changing how the brain decides controller relevance,
-display order, or Standby Assist ownership.
+Version 2.0.0 adds three information ORBs below the main frequency card:
+METAR, VATSIM ATIS, and a one-shot PDC snapshot from xPilot. Each ORB opens its
+own information drawer, keeps its own history, and marks newly received content
+as read only after that content is visibly displayed.
+
+Controller selection is also stronger. In the United States, XVatsim can use
+vNAS sector information as another source of evidence when deciding which
+Approach or Departure controller serves the flight. Terminal-controller
+transmitter distance is evaluated from the departure or arrival airport rather
+than from the moving aircraft. Center display continues to use the aircraft's
+250-nautical-mile range gate. These facts support the same central decision
+system; they do not create a second controller-selection path.
+
+Version 2.0.0 also prevents identical ATIS content from repeatedly returning to
+unread, improves exact route-polygon crossing detection, and keeps expensive
+route and authority preparation away from the X-Plane flight loop so normal
+settled operation remains calm.
 
 ## What XVatsim Does
 
@@ -38,7 +50,7 @@ XVatsim can sleep when there is nothing useful to show and wake when controller 
 - VATSIM account and active xPilot connection
 - IFR flight plan filed on VATSIM
 
-XVatsim Version 1 does not include Mac support, Linux support, X-Plane 11 support, SimBrief import, Navigraph AIRAC import, private-message or PDC cards, or a dedicated VFR workflow.
+XVatsim Version 2.0.0 does not include Mac support, Linux support, X-Plane 11 support, SimBrief import, Navigraph AIRAC import, a general private-message inbox, or a dedicated VFR controller-evidence workflow.
 
 ## Installation
 
@@ -87,7 +99,7 @@ Color and labels matter:
 
 Tuning a frequency does not make a row green by itself. XVatsim colors controller rows from route and authority context, not from radio tuning alone.
 
-In Version 1.2.3, the brain owns the final radio-board order, controller relevance decisions, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
+In Version 2.0.0, the brain owns the final radio-board order, controller relevance decisions, information ORBs and drawers, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
 
 When an update is available, XVatsim shows a dismissible update notice panel
 with the installed version, latest version, and an X-Plane.org or GitHub
@@ -97,6 +109,46 @@ failed results, so update status is not clipped into the bottom route/status
 line.
 
 ![Center frequency display](assets/05_center_frequency_display.jpg)
+
+## METAR, ATIS, And PDC Information
+
+The three round ORBs below the main card are independent information sources.
+Select an ORB to open its drawer. Select the same ORB again to close it, or
+select another ORB to switch drawers. Use the mouse wheel over an open drawer
+to read longer entries.
+
+### METAR
+
+The METAR ORB automatically follows the primary airport chosen for the current
+flight context. The drawer shows the latest available VATSIM METAR and keeps a
+bounded recent history. To look up another airport without changing the
+automatic primary airport, choose `Plugins > XVatsim > Select METAR Airport...`,
+enter one four-letter ICAO code, and press Enter.
+
+### VATSIM ATIS
+
+The ATIS ORB follows the primary departure or arrival airport and displays the
+current VATSIM voice-ATIS text when available. `NEW A`, for example, means a new
+Information A is unread; `INFO A` means that exact revision has been displayed.
+If VATSIM republishes identical Information A content, XVatsim keeps it read
+instead of treating it as a new message.
+
+For another airport, choose `Plugins > XVatsim > Select ATIS Airport...`, enter
+one four-letter ICAO code, and press Enter. A manual lookup does not replace the
+automatic primary airport.
+
+### One-Shot PDC Snapshot
+
+After a stable xPilot connection and complete flight identity are available,
+XVatsim can capture the first valid waiting xPilot private message for the
+flight. The PDC ORB changes from `NEW 1` to `MSG 1` after the captured message
+is visibly displayed. The drawer always warns `CAPTURED SNAPSHOT — CHECK XPILOT
+FOR REVISIONS`.
+
+This is a convenience snapshot, not a private-message inbox or a replacement
+for xPilot. XVatsim does not decide from the sender or wording whether the first
+waiting message is a clearance. Always use xPilot as the authoritative source,
+especially for revisions, amendments, or later messages.
 
 ## CTAF And UNICOM
 
@@ -110,9 +162,27 @@ For example, in some regions a destination or departure may show `NO CTAF / UNIC
 
 Open X-Plane's menu bar and choose `Plugins > XVatsim`.
 
+### IFR Mode / VFR Mode
+
+Selects the saved operating-mode preference. Version 2.0.0 retains the VFR mode
+foundation, but controller projection remains designed and proven for the IFR
+flight-plan workflow.
+
 ### Manual CTAF Lookup
 
 Opens a text prompt for looking up CTAF information manually. Enter the airport ICAO and press Enter. The prompt accepts CTAF lookup text such as `.ctaf KJAC` or simply the airport ICAO when the prompt is already open.
+
+### Select METAR Airport
+
+Opens a text prompt for a one-airport METAR lookup. Enter one four-letter ICAO
+code and press Enter. The result opens in the METAR drawer without changing the
+automatic primary airport.
+
+### Select ATIS Airport
+
+Opens a text prompt for a one-airport VATSIM ATIS lookup. Enter one four-letter
+ICAO code and press Enter. The result opens in the ATIS drawer without changing
+the automatic primary airport.
 
 ### Open Display
 
@@ -270,7 +340,15 @@ Do not use Reset Session just to recover after a reconnect. Use `Recover Current
   enabled and the lookup has completed successfully.
 - Confirm the recommended frequency is not already active.
 - A controller target takes priority over a CTAF/UNICOM advisory target.
-- Private-message and PDC handling are not part of Standby Assist in Version 1.
+- The PDC information drawer is separate from Standby Assist and never tunes a frequency.
+
+### METAR, ATIS, or PDC information is missing
+
+- Confirm xPilot is connected and the flight callsign matches the filed plan.
+- METAR and ATIS availability depends on the current VATSIM sources.
+- For a different airport, use `Select METAR Airport...` or `Select ATIS Airport...` from the XVatsim plugin menu.
+- The PDC drawer captures only the first valid waiting xPilot message after the flight is armed. Check xPilot for the complete conversation and all revisions.
+- If an ATIS republishes the same information code and unchanged content, XVatsim intentionally keeps the existing entry read.
 
 ### Update check is unavailable
 
@@ -307,4 +385,4 @@ Support contact:
 
 ## Freeware Notes
 
-XVatsim is being provided as freeware. Please keep the package intact when sharing it so pilots receive the plugin, transition audio, authority registry, README, quick start, and this user guide together. XVatsim is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.
+XVatsim is being provided as freeware. Please keep the package intact when sharing it so pilots receive the plugin, transition audio, authority registry, README, quick start, and this user guide together. XVatsim 2.0.0 is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.

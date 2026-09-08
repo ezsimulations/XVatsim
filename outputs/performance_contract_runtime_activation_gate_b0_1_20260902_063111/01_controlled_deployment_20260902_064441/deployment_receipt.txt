@@ -1,0 +1,24 @@
+Runtime Activation Gate B0.1 controlled deployment receipt
+timestamp=
+2026-09-02T06:44:41.7459197-07:00
+xplaneRunningBeforeDeployment=0
+candidate=
+C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\outputs\performance_contract_runtime_activation_gate_b0_1_20260902_063111\Runtime_Activation_Gate_B0_1_candidate_XVatsim.xpl
+candidateSha256=
+C4789D682D4A01E75BD0B1D749DF3404F280976A28F796B6681728607D0C0AA7
+predeploymentActiveSha256=
+CC42CD97A2655C1D8FB445FD128C85833E82BB7D535490EA4B08F310B2C5F512
+productCalmRollbackSha256=
+3D8E35CBD3B0FAA96CEB24D5422BD73ECB928F8A7F9B7417249FA994E4CD4E70
+activeBackup=
+C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\outputs\performance_contract_runtime_activation_gate_b0_1_20260902_063111\01_controlled_deployment_20260902_064441\Installed_Gate_B_predeployment_XVatsim.xpl
+rollbackBackup=
+C:\Users\DARRON\OneDrive\Documents\XVatsim-V2\outputs\performance_contract_runtime_activation_gate_b0_1_20260902_063111\01_controlled_deployment_20260902_064441\Product_Calm_rollback_XVatsim.xpl
+deployedPath=
+C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl
+deployedSha256=
+C4789D682D4A01E75BD0B1D749DF3404F280976A28F796B6681728607D0C0AA7
+deploymentHashExact=1
+startupSmokePending=1
+stagedFiles=0
+commitCreated=0

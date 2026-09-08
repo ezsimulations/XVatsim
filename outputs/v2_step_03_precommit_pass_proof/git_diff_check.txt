@@ -1,0 +1,14 @@
+exit=0
+warning: in the working copy of 'CMakeLists.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'brain/include/XVatsim/brain/BrainOwnedRuntime.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'brain/src/BrainOwnedRuntime.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/overlay/CMakeLists.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/overlay/include/XVatsim/modules/overlay/OverlayWindow.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/overlay/src/OverlayWindow.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'plugin/CMakeLists.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'plugin/src/XVatsimPlugin.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tools/regression_harness/CMakeLists.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tools/regression_harness/README.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tools/regression_harness/src/main.cpp', LF will be replaced by CRLF the next time Git touches it
+
+cachedExit=0

@@ -1,0 +1,14 @@
+name=V2 operating mode reselect is idempotent
+operating_mode.probe=selection
+operating_mode.settings_entry=vfr
+operating_mode.selection_requests=VFR
+expect.operating_mode=VFR
+expect.operating_mode_source=settings-store
+expect.operating_mode_reason=stored-preference
+expect.operating_mode_generation=0
+expect.operating_mode_change_count=0
+expect.operating_mode_persistence_requests=0
+expect.operating_mode_request_source=pilot-menu
+expect.operating_mode_request_reason=already-active
+expect.operating_mode_state_unchanged=true
+expect.operating_mode_retry_count=0

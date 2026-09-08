@@ -1,0 +1,1442 @@
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include <windows.h>
+#include <objidl.h>
+#include <bcrypt.h>
+#include <gdiplus.h>
+
+#include "XVatsim/brain/BrainMetarRuntime.h"
+#include "XVatsim/brain/BrainOwnedRuntime.h"
+#include "XVatsim/modules/overlay/OverlayAccessoryCore.h"
+#include "XVatsim/modules/overlay/OverlayVisualProof.h"
+
+namespace fs = std::filesystem;
+namespace brain = xvatsim::brain;
+namespace overlay = xvatsim::modules::overlay;
+
+namespace {
+
+struct VisualSpec {
+    std::string filename;
+    std::string variant;
+};
+
+const VisualSpec kVisuals[]{
+    {"01_unknown_no_primary.png", "unknown"},
+    {"02_primary_pending.png", "pending"},
+    {"03_primary_unavailable.png", "unavailable"},
+    {"04_primary_stale.png", "stale"},
+    {"05_primary_vfr.png", "vfr"},
+    {"06_primary_mvfr.png", "mvfr"},
+    {"07_primary_ifr.png", "ifr"},
+    {"08_primary_lifr.png", "lifr"},
+    {"09_selected_no_open.png", "selected"},
+    {"10_lookup_pending.png", "lookup-pending"},
+    {"11_lookup_spotlight.png", "lookup-spotlight"},
+    {"12_lookup_failure.png", "lookup-failure"},
+    {"13_primary_preempts_spotlight.png", "preempted"},
+    {"14_main_card_zero_difference.png", "main-card"},
+    {"17_second_kabq_spotlight.png", "lookup-spotlight"},
+    {"18_returned_kdfw_primary.png", "vfr"},
+    {"19_atis_owns_spotlight_expiry.png", "atis-ownership"},
+    {"20_pdc_owns_spotlight_expiry.png", "pdc-ownership"},
+    {"21_metar_closed_no_delayed_reopen.png", "metar-closed"},
+    {"22_normal_scale_cockpit_orb_crop.png", "orb-crop"},
+    {"23_neutral_before_primary_acceptance.png", "unknown"},
+    {"24_automatic_kdfw_vfr_no_click.png", "vfr"},
+    {"25_automatic_kdfw_mvfr_transition.png", "mvfr"},
+    {"26_automatic_ksan_primary_transition.png", "ksan-ifr"},
+    {"27_closed_drawer_automatic_update.png", "vfr"},
+    {"28_atis_selected_during_metar_update.png", "atis-ownership"},
+    {"29_pdc_selected_during_metar_update.png", "pdc-ownership"},
+    {"30_kabq_spotlight_unchanged_kdfw_orb.png", "lookup-spotlight"},
+    {"31_identical_primary_zero_rail_difference.png", "vfr"},
+    {"32_actual_rail_before_pixel_comparison.png", "unknown"},
+    {"33_actual_rail_after_pixel_comparison.png", "vfr"},
+    {"34_metar_active_populated_kdfw.png", "vfr"},
+    {"35_atis_active_truthful_empty.png", "atis-ownership"},
+    {"36_pdc_active_truthful_empty.png", "pdc-ownership"},
+    {"37_metar_to_atis_result.png", "atis-ownership"},
+    {"38_atis_to_pdc_result.png", "pdc-ownership"},
+    {"39_pdc_to_metar_result.png", "vfr"},
+    {"40_active_drawer_close_result.png", "metar-closed"},
+    {"41_double_atis_final_closed.png", "metar-closed"},
+    {"42_rapid_alternating_final_metar.png", "vfr"},
+    {"43_reenable_clean_metar_state.png", "vfr"},
+};
+
+constexpr std::uint64_t kAcceptedMainCardSignature =
+    8'949'928'878'432'326'300ULL;
+
+std::uint64_t ElapsedUs(std::chrono::steady_clock::time_point started) {
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - started).count());
+}
+
+std::string Hex(const unsigned char* bytes, std::size_t count) {
+    static constexpr char digits[] = "0123456789ABCDEF";
+    std::string result;
+    result.reserve(count * 2);
+    for (std::size_t index = 0; index < count; ++index) {
+        result.push_back(digits[(bytes[index] >> 4) & 0x0f]);
+        result.push_back(digits[bytes[index] & 0x0f]);
+    }
+    return result;
+}
+
+std::vector<unsigned char> ReadBytes(const fs::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(input),
+            std::istreambuf_iterator<char>()};
+}
+
+std::string Sha256(const fs::path& path) {
+    const auto bytes = ReadBytes(path);
+    BCRYPT_ALG_HANDLE algorithm = nullptr;
+    BCRYPT_HASH_HANDLE hash = nullptr;
+    DWORD objectBytes = 0;
+    DWORD returned = 0;
+    std::array<unsigned char, 32> digest{};
+    if (BCryptOpenAlgorithmProvider(
+            &algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) != 0 ||
+        BCryptGetProperty(
+            algorithm, BCRYPT_OBJECT_LENGTH,
+            reinterpret_cast<PUCHAR>(&objectBytes), sizeof(objectBytes),
+            &returned, 0) != 0) {
+        if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
+        return {};
+    }
+    std::vector<unsigned char> object(objectBytes);
+    const bool failed = BCryptCreateHash(
+            algorithm, &hash, object.data(), objectBytes, nullptr, 0, 0) != 0 ||
+        (!bytes.empty() && BCryptHashData(
+            hash, const_cast<PUCHAR>(bytes.data()),
+            static_cast<ULONG>(bytes.size()), 0) != 0) ||
+        BCryptFinishHash(hash, digest.data(), digest.size(), 0) != 0;
+    if (hash) BCryptDestroyHash(hash);
+    BCryptCloseAlgorithmProvider(algorithm, 0);
+    return failed ? std::string{} : Hex(digest.data(), digest.size());
+}
+
+int FindPngEncoder(CLSID* encoder) {
+    UINT count = 0;
+    UINT bytes = 0;
+    Gdiplus::GetImageEncodersSize(&count, &bytes);
+    if (bytes == 0 || encoder == nullptr) return -1;
+    std::vector<unsigned char> storage(bytes);
+    auto* encoders = reinterpret_cast<Gdiplus::ImageCodecInfo*>(storage.data());
+    if (Gdiplus::GetImageEncoders(count, bytes, encoders) != Gdiplus::Ok) return -1;
+    for (UINT index = 0; index < count; ++index) {
+        if (std::wstring(encoders[index].MimeType) == L"image/png") {
+            *encoder = encoders[index].Clsid;
+            return static_cast<int>(index);
+        }
+    }
+    return -1;
+}
+
+bool SavePng(const fs::path& path, const overlay::OfflineRasterImage& image) {
+    if (image.width <= 0 || image.height <= 0 ||
+        image.bgraPixels.size() !=
+            static_cast<std::size_t>(image.width * image.height * 4)) return false;
+    CLSID encoder{};
+    if (FindPngEncoder(&encoder) < 0) return false;
+    Gdiplus::Bitmap bitmap(
+        image.width, image.height, image.width * 4, PixelFormat32bppARGB,
+        const_cast<BYTE*>(image.bgraPixels.data()));
+    return bitmap.Save(path.wstring().c_str(), &encoder, nullptr) == Gdiplus::Ok;
+}
+
+overlay::OfflineRasterImage Canvas(int width, int height) {
+    overlay::OfflineRasterImage image;
+    image.width = std::max(1, width);
+    image.height = std::max(1, height);
+    image.bgraPixels.resize(static_cast<std::size_t>(image.width * image.height * 4));
+    for (std::size_t index = 0; index < image.bgraPixels.size(); index += 4) {
+        image.bgraPixels[index] = 44;
+        image.bgraPixels[index + 1] = 35;
+        image.bgraPixels[index + 2] = 27;
+        image.bgraPixels[index + 3] = 255;
+    }
+    return image;
+}
+
+overlay::OfflineRasterImage ScaleNearest(
+    const overlay::OfflineRasterImage& source,
+    int width,
+    int height) {
+    auto result = Canvas(width, height);
+    std::fill(result.bgraPixels.begin(), result.bgraPixels.end(), 0);
+    for (int y = 0; y < result.height; ++y) {
+        const int sourceY = std::min(source.height - 1,
+            static_cast<int>((static_cast<long long>(y) * source.height) / result.height));
+        for (int x = 0; x < result.width; ++x) {
+            const int sourceX = std::min(source.width - 1,
+                static_cast<int>((static_cast<long long>(x) * source.width) / result.width));
+            const auto from = static_cast<std::size_t>((sourceY * source.width + sourceX) * 4);
+            const auto to = static_cast<std::size_t>((y * result.width + x) * 4);
+            std::copy_n(source.bgraPixels.data() + from, 4,
+                        result.bgraPixels.data() + to);
+        }
+    }
+    return result;
+}
+
+void Blit(
+    overlay::OfflineRasterImage* target,
+    const overlay::OfflineRasterImage& source,
+    int left,
+    int top) {
+    if (!target) return;
+    for (int y = 0; y < source.height; ++y) {
+        for (int x = 0; x < source.width; ++x) {
+            const int tx = left + x;
+            const int ty = top + y;
+            if (tx < 0 || ty < 0 || tx >= target->width || ty >= target->height) continue;
+            const auto from = static_cast<std::size_t>((y * source.width + x) * 4);
+            const auto to = static_cast<std::size_t>((ty * target->width + tx) * 4);
+            const unsigned alpha = source.bgraPixels[from + 3];
+            for (int channel = 0; channel < 3; ++channel) {
+                target->bgraPixels[to + channel] = static_cast<unsigned char>((
+                    source.bgraPixels[from + channel] * alpha +
+                    target->bgraPixels[to + channel] * (255 - alpha) + 127) / 255);
+            }
+            target->bgraPixels[to + 3] = 255;
+        }
+    }
+}
+
+brain::OverlayViewModel MainCard() {
+    brain::OverlayViewModel view;
+    view.mode = brain::OverlayMode::Active;
+    view.visible = true;
+    view.title = "Enroute";
+    view.headerRightText = "N123XV";
+    view.version.text = "V2 STEP 4";
+    view.version.tone = brain::OverlayVersionTone::Current;
+    view.radioState.valid = true;
+    view.radioState.com1Powered = true;
+    view.radioState.com2Powered = true;
+    view.radioState.modeCActive = true;
+    view.radioState.com1ActiveFrequency = "127.650";
+    view.radioState.com2ActiveFrequency = "134.790";
+    view.bodyLines = {
+        {"CONNECTED N123XV", brain::OverlayTone::Active},
+        {"LAX_CTR 127.650", brain::OverlayTone::Active},
+        {"Controller workflow remains unchanged", brain::OverlayTone::Normal},
+        {"Brain-approved METAR accessory", brain::OverlayTone::Next},
+    };
+    return view;
+}
+
+brain::BrainMetarParsedObservation Parse(const std::string& station, const std::string& raw) {
+    return brain::ParseBrainOwnedMetarReport(station, raw, 1'787'860'800);
+}
+
+void AddHistory(
+    brain::BrainOwnedRuntimeState* state,
+    const std::string& key,
+    const std::string& title,
+    const std::string& raw,
+    std::int64_t chronology) {
+    brain::BrainOwnedAccessoryHistoryEntryInput entry;
+    entry.drawer = brain::BrainOwnedAccessoryDrawerId::Metar;
+    entry.stableKey = key;
+    entry.title = title;
+    entry.body = raw;
+    entry.chronological = true;
+    entry.chronologyKey = chronology;
+    (void)brain::AcceptBrainOwnedAccessoryHistoryEntry(state, entry);
+}
+
+class VisualMetarWorker final : public brain::BrainMetarWorker {
+public:
+    bool Start(const brain::BrainMetarWorkerRequest& request) override {
+        if (running) return false;
+        requests.push_back(request);
+        running = true;
+        return true;
+    }
+
+    bool TryHarvest(brain::BrainMetarWorkerFact* fact) override {
+        if (fact == nullptr || !ready.has_value()) return false;
+        *fact = *ready;
+        ready.reset();
+        running = false;
+        return true;
+    }
+
+    bool IsRunning() const override { return running; }
+
+    void CancelAndJoin() override { running = false; }
+
+    brain::BrainMetarWorkerShutdownSnapshot ShutdownSnapshot() const override {
+        brain::BrainMetarWorkerShutdownSnapshot snapshot;
+        snapshot.running = running;
+        snapshot.handlesClosed = !running;
+        snapshot.callbacksClosed = !running;
+        return snapshot;
+    }
+
+    void Complete(
+        brain::BrainMetarWorkerStatus status,
+        const std::string& raw = {}) {
+        if (requests.empty()) {
+            throw std::runtime_error("METAR completion has no request");
+        }
+        brain::BrainMetarWorkerFact fact;
+        fact.request = requests.back();
+        fact.status = status;
+        fact.stationIcao = fact.request.airportIcao;
+        fact.rawMetar = raw;
+        if (status == brain::BrainMetarWorkerStatus::Success) {
+            fact.decodeStatus = brain::BrainMetarDecodeStatus::Decoded;
+            fact.reportCardinality = 1;
+            fact.stationFieldType = brain::BrainMetarDecodedFieldType::String;
+            fact.metarFieldType = brain::BrainMetarDecodedFieldType::String;
+            fact.httpStatus = 200;
+        }
+        fact.stationFieldMissing = false;
+        fact.metarFieldMissing = false;
+        fact.payloadBytes = fact.rawMetar.size();
+        fact.networkElapsedUs = 2'500;
+        fact.diagnostic = status == brain::BrainMetarWorkerStatus::Success
+            ? "visual-fixture-success" : "visual-fixture-failure";
+        ready = std::move(fact);
+        running = false;
+    }
+
+    bool running = false;
+    std::vector<brain::BrainMetarWorkerRequest> requests;
+    std::optional<brain::BrainMetarWorkerFact> ready;
+};
+
+struct VisualBrainFixture {
+    brain::BrainOwnedRuntimeState state;
+    VisualMetarWorker worker;
+    brain::BrainOwnedAsyncFactCycleInput input;
+
+    VisualBrainFixture() {
+        brain::EnableBrainOwnedAccessoryRuntime(&state);
+        input.pluginEnabled = true;
+        input.xpilotConnected = true;
+        input.workflowStage = brain::WorkflowStage::Departure;
+        input.operatingMode = brain::BrainOwnedOperatingMode::IFR;
+        input.flightContext.active = true;
+        input.flightContext.callsign = "N123XV";
+        input.flightContext.departureIcao = "KDFW";
+        input.flightContext.destinationIcao = "KSAN";
+        input.monotonicMs = 1'000;
+        input.utcUnixSeconds = 1'787'860'800;
+    }
+
+    brain::BrainOwnedAsyncFactCycleOutput Cycle(long long advanceMs = 0) {
+        input.monotonicMs += advanceMs;
+        brain::BrainOwnedAsyncWorkerBindings bindings;
+        bindings.metar = &worker;
+        return brain::RunBrainOwnedAsyncFactCycle(&state, input, bindings);
+    }
+
+    brain::BrainOwnedAsyncFactCycleOutput AcceptCurrent(
+        const std::string& raw) {
+        if (!worker.running) Cycle();
+        if (!worker.running) {
+            throw std::runtime_error("Brain did not dispatch METAR request");
+        }
+        worker.Complete(brain::BrainMetarWorkerStatus::Success, raw);
+        const auto output = Cycle(1);
+        if (!output.completionAccepted) {
+            throw std::runtime_error("Brain did not accept METAR result");
+        }
+        return output;
+    }
+
+    brain::BrainOwnedAsyncFactCycleOutput AcceptPrimary(
+        const std::string& raw = "KDFW 271952Z 18010KT 10SM FEW050") {
+        return AcceptCurrent(raw);
+    }
+
+    brain::BrainOwnedAsyncFactCycleOutput RefreshPrimary(
+        const std::string& raw) {
+        const auto advance = std::max<long long>(
+            0, state.metar.nextPrimaryEligibleMonotonicMs - input.monotonicMs);
+        Cycle(advance);
+        return AcceptCurrent(raw);
+    }
+
+    void Select(brain::BrainOwnedAccessoryDrawerId drawer) {
+        brain::BrainOwnedAccessorySelectionRequest request;
+        request.drawer = drawer;
+        request.requestSequence = state.accessory.lastConsumedClickSequence + 1;
+        const auto decision =
+            brain::RequestBrainOwnedAccessoryDrawerSelection(&state, request);
+        if (decision.status != brain::BrainOwnedAccessoryOperationStatus::Available) {
+            throw std::runtime_error("Brain rejected accessory selection");
+        }
+    }
+
+    void SubmitLookup(const std::string& icao = "KABQ") {
+        brain::BrainOwnedTextEntryFact fact;
+        fact.mode = brain::BrainOwnedTextEntryMode::MetarAirportLookup;
+        fact.text = icao;
+        fact.monotonicMs = ++input.monotonicMs;
+        const auto decision = brain::CommitBrainOwnedTextEntryFact(&state, fact);
+        if (!decision.accepted) {
+            throw std::runtime_error("Brain rejected METAR lookup");
+        }
+    }
+
+    brain::BrainOwnedAsyncFactCycleOutput AcceptLookup(
+        const std::string& raw = "KABQ 271953Z 18012KT 4SM BKN020") {
+        Cycle();
+        return AcceptCurrent(raw);
+    }
+
+    brain::BrainOwnedAsyncFactCycleOutput FailLookup() {
+        Cycle();
+        if (!worker.running) {
+            throw std::runtime_error("Brain did not dispatch lookup request");
+        }
+        worker.Complete(brain::BrainMetarWorkerStatus::TransportFailure);
+        return Cycle(1);
+    }
+
+    void ExpireSpotlight() { Cycle(8'000); }
+
+    void BecomeStale() {
+        const auto advance = std::max<long long>(
+            0, state.metar.freshUntilMonotonicMs - input.monotonicMs);
+        const auto output = Cycle(advance);
+        if (!output.freshnessChanged ||
+            state.metar.visibleState != brain::BrainMetarVisibleState::Stale) {
+            throw std::runtime_error("Brain did not produce stale transition");
+        }
+    }
+
+    void SwitchToEnrouteAndAcceptKsan() {
+        input.workflowStage = brain::WorkflowStage::Enroute;
+        Cycle(1);
+        AcceptCurrent("KSAN 271952Z 24009KT 2SM BKN008");
+    }
+
+    void DisableAndReenable() {
+        brain::BrainOwnedAsyncWorkerBindings bindings;
+        bindings.metar = &worker;
+        brain::DisableBrainOwnedAccessoryRuntime(&state);
+        (void)brain::ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+            &state, bindings, false);
+        brain::ResetBrainOwnedRuntimeCachePreservingFlightContext(&state);
+        brain::EnableBrainOwnedAccessoryRuntime(&state);
+    }
+};
+
+brain::BrainOwnedRuntimeState BuildState(const std::string& variant) {
+    brain::BrainOwnedRuntimeState state;
+    brain::EnableBrainOwnedAccessoryRuntime(&state);
+    state.metar.initialized = true;
+    const bool ksan = variant == "ksan-ifr";
+    const bool pending = variant == "pending" || variant == "atis-pending" ||
+        variant == "pdc-pending";
+    state.metar.primaryAirportIcao = variant == "unknown" ? "" :
+        (ksan ? "KSAN" : "KDFW");
+    state.metar.visibleState = variant == "unknown"
+        ? brain::BrainMetarVisibleState::Unavailable
+        : pending
+            ? brain::BrainMetarVisibleState::Pending
+            : variant == "unavailable"
+                ? brain::BrainMetarVisibleState::Unavailable
+            : brain::BrainMetarVisibleState::Fresh;
+    state.metar.sourceHealth = pending
+        ? brain::BrainMetarSourceHealth::Pending
+        : variant == "unavailable"
+            ? brain::BrainMetarSourceHealth::Failed
+            : brain::BrainMetarSourceHealth::Healthy;
+    std::string raw = "KDFW 271952Z 18010KT 10SM FEW050";
+    if (variant == "mvfr") raw = "KDFW 271952Z 18010KT 4SM BKN020";
+    if (variant == "ifr") raw = "KDFW 271952Z 18010KT 2SM BKN008";
+    if (ksan) raw = "KSAN 271952Z 24009KT 2SM BKN008";
+    if (variant == "lifr" || variant == "preempted") {
+        raw = "SPECI KDFW 271954Z 18010KT M1/4SM VV003";
+    }
+    if (variant != "unknown" && !pending &&
+        variant != "unavailable") {
+        state.metar.primaryObservation = Parse(ksan ? "KSAN" : "KDFW", raw);
+        state.metar.primaryContentFingerprint = brain::FingerprintBrainMetarContent(raw);
+        state.metar.visibleFetchAgeMinutes = 2;
+        if (variant == "stale") state.metar.visibleState = brain::BrainMetarVisibleState::Stale;
+        AddHistory(&state, std::string("METAR|") + (ksan ? "KSAN|" : "KDFW|") +
+            std::to_string(state.metar.primaryObservation.observationUnixSeconds),
+            std::string(ksan ? "KSAN" : "KDFW") +
+                " · AUTOMATIC TARGET · 1952Z", raw,
+            state.metar.primaryObservation.observationUnixSeconds);
+    }
+    if (variant == "lookup-pending" ||
+        variant == "lookup-spotlight" || variant == "lookup-failure" ||
+        variant == "preempted") {
+        AddHistory(&state, "METAR|KSAN|1787852820",
+                   "KSAN · AUTOMATIC TARGET · 1747Z",
+                   "KSAN 271747Z 24009KT 10SM FEW050", 1'787'852'820);
+        AddHistory(&state, "METAR|KABQ|1787860380",
+                   "KABQ · PILOT REQUEST · 1953Z",
+                   "KABQ 271953Z 18012KT 4SM BKN020", 1'787'860'380);
+    }
+    if (variant == "lookup-pending") {
+        state.metar.pendingLookupIcao = "KABQ";
+        state.metar.transientPresentation =
+            brain::BrainMetarTransientPresentation::LookupPending;
+    } else if (variant == "lookup-spotlight") {
+        state.metar.pendingLookupIcao = "KABQ";
+        state.metar.lookupObservation = Parse(
+            "KABQ", "KABQ 271953Z 18012KT 4SM BKN020");
+        state.metar.transientPresentation =
+            brain::BrainMetarTransientPresentation::LookupSpotlight;
+    } else if (variant == "lookup-failure") {
+        state.metar.pendingLookupIcao = "KABQ";
+        state.metar.transientPresentation =
+            brain::BrainMetarTransientPresentation::LookupFailure;
+    }
+    state.metar.presentationGeneration = 1;
+    brain::BrainOwnedAccessorySelectionRequest request;
+    request.drawer = (variant == "atis-ownership" || variant == "atis-pending")
+        ? brain::BrainOwnedAccessoryDrawerId::Atis
+        : (variant == "pdc-ownership" || variant == "pdc-pending")
+            ? brain::BrainOwnedAccessoryDrawerId::Pdc
+            : brain::BrainOwnedAccessoryDrawerId::Metar;
+    request.requestSequence = 1;
+    (void)brain::RequestBrainOwnedAccessoryDrawerSelection(&state, request);
+    if (variant == "metar-closed") {
+        request.requestSequence = 2;
+        (void)brain::RequestBrainOwnedAccessoryDrawerSelection(&state, request);
+    }
+    return state;
+}
+
+void AddPriorKsanHistory(brain::BrainOwnedRuntimeState* state) {
+    AddHistory(
+        state, "METAR|KSAN|1787852820",
+        "KSAN · AUTOMATIC TARGET · 1747Z",
+        "KSAN 271747Z 24009KT 10SM FEW050", 1'787'852'820);
+}
+
+brain::BrainOwnedRuntimeState BuildTransitionVisualState(
+    int proofNumber,
+    const std::string& fallbackVariant) {
+    VisualBrainFixture fixture;
+    const std::string vfr = "KDFW 271952Z 18010KT 10SM FEW050";
+    const std::string mvfr = "KDFW 271952Z 18010KT 4SM BKN020";
+    const std::string lifr = "SPECI KDFW 271954Z 18010KT M1/4SM VV003";
+
+    switch (proofNumber) {
+        case 10:
+            fixture.AcceptPrimary(vfr);
+            AddPriorKsanHistory(&fixture.state);
+            fixture.SubmitLookup();
+            break;
+        case 11:
+            fixture.AcceptPrimary(vfr);
+            AddPriorKsanHistory(&fixture.state);
+            fixture.SubmitLookup();
+            fixture.AcceptLookup();
+            break;
+        case 12:
+            fixture.AcceptPrimary(vfr);
+            AddPriorKsanHistory(&fixture.state);
+            fixture.SubmitLookup();
+            fixture.AcceptLookup();
+            fixture.ExpireSpotlight();
+            fixture.SubmitLookup();
+            fixture.FailLookup();
+            break;
+        case 13:
+            fixture.AcceptPrimary(vfr);
+            AddPriorKsanHistory(&fixture.state);
+            fixture.SubmitLookup();
+            fixture.AcceptLookup();
+            fixture.RefreshPrimary(lifr);
+            break;
+        case 17:
+            fixture.AcceptPrimary(vfr);
+            AddPriorKsanHistory(&fixture.state);
+            fixture.SubmitLookup();
+            fixture.AcceptLookup();
+            fixture.ExpireSpotlight();
+            fixture.SubmitLookup();
+            fixture.AcceptLookup();
+            break;
+        case 18:
+            fixture.AcceptPrimary(vfr);
+            AddPriorKsanHistory(&fixture.state);
+            fixture.SubmitLookup();
+            fixture.AcceptLookup();
+            fixture.ExpireSpotlight();
+            break;
+        case 19:
+        case 20:
+        case 21:
+            fixture.AcceptPrimary(vfr);
+            fixture.SubmitLookup();
+            fixture.AcceptLookup();
+            if (proofNumber == 19) {
+                fixture.Select(brain::BrainOwnedAccessoryDrawerId::Atis);
+            } else if (proofNumber == 20) {
+                fixture.Select(brain::BrainOwnedAccessoryDrawerId::Pdc);
+            } else {
+                fixture.Select(brain::BrainOwnedAccessoryDrawerId::Metar);
+            }
+            fixture.ExpireSpotlight();
+            break;
+        case 24:
+        case 27:
+        case 33:
+            fixture.AcceptPrimary(vfr);
+            break;
+        case 25:
+            fixture.AcceptPrimary(vfr);
+            fixture.RefreshPrimary(mvfr);
+            break;
+        case 26:
+            fixture.AcceptPrimary(vfr);
+            fixture.SwitchToEnrouteAndAcceptKsan();
+            break;
+        case 28:
+        case 29:
+            fixture.Cycle();
+            fixture.Select(proofNumber == 28
+                ? brain::BrainOwnedAccessoryDrawerId::Atis
+                : brain::BrainOwnedAccessoryDrawerId::Pdc);
+            fixture.AcceptCurrent(vfr);
+            break;
+        case 30:
+            fixture.AcceptPrimary(vfr);
+            fixture.SubmitLookup();
+            fixture.AcceptLookup();
+            break;
+        case 31:
+            fixture.AcceptPrimary(vfr);
+            fixture.RefreshPrimary(vfr);
+            break;
+        case 34:
+        case 35:
+        case 36:
+            fixture.AcceptPrimary(vfr);
+            fixture.Select(proofNumber == 34
+                ? brain::BrainOwnedAccessoryDrawerId::Metar
+                : proofNumber == 35
+                    ? brain::BrainOwnedAccessoryDrawerId::Atis
+                    : brain::BrainOwnedAccessoryDrawerId::Pdc);
+            break;
+        case 37:
+            fixture.AcceptPrimary(vfr);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Metar);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Atis);
+            break;
+        case 38:
+            fixture.AcceptPrimary(vfr);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Atis);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Pdc);
+            break;
+        case 39:
+            fixture.AcceptPrimary(vfr);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Pdc);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Metar);
+            break;
+        case 40:
+            fixture.AcceptPrimary(vfr);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Metar);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Metar);
+            break;
+        case 41:
+            fixture.AcceptPrimary(vfr);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Atis);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Atis);
+            break;
+        case 42:
+            fixture.AcceptPrimary(vfr);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Metar);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Atis);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Pdc);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Metar);
+            break;
+        case 43:
+            fixture.AcceptPrimary(vfr);
+            fixture.Select(brain::BrainOwnedAccessoryDrawerId::Metar);
+            fixture.DisableAndReenable();
+            if (fixture.state.accessory.activeDrawer !=
+                    brain::BrainOwnedAccessoryDrawerId::Metar) {
+                fixture.Select(brain::BrainOwnedAccessoryDrawerId::Metar);
+            }
+            break;
+        default:
+            return BuildState(fallbackVariant);
+    }
+    return std::move(fixture.state);
+}
+
+void CloseActiveDrawer(brain::BrainOwnedRuntimeState* state) {
+    if (state == nullptr || state->accessory.activeDrawer ==
+            brain::BrainOwnedAccessoryDrawerId::None) {
+        return;
+    }
+    brain::BrainOwnedAccessorySelectionRequest close;
+    close.drawer = state->accessory.activeDrawer;
+    close.requestSequence = state->accessory.lastConsumedClickSequence + 1;
+    (void)brain::RequestBrainOwnedAccessoryDrawerSelection(state, close);
+}
+
+const brain::BrainOwnedAccessoryOrbPresentation* MetarOrb(
+    const brain::BrainOwnedAccessoryPresentationHandle& presentation) {
+    if (!presentation.snapshot) return nullptr;
+    for (const auto& orb : presentation.snapshot->orbs) {
+        if (orb.drawer == brain::BrainOwnedAccessoryDrawerId::Metar) {
+            return &orb;
+        }
+    }
+    return nullptr;
+}
+
+bool ValidateExactOrbPresentation(
+    const brain::BrainOwnedAccessoryPresentationHandle& presentation,
+    const std::string& variant) {
+    const auto* orb = MetarOrb(presentation);
+    if (orb == nullptr) return false;
+    const bool neutral = variant == "unknown" || variant == "pending" ||
+        variant == "atis-pending" || variant == "pdc-pending" ||
+        variant == "unavailable" || variant == "stale";
+    if (neutral) {
+        return orb->label == "METAR" && orb->airportIcao.empty() &&
+            orb->categoryText.empty() && orb->stateText.empty() &&
+            orb->selectedIndicator.empty() && orb->neutral &&
+            orb->tone ==
+                brain::BrainOwnedAccessoryOrbPresentation::Tone::Gray;
+    }
+    std::string expectedCategory = "VFR";
+    auto expectedTone = brain::BrainOwnedAccessoryOrbPresentation::Tone::Green;
+    if (variant == "mvfr") {
+        expectedCategory = "MVFR";
+        expectedTone = brain::BrainOwnedAccessoryOrbPresentation::Tone::Blue;
+    } else if (variant == "ifr") {
+        expectedCategory = "IFR";
+        expectedTone = brain::BrainOwnedAccessoryOrbPresentation::Tone::Red;
+    } else if (variant == "lifr" || variant == "preempted") {
+        expectedCategory = "LIFR";
+        expectedTone = brain::BrainOwnedAccessoryOrbPresentation::Tone::Magenta;
+    }
+    const auto expectedAirport = variant == "ksan-ifr" ? "KSAN" : "KDFW";
+    if (variant == "ksan-ifr") {
+        expectedCategory = "IFR";
+        expectedTone = brain::BrainOwnedAccessoryOrbPresentation::Tone::Red;
+    }
+    return orb->label.empty() && orb->airportIcao == expectedAirport &&
+        orb->categoryText == expectedCategory && orb->stateText.empty() &&
+        orb->selectedIndicator.empty() && !orb->neutral &&
+        orb->tone == expectedTone;
+}
+
+bool ValidateExactOrbStrings(
+    brain::BrainOwnedRuntimeState* state,
+    const std::string& variant) {
+    return ValidateExactOrbPresentation(
+        brain::ProjectBrainOwnedAccessoryPresentation(state, nullptr), variant);
+}
+
+struct RenderResult {
+    overlay::OfflineRasterImage composite;
+    std::uint64_t projectionUs = 0;
+    std::uint64_t wrapUs = 0;
+    std::uint64_t updateUs = 0;
+    std::uint64_t rasterUs = 0;
+    std::size_t mainCardSignature = 0;
+};
+
+RenderResult Render(
+    brain::BrainOwnedRuntimeState* state,
+    overlay::AccessoryTextMeasurementContext* measurement,
+    std::uint64_t generation) {
+    RenderResult result;
+    const auto mainCard = MainCard();
+    result.mainCardSignature =
+        overlay::BuildProductionMainCardSignatureForOfflineProof(mainCard, 0);
+    const auto typography = overlay::PrepareAccessoryTypography(measurement, 1.0f);
+    overlay::AccessoryLayoutInput layoutInput;
+    layoutInput.screenWidth = 1920;
+    layoutInput.screenHeight = 1080;
+    layoutInput.windowLeft = 120;
+    layoutInput.windowTop = 940;
+    layoutInput.scale = 1.0f;
+    layoutInput.cardAnimationProgress = 1.0f;
+    layoutInput.drawerOpen = false;
+    layoutInput.typography = &typography;
+    const auto layout = overlay::ResolveAccessoryLayout(layoutInput);
+
+    auto started = std::chrono::steady_clock::now();
+    const auto presentation = brain::ProjectBrainOwnedAccessoryPresentation(
+        state, nullptr);
+    result.projectionUs = ElapsedUs(started);
+    if (!presentation.snapshot) throw std::runtime_error("presentation unavailable");
+
+    layoutInput.drawerOpen = presentation.snapshot->activeDrawer !=
+        brain::BrainOwnedAccessoryDrawerId::None;
+    const auto resolvedLayout = overlay::ResolveAccessoryLayout(layoutInput);
+
+    overlay::AccessoryPreparationKeyInput keyInput;
+    keyInput.drawer = presentation.snapshot->activeDrawer;
+    keyInput.layoutGeneration = generation;
+    keyInput.commandIdentity = presentation.snapshot->commandIdentity;
+    keyInput.lifecycleEpoch = presentation.snapshot->lifecycleEpoch;
+    keyInput.selectedDrawerContentRevision =
+        presentation.snapshot->selectedDrawerContentRevision;
+    keyInput.typographyGeneration = typography.generation;
+    keyInput.scaleThousandths = 1000;
+    keyInput.contentWidth = std::max(
+        1, resolvedLayout.drawerBounds.right - resolvedLayout.drawerBounds.left -
+            2 * resolvedLayout.drawerContentInset);
+    keyInput.visibleLineCapacity = resolvedLayout.drawerVisibleLineCapacity;
+    auto prepared = std::make_shared<overlay::AccessoryPreparedDrawerPlan>();
+    prepared->key = overlay::BuildAccessoryPreparationKeyForCommand(keyInput);
+    prepared->snapshot = presentation.snapshot;
+    started = std::chrono::steady_clock::now();
+    prepared->layout = overlay::BuildAccessoryHistoryLayout(
+        measurement, *presentation.snapshot, resolvedLayout);
+    result.wrapUs = ElapsedUs(started);
+
+    overlay::AccessoryPresentationState presenter;
+    overlay::AccessoryPresentationUpdateInput update;
+    update.presentation = presentation;
+    update.layout = resolvedLayout;
+    update.mainCardProductionSignature = std::to_string(result.mainCardSignature);
+    update.measurementContext = measurement;
+    update.preparedPlan = prepared;
+    update.mechanicalLayoutGeneration = generation;
+    started = std::chrono::steady_clock::now();
+    (void)overlay::UpdateAccessoryPresentation(&presenter, update);
+    result.updateUs = ElapsedUs(started);
+
+    started = std::chrono::steady_clock::now();
+    const auto card = overlay::RenderProductionMainCardForOfflineProof(mainCard, 0);
+    const auto rail = overlay::RenderProductionAccessoryRailForOfflineProof(
+        resolvedLayout, *presentation.snapshot);
+    const auto drawer = overlay::RenderProductionAccessoryDrawerForOfflineProof(
+        resolvedLayout, presenter);
+    result.rasterUs = ElapsedUs(started);
+
+    const auto& bounds = resolvedLayout.resolvedBounds;
+    result.composite = Canvas(bounds.right - bounds.left, bounds.top - bounds.bottom);
+    const auto scaledCard = ScaleNearest(
+        card,
+        resolvedLayout.mainCardBounds.right - resolvedLayout.mainCardBounds.left,
+        resolvedLayout.mainCardBounds.top - resolvedLayout.mainCardBounds.bottom);
+    Blit(&result.composite, scaledCard,
+         resolvedLayout.mainCardBounds.left - bounds.left,
+         bounds.top - resolvedLayout.mainCardBounds.top);
+    Blit(&result.composite, rail,
+         resolvedLayout.railBounds.left - bounds.left,
+         bounds.top - resolvedLayout.railBounds.top);
+    Blit(&result.composite, drawer,
+         resolvedLayout.drawerBounds.left - bounds.left,
+         bounds.top - resolvedLayout.drawerBounds.top);
+    return result;
+}
+
+RenderResult RenderRepeatedLookupViewportVisual(
+    overlay::AccessoryTextMeasurementContext* measurement,
+    std::uint64_t generation,
+    bool expireSpotlight) {
+    VisualBrainFixture fixture;
+    const std::string primary = "KDFW 271952Z 18010KT 10SM FEW050";
+    const std::string lookup = "KABQ 271953Z 18012KT 4SM BKN020";
+    fixture.AcceptPrimary(primary);
+    AddPriorKsanHistory(&fixture.state);
+    fixture.SubmitLookup();
+    fixture.AcceptLookup(lookup);
+    fixture.ExpireSpotlight();
+
+    const auto mainCard = MainCard();
+    const auto mainCardSignature =
+        overlay::BuildProductionMainCardSignatureForOfflineProof(mainCard, 0);
+    const auto typography = overlay::PrepareAccessoryTypography(measurement, 1.0f);
+    overlay::AccessoryLayoutInput layoutInput;
+    layoutInput.screenWidth = 1920;
+    layoutInput.screenHeight = 1080;
+    layoutInput.windowLeft = 120;
+    layoutInput.windowTop = 940;
+    layoutInput.scale = 1.0f;
+    layoutInput.cardAnimationProgress = 1.0f;
+    layoutInput.drawerOpen = true;
+    layoutInput.typography = &typography;
+    const auto layout = overlay::ResolveAccessoryLayout(layoutInput);
+
+    overlay::AccessoryPresentationState presenter;
+    struct AppliedVisual {
+        brain::BrainOwnedAccessoryPresentationHandle presentation;
+        overlay::AccessoryPresentationUpdateResult update;
+        overlay::AccessoryDrawerRenderPlan render;
+    };
+    const auto applyCurrent = [&]() {
+        AppliedVisual applied;
+        applied.presentation = brain::ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, nullptr);
+        if (!applied.presentation.snapshot) {
+            throw std::runtime_error("repeated lookup projection unavailable");
+        }
+        overlay::AccessoryPreparationKeyInput keyInput;
+        keyInput.drawer = applied.presentation.snapshot->activeDrawer;
+        keyInput.layoutGeneration = generation;
+        keyInput.commandIdentity =
+            applied.presentation.snapshot->commandIdentity;
+        keyInput.lifecycleEpoch =
+            applied.presentation.snapshot->lifecycleEpoch;
+        keyInput.selectedDrawerContentRevision =
+            applied.presentation.snapshot->selectedDrawerContentRevision;
+        keyInput.typographyGeneration = typography.generation;
+        keyInput.scaleThousandths = 1000;
+        keyInput.contentWidth = std::max(
+            1, layout.drawerBounds.right - layout.drawerBounds.left -
+                2 * layout.drawerContentInset);
+        keyInput.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+        auto prepared =
+            std::make_shared<overlay::AccessoryPreparedDrawerPlan>();
+        prepared->key =
+            overlay::BuildAccessoryPreparationKeyForCommand(keyInput);
+        prepared->snapshot = applied.presentation.snapshot;
+        prepared->layout = overlay::BuildAccessoryHistoryLayout(
+            measurement, *applied.presentation.snapshot, layout);
+        overlay::AccessoryPresentationUpdateInput update;
+        update.presentation = applied.presentation;
+        update.layout = layout;
+        update.mainCardProductionSignature =
+            std::to_string(mainCardSignature);
+        update.measurementContext = measurement;
+        update.preparedPlan = prepared;
+        update.mechanicalLayoutGeneration = generation;
+        applied.update =
+            overlay::UpdateAccessoryPresentation(&presenter, update);
+        applied.render =
+            overlay::BuildAccessoryDrawerRenderPlan(presenter, layout);
+        return applied;
+    };
+    const auto contains = [](const overlay::AccessoryDrawerRenderPlan& plan,
+                             const std::string& token) {
+        return std::any_of(
+            plan.visibleLines.begin(), plan.visibleLines.end(),
+            [&](const auto& line) {
+                return line.text.find(token) != std::string::npos;
+            });
+    };
+    const auto scrollAwayFromTop = [&]() {
+        overlay::AccessoryPresentationScrollInput scroll;
+        scroll.layout = layout;
+        scroll.pointerX =
+            (layout.drawerBounds.left + layout.drawerBounds.right) / 2;
+        scroll.pointerY =
+            (layout.drawerBounds.top + layout.drawerBounds.bottom) / 2;
+        scroll.wheelClicks = 100;
+        const auto result =
+            overlay::ScrollAccessoryPresentation(&presenter, scroll);
+        if (!result.changed || presenter.drawerOffset <= 0) {
+            throw std::runtime_error(
+                "repeated lookup visual did not establish a scrolled drawer");
+        }
+        return presenter.drawerOffset;
+    };
+
+    (void)applyCurrent();
+    const auto primaryScrolledOffset = scrollAwayFromTop();
+    fixture.SubmitLookup();
+    const auto pending = applyCurrent();
+    if (!pending.update.scrollResetApplied || presenter.drawerOffset != 0) {
+        throw std::runtime_error(
+            "repeated lookup pending did not reset a scrolled drawer");
+    }
+    const auto pendingScrolledOffset = scrollAwayFromTop();
+    const auto parseBefore = fixture.state.metar.parseCount;
+    const auto historyBefore = fixture.state.metar.historyMutationCount;
+    const auto resetBeforeSpotlight =
+        fixture.state.accessory.scrollResetGeneration;
+    const auto accepted = fixture.AcceptLookup(lookup);
+    if (!accepted.completionAccepted || accepted.contentChanged ||
+        fixture.state.metar.parseCount != parseBefore ||
+        fixture.state.metar.historyMutationCount != historyBefore) {
+        throw std::runtime_error(
+            "repeated lookup visual did not traverse identical acceptance");
+    }
+    auto final = applyCurrent();
+    if (fixture.state.accessory.scrollResetGeneration !=
+            resetBeforeSpotlight + 1 ||
+        !final.update.scrollResetApplied || presenter.drawerOffset != 0 ||
+        final.render.firstVisibleLine != 0 ||
+        !contains(final.render, "METAR LOOKUP") ||
+        !contains(final.render, "KABQ")) {
+        throw std::runtime_error(
+            "repeated lookup spotlight was not visibly restored at the top");
+    }
+
+    int expiryScrolledOffset = 0;
+    if (expireSpotlight) {
+        expiryScrolledOffset = scrollAwayFromTop();
+        const auto resetBeforeExpiry =
+            fixture.state.accessory.scrollResetGeneration;
+        fixture.ExpireSpotlight();
+        final = applyCurrent();
+        if (fixture.state.accessory.scrollResetGeneration !=
+                resetBeforeExpiry + 1 ||
+            !final.update.scrollResetApplied || presenter.drawerOffset != 0 ||
+            final.render.firstVisibleLine != 0 ||
+            !contains(final.render, "KDFW")) {
+            throw std::runtime_error(
+                "spotlight expiry did not visibly restore KDFW at the top");
+        }
+    }
+
+    RenderResult result;
+    result.mainCardSignature = mainCardSignature;
+    const auto started = std::chrono::steady_clock::now();
+    const auto card =
+        overlay::RenderProductionMainCardForOfflineProof(mainCard, 0);
+    const auto rail = overlay::RenderProductionAccessoryRailForOfflineProof(
+        layout, *final.presentation.snapshot);
+    const auto drawer =
+        overlay::RenderProductionAccessoryDrawerForOfflineProof(
+            layout, presenter);
+    result.rasterUs = ElapsedUs(started);
+    const auto& bounds = layout.resolvedBounds;
+    result.composite =
+        Canvas(bounds.right - bounds.left, bounds.top - bounds.bottom);
+    const auto scaledCard = ScaleNearest(
+        card,
+        layout.mainCardBounds.right - layout.mainCardBounds.left,
+        layout.mainCardBounds.top - layout.mainCardBounds.bottom);
+    Blit(&result.composite, scaledCard,
+         layout.mainCardBounds.left - bounds.left,
+         bounds.top - layout.mainCardBounds.top);
+    Blit(&result.composite, rail,
+         layout.railBounds.left - bounds.left,
+         bounds.top - layout.railBounds.top);
+    Blit(&result.composite, drawer,
+         layout.drawerBounds.left - bounds.left,
+         bounds.top - layout.drawerBounds.top);
+    std::cout << "STEP4_VISUAL_REPEATED_LOOKUP_VIEWPORT: frame="
+              << (expireSpotlight ? "expiry" : "spotlight")
+              << " primary_scrolled_offset=" << primaryScrolledOffset
+              << " pending_scrolled_offset=" << pendingScrolledOffset
+              << " expiry_scrolled_offset=" << expiryScrolledOffset
+              << " final_offset=" << presenter.drawerOffset
+              << " first_visible_line=" << final.render.firstVisibleLine
+              << " parse_delta="
+              << (fixture.state.metar.parseCount - parseBefore)
+              << " history_delta="
+              << (fixture.state.metar.historyMutationCount - historyBefore)
+              << '\n';
+    return result;
+}
+
+overlay::OfflineRasterImage RenderMinimalOrbStateMatrix(
+    overlay::AccessoryTextMeasurementContext* measurement,
+    std::uint64_t* generation,
+    bool* exactStringsValid) {
+    const std::string variants[]{"unknown", "vfr", "mvfr", "ifr", "lifr"};
+    std::vector<overlay::OfflineRasterImage> rails;
+    const auto typography = overlay::PrepareAccessoryTypography(measurement, 1.0f);
+    for (const auto& variant : variants) {
+        auto state = BuildState(variant);
+        const auto currentGeneration = (*generation)++;
+        const auto variantValid = ValidateExactOrbStrings(&state, variant);
+        if (!variantValid) {
+            std::cerr << "minimal ORB matrix has invalid exact strings for "
+                      << variant << '\n';
+        }
+        *exactStringsValid = *exactStringsValid && variantValid;
+        overlay::AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 120;
+        layoutInput.windowTop = 940;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = false;
+        layoutInput.typography = &typography;
+        const auto layout = overlay::ResolveAccessoryLayout(layoutInput);
+        const auto presentation = brain::ProjectBrainOwnedAccessoryPresentation(
+            &state, nullptr);
+        rails.push_back(overlay::RenderProductionAccessoryRailForOfflineProof(
+            layout, *presentation.snapshot));
+    }
+    const int gap = 12;
+    int width = gap;
+    int height = 0;
+    for (const auto& rail : rails) {
+        width += rail.width + gap;
+        height = std::max(height, rail.height + 2 * gap);
+    }
+    auto matrix = Canvas(width, height);
+    int left = gap;
+    for (const auto& rail : rails) {
+        Blit(&matrix, rail, left, gap);
+        left += rail.width + gap;
+    }
+    return matrix;
+}
+
+overlay::OfflineRasterImage RenderTwoLineOrbScaleMatrix(
+    overlay::AccessoryTextMeasurementContext* measurement,
+    std::uint64_t* generation,
+    bool* exactStringsValid) {
+    const float scales[]{0.85f, 1.0f, 1.35f};
+    std::vector<overlay::OfflineRasterImage> rails;
+    for (const auto scale : scales) {
+        auto state = BuildState("vfr");
+        const auto currentGeneration = (*generation)++;
+        const auto scaleValid = ValidateExactOrbStrings(&state, "vfr");
+        if (!scaleValid) {
+            std::cerr << "two-line ORB matrix has invalid exact strings at scale "
+                      << scale << '\n';
+        }
+        *exactStringsValid = *exactStringsValid && scaleValid;
+        const auto typography = overlay::PrepareAccessoryTypography(
+            measurement, scale);
+        overlay::AccessoryLayoutInput input;
+        input.screenWidth = 1920;
+        input.screenHeight = 1080;
+        input.windowLeft = 120;
+        input.windowTop = 940;
+        input.scale = scale;
+        input.cardAnimationProgress = 1.0f;
+        input.drawerOpen = false;
+        input.typography = &typography;
+        const auto layout = overlay::ResolveAccessoryLayout(input);
+        const auto presentation = brain::ProjectBrainOwnedAccessoryPresentation(
+            &state, nullptr);
+        rails.push_back(overlay::RenderProductionAccessoryRailForOfflineProof(
+            layout, *presentation.snapshot));
+    }
+    constexpr int gap = 12;
+    int width = gap;
+    int height = 0;
+    for (const auto& rail : rails) {
+        width += rail.width + gap;
+        height = std::max(height, rail.height + 2 * gap);
+    }
+    auto matrix = Canvas(width, height);
+    int left = gap;
+    for (const auto& rail : rails) {
+        Blit(&matrix, rail, left, gap);
+        left += rail.width + gap;
+    }
+    return matrix;
+}
+
+std::shared_ptr<const overlay::AccessoryPreparedDrawerPlan> PreparePlan(
+    overlay::AccessoryTextMeasurementContext* measurement,
+    const brain::BrainOwnedAccessoryPresentationHandle& presentation,
+    const overlay::AccessoryLayoutResult& layout,
+    std::uint64_t mechanicalLayoutGeneration,
+    std::uint64_t typographyGeneration) {
+    if (!presentation.snapshot || presentation.snapshot->activeDrawer ==
+            brain::BrainOwnedAccessoryDrawerId::None) {
+        return {};
+    }
+    overlay::AccessoryPreparationKeyInput keyInput;
+    keyInput.drawer = presentation.snapshot->activeDrawer;
+    keyInput.layoutGeneration = mechanicalLayoutGeneration;
+    keyInput.commandIdentity = presentation.snapshot->commandIdentity;
+    keyInput.lifecycleEpoch = presentation.snapshot->lifecycleEpoch;
+    keyInput.selectedDrawerContentRevision =
+        presentation.snapshot->selectedDrawerContentRevision;
+    keyInput.typographyGeneration = typographyGeneration;
+    keyInput.scaleThousandths = 1000;
+    keyInput.contentWidth = std::max(
+        1, layout.drawerBounds.right - layout.drawerBounds.left -
+            (2 * layout.drawerContentInset));
+    keyInput.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+    auto plan = std::make_shared<overlay::AccessoryPreparedDrawerPlan>();
+    plan->key = overlay::BuildAccessoryPreparationKeyForCommand(keyInput);
+    plan->snapshot = presentation.snapshot;
+    plan->layout = overlay::BuildAccessoryHistoryLayout(
+        measurement, *presentation.snapshot, layout);
+    return plan;
+}
+
+bool ValidatePublicationTransition(
+    overlay::AccessoryTextMeasurementContext* measurement,
+    const std::string& name,
+    const std::string& beforeVariant,
+    const std::string& afterVariant,
+    bool drawerOpen,
+    std::uint64_t expectedRail,
+    std::uint64_t expectedDrawer,
+    std::ostringstream* report,
+    std::uint64_t* generation) {
+    VisualBrainFixture fixture;
+    const std::string vfr = "KDFW 271952Z 18010KT 10SM FEW050";
+    if (name == "kdfw_vfr_to_mvfr_closed" ||
+        name == "kdfw_to_ksan_closed" ||
+        name == "success_to_neutral_closed" ||
+        name == "lookup_spotlight_unchanged_primary" ||
+        name == "identical_primary_content_only") {
+        fixture.AcceptPrimary(vfr);
+    } else if (name == "neutral_to_kdfw_vfr_closed" ||
+               name == "metar_open_primary_change" ||
+               name == "atis_owns_primary_change" ||
+               name == "pdc_owns_primary_change") {
+        fixture.Cycle();
+    }
+    if (name == "metar_open_primary_change" ||
+        name == "lookup_spotlight_unchanged_primary") {
+        fixture.Select(brain::BrainOwnedAccessoryDrawerId::Metar);
+    } else if (name == "atis_owns_primary_change") {
+        fixture.Select(brain::BrainOwnedAccessoryDrawerId::Atis);
+    } else if (name == "pdc_owns_primary_change") {
+        fixture.Select(brain::BrainOwnedAccessoryDrawerId::Pdc);
+    }
+    const auto before = brain::ProjectBrainOwnedAccessoryPresentation(
+        &fixture.state, nullptr);
+    if (!before.snapshot ||
+        !ValidateExactOrbPresentation(before, beforeVariant)) {
+        std::cerr << "publication transition " << name
+                  << " has an invalid before projection for "
+                  << beforeVariant << '\n';
+        return false;
+    }
+
+    if (name == "neutral_to_kdfw_vfr_closed" ||
+        name == "metar_open_primary_change" ||
+        name == "atis_owns_primary_change" ||
+        name == "pdc_owns_primary_change") {
+        fixture.AcceptCurrent(vfr);
+    } else if (name == "kdfw_vfr_to_mvfr_closed") {
+        fixture.RefreshPrimary("KDFW 271952Z 18010KT 4SM BKN020");
+    } else if (name == "kdfw_to_ksan_closed") {
+        fixture.SwitchToEnrouteAndAcceptKsan();
+    } else if (name == "success_to_neutral_closed") {
+        fixture.BecomeStale();
+    } else if (name == "lookup_spotlight_unchanged_primary") {
+        fixture.SubmitLookup();
+        fixture.AcceptLookup();
+    } else if (name == "identical_primary_content_only") {
+        fixture.RefreshPrimary(vfr);
+    } else {
+        return false;
+    }
+    const auto after = brain::ProjectBrainOwnedAccessoryPresentation(
+        &fixture.state, nullptr);
+    if (!after.snapshot ||
+        (after.snapshot->activeDrawer !=
+            brain::BrainOwnedAccessoryDrawerId::None) != drawerOpen ||
+        !ValidateExactOrbPresentation(after, afterVariant)) {
+        std::cerr << "publication transition " << name
+                  << " has an invalid after projection for "
+                  << afterVariant << '\n';
+        return false;
+    }
+    overlay::AccessoryLayoutInput input;
+    input.screenWidth = 1920;
+    input.screenHeight = 1080;
+    input.windowLeft = 120;
+    input.windowTop = 940;
+    input.scale = 1.0f;
+    input.cardAnimationProgress = 1.0f;
+    input.drawerOpen = drawerOpen;
+    const auto typography = overlay::PrepareAccessoryTypography(measurement, 1.0f);
+    input.typography = &typography;
+    const auto layout = overlay::ResolveAccessoryLayout(input);
+    const auto mechanicalLayoutGeneration = (*generation)++;
+    overlay::AccessoryPresentationState presenter;
+    overlay::AccessoryPresentationUpdateInput update;
+    update.layout = layout;
+    update.mainCardProductionSignature =
+        std::to_string(kAcceptedMainCardSignature);
+    update.measurementContext = measurement;
+    update.mechanicalLayoutGeneration = mechanicalLayoutGeneration;
+    update.presentation = before;
+    update.preparedPlan = PreparePlan(
+        measurement, before, layout, mechanicalLayoutGeneration,
+        typography.generation);
+    (void)overlay::UpdateAccessoryPresentation(&presenter, update);
+    update.presentation = after;
+    update.preparedPlan = PreparePlan(
+        measurement, after, layout, mechanicalLayoutGeneration,
+        typography.generation);
+    const auto result = overlay::UpdateAccessoryPresentation(&presenter, update);
+    const auto expectedUpload = expectedRail + expectedDrawer;
+    if (report != nullptr) {
+        *report << name << ',' << result.delta.railRasterRequests << ','
+                << result.delta.uploadRequests << ','
+                << result.delta.drawerRasterRequests << ','
+                << (result.railAppearanceChanged ? "true" : "false") << '\n';
+    }
+    const auto valid = result.delta.railRasterRequests == expectedRail &&
+        result.delta.drawerRasterRequests == expectedDrawer &&
+        result.delta.uploadRequests == expectedUpload;
+    if (!valid) {
+        std::cerr << "publication transition " << name
+                  << " expected rail/drawer/upload " << expectedRail << '/'
+                  << expectedDrawer << '/' << expectedUpload << " but observed "
+                  << result.delta.railRasterRequests << '/'
+                  << result.delta.drawerRasterRequests << '/'
+                  << result.delta.uploadRequests << '\n';
+    }
+    return valid;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    if (argc != 2) {
+        std::cerr << "Usage: XVatsimStep4MetarVisualProof <output-directory>\n";
+        return 2;
+    }
+    const fs::path outputDirectory = argv[1];
+    fs::create_directories(outputDirectory);
+    Gdiplus::GdiplusStartupInput startupInput;
+    ULONG_PTR token = 0;
+    if (Gdiplus::GdiplusStartup(&token, &startupInput, nullptr) != Gdiplus::Ok) {
+        std::cerr << "GDI+ startup failed\n";
+        return 1;
+    }
+    auto* measurement = overlay::InitializeAccessoryTextMeasurement();
+    if (!measurement) {
+        Gdiplus::GdiplusShutdown(token);
+        std::cerr << "text measurement startup failed\n";
+        return 1;
+    }
+
+    std::ostringstream performance;
+    performance << "file,projection_us,wrapping_us,presentation_us,raster_us,main_card_signature\n";
+    std::size_t baselineMainCardSignature = 0;
+    bool failed = false;
+    bool exactStringsValid = true;
+    std::uint64_t generation = 1;
+    for (const auto& visual : kVisuals) {
+        const auto proofNumber = std::stoi(visual.filename.substr(0, 2));
+        auto state = BuildTransitionVisualState(
+            proofNumber, visual.variant);
+        if (proofNumber == 23 || proofNumber == 24 || proofNumber == 25 ||
+            proofNumber == 26 || proofNumber == 27 || proofNumber == 31 ||
+            proofNumber == 32 || proofNumber == 33) {
+            CloseActiveDrawer(&state);
+        }
+        const auto currentGeneration = generation++;
+        const auto visualStringsValid =
+            ValidateExactOrbStrings(&state, visual.variant);
+        if (!visualStringsValid) {
+            std::cerr << "visual " << visual.filename
+                      << " has invalid exact ORB strings for "
+                      << visual.variant << '\n';
+        }
+        exactStringsValid = exactStringsValid && visualStringsValid;
+        const auto rendered = proofNumber == 17 || proofNumber == 18
+            ? RenderRepeatedLookupViewportVisual(
+                measurement, currentGeneration, proofNumber == 18)
+            : Render(&state, measurement, currentGeneration);
+        if (baselineMainCardSignature == 0) {
+            baselineMainCardSignature = rendered.mainCardSignature;
+        }
+        if (rendered.mainCardSignature != baselineMainCardSignature ||
+            rendered.mainCardSignature != kAcceptedMainCardSignature ||
+            !SavePng(outputDirectory / visual.filename, rendered.composite)) {
+            std::cerr << "visual " << visual.filename
+                      << " failed main-card signature or PNG persistence validation\n";
+            failed = true;
+        }
+        performance << visual.filename << ',' << rendered.projectionUs << ','
+                    << rendered.wrapUs << ',' << rendered.updateUs << ','
+                    << rendered.rasterUs << ',' << rendered.mainCardSignature << '\n';
+    }
+    const auto matrix = RenderMinimalOrbStateMatrix(
+        measurement, &generation, &exactStringsValid);
+    if (!SavePng(
+            outputDirectory / "15_minimal_orb_state_matrix.png", matrix)) {
+        failed = true;
+    }
+    performance << "15_minimal_orb_state_matrix.png,0,0,0,0,"
+                << baselineMainCardSignature << '\n';
+    const auto scaleMatrix = RenderTwoLineOrbScaleMatrix(
+        measurement, &generation, &exactStringsValid);
+    if (!SavePng(
+            outputDirectory / "16_two_line_orb_scale_matrix.png",
+            scaleMatrix)) {
+        failed = true;
+    }
+    performance << "16_two_line_orb_scale_matrix.png,0,0,0,0,"
+                << baselineMainCardSignature << '\n';
+    std::ostringstream publication;
+    publication << "transition,rail_rasters,uploads,drawer_rasters,rail_appearance_changed\n";
+    failed = !ValidatePublicationTransition(
+        measurement, "neutral_to_kdfw_vfr_closed", "pending", "vfr", false,
+        1, 0, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "kdfw_vfr_to_mvfr_closed", "vfr", "mvfr", false,
+        1, 0, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "kdfw_to_ksan_closed", "vfr", "ksan-ifr", false,
+        1, 0, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "success_to_neutral_closed", "vfr", "unavailable", false,
+        1, 0, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "metar_open_primary_change", "pending", "vfr", true,
+        1, 1, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "atis_owns_primary_change", "atis-pending", "atis-ownership", true,
+        1, 0, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "pdc_owns_primary_change", "pdc-pending", "pdc-ownership", true,
+        1, 0, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "lookup_spotlight_unchanged_primary", "vfr", "lookup-spotlight", true,
+        0, 1, &publication, &generation) || failed;
+    failed = !ValidatePublicationTransition(
+        measurement, "identical_primary_content_only", "vfr", "vfr", false,
+        0, 0, &publication, &generation) || failed;
+    failed = failed || !exactStringsValid;
+    if (!exactStringsValid) {
+        std::cerr << "exact ORB string validation failed\n";
+    }
+    overlay::ShutdownAccessoryTextMeasurement(measurement);
+    Gdiplus::GdiplusShutdown(token);
+
+    {
+        std::ofstream output(outputDirectory / "performance.csv", std::ios::binary);
+        output << performance.str();
+    }
+    {
+        std::ofstream output(
+            outputDirectory / "publication_counts.csv", std::ios::binary);
+        output << publication.str();
+    }
+    std::ostringstream sums;
+    for (const auto& visual : kVisuals) {
+        sums << Sha256(outputDirectory / visual.filename) << "  "
+             << visual.filename << '\n';
+    }
+    sums << Sha256(outputDirectory / "15_minimal_orb_state_matrix.png")
+         << "  15_minimal_orb_state_matrix.png\n";
+    sums << Sha256(outputDirectory / "16_two_line_orb_scale_matrix.png")
+         << "  16_two_line_orb_scale_matrix.png\n";
+    sums << Sha256(outputDirectory / "publication_counts.csv")
+         << "  publication_counts.csv\n";
+    {
+        std::ofstream output(outputDirectory / "SHA256SUMS.txt", std::ios::binary);
+        output << sums.str();
+    }
+    if (failed) {
+        std::cerr << "Step 4 visual proof failed\n";
+        return 1;
+    }
+    std::cout << "Step 4 accessory-input visual proof wrote 43 deterministic images"
+              << " with exact ORB strings, transition counts, and unchanged main-card signature\n";
+    return 0;
+}

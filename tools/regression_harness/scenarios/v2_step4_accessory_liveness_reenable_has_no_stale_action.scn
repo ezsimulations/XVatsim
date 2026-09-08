@@ -1,0 +1,2 @@
+name=v2_step4_accessory_liveness_reenable_has_no_stale_action
+step4.probe=accessory_deferred_binding_boundaries

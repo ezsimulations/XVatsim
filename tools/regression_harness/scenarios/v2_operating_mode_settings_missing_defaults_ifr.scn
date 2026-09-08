@@ -1,0 +1,8 @@
+name=V2 operating mode missing setting defaults IFR
+operating_mode.probe=settings-load
+operating_mode.settings_entry=<missing>
+expect.operating_mode=IFR
+expect.operating_mode_load_status=missing
+expect.operating_mode_source=default
+expect.operating_mode_reason=missing-setting
+expect.operating_mode_generation=0

@@ -18,6 +18,7 @@ constexpr int kVatsimGroundFacility = 3;
 constexpr int kVatsimTowerFacility = 4;
 constexpr int kVatsimApproachFacility = 5;
 constexpr int kVatsimCenterFacility = 6;
+constexpr std::size_t kMaxTerminalEvidenceCandidates = 512;
 
 std::string Trim(const std::string& value) {
     auto begin = value.begin();
@@ -134,7 +135,12 @@ std::uint64_t BuildStableHash(
         HashCombine(&hash, candidate.atis);
         HashCombine(&hash, static_cast<std::uint64_t>(candidate.visualRangeNm));
         HashCombine(&hash, candidate.hasStationCoordinates);
-        if (candidate.hasStationCoordinates) {
+        // Once complete controller/frequency station evidence is present, the
+        // aircraft-selected station is only a reception detail. Excluding it
+        // prevents APP/DEP decision churn as the aircraft changes which AFV
+        // transmitter is currently best while the endpoint evidence is stable.
+        if (candidate.hasStationCoordinates &&
+            candidate.stationCoordinates.empty()) {
             HashCombine(
                 &hash,
                 static_cast<std::uint64_t>(
@@ -143,6 +149,20 @@ std::uint64_t BuildStableHash(
                 &hash,
                 static_cast<std::uint64_t>(
                     std::llround(candidate.stationLongitudeDeg * 100000.0)));
+        }
+        HashCombine(
+            &hash,
+            static_cast<std::uint64_t>(candidate.stationCoordinates.size()));
+        for (const auto& station : candidate.stationCoordinates) {
+            HashCombine(&hash, station.frequency);
+            HashCombine(
+                &hash,
+                static_cast<std::uint64_t>(
+                    std::llround(station.latitudeDeg * 100000.0)));
+            HashCombine(
+                &hash,
+                static_cast<std::uint64_t>(
+                    std::llround(station.longitudeDeg * 100000.0)));
         }
     }
     return hash;
@@ -189,6 +209,85 @@ std::unordered_map<std::string, ControllerSnapshot> IndexControllersByCallsign(
         }
     }
     return indexed;
+}
+
+std::unordered_map<std::string, const TransceiverControllerEvidenceSnapshot*>
+IndexTransceiverEvidenceByCallsign(
+    const TransceiverResolutionSnapshot& transceiverSnapshot) {
+    std::unordered_map<
+        std::string,
+        const TransceiverControllerEvidenceSnapshot*> indexed;
+    for (const auto& evidence : transceiverSnapshot.controllerEvidence) {
+        const auto callsign = ToUpper(Trim(evidence.callsign));
+        if (!callsign.empty()) {
+            indexed.emplace(callsign, &evidence);
+        }
+    }
+    return indexed;
+}
+
+void PopulateAllStationCoordinates(
+    const TransceiverControllerEvidenceSnapshot* evidence,
+    RadioReachableControllerCandidate* candidate) {
+    if (candidate == nullptr) {
+        return;
+    }
+
+    const auto candidateFrequency = NormalizeFrequency(candidate->frequency);
+    if (evidence != nullptr) {
+        for (const auto& station : evidence->stations) {
+            if (!std::isfinite(station.latitudeDeg) ||
+                !std::isfinite(station.longitudeDeg) ||
+                (station.latitudeDeg == 0.0 && station.longitudeDeg == 0.0)) {
+                continue;
+            }
+
+            const auto stationFrequency =
+                NormalizeFrequency(station.sourceFrequency);
+            if (!candidateFrequency.empty() && !stationFrequency.empty() &&
+                candidateFrequency != stationFrequency) {
+                continue;
+            }
+
+            RadioReachableStationCoordinate coordinate;
+            coordinate.frequency = stationFrequency;
+            coordinate.latitudeDeg = station.latitudeDeg;
+            coordinate.longitudeDeg = station.longitudeDeg;
+            candidate->stationCoordinates.push_back(std::move(coordinate));
+        }
+    }
+
+    if (candidate->stationCoordinates.empty() &&
+        candidate->hasStationCoordinates) {
+        RadioReachableStationCoordinate coordinate;
+        coordinate.frequency = candidateFrequency;
+        coordinate.latitudeDeg = candidate->stationLatitudeDeg;
+        coordinate.longitudeDeg = candidate->stationLongitudeDeg;
+        candidate->stationCoordinates.push_back(std::move(coordinate));
+    }
+
+    std::sort(
+        candidate->stationCoordinates.begin(),
+        candidate->stationCoordinates.end(),
+        [](const auto& left, const auto& right) {
+            if (left.frequency != right.frequency) {
+                return left.frequency < right.frequency;
+            }
+            if (left.latitudeDeg != right.latitudeDeg) {
+                return left.latitudeDeg < right.latitudeDeg;
+            }
+            return left.longitudeDeg < right.longitudeDeg;
+        });
+    candidate->stationCoordinates.erase(
+        std::unique(
+            candidate->stationCoordinates.begin(),
+            candidate->stationCoordinates.end(),
+            [](const auto& left, const auto& right) {
+                return left.frequency == right.frequency &&
+                       left.latitudeDeg == right.latitudeDeg &&
+                       left.longitudeDeg == right.longitudeDeg;
+            }),
+        candidate->stationCoordinates.end());
 }
 
 void SortRadioReachableCandidates(RadioReachableControllerSnapshot* snapshot) {
@@ -386,6 +485,8 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshotFromTransc
     }
 
     const auto controllersByCallsign = IndexControllersByCallsign(controllerFeedSnapshot);
+    const auto transceiverEvidenceByCallsign =
+        IndexTransceiverEvidenceByCallsign(transceiverSnapshot);
     int unmatchedCandidates = 0;
     int distanceFilteredCandidates = 0;
     const auto maxCandidateDistanceNm =
@@ -431,6 +532,15 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshotFromTransc
             candidate.hasStationCoordinates ? receivable.latitudeDeg : 0.0;
         candidate.stationLongitudeDeg =
             candidate.hasStationCoordinates ? receivable.longitudeDeg : 0.0;
+        const auto transceiverEvidence =
+            transceiverEvidenceByCallsign.find(callsign);
+        if (candidate.group == RadioReachableFacilityGroup::AppDep) {
+            PopulateAllStationCoordinates(
+                transceiverEvidence == transceiverEvidenceByCallsign.end()
+                    ? nullptr
+                    : transceiverEvidence->second,
+                &candidate);
+        }
         candidate.firstSeenSeconds = options.nowSeconds;
         candidate.lastSeenSeconds = options.nowSeconds;
         candidate.stableKey = BuildStableKey(
@@ -465,6 +575,86 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshotFromTransc
     }
     snapshot.statusLine = stream.str();
     return snapshot;
+}
+
+RadioReachableControllerSnapshot
+AugmentRadioReachableControllerSnapshotWithAppDepEvidence(
+    const RadioReachableControllerSnapshot& snapshot,
+    const TransceiverResolutionSnapshot& transceiverSnapshot) {
+    auto augmented = snapshot;
+    if (!augmented.available || augmented.stale ||
+        !transceiverSnapshot.available || transceiverSnapshot.stale) {
+        return augmented;
+    }
+
+    std::unordered_set<std::string> existingCallsigns;
+    existingCallsigns.reserve(augmented.candidates.size());
+    for (const auto& candidate : augmented.candidates) {
+        existingCallsigns.insert(ToUpper(Trim(candidate.callsign)));
+    }
+
+    std::size_t added = 0;
+    for (const auto& evidence : transceiverSnapshot.controllerEvidence) {
+        if (added >= kMaxTerminalEvidenceCandidates) {
+            break;
+        }
+        ControllerSnapshot controller;
+        controller.callsign = evidence.callsign;
+        controller.frequency = evidence.controllerFrequency;
+        controller.facility = evidence.facility;
+        controller.actionable = evidence.actionable;
+        controller.atis = evidence.atis;
+        controller.visualRangeNm = evidence.visualRangeNm;
+        if (ClassifyRadioReachableFacility(controller) !=
+                RadioReachableFacilityGroup::AppDep ||
+            !controller.actionable || controller.atis) {
+            continue;
+        }
+
+        const auto callsign = ToUpper(Trim(controller.callsign));
+        if (callsign.empty() || existingCallsigns.find(callsign) !=
+                                    existingCallsigns.end()) {
+            continue;
+        }
+        const auto frequency = NormalizeFrequency(
+            evidence.resolvedDisplayFrequency.empty()
+                ? evidence.controllerFrequency
+                : evidence.resolvedDisplayFrequency);
+        if (frequency.empty()) {
+            continue;
+        }
+
+        RadioReachableControllerCandidate candidate;
+        candidate.callsign = callsign;
+        candidate.frequency = frequency;
+        candidate.vatsimFacility = controller.facility;
+        candidate.group = RadioReachableFacilityGroup::AppDep;
+        candidate.source = augmented.source;
+        candidate.actionable = controller.actionable;
+        candidate.atis = controller.atis;
+        candidate.visualRangeNm = controller.visualRangeNm;
+        PopulateAllStationCoordinates(&evidence, &candidate);
+        candidate.stableKey = BuildStableKey(
+            candidate.callsign, candidate.frequency, candidate.group);
+        augmented.candidates.push_back(std::move(candidate));
+        existingCallsigns.insert(callsign);
+        IncrementGroupCount(
+            &augmented.counts, RadioReachableFacilityGroup::AppDep);
+        ++added;
+    }
+
+    if (added == 0) {
+        return augmented;
+    }
+    SortRadioReachableCandidates(&augmented);
+    augmented.stableHash = BuildStableHash(augmented);
+    std::ostringstream status;
+    status << augmented.statusLine
+           << " terminalEvidenceAdded=" << added
+           << " hash=" << HashToHex(augmented.stableHash);
+    augmented.statusLine = status.str();
+    augmented.changeReason += "+terminal-evidence";
+    return augmented;
 }
 
 bool RadioReachableGroupAllowedForStage(

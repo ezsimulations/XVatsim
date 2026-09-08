@@ -1,4 +1,14 @@
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
+
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
@@ -6,9 +16,15 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
+#include <thread>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -16,6 +32,7 @@
 
 #include "XVatsim/brain/BrainOrchestrator.h"
 #include "XVatsim/brain/BrainDisplayIntent.h"
+#include "XVatsim/brain/BrainMetarRuntime.h"
 #include "XVatsim/brain/BrainOwnedRuntime.h"
 #include "XVatsim/brain/BrainOwnedWorkerTypes.h"
 #include "XVatsim/brain/BrainTypes.h"
@@ -35,10 +52,25 @@
 #include "XVatsim/modules/airport_frequency_catalog/AirportFrequencyCatalogResolver.h"
 #include "XVatsim/modules/departure/DepartureModule.h"
 #include "XVatsim/modules/enroute/EnrouteModule.h"
+#include "XVatsim/modules/overlay/OverlayAccessoryCore.h"
+#include "XVatsim/modules/metar/VatsimMetarClient.h"
+#include "XVatsim/modules/metar/VatsimMetarDecoder.h"
+#include "XVatsim/modules/vatsim_data_feed/VatsimDataFeedClient.h"
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
+#include "XVatsim/modules/settings_store/SettingsStore.h"
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
 #include "XVatsim/modules/transceiver_resolver/TransceiverResolver.h"
 #include "XVatsim/modules/update_checker/UpdateChecker.h"
+#include "XVatsim/modules/vnas_data/VnasDataClient.h"
+
+#include "Step6PdcContractProbe.h"
+#include "PerformanceContractGateACalm1Probe.h"
+#include "PerformanceContractGateACalm2Probe.h"
+#include "PerformanceContractGateAProbe.h"
+#include "PerformanceContractGateBProbe.h"
+#include "PerformanceContractGateBTelemetryProbe.h"
+#include "ProductCalm1Probe.h"
+#include "RuntimeActivationGateProbe.h"
 
 namespace {
 
@@ -267,6 +299,7 @@ struct ScenarioExpectations {
     std::vector<std::string> brainControllerRelevanceArrivalCallsigns;
     std::vector<std::string> brainControllerRelevanceEnrouteCallsigns;
     std::vector<std::string> brainControllerRelevanceCompletions;
+    std::vector<std::string> brainControllerRelevanceCompletionsContains;
     std::vector<std::string> phasePublisherReuseLifecycle;
     std::vector<std::string> phasePublisherIsolationLifecycle;
     std::vector<std::string> phasePublisherWorkflowClearLifecycle;
@@ -376,8 +409,66 @@ struct CenterCoverageFeatureSpec {
     std::vector<xvatsim::core::route::SectorPolygon> polygons;
 };
 
+struct OperatingModeScenarioInput {
+    std::string probe;
+    std::string settingsEntry;
+    std::string initialMode;
+    std::vector<std::string> selectionRequests;
+    std::vector<std::string> roundTripModes;
+    std::vector<std::string> resetPaths;
+    std::string parityStage;
+    std::string persistence;
+    int processingCycles = 0;
+};
+
+struct OperatingModeScenarioExpectations {
+    std::optional<std::string> mode;
+    std::optional<std::string> loadStatus;
+    std::optional<std::string> source;
+    std::optional<std::string> reason;
+    std::optional<int> generation;
+    std::optional<int> changeCount;
+    std::optional<int> persistenceRequests;
+    std::optional<int> saveAttempts;
+    std::optional<int> saveSuccesses;
+    std::optional<std::string> requestSource;
+    std::optional<std::string> requestReason;
+    std::optional<bool> stateUnchanged;
+    std::optional<bool> resetPreserved;
+    std::optional<bool> noAutomaticVfr;
+    std::vector<std::string> roundTripModes;
+    std::optional<bool> parity;
+    std::optional<std::string> allowedParityDifference;
+    std::optional<int> retryCount;
+    std::optional<int> processingCycles;
+    std::optional<bool> missingPlanProcessed;
+    std::vector<std::string> resetTrace;
+    std::optional<int> pipelineRuns;
+    std::optional<std::string> pipelineStage;
+    std::vector<std::string> pipelineControllerCallsigns;
+    std::vector<std::string> pipelineDisplayCallsigns;
+};
+
+struct Step3ScenarioInput {
+    std::vector<std::string> actions;
+    std::vector<std::string> expectations;
+};
+
+struct Step4ScenarioInput {
+    std::string probe;
+};
+
+struct Step5ScenarioInput {
+    std::string probe;
+};
+
 struct ScenarioData {
     std::string name;
+    Step3ScenarioInput step3;
+    Step4ScenarioInput step4;
+    Step5ScenarioInput step5;
+    OperatingModeScenarioInput operatingMode;
+    OperatingModeScenarioExpectations operatingModeExpectations;
     double nowSeconds = 0.0;
     bool departureTerminalCoverageKnown = false;
     bool insideDepartureTerminalCoverage = false;
@@ -474,6 +565,11 @@ struct ScenarioData {
     std::vector<TerminalCoverageFeatureSpec> terminalAuthorityFeatures;
     std::vector<std::string> airportFrequencyFrqRows;
     WorkflowStage controllerRelevanceWorkflowStage = WorkflowStage::Departure;
+    bool controllerRelevanceV2Enabled = false;
+    bool controllerRelevanceVnasSectorPrecedenceEnabled = true;
+    double controllerRelevanceTerminalRadiusNm = 5.0;
+    std::string vnasControllerFeedJson;
+    std::vector<std::string> vnasArtccFacilityJsons;
     bool resolveRouteWithResolver = false;
     bool resolverRouteBuildsPreRefreshSnapshot = false;
     std::vector<CenterCoverageFeatureSpec> resolverRouteCenterFeatures;
@@ -516,7 +612,7 @@ struct ScenarioData {
     std::vector<std::string> sourcePackageTerminalAuthorityJsons;
     std::vector<std::string> sourceRegistryJsons;
     std::string updateManifestPayload;
-    std::string updateInstalledVersion = "1.2.3";
+    std::string updateInstalledVersion = "2.0.0";
     std::string updateManifestUrl =
         "https://ezsimulations.github.io/XVatsim/xvatsim_update.json";
     std::unordered_map<std::string, std::string> sourceRegistryPayloadsByUrl;
@@ -599,6 +695,20 @@ bool ParseBool(const std::string& value, bool* outValue) {
         return true;
     }
     return false;
+}
+
+std::optional<int> ParseNonnegativeInt(const std::string& value) {
+    try {
+        std::size_t consumed = 0;
+        const auto trimmed = Trim(value);
+        const auto parsed = std::stoi(trimmed, &consumed);
+        if (consumed != trimmed.size() || parsed < 0) {
+            return std::nullopt;
+        }
+        return parsed;
+    } catch (...) {
+        return std::nullopt;
+    }
 }
 
 std::string NormalizeSourceOwnedLiveConsumptionSettingsSourceForHarness(
@@ -3019,9 +3129,52 @@ std::string BuildRadioReachableHashCheckProbe() {
     const auto changed =
         xvatsim::brain::BuildRadioReachableControllerSnapshot(changedControllers, options);
 
+    std::vector<xvatsim::brain::ControllerSnapshot> terminalControllers = {
+        MakeRadioReachableProbeController("IAD_M_APP", "126.650", 5)};
+    xvatsim::brain::ControllerFeedSnapshot terminalFeed;
+    terminalFeed.available = true;
+    terminalFeed.stale = false;
+    terminalFeed.controllers = &terminalControllers;
+
+    xvatsim::brain::TransceiverResolutionSnapshot terminalTransceivers;
+    terminalTransceivers.available = true;
+    terminalTransceivers.stale = false;
+    xvatsim::brain::ReceivableControllerSnapshot selected;
+    selected.callsign = "IAD_M_APP";
+    selected.frequency = "126.650";
+    selected.distanceNm = 20.0;
+    selected.latitudeDeg = 38.9445;
+    selected.longitudeDeg = -77.4558;
+    terminalTransceivers.candidates.push_back(selected);
+    xvatsim::brain::TransceiverControllerEvidenceSnapshot evidence;
+    evidence.callsign = "IAD_M_APP";
+    evidence.controllerFrequency = "126.650";
+    evidence.hasTransceiverEntry = true;
+    for (const auto& coordinates :
+         std::vector<std::pair<double, double>>{
+             {38.9445, -77.4558}, {39.1754, -76.6683}}) {
+        xvatsim::brain::TransceiverStationEvidenceSnapshot station;
+        station.sourceFrequency = "126.650";
+        station.latitudeDeg = coordinates.first;
+        station.longitudeDeg = coordinates.second;
+        evidence.stations.push_back(std::move(station));
+    }
+    terminalTransceivers.controllerEvidence.push_back(std::move(evidence));
+    const auto selectedIad =
+        xvatsim::brain::BuildRadioReachableControllerSnapshotFromTransceivers(
+            terminalTransceivers, terminalFeed, options);
+    terminalTransceivers.candidates.front().distanceNm = 175.0;
+    terminalTransceivers.candidates.front().latitudeDeg = 39.1754;
+    terminalTransceivers.candidates.front().longitudeDeg = -76.6683;
+    const auto selectedBwi =
+        xvatsim::brain::BuildRadioReachableControllerSnapshotFromTransceivers(
+            terminalTransceivers, terminalFeed, options);
+
     std::ostringstream stream;
     stream << "same=" << (original.stableHash == repeated.stableHash ? 1 : 0)
-           << ",changed=" << (original.stableHash != changed.stableHash ? 1 : 0);
+           << ",changed=" << (original.stableHash != changed.stableHash ? 1 : 0)
+           << ",terminalSelectionStable="
+           << (selectedIad.stableHash == selectedBwi.stableHash ? 1 : 0);
     return stream.str();
 }
 
@@ -4112,6 +4265,165 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
 
     if (key == "name") {
         scenario->name = value;
+        return true;
+    }
+    if (key == "step3.action") {
+        scenario->step3.actions.push_back(value);
+        return true;
+    }
+    if (key == "step4.probe") {
+        scenario->step4.probe = value;
+        return true;
+    }
+    if (key == "step5.probe") {
+        scenario->step5.probe = value;
+        return true;
+    }
+    if (key == "expect.step3") {
+        scenario->step3.expectations.push_back(value);
+        return true;
+    }
+    if (key == "operating_mode.probe") {
+        scenario->operatingMode.probe = value;
+        return true;
+    }
+    if (key == "operating_mode.settings_entry") {
+        scenario->operatingMode.settingsEntry = value;
+        return true;
+    }
+    if (key == "operating_mode.initial_mode") {
+        scenario->operatingMode.initialMode = value;
+        return true;
+    }
+    if (key == "operating_mode.selection_requests") {
+        scenario->operatingMode.selectionRequests = Split(value, ',');
+        return true;
+    }
+    if (key == "operating_mode.round_trip_modes") {
+        scenario->operatingMode.roundTripModes = Split(value, ',');
+        return true;
+    }
+    if (key == "operating_mode.reset_paths") {
+        scenario->operatingMode.resetPaths = Split(value, ',');
+        return true;
+    }
+    if (key == "operating_mode.parity_stage") {
+        scenario->operatingMode.parityStage = value;
+        return true;
+    }
+    if (key == "operating_mode.persistence") {
+        scenario->operatingMode.persistence = value;
+        return true;
+    }
+    if (key == "operating_mode.processing_cycles") {
+        const auto parsed = ParseNonnegativeInt(value);
+        if (!parsed.has_value()) {
+            return false;
+        }
+        scenario->operatingMode.processingCycles = *parsed;
+        return true;
+    }
+    if (key == "expect.operating_mode") {
+        scenario->operatingModeExpectations.mode = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_load_status") {
+        scenario->operatingModeExpectations.loadStatus = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_source") {
+        scenario->operatingModeExpectations.source = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_reason") {
+        scenario->operatingModeExpectations.reason = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_generation" ||
+        key == "expect.operating_mode_change_count" ||
+        key == "expect.operating_mode_persistence_requests" ||
+        key == "expect.operating_mode_save_attempts" ||
+        key == "expect.operating_mode_save_successes" ||
+        key == "expect.operating_mode_retry_count" ||
+        key == "expect.operating_mode_processing_cycles" ||
+        key == "expect.operating_mode_pipeline_runs") {
+        const auto parsed = ParseNonnegativeInt(value);
+        if (!parsed.has_value()) {
+            return false;
+        }
+        if (key == "expect.operating_mode_generation") {
+            scenario->operatingModeExpectations.generation = *parsed;
+        } else if (key == "expect.operating_mode_change_count") {
+            scenario->operatingModeExpectations.changeCount = *parsed;
+        } else if (key == "expect.operating_mode_persistence_requests") {
+            scenario->operatingModeExpectations.persistenceRequests = *parsed;
+        } else if (key == "expect.operating_mode_save_attempts") {
+            scenario->operatingModeExpectations.saveAttempts = *parsed;
+        } else if (key == "expect.operating_mode_save_successes") {
+            scenario->operatingModeExpectations.saveSuccesses = *parsed;
+        } else if (key == "expect.operating_mode_retry_count") {
+            scenario->operatingModeExpectations.retryCount = *parsed;
+        } else if (key == "expect.operating_mode_processing_cycles") {
+            scenario->operatingModeExpectations.processingCycles = *parsed;
+        } else {
+            scenario->operatingModeExpectations.pipelineRuns = *parsed;
+        }
+        return true;
+    }
+    if (key == "expect.operating_mode_request_source") {
+        scenario->operatingModeExpectations.requestSource = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_request_reason") {
+        scenario->operatingModeExpectations.requestReason = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_state_unchanged" ||
+        key == "expect.operating_mode_reset_preserved" ||
+        key == "expect.operating_mode_no_automatic_vfr" ||
+        key == "expect.operating_mode_missing_plan_processed" ||
+        key == "expect.operating_mode_parity") {
+        bool parsed = false;
+        if (!ParseBool(value, &parsed)) {
+            return false;
+        }
+        if (key == "expect.operating_mode_state_unchanged") {
+            scenario->operatingModeExpectations.stateUnchanged = parsed;
+        } else if (key == "expect.operating_mode_reset_preserved") {
+            scenario->operatingModeExpectations.resetPreserved = parsed;
+        } else if (key == "expect.operating_mode_no_automatic_vfr") {
+            scenario->operatingModeExpectations.noAutomaticVfr = parsed;
+        } else if (key == "expect.operating_mode_missing_plan_processed") {
+            scenario->operatingModeExpectations.missingPlanProcessed = parsed;
+        } else {
+            scenario->operatingModeExpectations.parity = parsed;
+        }
+        return true;
+    }
+    if (key == "expect.operating_mode_round_trip") {
+        scenario->operatingModeExpectations.roundTripModes = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.operating_mode_allowed_parity_difference") {
+        scenario->operatingModeExpectations.allowedParityDifference = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_reset_trace") {
+        scenario->operatingModeExpectations.resetTrace = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.operating_mode_pipeline_stage") {
+        scenario->operatingModeExpectations.pipelineStage = value;
+        return true;
+    }
+    if (key == "expect.operating_mode_pipeline_controller_callsigns") {
+        scenario->operatingModeExpectations.pipelineControllerCallsigns =
+            Split(value, ',');
+        return true;
+    }
+    if (key == "expect.operating_mode_pipeline_display_callsigns") {
+        scenario->operatingModeExpectations.pipelineDisplayCallsigns =
+            Split(value, ',');
         return true;
     }
     if (key == "now_seconds") {
@@ -5788,6 +6100,11 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
             Split(value, ',');
         return true;
     }
+    if (key == "expect.brain_controller_relevance_completions_contains") {
+        scenario->expectations.brainControllerRelevanceCompletionsContains =
+            Split(value, ',');
+        return true;
+    }
     if (key == "expect.phase_publisher_reuse_lifecycle") {
         scenario->expectations.phasePublisherReuseLifecycle = Split(value, ',');
         return true;
@@ -6686,6 +7003,99 @@ bool AddTransceiverCandidate(
 
     snapshot->candidates.push_back(std::move(candidate));
     snapshot->receivableControllers = static_cast<int>(snapshot->candidates.size());
+    return true;
+}
+
+bool AddTransceiverStation(
+    xvatsim::brain::TransceiverResolutionSnapshot* snapshot,
+    const std::string& value) {
+    if (snapshot == nullptr) {
+        return false;
+    }
+
+    std::string callsign;
+    std::string frequency;
+    double latitudeDeg = 0.0;
+    double longitudeDeg = 0.0;
+    bool hasLatitude = false;
+    bool hasLongitude = false;
+    std::optional<int> facility;
+    std::optional<bool> actionable;
+    for (const auto& part : Split(value, ';')) {
+        const auto equalsIndex = part.find('=');
+        if (equalsIndex == std::string::npos) {
+            continue;
+        }
+        const auto field = Trim(part.substr(0, equalsIndex));
+        const auto fieldValue = Trim(part.substr(equalsIndex + 1));
+        if (field == "callsign") {
+            callsign = ToUpperCopy(fieldValue);
+        } else if (field == "frequency") {
+            frequency = fieldValue;
+        } else if (field == "lat") {
+            const auto parsed = ParseDouble(fieldValue);
+            if (!parsed.has_value()) {
+                return false;
+            }
+            latitudeDeg = *parsed;
+            hasLatitude = true;
+        } else if (field == "lon") {
+            const auto parsed = ParseDouble(fieldValue);
+            if (!parsed.has_value()) {
+                return false;
+            }
+            longitudeDeg = *parsed;
+            hasLongitude = true;
+        } else if (field == "facility") {
+            const auto parsed = ParseDouble(fieldValue);
+            if (!parsed.has_value()) {
+                return false;
+            }
+            facility = static_cast<int>(*parsed);
+        } else if (field == "actionable") {
+            bool parsed = false;
+            if (!ParseBool(fieldValue, &parsed)) {
+                return false;
+            }
+            actionable = parsed;
+        }
+    }
+    if (callsign.empty() || frequency.empty() || !hasLatitude ||
+        !hasLongitude) {
+        return false;
+    }
+
+    auto evidence = std::find_if(
+        snapshot->controllerEvidence.begin(),
+        snapshot->controllerEvidence.end(),
+        [&](const auto& current) {
+            return ToUpperCopy(current.callsign) == callsign;
+        });
+    if (evidence == snapshot->controllerEvidence.end()) {
+        xvatsim::brain::TransceiverControllerEvidenceSnapshot next;
+        next.callsign = callsign;
+        next.controllerFrequency = frequency;
+        next.facility = facility.value_or(0);
+        next.actionable = actionable.value_or(false);
+        next.hasTransceiverEntry = true;
+        snapshot->controllerEvidence.push_back(std::move(next));
+        evidence = std::prev(snapshot->controllerEvidence.end());
+    }
+    if (facility.has_value()) {
+        evidence->facility = *facility;
+    }
+    if (actionable.has_value()) {
+        evidence->actionable = *actionable;
+    }
+
+    xvatsim::brain::TransceiverStationEvidenceSnapshot station;
+    station.sourceFrequency = frequency;
+    station.latitudeDeg = latitudeDeg;
+    station.longitudeDeg = longitudeDeg;
+    evidence->stations.push_back(std::move(station));
+    evidence->hasTransceiverEntry = true;
+    evidence->matchingTransceiverCount =
+        static_cast<int>(evidence->stations.size());
     return true;
 }
 
@@ -9422,6 +9832,52 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
             scenario->controllerRelevanceWorkflowStage = *parsed;
             continue;
         }
+        if (key == "brain_controller_relevance.v2_enabled") {
+            if (!ParseBool(value, &scenario->controllerRelevanceV2Enabled)) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid brain_controller_relevance.v2_enabled at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "brain_controller_relevance.vnas_sector_precedence_enabled") {
+            if (!ParseBool(
+                    value,
+                    &scenario->
+                         controllerRelevanceVnasSectorPrecedenceEnabled)) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid brain_controller_relevance.vnas_sector_precedence_enabled at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "brain_controller_relevance.terminal_radius_nm") {
+            const auto parsed = ParseDouble(value);
+            if (!parsed.has_value() || *parsed <= 0.0) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid brain_controller_relevance.terminal_radius_nm at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            scenario->controllerRelevanceTerminalRadiusNm = *parsed;
+            continue;
+        }
+        if (key == "vnas.controller_feed_json") {
+            scenario->vnasControllerFeedJson = value;
+            continue;
+        }
+        if (key == "vnas.artcc_facility_json") {
+            scenario->vnasArtccFacilityJsons.push_back(value);
+            continue;
+        }
         if (key == "controller.entry") {
             if (!AddController(&scenario->controllers, value)) {
                 if (outError != nullptr) {
@@ -9621,6 +10077,18 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
                 if (outError != nullptr) {
                     *outError =
                         "Invalid transceiver.candidate at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "transceiver.station") {
+            if (!AddTransceiverStation(
+                    &scenario->transceiverResolutionSnapshot, value)) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid transceiver.station at line " +
                         std::to_string(lineNumber);
                 }
                 return false;
@@ -10173,6 +10641,12904 @@ std::optional<int> CheckStringListContains(
     return PrintMismatch(label, JoinCsv(missing), actual);
 }
 
+struct OperatingModeProbeActual {
+    std::string mode = "IFR";
+    std::string loadStatus = "missing";
+    std::string source = "default";
+    std::string reason = "missing-setting";
+    int generation = 0;
+    int changeCount = 0;
+    int persistenceRequests = 0;
+    int saveAttempts = 0;
+    int saveSuccesses = 0;
+    std::string requestSource = "none";
+    std::string requestReason = "none";
+    bool stateUnchanged = false;
+    bool resetPreserved = false;
+    bool noAutomaticVfr = false;
+    std::vector<std::string> roundTripModes;
+    bool parity = false;
+    std::string allowedParityDifference;
+    int retryCount = 0;
+    int processingCycles = 0;
+    bool missingPlanProcessed = false;
+    std::vector<std::string> resetTrace;
+    int pipelineRuns = 0;
+    std::string pipelineStage;
+    std::vector<std::string> pipelineControllerCallsigns;
+    std::vector<std::string> pipelineDisplayCallsigns;
+};
+
+xvatsim::brain::BrainOwnedOperatingMode ParseHarnessOperatingMode(
+    const std::string& value) {
+    return ToUpperCopy(value) == "VFR"
+               ? xvatsim::brain::BrainOwnedOperatingMode::VFR
+               : xvatsim::brain::BrainOwnedOperatingMode::IFR;
+}
+
+xvatsim::modules::settings_store::StoredOperatingMode
+ToHarnessStoredOperatingMode(xvatsim::brain::BrainOwnedOperatingMode mode) {
+    return mode == xvatsim::brain::BrainOwnedOperatingMode::VFR
+               ? xvatsim::modules::settings_store::StoredOperatingMode::VFR
+               : xvatsim::modules::settings_store::StoredOperatingMode::IFR;
+}
+
+xvatsim::brain::BrainOwnedOperatingModeLoadStatus
+ToHarnessBrainLoadStatus(
+    xvatsim::modules::settings_store::StoredOperatingModeLoadStatus status) {
+    using BrainStatus = xvatsim::brain::BrainOwnedOperatingModeLoadStatus;
+    using StoredStatus =
+        xvatsim::modules::settings_store::StoredOperatingModeLoadStatus;
+    switch (status) {
+        case StoredStatus::Valid:
+            return BrainStatus::Valid;
+        case StoredStatus::Invalid:
+            return BrainStatus::Invalid;
+        case StoredStatus::Unavailable:
+            return BrainStatus::Unavailable;
+        case StoredStatus::Missing:
+        default:
+            return BrainStatus::Missing;
+    }
+}
+
+xvatsim::brain::BrainOwnedOperatingMode ToHarnessBrainOperatingMode(
+    xvatsim::modules::settings_store::StoredOperatingMode mode) {
+    return mode == xvatsim::modules::settings_store::StoredOperatingMode::VFR
+               ? xvatsim::brain::BrainOwnedOperatingMode::VFR
+               : xvatsim::brain::BrainOwnedOperatingMode::IFR;
+}
+
+void InitializeHarnessOperatingModeFromSettings(
+    xvatsim::brain::BrainOwnedRuntimeState* state,
+    const xvatsim::modules::settings_store::PluginSettings& settings) {
+    xvatsim::brain::BrainOwnedOperatingModeInitializationInput input;
+    input.loadStatus =
+        ToHarnessBrainLoadStatus(settings.operatingModeLoadStatus);
+    input.storedMode = ToHarnessBrainOperatingMode(settings.operatingMode);
+    xvatsim::brain::InitializeBrainOwnedOperatingMode(state, input);
+}
+
+std::string HarnessOperatingModeName(
+    xvatsim::brain::BrainOwnedOperatingMode mode) {
+    return mode == xvatsim::brain::BrainOwnedOperatingMode::VFR ? "VFR" : "IFR";
+}
+
+std::string HarnessLoadStatusName(
+    xvatsim::modules::settings_store::StoredOperatingModeLoadStatus status) {
+    using Status =
+        xvatsim::modules::settings_store::StoredOperatingModeLoadStatus;
+    switch (status) {
+        case Status::Valid:
+            return "valid";
+        case Status::Invalid:
+            return "invalid";
+        case Status::Unavailable:
+            return "unavailable";
+        case Status::Missing:
+        default:
+            return "missing";
+    }
+}
+
+std::filesystem::path OperatingModeProbePath(const ScenarioData& scenario) {
+    std::string token = scenario.name;
+    std::transform(
+        token.begin(),
+        token.end(),
+        token.begin(),
+        [](unsigned char ch) {
+            return std::isalnum(ch) != 0 ? static_cast<char>(std::tolower(ch)) : '_';
+        });
+    return std::filesystem::temp_directory_path() /
+           "xvatsim_v2_step_02_harness" / (token + ".prf");
+}
+
+bool WriteOperatingModeProbeSettings(
+    const std::filesystem::path& path,
+    const std::string& contents) {
+    std::error_code error;
+    std::filesystem::create_directories(path.parent_path(), error);
+    if (error) {
+        return false;
+    }
+    std::ofstream output(path, std::ios::trunc);
+    output << contents;
+    return output.good();
+}
+
+struct OperatingModePipelinePass {
+    WorkflowStage stage = WorkflowStage::None;
+    std::vector<std::string> controllerCallsigns;
+    std::vector<std::string> displayCallsigns;
+    std::string serializedOutput;
+};
+
+std::string SerializeOperatingModePipelineOutput(
+    const xvatsim::core::workflow::HandoffDecision& workflowDecision,
+    const xvatsim::brain::RadioReachableControllerSnapshot& radioSnapshot,
+    const xvatsim::brain::BrainControllerRelevanceWorkerOutput& relevance,
+    const xvatsim::brain::BrainOwnedPublisherOutput& publisher,
+    const xvatsim::brain::OverlayViewModel& view) {
+    const auto& display = publisher.finalDisplay;
+    std::ostringstream stream;
+    stream << static_cast<int>(workflowDecision.stage) << ':'
+           << workflowDecision.reason << '|'
+           << (radioSnapshot.available ? 1 : 0) << ':'
+           << (radioSnapshot.stale ? 1 : 0) << ':'
+           << radioSnapshot.stableHash << '|'
+           << (relevance.available ? 1 : 0) << ':'
+           << (relevance.stale ? 1 : 0) << ':' << relevance.reason << '|'
+           << (display.available ? 1 : 0) << '|'
+           << static_cast<int>(display.source) << '|'
+           << display.airportIcao << '|';
+    for (const auto& station : display.stations) {
+        stream << static_cast<int>(station.role) << ':'
+               << station.callsign << ':' << station.frequency << ':'
+               << station.stableCompletionKey << ';';
+    }
+    stream << "view=" << static_cast<int>(view.mode) << ':'
+           << (view.visible ? 1 : 0) << ':' << view.title << ':'
+           << view.headerRightText << '|';
+    for (const auto& line : view.bodyLines) {
+        stream << line.text << ':' << static_cast<int>(line.tone) << ';';
+    }
+    const auto appendBoard = [&](const xvatsim::brain::ModuleBoardSnapshot& board) {
+        stream << "board=" << (board.available ? 1 : 0) << ':'
+               << static_cast<int>(board.source) << ':' << board.airportIcao
+               << ':';
+        for (const auto& station : board.stations) {
+            stream << static_cast<int>(station.role) << ':' << station.callsign
+                   << ':' << station.frequency << ':'
+                   << station.stableCompletionKey << ';';
+        }
+    };
+    appendBoard(publisher.departureBoard);
+    appendBoard(publisher.enrouteBoard);
+    appendBoard(publisher.arrivalBoard);
+    for (const auto& completion : relevance.completions) {
+        stream << completion.callsign << ':' << completion.frequency << ':'
+               << completion.stableKey << ':'
+               << static_cast<int>(completion.decision) << ':'
+               << (completion.displayed ? 1 : 0) << ';';
+    }
+    return stream.str();
+}
+
+OperatingModePipelinePass ExecuteOperatingModePipelinePass(
+    const ScenarioData& scenario,
+    xvatsim::brain::BrainOwnedRuntimeState* state) {
+    OperatingModePipelinePass pass;
+    auto workflowState = scenario.workflowState;
+    const auto workflowDecision =
+        xvatsim::core::workflow::ResolveWorkflowStage(
+            scenario.aircraftState,
+            scenario.radioStateSnapshot,
+            scenario.departureTerminalCoverageKnown,
+            scenario.insideDepartureTerminalCoverage,
+            scenario.departureBoard,
+            scenario.enrouteBoard,
+            scenario.nowSeconds,
+            &workflowState,
+            scenario.tuning);
+    pass.stage = workflowDecision.stage;
+
+    xvatsim::brain::ControllerFeedSnapshot controllerFeed;
+    controllerFeed.generation = scenario.controllerFeedGeneration;
+    controllerFeed.stale = scenario.controllerFeedStale;
+    controllerFeed.available =
+        scenario.controllerFeedAvailable.value_or(!scenario.controllers.empty());
+    if (controllerFeed.stale) {
+        controllerFeed.available = false;
+    }
+    if ((controllerFeed.available && !controllerFeed.stale) ||
+        scenario.forceControllerFeedEntries) {
+        controllerFeed.connectedControllers =
+            static_cast<int>(scenario.controllers.size());
+        controllerFeed.controllers = &scenario.controllers;
+    }
+
+    xvatsim::brain::RadioReachableBuildOptions radioOptions;
+    radioOptions.available = scenario.transceiverResolutionSnapshot.available;
+    radioOptions.stale = scenario.transceiverResolutionSnapshot.stale;
+    radioOptions.generation = controllerFeed.generation;
+    radioOptions.source = xvatsim::brain::RadioReachableSource::AFVRadioRange;
+    radioOptions.changeReason = "operating-mode-pipeline-proof";
+    radioOptions.nowSeconds = scenario.nowSeconds;
+    const auto radioSnapshot =
+        xvatsim::brain::BuildRadioReachableControllerSnapshotFromTransceivers(
+            scenario.transceiverResolutionSnapshot,
+            controllerFeed,
+            radioOptions);
+    const auto gatedRadioSnapshot =
+        xvatsim::brain::RunBrainOwnedRadioPhaseGate(
+            state,
+            radioSnapshot,
+            workflowDecision.stage,
+            "operating-mode-pipeline-proof");
+
+    xvatsim::brain::BrainControllerRelevanceWorkerInput relevanceInput;
+    relevanceInput.workflowStage = workflowDecision.stage;
+    relevanceInput.radioBoardHash = gatedRadioSnapshot.stableHash;
+    relevanceInput.routePolygonHash = 1;
+    relevanceInput.currentPolygonIndex = 1;
+    relevanceInput.currentPolygonKey =
+        scenario.routeSectorSnapshot.currentSectors.empty()
+            ? "CURRENT"
+            : scenario.routeSectorSnapshot.currentSectors.front().identifier;
+    relevanceInput.nextPolygonKey =
+        scenario.routeSectorSnapshot.nextSectors.empty()
+            ? ""
+            : scenario.routeSectorSnapshot.nextSectors.front().identifier;
+    relevanceInput.currentSectors = scenario.routeSectorSnapshot.currentSectors;
+    relevanceInput.nextSectors = scenario.routeSectorSnapshot.nextSectors;
+    relevanceInput.departureIcao =
+        scenario.workflowState.flightContext.departureIcao;
+    relevanceInput.arrivalIcao =
+        scenario.workflowState.flightContext.destinationIcao;
+    relevanceInput.radios = scenario.radioStateSnapshot;
+    relevanceInput.candidates = gatedRadioSnapshot.candidates;
+    const auto relevance =
+        xvatsim::brain::RunBrainControllerRelevanceWorker(relevanceInput);
+
+    state->routePolygonHash = relevanceInput.routePolygonHash;
+    state->currentPolygonIndex = relevanceInput.currentPolygonIndex;
+    state->currentPolygonKey = relevanceInput.currentPolygonKey;
+    state->nextPolygonKey = relevanceInput.nextPolygonKey;
+    state->candidateCompletions = relevance.completions;
+    xvatsim::brain::BrainOwnedPublisherFactInput publisherFacts;
+    publisherFacts.workflowStage = workflowDecision.stage;
+    publisherFacts.radios = scenario.radioStateSnapshot;
+    publisherFacts.departureBoard = relevance.departureBoard;
+    publisherFacts.arrivalBoard = relevance.arrivalBoard;
+    publisherFacts.enrouteBoard = relevance.enrouteBoard;
+    publisherFacts.completions = relevance.completions;
+    publisherFacts.publishReason = "operating-mode-pipeline-proof";
+    publisherFacts.productPlanKey = "OPERATING-MODE-PIPELINE-PROOF";
+    publisherFacts.productPlanKeySource = "harness-scenario";
+    const auto publisherInput =
+        xvatsim::brain::BuildBrainOwnedPublisherInputFromFacts(
+            *state,
+            publisherFacts);
+    const auto publisher =
+        xvatsim::brain::RunBrainOwnedPublisher(state, publisherInput);
+    xvatsim::brain::CommitBrainOwnedPublishedRuntimeFromPublisherOutput(
+        state,
+        workflowDecision.stage,
+        publisherFacts.productPlanKey,
+        gatedRadioSnapshot,
+        publisher,
+        publisher.finalDisplay);
+    xvatsim::brain::CommitBrainOwnedWorkflowState(state, workflowState);
+
+    const auto view = xvatsim::brain::BrainOrchestrator::BuildOverlayViewModel(
+        workflowDecision.stage,
+        scenario.aircraftState,
+        scenario.xPilotSessionSnapshot,
+        scenario.radioStateSnapshot,
+        scenario.networkPlanSnapshot,
+        controllerFeed,
+        scenario.transceiverResolutionSnapshot,
+        publisher.finalDisplay,
+        xvatsim::brain::ManualQuerySnapshot{});
+
+    const auto* stageBoard = &publisher.departureBoard;
+    if (workflowDecision.stage == WorkflowStage::Enroute) {
+        stageBoard = &publisher.enrouteBoard;
+    } else if (workflowDecision.stage == WorkflowStage::Arrival) {
+        stageBoard = &publisher.arrivalBoard;
+    }
+    pass.controllerCallsigns = ExtractCallsigns(*stageBoard);
+    pass.displayCallsigns = ExtractCallsigns(publisher.finalDisplay);
+    pass.serializedOutput = SerializeOperatingModePipelineOutput(
+        workflowDecision,
+        gatedRadioSnapshot,
+        relevance,
+        publisher,
+        view);
+    return pass;
+}
+
+void ExecuteHarnessSessionRuntimeCacheReset(
+    xvatsim::brain::BrainOwnedRuntimeState* state) {
+    xvatsim::brain::ResetBrainOwnedRuntimeState(state);
+    xvatsim::brain::ResetBrainOwnedDisplayPublisherState(state);
+}
+
+void ExecuteHarnessColdDarkPresentationReset(
+    xvatsim::brain::BrainOwnedRuntimeState* state) {
+    xvatsim::brain::ClearBrainOwnedPendingTextEntryMode(state);
+    xvatsim::brain::ClearBrainOwnedManualQuery(state);
+    xvatsim::brain::ResetBrainOwnedCruiseTarget(state);
+    xvatsim::brain::ClearBrainOwnedDiversionOverrideSource(state);
+    xvatsim::brain::ResetBrainOwnedRuntimeCachePreservingFlightContext(state);
+    xvatsim::brain::ResetBrainOwnedWorkflowProgress(state);
+    xvatsim::brain::ResetBrainOwnedEnrouteInitialHold(state);
+    xvatsim::brain::ClearBrainOwnedFlightContext(state);
+    xvatsim::brain::ClearBrainOwnedLastSampledFacts(state);
+    xvatsim::brain::ClearBrainOwnedXPilotConnectionTracking(state);
+    xvatsim::brain::ClearBrainOwnedFlightRecoveryRequests(state);
+    xvatsim::brain::ClearBrainOwnedAircraftStateInvalidBoundary(state);
+    xvatsim::brain::ResetBrainOwnedPdcProductState(state, false);
+    xvatsim::brain::ClearBrainOwnedManualQuery(state);
+    xvatsim::brain::ResetBrainOwnedDisplayPublisherState(state);
+    xvatsim::brain::ResetBrainOwnedStandbyAssistLatch(state);
+}
+
+void ExecuteHarnessPluginRuntimeReset(
+    xvatsim::brain::BrainOwnedRuntimeState* state) {
+    xvatsim::brain::ClearBrainOwnedPendingTextEntryMode(state);
+    xvatsim::brain::ClearBrainOwnedManualQuery(state);
+    xvatsim::brain::ClearBrainOwnedFlightRecoveryRequests(state);
+    ExecuteHarnessSessionRuntimeCacheReset(state);
+    ExecuteHarnessColdDarkPresentationReset(state);
+    xvatsim::brain::SetBrainOwnedColdDarkResetApplied(state, false);
+}
+
+bool HarnessOperatingModeStateEquals(
+    const xvatsim::brain::BrainOwnedOperatingModeState& left,
+    const xvatsim::brain::BrainOwnedOperatingModeState& right) {
+    return left.mode == right.mode && left.source == right.source &&
+           left.reason == right.reason && left.generation == right.generation;
+}
+
+OperatingModePipelinePass ExecuteHarnessOrdinaryProcessingCycle(
+    const ScenarioData& scenario,
+    xvatsim::brain::BrainOwnedRuntimeState* state) {
+    xvatsim::brain::BrainOwnedFlightPlanSampleInput sampleInput;
+    sampleInput.flightContextActive = state->flightContext.active;
+    sampleInput.nowSeconds = static_cast<long long>(scenario.nowSeconds);
+    sampleInput.sampleCadenceSeconds = 5;
+    const auto sampleDecision =
+        xvatsim::brain::DecideBrainOwnedFlightPlanSample(*state, sampleInput);
+    if (sampleDecision.shouldSample) {
+        xvatsim::brain::BrainOwnedFlightPlanSampleCommitInput commitInput;
+        commitInput.nowSeconds = sampleInput.nowSeconds;
+        commitInput.snapshot = scenario.flightPlanSnapshot;
+        xvatsim::brain::CommitBrainOwnedFlightPlanSample(state, commitInput);
+    }
+
+    xvatsim::brain::PilotIdentitySnapshot pilotIdentity;
+    pilotIdentity.connected = scenario.xPilotSessionSnapshot.connected;
+    pilotIdentity.ready = scenario.xPilotSessionSnapshot.connected;
+    pilotIdentity.callsign = scenario.xPilotSessionSnapshot.callsign;
+    pilotIdentity.normalizedCallsign = scenario.xPilotSessionSnapshot.callsign;
+    xvatsim::brain::CommitBrainOwnedLastSampledFacts(
+        state,
+        scenario.aircraftState,
+        pilotIdentity,
+        state->hasFlightPlanSnapshot ? state->flightPlanSnapshot
+                                     : scenario.flightPlanSnapshot,
+        scenario.networkPlanSnapshot);
+    return ExecuteOperatingModePipelinePass(scenario, state);
+}
+
+OperatingModeProbeActual ExecuteOperatingModeProbe(
+    const ScenarioData& scenario) {
+    OperatingModeProbeActual actual;
+    const auto path = OperatingModeProbePath(scenario);
+    std::error_code cleanupError;
+    std::filesystem::remove(path, cleanupError);
+
+    auto loadSettingsEntry = [&](const std::string& entry) {
+        xvatsim::modules::settings_store::SettingsStore store;
+        store.SetPath(path.string());
+        std::filesystem::remove(path, cleanupError);
+        if (entry == "<empty>") {
+            WriteOperatingModeProbeSettings(path, "operating_mode=\n");
+        } else if (entry == "<malformed>") {
+            WriteOperatingModeProbeSettings(path, "operating_mode vfr\n");
+        } else if (entry == "<unknown>") {
+            WriteOperatingModeProbeSettings(path, "operating_mode=visual\n");
+        } else if (entry != "<missing>" && !entry.empty()) {
+            WriteOperatingModeProbeSettings(
+                path,
+                "operating_mode=" + entry + "\n");
+        }
+        return store.Load();
+    };
+
+    xvatsim::brain::BrainOwnedRuntimeState state;
+    xvatsim::brain::BrainOwnedOperatingModeSelectionResult lastSelection;
+
+    if (scenario.operatingMode.probe == "settings-load") {
+        const auto settings = loadSettingsEntry(scenario.operatingMode.settingsEntry);
+        InitializeHarnessOperatingModeFromSettings(&state, settings);
+        actual.loadStatus = HarnessLoadStatusName(settings.operatingModeLoadStatus);
+
+        if (scenario.operatingMode.settingsEntry == "<unknown>") {
+            for (const auto& invalid : {"<empty>", "<malformed>", "<unknown>"}) {
+                const auto invalidSettings = loadSettingsEntry(invalid);
+                if (invalidSettings.operatingModeLoadStatus !=
+                        xvatsim::modules::settings_store::
+                            StoredOperatingModeLoadStatus::Invalid ||
+                    invalidSettings.operatingMode !=
+                        xvatsim::modules::settings_store::StoredOperatingMode::IFR) {
+                    actual.loadStatus = "invalid-set-failed";
+                }
+            }
+        }
+
+        for (const auto& mode : scenario.operatingMode.roundTripModes) {
+            const auto loaded = loadSettingsEntry(ToUpperCopy(mode) == "VFR" ? "VFR" : " IFR ");
+            if (loaded.operatingModeLoadStatus ==
+                xvatsim::modules::settings_store::StoredOperatingModeLoadStatus::Valid) {
+                actual.roundTripModes.push_back(
+                    loaded.operatingMode ==
+                            xvatsim::modules::settings_store::StoredOperatingMode::VFR
+                        ? "VFR"
+                        : "IFR");
+            }
+        }
+    } else if (scenario.operatingMode.probe == "round-trip") {
+        xvatsim::modules::settings_store::SettingsStore store;
+        store.SetPath(path.string());
+        for (const auto& mode : scenario.operatingMode.roundTripModes) {
+            xvatsim::modules::settings_store::PluginSettings settings;
+            settings.operatingMode = ToHarnessStoredOperatingMode(
+                ParseHarnessOperatingMode(mode));
+            settings.operatingModeLoadStatus =
+                xvatsim::modules::settings_store::
+                    StoredOperatingModeLoadStatus::Valid;
+            ++actual.saveAttempts;
+            if (store.Save(settings)) {
+                ++actual.saveSuccesses;
+                const auto loaded = store.Load();
+                if (loaded.operatingModeLoadStatus ==
+                    xvatsim::modules::settings_store::
+                        StoredOperatingModeLoadStatus::Valid) {
+                    actual.roundTripModes.push_back(
+                        loaded.operatingMode ==
+                                xvatsim::modules::settings_store::
+                                    StoredOperatingMode::VFR
+                            ? "VFR"
+                            : "IFR");
+                }
+            }
+        }
+    }
+    else {
+        if (!scenario.operatingMode.settingsEntry.empty()) {
+            const auto settings =
+                loadSettingsEntry(scenario.operatingMode.settingsEntry);
+            InitializeHarnessOperatingModeFromSettings(&state, settings);
+            actual.loadStatus =
+                HarnessLoadStatusName(settings.operatingModeLoadStatus);
+        } else {
+            xvatsim::brain::InitializeBrainOwnedOperatingMode(
+                &state,
+                xvatsim::brain::BrainOwnedOperatingModeInitializationInput{});
+            if (ToUpperCopy(scenario.operatingMode.initialMode) == "VFR") {
+                lastSelection =
+                    xvatsim::brain::RequestBrainOwnedOperatingModeSelection(
+                        &state,
+                        xvatsim::brain::BrainOwnedOperatingMode::VFR);
+            }
+        }
+
+        if (scenario.operatingMode.probe == "selection" ||
+            scenario.operatingMode.probe == "persistence-failure") {
+            const auto beforeSelectionState = state.operatingMode;
+            for (const auto& request : scenario.operatingMode.selectionRequests) {
+                lastSelection =
+                    xvatsim::brain::RequestBrainOwnedOperatingModeSelection(
+                        &state,
+                        ParseHarnessOperatingMode(request));
+                if (lastSelection.changed) {
+                    ++actual.changeCount;
+                }
+                if (lastSelection.persistenceRequested) {
+                    ++actual.persistenceRequests;
+                }
+                if (scenario.operatingMode.probe == "persistence-failure" &&
+                    lastSelection.persistenceRequested) {
+                    xvatsim::modules::settings_store::SettingsStore unavailableStore;
+                    xvatsim::modules::settings_store::PluginSettings settings;
+                    settings.operatingMode =
+                        ToHarnessStoredOperatingMode(lastSelection.effectiveMode);
+                    ++actual.saveAttempts;
+                    if (unavailableStore.Save(settings)) {
+                        ++actual.saveSuccesses;
+                    }
+                }
+            }
+            actual.stateUnchanged =
+                beforeSelectionState.mode == state.operatingMode.mode &&
+                beforeSelectionState.source == state.operatingMode.source &&
+                beforeSelectionState.reason == state.operatingMode.reason &&
+                beforeSelectionState.generation ==
+                    state.operatingMode.generation;
+
+            if (scenario.operatingMode.probe == "persistence-failure") {
+                const auto attemptsBeforeProcessing = actual.saveAttempts;
+                for (int cycle = 0;
+                     cycle < scenario.operatingMode.processingCycles;
+                     ++cycle) {
+                    (void)ExecuteHarnessOrdinaryProcessingCycle(
+                        scenario,
+                        &state);
+                    ++actual.processingCycles;
+                }
+                actual.retryCount = actual.saveAttempts - attemptsBeforeProcessing;
+            }
+        } else if (scenario.operatingMode.probe == "reset-preservation") {
+            actual.resetPreserved = true;
+            for (const auto& resetPath : scenario.operatingMode.resetPaths) {
+                xvatsim::brain::BrainOwnedRuntimeState resetState;
+                xvatsim::brain::InitializeBrainOwnedOperatingMode(
+                    &resetState,
+                    xvatsim::brain::BrainOwnedOperatingModeInitializationInput{});
+                (void)xvatsim::brain::RequestBrainOwnedOperatingModeSelection(
+                    &resetState,
+                    xvatsim::brain::BrainOwnedOperatingMode::VFR);
+                const auto expected = resetState.operatingMode;
+                if (resetPath == "runtime") {
+                    xvatsim::brain::ResetBrainOwnedRuntimeState(&resetState);
+                    actual.resetTrace.push_back("runtime:reset-runtime");
+                } else if (resetPath == "cache-preserving") {
+                    xvatsim::brain::ResetBrainOwnedRuntimeCachePreservingFlightContext(
+                        &resetState);
+                    actual.resetTrace.push_back(
+                        "cache-preserving:reset-cache-preserving");
+                } else if (resetPath == "session") {
+                    ExecuteHarnessPluginRuntimeReset(&resetState);
+                    actual.resetTrace.push_back("session:plugin-runtime-reset");
+                } else if (resetPath == "cold-dark") {
+                    xvatsim::brain::workflow::AircraftRuntimeBoundaryInput input;
+                    input.aircraftState.valid = true;
+                    input.aircraftState.batteryOn = false;
+                    input.coldDarkResetApplied = resetState.coldDarkResetApplied;
+                    input.aircraftStateInvalidBoundaryActive =
+                        resetState.aircraftStateInvalidBoundaryActive;
+                    const auto decision =
+                        xvatsim::brain::workflow::ResolveAircraftRuntimeBoundary(
+                            input);
+                    if (decision.shouldResetSessionRuntimeCaches) {
+                        ExecuteHarnessSessionRuntimeCacheReset(&resetState);
+                    }
+                    if (decision.shouldResetPresentationState) {
+                        ExecuteHarnessColdDarkPresentationReset(&resetState);
+                    }
+                    xvatsim::brain::ApplyBrainOwnedAircraftRuntimeBoundaryDecision(
+                        &resetState,
+                        decision);
+                    actual.resetTrace.push_back(
+                        decision.shouldResetSessionRuntimeCaches &&
+                                decision.shouldResetPresentationState
+                            ? "cold-dark:session-caches+presentation"
+                            : "cold-dark:boundary-decision-failed");
+                } else if (resetPath == "invalid-aircraft") {
+                    xvatsim::brain::workflow::AircraftRuntimeBoundaryInput input;
+                    input.aircraftState.valid = false;
+                    input.coldDarkResetApplied = resetState.coldDarkResetApplied;
+                    input.aircraftStateInvalidBoundaryActive =
+                        resetState.aircraftStateInvalidBoundaryActive;
+                    const auto decision =
+                        xvatsim::brain::workflow::ResolveAircraftRuntimeBoundary(
+                            input);
+                    if (decision.shouldResetForInvalidAircraftState) {
+                        ExecuteHarnessPluginRuntimeReset(&resetState);
+                    }
+                    xvatsim::brain::ApplyBrainOwnedAircraftRuntimeBoundaryDecision(
+                        &resetState,
+                        decision);
+                    actual.resetTrace.push_back(
+                        decision.shouldResetForInvalidAircraftState
+                            ? "invalid-aircraft:invalid-reset"
+                            : "invalid-aircraft:boundary-decision-failed");
+                } else if (resetPath == "xpilot-disconnect") {
+                    resetState.xPilotSessionBoundaryState.lastXPilotConnected = true;
+                    resetState.xPilotSessionBoundaryState.lastConnectedPilotCallsign =
+                        "N100PC";
+                    xvatsim::brain::workflow::XPilotSessionBoundaryInput input;
+                    input.state = resetState.xPilotSessionBoundaryState;
+                    input.xPilotSession.connected = false;
+                    const auto decision =
+                        xvatsim::brain::workflow::ResolveXPilotSessionBoundary(
+                            input);
+                    if (decision.shouldPreserveFlightStateForDisconnect) {
+                        xvatsim::brain::ResetBrainOwnedDisplayPublisherState(
+                            &resetState);
+                        xvatsim::brain::ResetBrainOwnedStandbyAssistLatch(
+                            &resetState);
+                    }
+                    xvatsim::brain::ApplyBrainOwnedXPilotSessionBoundaryDecision(
+                        &resetState,
+                        decision);
+                    actual.resetTrace.push_back(
+                        decision.shouldPreserveFlightStateForDisconnect
+                            ? "xpilot-disconnect:preserve-flight-state"
+                            : "xpilot-disconnect:boundary-decision-failed");
+                } else if (resetPath == "xpilot-reconnect") {
+                    resetState.xPilotSessionBoundaryState.lastXPilotConnected = false;
+                    resetState.xPilotSessionBoundaryState.disconnectedPilotCallsign =
+                        "N100PC";
+                    xvatsim::brain::workflow::XPilotSessionBoundaryInput input;
+                    input.state = resetState.xPilotSessionBoundaryState;
+                    input.xPilotSession.connected = true;
+                    input.xPilotSession.callsign = "N100PC";
+                    input.pilotIdentity.connected = true;
+                    input.pilotIdentity.ready = true;
+                    input.pilotIdentity.callsign = "N100PC";
+                    input.pilotIdentity.normalizedCallsign = "N100PC";
+                    const auto decision =
+                        xvatsim::brain::workflow::ResolveXPilotSessionBoundary(
+                            input);
+                    xvatsim::brain::ApplyBrainOwnedXPilotSessionBoundaryDecision(
+                        &resetState,
+                        decision);
+                    actual.resetTrace.push_back(
+                        decision.shouldQueueAutomaticRecovery
+                            ? "xpilot-reconnect:queue-recovery"
+                            : "xpilot-reconnect:boundary-decision-failed");
+                } else if (resetPath == "callsign-change") {
+                    resetState.xPilotSessionBoundaryState.lastXPilotConnected = true;
+                    resetState.xPilotSessionBoundaryState.lastConnectedPilotCallsign =
+                        "N100PC";
+                    xvatsim::brain::workflow::XPilotSessionBoundaryInput input;
+                    input.state = resetState.xPilotSessionBoundaryState;
+                    input.xPilotSession.connected = true;
+                    input.xPilotSession.callsign = "N200PC";
+                    input.pilotIdentity.connected = true;
+                    input.pilotIdentity.ready = true;
+                    input.pilotIdentity.callsign = "N200PC";
+                    input.pilotIdentity.normalizedCallsign = "N200PC";
+                    const auto decision =
+                        xvatsim::brain::workflow::ResolveXPilotSessionBoundary(
+                            input);
+                    if (decision.shouldResetFlightScopedState) {
+                        ExecuteHarnessPluginRuntimeReset(&resetState);
+                    }
+                    xvatsim::brain::ApplyBrainOwnedXPilotSessionBoundaryDecision(
+                        &resetState,
+                        decision);
+                    actual.resetTrace.push_back(
+                        decision.shouldResetFlightScopedState
+                            ? "callsign-change:flight-scoped-reset"
+                            : "callsign-change:boundary-decision-failed");
+                } else if (resetPath == "plugin-disable-enable") {
+                    ExecuteHarnessPluginRuntimeReset(&resetState);
+                    ExecuteHarnessPluginRuntimeReset(&resetState);
+                    actual.resetTrace.push_back(
+                        "plugin-disable-enable:disable-reset+enable-reset");
+                } else {
+                    actual.resetTrace.push_back(resetPath + ":unknown");
+                }
+                actual.resetPreserved =
+                    actual.resetPreserved &&
+                    HarnessOperatingModeStateEquals(
+                        resetState.operatingMode,
+                        expected);
+                state = resetState;
+            }
+        } else if (scenario.operatingMode.probe == "missing-flight-plan") {
+            const auto before = state.operatingMode;
+            (void)ExecuteHarnessOrdinaryProcessingCycle(scenario, &state);
+            ++actual.processingCycles;
+            actual.missingPlanProcessed =
+                state.hasFlightPlanSnapshot &&
+                !state.flightPlanSnapshot.available &&
+                !state.lastFlightPlanSnapshot.available;
+            actual.noAutomaticVfr =
+                HarnessOperatingModeStateEquals(state.operatingMode, before) &&
+                state.operatingMode.mode ==
+                    xvatsim::brain::BrainOwnedOperatingMode::IFR &&
+                actual.changeCount == 0 && actual.persistenceRequests == 0;
+        } else if (scenario.operatingMode.probe == "parity") {
+            xvatsim::brain::BrainOwnedRuntimeState ifrState;
+            xvatsim::brain::BrainOwnedRuntimeState vfrState;
+            xvatsim::brain::BrainOwnedOperatingModeInitializationInput ifrInput;
+            ifrInput.loadStatus =
+                xvatsim::brain::BrainOwnedOperatingModeLoadStatus::Valid;
+            ifrInput.storedMode =
+                xvatsim::brain::BrainOwnedOperatingMode::IFR;
+            xvatsim::brain::InitializeBrainOwnedOperatingMode(&ifrState, ifrInput);
+            xvatsim::brain::BrainOwnedOperatingModeInitializationInput vfrInput;
+            vfrInput.loadStatus =
+                xvatsim::brain::BrainOwnedOperatingModeLoadStatus::Valid;
+            vfrInput.storedMode =
+                xvatsim::brain::BrainOwnedOperatingMode::VFR;
+            xvatsim::brain::InitializeBrainOwnedOperatingMode(
+                &vfrState,
+                vfrInput);
+            const auto ifrPass =
+                ExecuteOperatingModePipelinePass(scenario, &ifrState);
+            const auto vfrPass =
+                ExecuteOperatingModePipelinePass(scenario, &vfrState);
+            actual.pipelineRuns = 2;
+            actual.pipelineStage = WorkflowStageToString(ifrPass.stage);
+            actual.pipelineControllerCallsigns = ifrPass.controllerCallsigns;
+            actual.pipelineDisplayCallsigns = ifrPass.displayCallsigns;
+            actual.parity =
+                ifrPass.stage == vfrPass.stage &&
+                ifrPass.controllerCallsigns == vfrPass.controllerCallsigns &&
+                ifrPass.displayCallsigns == vfrPass.displayCallsigns &&
+                ifrPass.serializedOutput == vfrPass.serializedOutput;
+            actual.allowedParityDifference = "state-diagnostic-only";
+        }
+    }
+
+    actual.mode = HarnessOperatingModeName(state.operatingMode.mode);
+    actual.source = xvatsim::brain::ToString(state.operatingMode.source);
+    actual.reason = state.operatingMode.reason;
+    actual.generation = static_cast<int>(state.operatingMode.generation);
+    if (!lastSelection.requestReason.empty()) {
+        actual.requestSource =
+            xvatsim::brain::ToString(lastSelection.requestSource);
+        actual.requestReason = lastSelection.requestReason;
+    }
+
+    std::filesystem::remove(path, cleanupError);
+    return actual;
+}
+
+int RunOperatingModeProbe(const ScenarioData& scenario) {
+    const auto actual = ExecuteOperatingModeProbe(scenario);
+    const auto& expected = scenario.operatingModeExpectations;
+    int failures = 0;
+    const auto checkString = [&](const char* label,
+                                 const std::optional<std::string>& wanted,
+                                 const std::string& observed) {
+        if (wanted.has_value() && *wanted != observed) {
+            failures += PrintMismatch(label, *wanted, observed);
+        }
+    };
+    const auto checkInt = [&](const char* label,
+                              const std::optional<int>& wanted,
+                              int observed) {
+        if (wanted.has_value() && *wanted != observed) {
+            failures += PrintMismatch(
+                label,
+                std::to_string(*wanted),
+                std::to_string(observed));
+        }
+    };
+    const auto checkBool = [&](const char* label,
+                               const std::optional<bool>& wanted,
+                               bool observed) {
+        if (wanted.has_value() && *wanted != observed) {
+            failures += PrintMismatch(
+                label,
+                *wanted ? "true" : "false",
+                observed ? "true" : "false");
+        }
+    };
+
+    checkString("operating mode", expected.mode, actual.mode);
+    checkString("operating mode load status", expected.loadStatus, actual.loadStatus);
+    checkString("operating mode source", expected.source, actual.source);
+    checkString("operating mode reason", expected.reason, actual.reason);
+    checkInt("operating mode generation", expected.generation, actual.generation);
+    checkInt("operating mode change count", expected.changeCount, actual.changeCount);
+    checkInt(
+        "operating mode persistence requests",
+        expected.persistenceRequests,
+        actual.persistenceRequests);
+    checkInt("operating mode save attempts", expected.saveAttempts, actual.saveAttempts);
+    checkInt("operating mode save successes", expected.saveSuccesses, actual.saveSuccesses);
+    checkString(
+        "operating mode request source",
+        expected.requestSource,
+        actual.requestSource);
+    checkString(
+        "operating mode request reason",
+        expected.requestReason,
+        actual.requestReason);
+    checkBool(
+        "operating mode state unchanged",
+        expected.stateUnchanged,
+        actual.stateUnchanged);
+    checkBool(
+        "operating mode reset preserved",
+        expected.resetPreserved,
+        actual.resetPreserved);
+    checkBool(
+        "operating mode no automatic VFR",
+        expected.noAutomaticVfr,
+        actual.noAutomaticVfr);
+    checkBool("operating mode parity", expected.parity, actual.parity);
+    checkString(
+        "operating mode allowed parity difference",
+        expected.allowedParityDifference,
+        actual.allowedParityDifference);
+    checkInt("operating mode retry count", expected.retryCount, actual.retryCount);
+    checkInt(
+        "operating mode processing cycles",
+        expected.processingCycles,
+        actual.processingCycles);
+    checkBool(
+        "operating mode missing plan processed",
+        expected.missingPlanProcessed,
+        actual.missingPlanProcessed);
+    checkInt(
+        "operating mode pipeline runs",
+        expected.pipelineRuns,
+        actual.pipelineRuns);
+    checkString(
+        "operating mode pipeline stage",
+        expected.pipelineStage,
+        actual.pipelineStage);
+    if (const auto mismatch = CheckStringList(
+            "operating mode reset trace",
+            expected.resetTrace,
+            actual.resetTrace)) {
+        failures += *mismatch;
+    }
+    if (const auto mismatch = CheckStringList(
+            "operating mode pipeline controller callsigns",
+            expected.pipelineControllerCallsigns,
+            actual.pipelineControllerCallsigns)) {
+        failures += *mismatch;
+    }
+    if (const auto mismatch = CheckStringList(
+            "operating mode pipeline display callsigns",
+            expected.pipelineDisplayCallsigns,
+            actual.pipelineDisplayCallsigns)) {
+        failures += *mismatch;
+    }
+    if (!expected.roundTripModes.empty() &&
+        expected.roundTripModes != actual.roundTripModes) {
+        failures += PrintMismatch(
+            "operating mode round trip",
+            JoinCsv(expected.roundTripModes),
+            JoinCsv(actual.roundTripModes));
+    }
+
+    if (failures != 0) {
+        return 1;
+    }
+    std::cout << "Scenario passed: " << scenario.name << "\n";
+    return 0;
+}
+
+std::string Step3Bool(bool value) { return value ? "true" : "false"; }
+
+std::string Step3DigestHex(const std::array<std::uint8_t, 32>& digest) {
+    constexpr char digits[] = "0123456789ABCDEF";
+    std::string result;
+    result.reserve(digest.size() * 2);
+    for (const auto value : digest) {
+        result.push_back(digits[(value >> 4U) & 0x0fU]);
+        result.push_back(digits[value & 0x0fU]);
+    }
+    return result;
+}
+
+std::string Step3Status(xvatsim::brain::BrainOwnedAccessoryOperationStatus status) {
+    return status == xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available
+        ? "available"
+        : "unavailable";
+}
+
+std::string Step3Drawer(xvatsim::brain::BrainOwnedAccessoryDrawerId drawer) {
+    using Drawer = xvatsim::brain::BrainOwnedAccessoryDrawerId;
+    switch (drawer) {
+        case Drawer::Metar: return "METAR";
+        case Drawer::Atis: return "ATIS";
+        case Drawer::Pdc: return "PDC";
+        case Drawer::None: default: return "NONE";
+    }
+}
+
+xvatsim::brain::BrainOwnedAccessoryDrawerId Step3DrawerFromToken(
+    const std::string& token) {
+    using Drawer = xvatsim::brain::BrainOwnedAccessoryDrawerId;
+    if (token == "METAR") return Drawer::Metar;
+    if (token == "ATIS") return Drawer::Atis;
+    if (token == "PDC") return Drawer::Pdc;
+    return Drawer::None;
+}
+
+std::string Step3Action(xvatsim::brain::BrainOwnedAccessoryDrawerAction action) {
+    using Action = xvatsim::brain::BrainOwnedAccessoryDrawerAction;
+    switch (action) {
+        case Action::Opened: return "Opened";
+        case Action::Closed: return "Closed";
+        case Action::Switched: return "Switched";
+        case Action::DuplicateRequestIgnored: return "DuplicateRequestIgnored";
+        case Action::None: default: return "None";
+    }
+}
+
+std::string Step3WheelScope(xvatsim::modules::overlay::AccessoryWheelScope scope) {
+    using Scope=xvatsim::modules::overlay::AccessoryWheelScope;
+    if(scope==Scope::Drawer) return "drawer";
+    if(scope==Scope::MainCard) return "main";
+    return "unhandled";
+}
+
+xvatsim::modules::overlay::AccessoryPerformanceCategory
+Step3PerformanceCategoryFromToken(const std::string& token) {
+    using Category =
+        xvatsim::modules::overlay::AccessoryPerformanceCategory;
+    if (token == "rail-raster") return Category::RailRasterization;
+    if (token == "drawer-raster") return Category::DrawerRasterization;
+    if (token == "rail-upload") return Category::RailTextureUpload;
+    if (token == "drawer-upload") return Category::DrawerTextureUpload;
+    if (token == "completed-draw") return Category::CompletedAccessoryDraw;
+    if (token == "open-action") return Category::OpenAction;
+    if (token == "switch-action") return Category::AtomicSwitchAction;
+    if (token == "close-action") return Category::CloseAction;
+    if (token == "effective-scroll-action") {
+        return Category::EffectiveScrollAction;
+    }
+    if (token == "dispatch-wall") {
+        return Category::BrainPresentationDispatchWall;
+    }
+    if (token == "action-draw-wall") {
+        return Category::MatchingActionDrawWall;
+    }
+    if (token == "combined-action-wall") {
+        return Category::CombinedActionWall;
+    }
+    if (token == "callback-wait") return Category::CallbackWait;
+    if (token == "preparation-wait") return Category::PreparationWait;
+    if (token == "frame-interval") return Category::ContainingFrameInterval;
+    return Category::Count;
+}
+
+xvatsim::modules::overlay::AccessoryRasterReason
+Step3RasterReasonFromToken(const std::string& token) {
+    using Reason = xvatsim::modules::overlay::AccessoryRasterReason;
+    if (token == "initial") return Reason::Initial;
+    if (token == "selection-open-close-switch" || token == "selection") {
+        return Reason::Selection;
+    }
+    if (token == "scale-or-resize") return Reason::EffectiveScaleOrResize;
+    if (token == "typography-or-layout") return Reason::TypographyOrLayout;
+    if (token == "content-generation") return Reason::ContentGeneration;
+    if (token == "presentation-scroll") return Reason::PresentationScroll;
+    return Reason::Count;
+}
+
+std::size_t Step3DrawerIndex(xvatsim::brain::BrainOwnedAccessoryDrawerId drawer) {
+    using Drawer = xvatsim::brain::BrainOwnedAccessoryDrawerId;
+    if (drawer == Drawer::Atis) return 1;
+    if (drawer == Drawer::Pdc) return 2;
+    return 0;
+}
+
+bool Step3IsValidUtf8(const std::string& text) {
+    std::size_t index = 0;
+    while (index < text.size()) {
+        const auto first = static_cast<unsigned char>(text[index]);
+        std::size_t continuationCount = 0;
+        if (first <= 0x7F) continuationCount = 0;
+        else if (first >= 0xC2 && first <= 0xDF) continuationCount = 1;
+        else if (first >= 0xE0 && first <= 0xEF) continuationCount = 2;
+        else if (first >= 0xF0 && first <= 0xF4) continuationCount = 3;
+        else return false;
+        if (index + continuationCount >= text.size()) return false;
+        for (std::size_t offset = 1; offset <= continuationCount; ++offset) {
+            const auto value = static_cast<unsigned char>(text[index + offset]);
+            if ((value & 0xC0) != 0x80) return false;
+        }
+        index += continuationCount + 1;
+    }
+    return true;
+}
+
+std::string Step3JoinLines(const std::vector<std::string>& lines) {
+    std::ostringstream stream;
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        if (index != 0) stream << '\n';
+        stream << lines[index];
+    }
+    return stream.str();
+}
+
+std::string Step3ConcatenateLines(const std::vector<std::string>& lines) {
+    std::ostringstream stream;
+    for (const auto& line : lines) stream << line;
+    return stream.str();
+}
+
+std::string Step3NormalizeCrlf(const std::string& text) {
+    std::string normalized;
+    normalized.reserve(text.size());
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        if (text[index] == '\r' && index + 1 < text.size() &&
+            text[index + 1] == '\n') {
+            normalized.push_back('\n');
+            ++index;
+        } else {
+            normalized.push_back(text[index]);
+        }
+    }
+    return normalized;
+}
+
+std::string Step3RemoveLineFeeds(std::string text) {
+    text.erase(std::remove(text.begin(), text.end(), '\n'), text.end());
+    return text;
+}
+
+struct Step3ExecutionContext {
+    xvatsim::modules::overlay::AccessoryTextMeasurementContext*
+        measurementContext = nullptr;
+    std::map<int, xvatsim::modules::overlay::AccessoryTypographyMetrics>
+        typography;
+    std::unordered_map<std::string, std::unique_ptr<xvatsim::brain::BrainOwnedRuntimeState>> states;
+    std::unordered_map<std::string, xvatsim::brain::BrainOwnedAccessoryPresentationHandle> snapshots;
+    std::unordered_map<std::string, xvatsim::modules::overlay::AccessoryLayoutResult> layouts;
+    std::unordered_map<std::string, xvatsim::modules::overlay::AccessoryHitTestResult> hits;
+    std::unordered_map<std::string, xvatsim::modules::overlay::AccessoryPresentationState> presenters;
+    std::unordered_map<std::string,
+        xvatsim::modules::overlay::AccessoryClickFactQueue> clickQueues;
+    std::unordered_map<std::string,
+        xvatsim::modules::overlay::AccessoryInputDispatchCoordinator>
+        inputDispatchers;
+    std::unordered_map<std::string,
+        std::unique_ptr<xvatsim::modules::overlay::AccessoryPerformanceCollector>>
+        dispatchPerformanceCollectors;
+    std::unordered_map<std::string, std::uint64_t>
+        presenterRenderGenerations;
+    std::unordered_map<std::string,
+        std::unique_ptr<xvatsim::modules::overlay::AccessoryPerformanceCollector>>
+        performanceCollectors;
+    std::unordered_map<std::string, std::string> mainCardSignatures;
+    std::unordered_map<std::string, std::string> observed;
+
+    Step3ExecutionContext() {
+        measurementContext =
+            xvatsim::modules::overlay::InitializeAccessoryTextMeasurement();
+        for (const float scale : {0.85f, 1.0f, 1.35f}) {
+            const int key = static_cast<int>(std::lround(scale * 1000.0f));
+            typography.emplace(
+                key,
+                xvatsim::modules::overlay::PrepareAccessoryTypography(
+                    measurementContext,
+                    scale));
+        }
+    }
+
+    ~Step3ExecutionContext() {
+        xvatsim::modules::overlay::ShutdownAccessoryTextMeasurement(
+            measurementContext);
+        measurementContext = nullptr;
+    }
+
+    const xvatsim::modules::overlay::AccessoryTypographyMetrics* Typography(
+        float scale) {
+        const int key = static_cast<int>(std::lround(scale * 1000.0f));
+        auto found = typography.find(key);
+        if (found == typography.end()) {
+            found = typography.emplace(
+                key,
+                xvatsim::modules::overlay::PrepareAccessoryTypography(
+                    measurementContext,
+                    scale)).first;
+        }
+        return &found->second;
+    }
+
+    xvatsim::brain::BrainOwnedRuntimeState* State(const std::string& name) {
+        auto& state = states[name];
+        if (!state) state = std::make_unique<xvatsim::brain::BrainOwnedRuntimeState>();
+        return state.get();
+    }
+};
+
+xvatsim::modules::overlay::AccessoryGdiMeasurementCounters Step3GdiCounterDelta(
+    const xvatsim::modules::overlay::AccessoryGdiMeasurementCounters& before,
+    const xvatsim::modules::overlay::AccessoryGdiMeasurementCounters& after) {
+    xvatsim::modules::overlay::AccessoryGdiMeasurementCounters result;
+    result.measurementCalls = after.measurementCalls - before.measurementCalls;
+    result.bitmapConstructions =
+        after.bitmapConstructions - before.bitmapConstructions;
+    result.graphicsConstructions =
+        after.graphicsConstructions - before.graphicsConstructions;
+    result.fontConstructions = after.fontConstructions - before.fontConstructions;
+    return result;
+}
+
+void ObserveStep3GdiCounters(
+    const xvatsim::modules::overlay::AccessoryGdiMeasurementCounters& counters,
+    const std::string& prefix,
+    std::unordered_map<std::string, std::string>* observed) {
+    (*observed)[prefix + ".gdi_measurements"] =
+        std::to_string(counters.measurementCalls);
+    (*observed)[prefix + ".gdi_bitmaps"] =
+        std::to_string(counters.bitmapConstructions);
+    (*observed)[prefix + ".gdi_graphics"] =
+        std::to_string(counters.graphicsConstructions);
+    (*observed)[prefix + ".gdi_fonts"] =
+        std::to_string(counters.fontConstructions);
+}
+
+xvatsim::modules::overlay::AccessoryLayoutResult ResolveStep3Layout(
+    Step3ExecutionContext* context,
+    xvatsim::modules::overlay::AccessoryLayoutInput input) {
+    input.typography = context == nullptr ? nullptr : context->Typography(input.scale);
+    return xvatsim::modules::overlay::ResolveAccessoryLayout(input);
+}
+
+std::vector<std::string> Step3HistoryKeys(
+    const xvatsim::brain::BrainOwnedAccessoryHistory& history) {
+    std::vector<std::string> values;
+    for (const auto& entry : history.entries) values.push_back(entry.stableKey);
+    return values;
+}
+
+std::vector<std::string> Step3HistoryBodies(
+    const xvatsim::brain::BrainOwnedAccessoryHistory& history) {
+    std::vector<std::string> values;
+    for (const auto& entry : history.entries) values.push_back(entry.body);
+    return values;
+}
+
+std::vector<std::string> Step3HistoryTitles(
+    const xvatsim::brain::BrainOwnedAccessoryHistory& history) {
+    std::vector<std::string> values;
+    for (const auto& entry : history.entries) values.push_back(entry.title);
+    return values;
+}
+
+std::vector<std::string> Step3HistorySequences(
+    const xvatsim::brain::BrainOwnedAccessoryHistory& history) {
+    std::vector<std::string> values;
+    for (const auto& entry : history.entries) {
+        values.push_back(std::to_string(entry.acceptedSequence));
+    }
+    return values;
+}
+
+void ObserveStep3History(
+    const xvatsim::brain::BrainOwnedAccessoryHistory& history,
+    const std::string& prefix,
+    std::unordered_map<std::string, std::string>* observed) {
+    (*observed)[prefix + ".count"] = std::to_string(history.entries.size());
+    (*observed)[prefix + ".bytes"] = std::to_string(history.retainedBytes);
+    (*observed)[prefix + ".generation"] = std::to_string(history.generation);
+    (*observed)[prefix + ".next_sequence"] =
+        std::to_string(history.nextAcceptedSequence);
+    (*observed)[prefix + ".keys"] = JoinCsv(Step3HistoryKeys(history));
+    (*observed)[prefix + ".titles"] = JoinCsv(Step3HistoryTitles(history));
+    (*observed)[prefix + ".bodies"] = JoinCsv(Step3HistoryBodies(history));
+    (*observed)[prefix + ".sequences"] = JoinCsv(Step3HistorySequences(history));
+    (*observed)[prefix + ".newest_key"] = "";
+    (*observed)[prefix + ".oldest_key"] = "";
+    (*observed)[prefix + ".newest_sequence"] = "0";
+    (*observed)[prefix + ".oldest_sequence"] = "0";
+    int caseVariantCount=0;
+    bool upperBody=false,lowerBody=false;
+    for(const auto& entry:history.entries) {
+        if(entry.stableKey=="CaseKey") {caseVariantCount++; upperBody=entry.body=="UPPER";}
+        if(entry.stableKey=="casekey") {caseVariantCount++; lowerBody=entry.body=="LOWER";}
+    }
+    (*observed)[prefix + ".case_variant_count"]=std::to_string(caseVariantCount);
+    (*observed)[prefix + ".case_sensitive_pair"]=
+        Step3Bool(caseVariantCount==2 && upperBody && lowerBody);
+    std::size_t recountedBytes=0;
+    for(const auto& entry:history.entries) recountedBytes+=entry.retainedBytes;
+    (*observed)[prefix + ".within_count_limit"]=
+        Step3Bool(history.entries.size()<=32);
+    (*observed)[prefix + ".within_byte_limit"]=
+        Step3Bool(history.retainedBytes<=65536);
+    (*observed)[prefix + ".recounted_bytes"]=std::to_string(recountedBytes);
+    if (!history.entries.empty()) {
+        const auto& newest = history.entries.front();
+        const auto& oldest = history.entries.back();
+        (*observed)[prefix + ".newest_key"] = newest.stableKey;
+        (*observed)[prefix + ".oldest_key"] = oldest.stableKey;
+        (*observed)[prefix + ".newest_sequence"] =
+            std::to_string(newest.acceptedSequence);
+        (*observed)[prefix + ".oldest_sequence"] =
+            std::to_string(oldest.acceptedSequence);
+    }
+}
+
+void ObserveStep3RenderCounters(
+    const xvatsim::modules::overlay::AccessoryRenderCounters& counters,
+    const std::string& prefix,
+    std::unordered_map<std::string, std::string>* observed) {
+    (*observed)[prefix + ".history_visits"] = std::to_string(counters.historyVisits);
+    (*observed)[prefix + ".copies"] = std::to_string(counters.entryCopies);
+    (*observed)[prefix + ".wraps"] = std::to_string(counters.wrapVisits);
+    (*observed)[prefix + ".main"] = std::to_string(counters.mainCardRasterRequests);
+    (*observed)[prefix + ".rail"] = std::to_string(counters.railRasterRequests);
+    (*observed)[prefix + ".drawer"] = std::to_string(counters.drawerRasterRequests);
+    (*observed)[prefix + ".uploads"] = std::to_string(counters.uploadRequests);
+    (*observed)[prefix + ".publications"] =
+        std::to_string(counters.snapshotPublications);
+}
+
+void ObserveStep3PerformanceSnapshot(
+    const xvatsim::modules::overlay::AccessoryPerformanceSnapshot& snapshot,
+    const std::string& prefix,
+    std::unordered_map<std::string, std::string>* observed) {
+    (*observed)[prefix+".epoch"]=std::to_string(snapshot.epoch);
+    (*observed)[prefix+".revision"]=
+        std::to_string(snapshot.measurementRevision);
+    (*observed)[prefix+".threshold_failure"]=
+        Step3Bool(snapshot.thresholdFailure);
+    (*observed)[prefix+".first_violation_us"]=
+        std::to_string(snapshot.firstViolationMicroseconds);
+    (*observed)[prefix+".first_violation_category"]=
+        xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(
+            snapshot.firstViolationCategory);
+    (*observed)[prefix+".warning_count"]=
+        std::to_string(snapshot.warningCount);
+    (*observed)[prefix+".publication_count"]=
+        std::to_string(snapshot.publicationCount);
+    (*observed)[prefix+".actions_completed"]=
+        std::to_string(snapshot.actionsCompleted);
+    (*observed)[prefix+".synchronous_wall_within_budget_count"]=
+        std::to_string(snapshot.synchronousWallWithinBudgetCount);
+    (*observed)[prefix+".frame_cadence_limited_count"]=
+        std::to_string(snapshot.frameCadenceLimitedCount);
+    (*observed)[prefix+".preparation_limited_count"]=
+        std::to_string(snapshot.preparationLimitedCount);
+    (*observed)[prefix+".synchronous_wall_failure_count"]=
+        std::to_string(snapshot.synchronousWallFailureCount);
+    (*observed)[prefix+".render_wall_failure_count"]=
+        std::to_string(snapshot.renderWallFailureCount);
+    (*observed)[prefix+".timing_unavailable_count"]=
+        std::to_string(snapshot.timingUnavailableCount);
+    (*observed)[prefix+".cadence_contract_failure_count"]=
+        std::to_string(snapshot.cadenceContractFailureCount);
+    (*observed)[prefix+".missed_eligible_draws"]=
+        std::to_string(snapshot.missedEligibleDraws);
+    (*observed)[prefix+".unique_draw_samples"]=
+        std::to_string(snapshot.uniqueDrawSamples);
+    (*observed)[prefix+".draw_sample_references"]=
+        std::to_string(snapshot.drawSampleReferences);
+    (*observed)[prefix+".coalesced_action_count"]=
+        std::to_string(snapshot.coalescedActionCount);
+    (*observed)[prefix+".maximum_actions_per_draw"]=
+        std::to_string(snapshot.maximumActionsPerDraw);
+    (*observed)[prefix+".violation_record_count"]=
+        std::to_string(snapshot.firstViolationRecordCount);
+    (*observed)[prefix+".serialized_violation_record_count"]=
+        std::to_string(snapshot.firstViolationRecordCount);
+    (*observed)[prefix+".dropped_violation_record_count"]=
+        std::to_string(snapshot.droppedViolationRecordCount);
+    for(std::size_t index=0;index<snapshot.categories.size();++index) {
+        const auto category=static_cast<
+            xvatsim::modules::overlay::AccessoryPerformanceCategory>(index);
+        const auto token=
+            xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(category);
+        const auto& summary=snapshot.categories[index];
+        (*observed)[prefix+"."+token+".count"]=
+            std::to_string(summary.count);
+        (*observed)[prefix+"."+token+".p50_us"]=
+            std::to_string(summary.p50Microseconds);
+        (*observed)[prefix+"."+token+".p95_us"]=
+            std::to_string(summary.p95Microseconds);
+        (*observed)[prefix+"."+token+".max_us"]=
+            std::to_string(summary.maximumMicroseconds);
+    }
+    const char* actionTokens[]{"open", "switch", "close"};
+    for(std::size_t actionIndex=0;
+        actionIndex<snapshot.actionStageWall.size();++actionIndex) {
+        for(std::size_t stageIndex=0;
+            stageIndex<snapshot.actionStageWall[actionIndex].size();
+            ++stageIndex) {
+            const auto stage=static_cast<
+                xvatsim::modules::overlay::AccessoryDispatchStage>(stageIndex);
+            const auto& summary=
+                snapshot.actionStageWall[actionIndex][stageIndex];
+            const std::string key=prefix+"."+actionTokens[actionIndex]+"-"+
+                xvatsim::modules::overlay::AccessoryDispatchStageToken(stage);
+            (*observed)[key+".count"]=std::to_string(summary.count);
+            (*observed)[key+".p50_us"]=
+                std::to_string(summary.p50Microseconds);
+            (*observed)[key+".p95_us"]=
+                std::to_string(summary.p95Microseconds);
+            (*observed)[key+".max_us"]=
+                std::to_string(summary.maximumMicroseconds);
+        }
+    }
+    for(std::size_t index=0;index<snapshot.railRasterReasons.size();++index) {
+        const auto reason=static_cast<
+            xvatsim::modules::overlay::AccessoryRasterReason>(index);
+        const auto token=
+            xvatsim::modules::overlay::AccessoryRasterReasonToken(reason);
+        (*observed)[prefix+".rail_reason."+token]=
+            std::to_string(snapshot.railRasterReasons[index]);
+        (*observed)[prefix+".drawer_reason."+token]=
+            std::to_string(snapshot.drawerRasterReasons[index]);
+    }
+    const auto& action=snapshot.lastAction;
+    (*observed)[prefix+".last.available"]=Step3Bool(action.available);
+    (*observed)[prefix+".last.category"]=
+        xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(
+            action.actionCategory);
+    (*observed)[prefix+".last.classification"]=
+        xvatsim::modules::overlay::AccessoryActionTimingClassificationToken(
+            action.classification);
+    (*observed)[prefix+".last.request_sequence"]=
+        std::to_string(action.requestSequence);
+    (*observed)[prefix+".last.mouse_fact_accepted_us"]=
+        std::to_string(action.mouseFactAcceptedMicroseconds);
+    (*observed)[prefix+".last.dispatch_started_us"]=
+        std::to_string(action.dispatchStartedMicroseconds);
+    (*observed)[prefix+".last.dispatch_completed_us"]=
+        std::to_string(action.dispatchCompletedMicroseconds);
+    (*observed)[prefix+".last.preceding_draw_entered_us"]=
+        std::to_string(action.precedingDrawEnteredMicroseconds);
+    (*observed)[prefix+".last.matching_draw_entered_us"]=
+        std::to_string(action.matchingDrawEnteredMicroseconds);
+    (*observed)[prefix+".last.matching_draw_completed_us"]=
+        std::to_string(action.matchingDrawCompletedMicroseconds);
+    (*observed)[prefix+".last.dispatch_wall_us"]=
+        std::to_string(action.dispatchWallMicroseconds);
+    (*observed)[prefix+".last.queued_before_dispatch_us"]=
+        std::to_string(action.queuedBeforeDispatchMicroseconds);
+    (*observed)[prefix+".last.callback_wait_us"]=
+        std::to_string(action.callbackWaitMicroseconds);
+    (*observed)[prefix+".last.action_draw_wall_us"]=
+        std::to_string(action.actionDrawWallMicroseconds);
+    (*observed)[prefix+".last.draw_callback_elapsed_us"]=
+        std::to_string(action.matchingDrawCallbackElapsedMicroseconds);
+    (*observed)[prefix+".last.combined_action_wall_us"]=
+        std::to_string(action.combinedActionWallMicroseconds);
+    (*observed)[prefix+".last.preparation_wait_us"]=
+        std::to_string(action.preparationWaitMicroseconds);
+    (*observed)[prefix+".last.draw_sample_id"]=
+        std::to_string(action.drawSampleId);
+    (*observed)[prefix+".last.shared_draw_sample"]=
+        Step3Bool(action.sharedDrawSample);
+    (*observed)[prefix+".last.draw_sample_fan_out"]=
+        std::to_string(action.drawSampleFanOut);
+    (*observed)[prefix+".last.render_wall_failure"]=
+        Step3Bool(action.renderWallFailure);
+    (*observed)[prefix+".last.render_wall_failure_category"]=
+        xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(
+            action.renderWallFailureCategory);
+    (*observed)[prefix+".last.render_wall_failure_us"]=
+        std::to_string(action.renderWallFailureMicroseconds);
+    (*observed)[prefix+".last.end_to_end_us"]=
+        std::to_string(action.endToEndMicroseconds);
+    (*observed)[prefix+".last.frame_interval_us"]=
+        std::to_string(action.containingFrameIntervalMicroseconds);
+    (*observed)[prefix+".last.expected_draw_ordinal"]=
+        std::to_string(action.expectedDrawOrdinal);
+    (*observed)[prefix+".last.matching_draw_ordinal"]=
+        std::to_string(action.matchingDrawOrdinal);
+    (*observed)[prefix+".last.missed_eligible_draws"]=
+        std::to_string(action.missedEligibleDraws);
+    (*observed)[prefix+".last.accounting_exact"]=
+        Step3Bool(action.accountingExact);
+    for(std::size_t stageIndex=0;
+        stageIndex<action.stages.elapsedMicroseconds.size();++stageIndex) {
+        const auto stage=static_cast<
+            xvatsim::modules::overlay::AccessoryDispatchStage>(stageIndex);
+        (*observed)[prefix+".last."+
+            xvatsim::modules::overlay::AccessoryDispatchStageToken(stage)+
+            "_us"]=
+                std::to_string(action.stages.elapsedMicroseconds[stageIndex]);
+    }
+    for(std::size_t index=0;
+        index<snapshot.firstViolationRecordCount &&
+        index<snapshot.firstViolationRecords.size();++index) {
+        (*observed)[prefix+".violation."+std::to_string(index)+
+            ".classification"]=
+                xvatsim::modules::overlay::
+                    AccessoryActionTimingClassificationToken(
+                        snapshot.firstViolationRecords[index].classification);
+        (*observed)[prefix+".violation."+std::to_string(index)+
+            ".request_sequence"]=std::to_string(
+                snapshot.firstViolationRecords[index].requestSequence);
+        (*observed)[prefix+".violation."+std::to_string(index)+
+            ".draw_sample_id"]=std::to_string(
+                snapshot.firstViolationRecords[index].drawSampleId);
+        (*observed)[prefix+".violation."+std::to_string(index)+
+            ".fan_out"]=std::to_string(
+                snapshot.firstViolationRecords[index].drawSampleFanOut);
+    }
+}
+
+void ObserveStep3DispatchSnapshot(
+    const xvatsim::modules::overlay::AccessoryInputDispatchSnapshot& snapshot,
+    const std::string& prefix,
+    std::unordered_map<std::string, std::string>* observed) {
+    (*observed)[prefix+".in_flight"]=Step3Bool(snapshot.inFlight);
+    (*observed)[prefix+".presentation_bound"]=
+        Step3Bool(snapshot.presentationBound);
+    (*observed)[prefix+".in_flight_sequence"]=
+        std::to_string(snapshot.inFlightRequestSequence);
+    (*observed)[prefix+".expected_selection_generation"]=
+        std::to_string(snapshot.expectedSelectionGeneration);
+    (*observed)[prefix+".expected_render_generation"]=
+        std::to_string(snapshot.expectedRenderGeneration);
+    (*observed)[prefix+".expected_drawer"]=
+        Step3Drawer(snapshot.expectedDrawer);
+    (*observed)[prefix+".notifications"]=
+        std::to_string(snapshot.dispatchNotifications);
+    (*observed)[prefix+".begin_attempts"]=
+        std::to_string(snapshot.beginAttempts);
+    (*observed)[prefix+".begun_count"]=
+        std::to_string(snapshot.requestsBegun);
+    (*observed)[prefix+".blocked_count"]=
+        std::to_string(snapshot.blockedWhileInFlight);
+    (*observed)[prefix+".bound_count"]=
+        std::to_string(snapshot.presentationsBound);
+    (*observed)[prefix+".completed_count"]=
+        std::to_string(snapshot.matchingDrawCompletions);
+    (*observed)[prefix+".exact_completed"]=
+        std::to_string(snapshot.exactMatchCompletions);
+    (*observed)[prefix+".superseded_completed"]=
+        std::to_string(snapshot.supersededGenerationCompletions);
+    (*observed)[prefix+".explicit_cancellations"]=
+        std::to_string(snapshot.explicitCancellations);
+    (*observed)[prefix+".selection_superseded_cancellations"]=
+        std::to_string(snapshot.selectionSupersededCancellations);
+    (*observed)[prefix+".mismatched_draws"]=
+        std::to_string(snapshot.mismatchedDrawAttempts);
+    (*observed)[prefix+".invalidated_in_flight"]=
+        std::to_string(snapshot.invalidatedInFlight);
+    (*observed)[prefix+".maximum_in_flight_us"]=
+        std::to_string(snapshot.maximumInFlightMicroseconds);
+}
+
+bool Step3PresenterTitleMarkerVisible(
+    const xvatsim::modules::overlay::AccessoryPresentationState& presenter) {
+    if (presenter.preparedPlan == nullptr) return false;
+    for(const auto& lines:presenter.preparedPlan->layout.renderedTitleLines) {
+        if(Step3ConcatenateLines(lines).find("CONTENT LIMITED")!=
+            std::string::npos) return true;
+    }
+    return false;
+}
+
+bool Step3PresenterPairingIntact(
+    const xvatsim::modules::overlay::AccessoryPresentationState& presenter) {
+    if (presenter.preparedPlan == nullptr) return false;
+    const auto& plan = presenter.preparedPlan->layout;
+    return plan.renderedEntryKeys.size()==plan.renderedEntryTitles.size() &&
+        plan.renderedEntryKeys.size()==plan.renderedEntryBodies.size() &&
+        plan.renderedEntryKeys.size()==plan.renderedTitleLines.size() &&
+        plan.renderedEntryKeys.size()==plan.renderedBodyLines.size();
+}
+
+std::shared_ptr<const xvatsim::modules::overlay::AccessoryPreparedDrawerPlan>
+Step3PreparePresentationPlan(
+    Step3ExecutionContext* context,
+    const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& presentation,
+    const xvatsim::modules::overlay::AccessoryLayoutResult& layout,
+    std::uint64_t mechanicalLayoutGeneration = 1) {
+    if (context == nullptr || presentation.snapshot == nullptr ||
+        presentation.snapshot->activeDrawer ==
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::None) return nullptr;
+    auto result = std::make_shared<
+        xvatsim::modules::overlay::AccessoryPreparedDrawerPlan>();
+    result->snapshot = presentation.snapshot;
+    result->key.drawer = presentation.snapshot->activeDrawer;
+    result->key.layoutGeneration = mechanicalLayoutGeneration;
+    result->key.commandIdentity = presentation.snapshot->commandIdentity;
+    result->key.lifecycleEpoch = presentation.snapshot->lifecycleEpoch;
+    result->key.selectedDrawerContentRevision =
+        presentation.snapshot->selectedDrawerContentRevision;
+    result->key.scaleThousandths = static_cast<int>(
+        std::lround(layout.scale * 1000.0f));
+    result->key.contentWidth = std::max(1,
+        layout.drawerBounds.right - layout.drawerBounds.left -
+            (2 * layout.drawerContentInset));
+    result->key.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+    result->layout = xvatsim::modules::overlay::BuildAccessoryHistoryLayout(
+        context->measurementContext, *presentation.snapshot, layout);
+    return result;
+}
+
+bool ExecuteStep3Action(
+    const std::string& actionText,
+    Step3ExecutionContext* context,
+    std::string* error) {
+    if (context == nullptr) return false;
+    const auto parts = Split(actionText, ':');
+    if (parts.empty()) return false;
+    const auto fail = [&](const std::string& message) {
+        if (error != nullptr) *error = message + ": " + actionText;
+        return false;
+    };
+    const auto parseInt = [&](const std::string& text, int* value) {
+        const auto parsed = ParseNonnegativeInt(text);
+        if (!parsed.has_value()) return false;
+        *value = *parsed;
+        return true;
+    };
+
+    if (parts[0] == "new" && parts.size() == 2) {
+        context->states[parts[1]] =
+            std::make_unique<xvatsim::brain::BrainOwnedRuntimeState>();
+        return true;
+    }
+    if (parts[0] == "worker-contract" && parts.size() == 2) {
+        using namespace xvatsim::modules::overlay;
+        using Drawer = xvatsim::brain::BrainOwnedAccessoryDrawerId;
+        xvatsim::brain::BrainOwnedRuntimeState state;
+        const std::array<Drawer,3> drawers{Drawer::Metar,Drawer::Atis,Drawer::Pdc};
+        for (const auto drawer : drawers) {
+            for (int index = 0; index < 14; ++index) {
+                xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput entry;
+                entry.drawer = drawer;
+                entry.stableKey = "worker-" + std::to_string(static_cast<int>(drawer)) +
+                    "-" + std::to_string(index);
+                entry.title = index == 13 ? "Unicode éª â Î©" :
+                    "Prepared title " + std::to_string(index);
+                const char fill = index % 3 == 0 ? 'W' : index % 3 == 1 ? 'i' : 'M';
+                entry.body.assign(4800, fill);
+                if (index == 13) entry.body += " éªâÎ©";
+                xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(&state, entry);
+            }
+        }
+        AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth=1920; layoutInput.screenHeight=1080;
+        layoutInput.windowLeft=300; layoutInput.windowTop=900;
+        layoutInput.scale=1.0f; layoutInput.cardAnimationProgress=1.0f;
+        layoutInput.drawerOpen=true; layoutInput.typography=context->Typography(1.0f);
+        const auto layout=ResolveAccessoryLayout(layoutInput);
+        const auto submitEventually=[](
+            AccessoryPreparationWorker* target,
+            const AccessoryPreparationRequest& request) {
+            const auto deadline=std::chrono::steady_clock::now()+
+                std::chrono::seconds(5);
+            while(std::chrono::steady_clock::now()<deadline) {
+                if(target->Request(request)) return true;
+                const auto state=target->State();
+                if(state==AccessoryPreparationWorkerState::Failed ||
+                   state==AccessoryPreparationWorkerState::Stopped) return false;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return false;
+        };
+        AccessoryPreparationWorker worker;
+        const std::uint64_t mainThread=1;
+        const bool started=worker.Start(mainThread);
+        std::array<AccessoryPreparationKey,3> keys{};
+        std::array<std::shared_ptr<const
+            xvatsim::brain::BrainOwnedAccessoryPresentationSnapshot>,3> source{};
+        std::array<std::shared_ptr<const AccessoryPreparedDrawerPlan>,3> ready{};
+        for(std::size_t index=0;index<drawers.size();++index) {
+            xvatsim::brain::BrainOwnedAccessorySelectionRequest selection;
+            selection.drawer=drawers[index];
+            selection.requestSequence=index+1;
+            (void)xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+                &state,selection);
+            const auto handle=xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+                &state,1,nullptr);
+            source[index]=handle.snapshot;
+            keys[index].drawer=drawers[index];
+            keys[index].layoutGeneration=1;
+            keys[index].commandIdentity=handle.snapshot->commandIdentity;
+            keys[index].lifecycleEpoch=handle.snapshot->lifecycleEpoch;
+            keys[index].selectedDrawerContentRevision=
+                handle.snapshot->selectedDrawerContentRevision;
+            keys[index].typographyGeneration=context->Typography(1.0f)->generation;
+            keys[index].scaleThousandths=1000;
+            keys[index].contentWidth=layout.drawerBounds.right-layout.drawerBounds.left-
+                2*layout.drawerContentInset;
+            keys[index].visibleLineCapacity=layout.drawerVisibleLineCapacity;
+            AccessoryPreparationRequest request;
+            request.key=keys[index]; request.snapshot=handle.snapshot; request.layout=layout;
+            if (submitEventually(&worker,request)) {
+                const auto deadline=std::chrono::steady_clock::now()+
+                    std::chrono::seconds(10);
+                while(std::chrono::steady_clock::now()<deadline &&
+                      ready[index]==nullptr) {
+                    ready[index]=worker.TryTakeReady(keys[index],nullptr);
+                    if(ready[index]==nullptr)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
+        }
+
+        std::mutex publicationGateMutex;
+        std::condition_variable publicationGateChanged;
+        bool publicationGateEntered=false;
+        bool publicationGateReleased=false;
+        AccessoryPreparationWorkerHooks contentionHooks;
+        contentionHooks.beforeReadyPublication=[&] {
+            std::unique_lock<std::mutex> lock(publicationGateMutex);
+            publicationGateEntered=true;
+            publicationGateChanged.notify_all();
+            publicationGateChanged.wait(lock,[&]{return publicationGateReleased;});
+        };
+        AccessoryPreparationWorker contentionWorker(std::move(contentionHooks));
+        const bool contentionStarted=contentionWorker.Start(mainThread);
+        AccessoryPreparationRequest contentionRequest;
+        contentionRequest.key=keys[0];
+        contentionRequest.snapshot=source[0];
+        contentionRequest.layout=layout;
+        const bool contentionRequested=submitEventually(
+            &contentionWorker,contentionRequest);
+        {
+            std::unique_lock<std::mutex> lock(publicationGateMutex);
+            publicationGateChanged.wait_for(
+                lock,std::chrono::seconds(5),[&]{return publicationGateEntered;});
+        }
+        auto wrongContentionKey=keys[0];
+        ++wrongContentionKey.layoutGeneration;
+        const auto contentionCheckStarted=std::chrono::steady_clock::now();
+        const auto contentionWrong=contentionWorker.TryTakeReady(
+            wrongContentionKey,nullptr);
+        const auto contentionExact=contentionWorker.TryTakeReady(keys[0],nullptr);
+        const auto contentionCheckUs=static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now()-contentionCheckStarted).count());
+
+        std::array<AccessoryPreparationRequest,3> contendedRequests{};
+        std::array<bool,3> contendedSubmissionResults{};
+        std::uint64_t maximumContendedSubmissionUs=0;
+        for(std::size_t index=0;index<contendedRequests.size();++index) {
+            contendedRequests[index].key=keys[index];
+            contendedRequests[index].key.layoutGeneration=101;
+            contendedRequests[index].snapshot=source[index];
+            contendedRequests[index].layout=layout;
+            const auto enqueueStarted=std::chrono::steady_clock::now();
+            contendedSubmissionResults[index]=contentionWorker.Request(
+                contendedRequests[index]);
+            maximumContendedSubmissionUs=std::max<std::uint64_t>(
+                maximumContendedSubmissionUs,
+                static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now()-enqueueStarted).count()));
+        }
+        const bool callerMarkedSubmitted=std::any_of(
+            contendedSubmissionResults.begin(),contendedSubmissionResults.end(),
+            [](bool submitted){return submitted;});
+        {
+            std::lock_guard<std::mutex> lock(publicationGateMutex);
+            publicationGateReleased=true;
+        }
+        publicationGateChanged.notify_all();
+        std::array<bool,3> retriedSubmissions{};
+        std::array<std::shared_ptr<const AccessoryPreparedDrawerPlan>,3>
+            contentionPublished{};
+        for(std::size_t index=0;index<contendedRequests.size();++index) {
+            retriedSubmissions[index]=submitEventually(
+                &contentionWorker,contendedRequests[index]);
+            const auto retryDeadline=std::chrono::steady_clock::now()+
+                std::chrono::seconds(5);
+            while(retriedSubmissions[index] &&
+                  contentionPublished[index]==nullptr &&
+                  std::chrono::steady_clock::now()<retryDeadline) {
+                contentionPublished[index]=contentionWorker.TryTakeReady(
+                    contendedRequests[index].key,nullptr);
+                if(contentionPublished[index]==nullptr)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+        const auto staleAfterRetry=contentionWorker.TryTakeReady(
+            keys[0],nullptr);
+
+        auto rapidState=state;
+        rapidState.accessory.activeDrawer=Drawer::None;
+        rapidState.accessory.lastConsumedClickSequence=0;
+        rapidState.accessory.selectionGeneration=0;
+        ++rapidState.accessory.semanticPresentationGeneration;
+        rapidState.accessory.cachedPresentationSnapshot.reset();
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest rapidClick;
+        std::array<xvatsim::brain::BrainOwnedAccessorySelectionDecision,3>
+            rapidDecisions{};
+        for(std::size_t index=0;index<drawers.size();++index) {
+            rapidClick.drawer=drawers[index];
+            rapidClick.requestSequence=index+1;
+            rapidDecisions[index]=
+                xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+                    &rapidState,rapidClick);
+        }
+        const auto rapidPresentation=
+            xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+                &rapidState,101,nullptr);
+        AccessoryPresentationState rapidPresenter;
+        AccessoryPresentationUpdateInput rapidInput;
+        rapidInput.presentation=rapidPresentation;
+        rapidInput.layout=layout;
+        rapidInput.measurementContext=context->measurementContext;
+        rapidInput.mechanicalLayoutGeneration=101;
+        rapidInput.preparedPlan=Step3PreparePresentationPlan(
+            context,rapidPresentation,layout,101);
+        const auto rapidUpdate=UpdateAccessoryPresentation(
+            &rapidPresenter,rapidInput);
+        const auto contentionCounters=contentionWorker.SnapshotCounters();
+        const auto contentionIdleBefore=contentionWorker.SnapshotCounters();
+        const auto contentionGdiBefore=GetAccessoryGdiMeasurementCounters(
+            context->measurementContext);
+        const auto contentionIdle=RunUnchangedAccessoryPresentationUpdates(
+            &rapidPresenter,rapidInput,10000);
+        const auto contentionGdiAfter=GetAccessoryGdiMeasurementCounters(
+            context->measurementContext);
+        const auto contentionGdiDelta=Step3GdiCounterDelta(
+            contentionGdiBefore,contentionGdiAfter);
+        const auto contentionIdleAfter=contentionWorker.SnapshotCounters();
+        bool contentionExactPublished=true;
+        for(std::size_t index=0;index<contentionPublished.size();++index) {
+            contentionExactPublished=contentionExactPublished &&
+                contentionPublished[index]!=nullptr &&
+                contentionPublished[index]->key==contendedRequests[index].key;
+        }
+        contentionWorker.Stop();
+
+        enum class DelayedStartupStage { Priority, Measurement };
+        const auto runDelayedStartupProof=[&](
+            DelayedStartupStage delayedStage,
+            AccessoryPreparationWorkerFailure expectedFailure) {
+            struct Result {
+                bool startReturned=false;
+                bool repeatedStartReturned=false;
+                std::uint64_t startUs=0;
+                std::uint64_t repeatedStartUs=0;
+                bool remainedStarting=false;
+                bool requestRetained=false;
+                bool becameReady=false;
+                bool exactPublished=false;
+                bool failedState=false;
+                bool requestRejected=false;
+                bool noReady=false;
+                bool noRetry=false;
+                bool oneDiagnostic=false;
+                bool bounded=false;
+                bool pendingResolved=false;
+                bool stopped=false;
+            } result;
+            std::mutex gateMutex;
+            std::condition_variable gateChanged;
+            bool gateEntered=false;
+            bool gateReleased=false;
+            const auto waitAtGate=[&] {
+                std::unique_lock<std::mutex> lock(gateMutex);
+                gateEntered=true;
+                gateChanged.notify_all();
+                gateChanged.wait(lock,[&]{return gateReleased;});
+            };
+            AccessoryPreparationWorkerHooks hooks;
+            hooks.assignBelowNormalPriority=[&] {
+                if(delayedStage==DelayedStartupStage::Priority) waitAtGate();
+                return expectedFailure!=
+                    AccessoryPreparationWorkerFailure::PriorityAssignment;
+            };
+            if(delayedStage==DelayedStartupStage::Measurement) {
+                hooks.initializeTextMeasurement=[&] {
+                    waitAtGate();
+                    if(expectedFailure==AccessoryPreparationWorkerFailure::
+                            TextMeasurementInitialization) {
+                        return static_cast<AccessoryTextMeasurementContext*>(nullptr);
+                    }
+                    return InitializeAccessoryTextMeasurement();
+                };
+            }
+            AccessoryPreparationWorker delayedWorker(std::move(hooks));
+            const auto startBegan=std::chrono::steady_clock::now();
+            result.startReturned=delayedWorker.Start(mainThread);
+            result.startUs=static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now()-startBegan).count());
+            {
+                std::unique_lock<std::mutex> lock(gateMutex);
+                gateChanged.wait_for(
+                    lock,std::chrono::seconds(5),[&]{return gateEntered;});
+            }
+            result.requestRetained=delayedWorker.Request(contentionRequest);
+            const auto secondStartBegan=std::chrono::steady_clock::now();
+            result.repeatedStartReturned=delayedWorker.Start(mainThread);
+            result.repeatedStartUs=static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now()-secondStartBegan).count());
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            const auto gatedCounters=delayedWorker.SnapshotCounters();
+            result.remainedStarting=
+                delayedWorker.State()==AccessoryPreparationWorkerState::Starting &&
+                gatedCounters.maximumQueueDepth<=1 &&
+                gatedCounters.jobsRequested==1 && gatedCounters.jobsStarted==0;
+            {
+                std::lock_guard<std::mutex> lock(gateMutex);
+                gateReleased=true;
+            }
+            gateChanged.notify_all();
+            const auto terminalDeadline=
+                std::chrono::steady_clock::now()+std::chrono::seconds(10);
+            while(delayedWorker.State()==AccessoryPreparationWorkerState::Starting &&
+                  std::chrono::steady_clock::now()<terminalDeadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            if(expectedFailure==AccessoryPreparationWorkerFailure::None) {
+                result.becameReady=
+                    delayedWorker.State()==AccessoryPreparationWorkerState::Ready;
+                std::shared_ptr<const AccessoryPreparedDrawerPlan> published;
+                while(!published && std::chrono::steady_clock::now()<terminalDeadline) {
+                    published=delayedWorker.TryTakeReady(keys[0],nullptr);
+                    if(!published)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                result.exactPublished=published!=nullptr &&
+                    published->key==keys[0];
+            } else {
+                result.failedState=
+                    delayedWorker.State()==AccessoryPreparationWorkerState::Failed &&
+                    delayedWorker.Failure()==expectedFailure;
+                result.requestRejected=!delayedWorker.Request(contentionRequest);
+                result.noReady=
+                    delayedWorker.TryTakeReady(keys[0],nullptr)==nullptr;
+            }
+            const auto beforeIdle=delayedWorker.SnapshotCounters();
+            for(int iteration=0;iteration<10000;++iteration) {
+                if(delayedWorker.State()==AccessoryPreparationWorkerState::Ready &&
+                   expectedFailure!=AccessoryPreparationWorkerFailure::None) {
+                    delayedWorker.Request(contentionRequest);
+                }
+            }
+            const bool failedRestartRejected=
+                expectedFailure==AccessoryPreparationWorkerFailure::None ||
+                !delayedWorker.Start(mainThread);
+            const auto afterIdle=delayedWorker.SnapshotCounters();
+            result.noRetry=failedRestartRejected &&
+                afterIdle.startupAttemptCount==beforeIdle.startupAttemptCount &&
+                afterIdle.jobsRequested==beforeIdle.jobsRequested &&
+                afterIdle.jobsStarted==beforeIdle.jobsStarted;
+            result.oneDiagnostic=expectedFailure==
+                    AccessoryPreparationWorkerFailure::None
+                ? afterIdle.startupFailureDiagnosticCount==0
+                : afterIdle.startupFailureDiagnosticCount==1;
+            result.bounded=afterIdle.maximumQueueDepth<=1 &&
+                afterIdle.maximumReadyCacheCount==0 &&
+                (expectedFailure==AccessoryPreparationWorkerFailure::None ||
+                 (afterIdle.jobsCompleted==0 && afterIdle.jobsCancelled>=1));
+            const auto availability=ResolveAccessoryPreparationAvailability(
+                AccessoryPreparationWorkerState::Failed,true);
+            result.pendingResolved=!availability.ready &&
+                !availability.retryStartup && availability.cancelPendingAction;
+            delayedWorker.Stop();
+            result.stopped=delayedWorker.State()==
+                    AccessoryPreparationWorkerState::Stopped &&
+                delayedWorker.SnapshotCounters().runningWorkerThreads==0;
+            return result;
+        };
+        const auto delayedSuccess=runDelayedStartupProof(
+            DelayedStartupStage::Priority,
+            AccessoryPreparationWorkerFailure::None);
+        const auto priorityFailure=runDelayedStartupProof(
+            DelayedStartupStage::Priority,
+            AccessoryPreparationWorkerFailure::PriorityAssignment);
+        const auto measurementFailure=runDelayedStartupProof(
+            DelayedStartupStage::Measurement,
+            AccessoryPreparationWorkerFailure::TextMeasurementInitialization);
+
+        AccessoryPreparationKey newestReplacementKey=keys[2];
+        for(std::uint64_t generation=2;generation<=200;++generation) {
+            AccessoryPreparationRequest replacement;
+            replacement.key=keys[2];
+            replacement.key.layoutGeneration=generation;
+            replacement.snapshot=source[2]; replacement.layout=layout;
+            if(submitEventually(&worker,replacement)) {
+                newestReplacementKey=replacement.key;
+            }
+        }
+        std::shared_ptr<const AccessoryPreparedDrawerPlan> replacementReady;
+        const auto replacementDeadline=
+            std::chrono::steady_clock::now()+std::chrono::seconds(10);
+        while(!replacementReady && std::chrono::steady_clock::now()<replacementDeadline) {
+            replacementReady=worker.TryTakeReady(newestReplacementKey,nullptr);
+            if(!replacementReady) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        bool reconstruction=true,markers=true,fit=true;
+        const bool maximumRetainedPrepared =
+            state.accessory.histories[0].retainedBytes > 60000 &&
+            state.accessory.histories[1].retainedBytes > 60000 &&
+            state.accessory.histories[2].retainedBytes > 60000;
+        for(std::size_t drawer=0;drawer<ready.size();++drawer) {
+            reconstruction=reconstruction && ready[drawer]!=nullptr && source[drawer]!=nullptr;
+            if(!ready[drawer]||!source[drawer]) continue;
+            reconstruction=reconstruction &&
+                ready[drawer]->layout.renderedEntryKeys.size()==source[drawer]->entries.size();
+            for(std::size_t entry=0;entry<source[drawer]->entries.size();++entry) {
+                reconstruction=reconstruction &&
+                    ready[drawer]->layout.renderedEntryKeys[entry]==source[drawer]->entries[entry].stableKey &&
+                    ready[drawer]->layout.renderedEntryTitles[entry]==source[drawer]->entries[entry].title &&
+                    ready[drawer]->layout.renderedEntryBodies[entry]==source[drawer]->entries[entry].body;
+            }
+            markers=markers && ready[drawer]->layout.finalMarkerBelongsToSelectedHistory &&
+                ready[drawer]->layout.finalMarker.find("END OF ")==0;
+            fit=fit && ready[drawer]->layout.allWrappedLinesFit;
+        }
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest click;
+        click.drawer=Drawer::Metar; click.requestSequence=1;
+        xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(&state,click);
+        auto presentation=xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(&state,1,nullptr);
+        AccessoryPresentationState presenter;
+        AccessoryPresentationUpdateInput updateInput;
+        updateInput.presentation=presentation; updateInput.layout=layout;
+        updateInput.measurementContext=context->measurementContext;
+        updateInput.mechanicalLayoutGeneration=1;
+        updateInput.preparedPlan=Step3PreparePresentationPlan(
+            context,presentation,layout);
+        const auto openStarted=std::chrono::steady_clock::now();
+        const auto open=UpdateAccessoryPresentation(&presenter,updateInput);
+        const auto openUs=static_cast<std::uint64_t>(std::chrono::duration_cast<
+            std::chrono::microseconds>(std::chrono::steady_clock::now()-openStarted).count());
+        click.drawer=Drawer::Atis; click.requestSequence=2;
+        xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(&state,click);
+        presentation=xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(&state,1,nullptr);
+        updateInput.presentation=presentation;
+        updateInput.preparedPlan=Step3PreparePresentationPlan(
+            context,presentation,layout);
+        const auto switchStarted=std::chrono::steady_clock::now();
+        const auto switched=UpdateAccessoryPresentation(&presenter,updateInput);
+        const auto switchUs=static_cast<std::uint64_t>(std::chrono::duration_cast<
+            std::chrono::microseconds>(std::chrono::steady_clock::now()-switchStarted).count());
+        const auto workerBeforeIdle=worker.SnapshotCounters();
+        const auto idle=RunUnchangedAccessoryPresentationUpdates(&presenter,updateInput,10000);
+        const auto workerAfterIdle=worker.SnapshotCounters();
+        const bool normalStartupReady=
+            worker.State()==AccessoryPreparationWorkerState::Ready &&
+            worker.Failure()==AccessoryPreparationWorkerFailure::None;
+        auto staleInput=updateInput;
+        staleInput.mechanicalLayoutGeneration=2;
+        const auto stale=UpdateAccessoryPresentation(&presenter,staleInput);
+        const auto historyCountsBeforeDisable=std::array<std::size_t,3>{
+            state.accessory.histories[0].entries.size(),
+            state.accessory.histories[1].entries.size(),
+            state.accessory.histories[2].entries.size()};
+        xvatsim::brain::DisableBrainOwnedAccessoryRuntime(&state);
+        worker.CancelAll();
+        worker.Stop();
+        const bool disabledStopped=worker.SnapshotCounters().runningWorkerThreads==0;
+        xvatsim::brain::EnableBrainOwnedAccessoryRuntime(&state);
+        worker.Start(mainThread);
+        const bool historiesPreserved=historyCountsBeforeDisable==
+            std::array<std::size_t,3>{
+                state.accessory.histories[0].entries.size(),
+                state.accessory.histories[1].entries.size(),
+                state.accessory.histories[2].entries.size()};
+        AccessoryPreparationRequest recreated;
+        recreated.key=keys[0]; recreated.snapshot=source[0]; recreated.layout=layout;
+        const bool recreatedRequested=submitEventually(&worker,recreated);
+        std::shared_ptr<const AccessoryPreparedDrawerPlan> recreatedReady;
+        const auto recreateDeadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+        while(!recreatedReady && std::chrono::steady_clock::now()<recreateDeadline) {
+            recreatedReady=worker.TryTakeReady(keys[0],nullptr);
+            if(!recreatedReady) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        const auto oldKey=keys[0];
+        xvatsim::brain::ResetBrainOwnedAccessoryForSessionReset(&state);
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest clearedSelection;
+        clearedSelection.drawer=Drawer::Metar;
+        clearedSelection.requestSequence=1;
+        (void)xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+            &state,clearedSelection);
+        const auto clearedHandle=
+            xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+                &state,1,nullptr);
+        AccessoryPreparationRequest clearedRequest;
+        clearedRequest.key=oldKey;
+        clearedRequest.key.commandIdentity=
+            clearedHandle.snapshot->commandIdentity;
+        clearedRequest.key.lifecycleEpoch=
+            clearedHandle.snapshot->lifecycleEpoch;
+        clearedRequest.key.selectedDrawerContentRevision=
+            clearedHandle.snapshot->selectedDrawerContentRevision;
+        clearedRequest.snapshot=clearedHandle.snapshot; clearedRequest.layout=layout;
+        submitEventually(&worker,clearedRequest);
+        const bool resetRejectedOld=worker.TryTakeReady(oldKey,nullptr)==nullptr;
+        xvatsim::brain::ResetBrainOwnedAccessoryForCallsignChange(
+            &state,"OLDPC","NEWPC");
+        worker.CancelAll();
+        const bool callsignRejectedOld=worker.TryTakeReady(oldKey,nullptr)==nullptr;
+        worker.Stop();
+        const auto counters=worker.SnapshotCounters();
+        const auto& prefix=parts[1];
+        context->observed[prefix+".started"]=Step3Bool(started);
+        context->observed[prefix+".all_ready"]=Step3Bool(
+            std::all_of(ready.begin(),ready.end(),[](const auto& value){return value!=nullptr;}));
+        context->observed[prefix+".reconstruction"]=Step3Bool(reconstruction);
+        context->observed[prefix+".markers"]=Step3Bool(markers);
+        context->observed[prefix+".fit"]=Step3Bool(fit);
+        context->observed[prefix+".maximum_retained_prepared"]=
+            Step3Bool(maximumRetainedPrepared);
+        context->observed[prefix+".open_under_budget"]=Step3Bool(
+            open.status==xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available && openUs<=16700);
+        context->observed[prefix+".switch_under_budget"]=Step3Bool(
+            switched.status==xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available && switchUs<=16700);
+        context->observed[prefix+".stale_rejected"]=Step3Bool(stale.preparationPending);
+        context->observed[prefix+".disable_stopped"]=Step3Bool(disabledStopped);
+        context->observed[prefix+".disable_enable_preserved"]=Step3Bool(historiesPreserved);
+        context->observed[prefix+".resources_recreated"]=Step3Bool(
+            recreatedRequested && recreatedReady!=nullptr);
+        context->observed[prefix+".replacement_proven"]=Step3Bool(
+            replacementReady!=nullptr && counters.jobsReplaced>0);
+        context->observed[prefix+".reset_rejected_stale"]=Step3Bool(resetRejectedOld);
+        context->observed[prefix+".callsign_rejected_stale"]=Step3Bool(callsignRejectedOld);
+        context->observed[prefix+".idle_zero"]=Step3Bool(
+            idle.delta.historyVisits==0 && idle.delta.entryCopies==0 && idle.delta.wrapVisits==0 &&
+            idle.delta.railRasterRequests==0 && idle.delta.drawerRasterRequests==0 &&
+            idle.delta.uploadRequests==0 &&
+            workerAfterIdle.jobsRequested==workerBeforeIdle.jobsRequested &&
+            workerAfterIdle.jobsStarted==workerBeforeIdle.jobsStarted &&
+            workerAfterIdle.enqueueAttemptCount==
+                workerBeforeIdle.enqueueAttemptCount);
+        context->observed[prefix+".jobs_requested_at_least_three"]=
+            Step3Bool(counters.jobsRequested>=3);
+        context->observed[prefix+".jobs_completed_at_least_three"]=
+            Step3Bool(counters.jobsCompleted>=3);
+        context->observed[prefix+".max_queue_depth"]=std::to_string(counters.maximumQueueDepth);
+        context->observed[prefix+".max_ready_count"]=std::to_string(counters.maximumReadyCacheCount);
+        context->observed[prefix+".queue_bounded"]=Step3Bool(counters.maximumQueueDepth<=3);
+        context->observed[prefix+".ready_bounded"]=Step3Bool(counters.maximumReadyCacheCount<=3);
+        context->observed[prefix+".priority_requested"]=Step3Bool(counters.priorityRequested);
+        context->observed[prefix+".priority_succeeded"]=Step3Bool(counters.prioritySucceeded);
+        context->observed[prefix+".thread_distinct"]=Step3Bool(
+            counters.workerThreadIdentity!=0 && counters.workerThreadIdentity!=mainThread);
+        context->observed[prefix+".prohibited_accesses"]=std::to_string(counters.prohibitedAccessCount);
+        context->observed[prefix+".threads_after_stop"]=std::to_string(counters.runningWorkerThreads);
+        context->observed[prefix+".wake_count"]=std::to_string(counters.workerWakeCount);
+        context->observed[prefix+".sleep_count"]=std::to_string(counters.workerSleepCount);
+        context->observed[prefix+".worker_slept_and_woke"]=Step3Bool(
+            counters.workerWakeCount>=1 && counters.workerSleepCount>=1);
+        context->observed[prefix+".max_slice_us"]=
+            std::to_string(counters.maximumContiguousExecutionMicroseconds);
+        context->observed[prefix+".publication_max_us"]=
+            std::to_string(counters.maximumPublicationMicroseconds);
+        context->observed[prefix+".open_us"]=std::to_string(openUs);
+        context->observed[prefix+".switch_us"]=std::to_string(switchUs);
+        context->observed[prefix+".publication_under_budget"]=Step3Bool(
+            counters.maximumPublicationMicroseconds<=16700);
+        context->observed[prefix+".contention_started"]=Step3Bool(
+            contentionStarted && contentionRequested && publicationGateEntered);
+        context->observed[prefix+".contention_nonblocking"]=Step3Bool(
+            contentionCheckUs<=1000 && contentionWrong==nullptr &&
+            contentionExact==nullptr);
+        context->observed[prefix+".contention_stale_rejected"]=Step3Bool(
+            contentionWrong==nullptr);
+        context->observed[prefix+".contention_exact_published"]=Step3Bool(
+            contentionExactPublished);
+        context->observed[prefix+".contention_at_least_two"]=Step3Bool(
+            contentionCounters.readinessContentionCount>=2);
+        context->observed[prefix+".enqueue_contention_nonblocking"]=Step3Bool(
+            !callerMarkedSubmitted && maximumContendedSubmissionUs<=16700 &&
+            contentionCounters.enqueueContentionCount>=3);
+        context->observed[prefix+".enqueue_caller_not_marked"]=
+            Step3Bool(!callerMarkedSubmitted);
+        context->observed[prefix+".enqueue_retry_exact"]=Step3Bool(
+            std::all_of(retriedSubmissions.begin(),retriedSubmissions.end(),
+                        [](bool value){return value;}) &&
+            staleAfterRetry==nullptr &&
+            std::all_of(contentionPublished.begin(),contentionPublished.end(),
+                        [](const auto& value){return value!=nullptr;}));
+        context->observed[prefix+".enqueue_rapid_serialized"]=Step3Bool(
+            rapidDecisions[0].action==
+                xvatsim::brain::BrainOwnedAccessoryDrawerAction::Opened &&
+            rapidDecisions[1].action==
+                xvatsim::brain::BrainOwnedAccessoryDrawerAction::Switched &&
+            rapidDecisions[2].action==
+                xvatsim::brain::BrainOwnedAccessoryDrawerAction::Switched &&
+            rapidState.accessory.selectionGeneration==3 &&
+            rapidUpdate.status==
+                xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available &&
+            rapidPresenter.activeSnapshot!=nullptr &&
+            rapidPresenter.activeSnapshot->activeDrawer==Drawer::Pdc &&
+            rapidUpdate.publishedSnapshotCount==1);
+        context->observed[prefix+".enqueue_idle_zero"]=Step3Bool(
+            contentionIdle.delta.historyVisits==0 &&
+            contentionIdle.delta.entryCopies==0 &&
+            contentionIdle.delta.wrapVisits==0 &&
+            contentionIdle.delta.railRasterRequests==0 &&
+            contentionIdle.delta.drawerRasterRequests==0 &&
+            contentionIdle.delta.uploadRequests==0 &&
+            contentionGdiDelta.measurementCalls==0 &&
+            contentionGdiDelta.bitmapConstructions==0 &&
+            contentionGdiDelta.graphicsConstructions==0 &&
+            contentionGdiDelta.fontConstructions==0 &&
+            contentionIdleAfter.enqueueAttemptCount==
+                contentionIdleBefore.enqueueAttemptCount &&
+            contentionIdleAfter.enqueueContentionCount==
+                contentionIdleBefore.enqueueContentionCount &&
+            contentionIdleAfter.jobsRequested==
+                contentionIdleBefore.jobsRequested &&
+            contentionIdleAfter.jobsStarted==contentionIdleBefore.jobsStarted &&
+            contentionIdleAfter.startupFailureDiagnosticCount==
+                contentionIdleBefore.startupFailureDiagnosticCount);
+        context->observed[prefix+".enqueue_counters_exact"]=Step3Bool(
+            contentionCounters.enqueueAttemptCount==
+                contentionCounters.enqueueContentionCount+
+                    contentionCounters.enqueueSuccessCount &&
+            contentionCounters.enqueueContentionCount>=3 &&
+            contentionCounters.enqueueSuccessCount==4 &&
+            contentionCounters.maximumEnqueueMicroseconds<=16700 &&
+            counters.enqueueReplacementCount==counters.jobsReplaced &&
+            counters.enqueueReplacementCount>0);
+        context->observed[prefix+".enqueue_attempts"]=
+            std::to_string(contentionCounters.enqueueAttemptCount);
+        context->observed[prefix+".enqueue_contentions"]=
+            std::to_string(contentionCounters.enqueueContentionCount);
+        context->observed[prefix+".enqueue_successes"]=
+            std::to_string(contentionCounters.enqueueSuccessCount);
+        context->observed[prefix+".enqueue_replacements"]=
+            std::to_string(contentionCounters.enqueueReplacementCount);
+        context->observed[prefix+".enqueue_max_us"]=
+            std::to_string(contentionCounters.maximumEnqueueMicroseconds);
+        context->observed[prefix+".normal_startup_ready"]=
+            Step3Bool(normalStartupReady && counters.startupSuccessCount>=2);
+        context->observed[prefix+".delayed_success_async"]=Step3Bool(
+            delayedSuccess.startReturned && delayedSuccess.repeatedStartReturned &&
+            delayedSuccess.startUs<=16700 && delayedSuccess.repeatedStartUs<=16700 &&
+            delayedSuccess.remainedStarting);
+        context->observed[prefix+".delayed_success_retained_exact"]=Step3Bool(
+            delayedSuccess.requestRetained && delayedSuccess.becameReady &&
+            delayedSuccess.exactPublished && delayedSuccess.stopped);
+        context->observed[prefix+".priority_failure_explicit"]=Step3Bool(
+            priorityFailure.startReturned &&
+            priorityFailure.repeatedStartReturned &&
+            priorityFailure.startUs<=16700 &&
+            priorityFailure.repeatedStartUs<=16700 &&
+            priorityFailure.remainedStarting && priorityFailure.failedState);
+        context->observed[prefix+".priority_failure_safe"]=Step3Bool(
+            priorityFailure.requestRetained && priorityFailure.requestRejected &&
+            priorityFailure.noReady &&
+            priorityFailure.noRetry && priorityFailure.oneDiagnostic &&
+            priorityFailure.bounded && priorityFailure.pendingResolved &&
+            priorityFailure.stopped);
+        context->observed[prefix+".measurement_failure_explicit"]=Step3Bool(
+            measurementFailure.startReturned &&
+            measurementFailure.repeatedStartReturned &&
+            measurementFailure.startUs<=16700 &&
+            measurementFailure.repeatedStartUs<=16700 &&
+            measurementFailure.remainedStarting &&
+            measurementFailure.failedState);
+        context->observed[prefix+".measurement_failure_safe"]=Step3Bool(
+            measurementFailure.requestRetained &&
+            measurementFailure.requestRejected && measurementFailure.noReady &&
+            measurementFailure.noRetry && measurementFailure.oneDiagnostic &&
+            measurementFailure.bounded && measurementFailure.pendingResolved &&
+            measurementFailure.stopped);
+        std::cout << "STEP3_WORKER_PROOF jobsRequested=" << counters.jobsRequested
+                  << " jobsReplaced=" << counters.jobsReplaced
+                  << " jobsStarted=" << counters.jobsStarted
+                  << " jobsCompleted=" << counters.jobsCompleted
+                  << " jobsCancelled=" << counters.jobsCancelled
+                  << " staleRejected=" << counters.staleResultsRejected
+                  << " maxQueueDepth=" << counters.maximumQueueDepth
+                  << " maxReadyCount=" << counters.maximumReadyCacheCount
+                  << " wakeCount=" << counters.workerWakeCount
+                  << " sleepCount=" << counters.workerSleepCount
+                  << " maxSliceUs=" << counters.maximumContiguousExecutionMicroseconds
+                  << " metarPrepTotalUs=" << counters.totalPreparationMicroseconds[0]
+                  << " atisPrepTotalUs=" << counters.totalPreparationMicroseconds[1]
+                  << " pdcPrepTotalUs=" << counters.totalPreparationMicroseconds[2]
+                  << " publicationMaxUs=" << counters.maximumPublicationMicroseconds
+                  << " readinessChecks=" << counters.readinessCheckCount
+                  << " readinessContentions=" << counters.readinessContentionCount
+                  << " forcedContentionUs=" << contentionCheckUs
+                  << " forcedContentions="
+                  << contentionCounters.readinessContentionCount
+                  << " enqueueAttempts="
+                  << contentionCounters.enqueueAttemptCount
+                  << " enqueueContentions="
+                  << contentionCounters.enqueueContentionCount
+                  << " enqueueSuccesses="
+                  << contentionCounters.enqueueSuccessCount
+                  << " enqueueReplacements="
+                  << contentionCounters.enqueueReplacementCount
+                  << " enqueueMaxUs="
+                  << contentionCounters.maximumEnqueueMicroseconds
+                  << " replacementCounter="
+                  << counters.enqueueReplacementCount
+                  << " startupAttempts=" << counters.startupAttemptCount
+                  << " startupSuccesses=" << counters.startupSuccessCount
+                  << " startupFailures=" << counters.startupFailureCount
+                  << " delayedStartUs=" << delayedSuccess.startUs
+                  << " delayedRepeatStartUs=" << delayedSuccess.repeatedStartUs
+                  << " delayedPriorityFailureStartUs=" << priorityFailure.startUs
+                  << " delayedGdiFailureStartUs=" << measurementFailure.startUs
+                  << " openPublishUs=" << openUs
+                  << " switchPublishUs=" << switchUs
+                  << " priorityRequested=" << (counters.priorityRequested?"true":"false")
+                  << " prioritySucceeded=" << (counters.prioritySucceeded?"true":"false")
+                  << " prohibitedAccesses=" << counters.prohibitedAccessCount
+                  << " threadsAfterStop=" << counters.runningWorkerThreads << '\n';
+        return true;
+    }
+    if (parts[0] == "restart" && parts.size() == 2) {
+        context->states[parts[1]].reset();
+        context->states[parts[1]] =
+            std::make_unique<xvatsim::brain::BrainOwnedRuntimeState>();
+        context->observed[parts[1] + ".restart_recreated"] = "true";
+        return true;
+    }
+    if (parts[0] == "mode" && parts.size() == 3) {
+        const auto mode = parts[2] == "VFR"
+            ? xvatsim::brain::BrainOwnedOperatingMode::VFR
+            : xvatsim::brain::BrainOwnedOperatingMode::IFR;
+        auto* state = context->State(parts[1]);
+        const auto result = xvatsim::brain::RequestBrainOwnedOperatingModeSelection(state, mode);
+        context->observed[parts[1] + ".mode"] =
+            result.effectiveMode == xvatsim::brain::BrainOwnedOperatingMode::VFR ? "VFR" : "IFR";
+        return true;
+    }
+    if (parts[0] == "accept" && parts.size() == 7) {
+        xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+        input.drawer = Step3DrawerFromToken(parts[2]);
+        input.stableKey = parts[3];
+        input.title = parts[4];
+        input.body = parts[5];
+        const auto result = xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(
+            context->State(parts[1]), input);
+        const auto prefix = parts[6];
+        context->observed[prefix + ".status"] = Step3Status(result.status);
+        context->observed[prefix + ".accepted"] = Step3Bool(result.accepted);
+        context->observed[prefix + ".duplicate"] = Step3Bool(result.duplicate);
+        context->observed[prefix + ".limited"] = Step3Bool(result.contentLimited);
+        context->observed[prefix + ".sequence"] = std::to_string(result.acceptedSequence);
+        context->observed[prefix + ".generation"] = std::to_string(result.historyGeneration);
+        return true;
+    }
+    if (parts[0] == "accept-oversized" && parts.size() == 5) {
+        xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+        input.drawer = Step3DrawerFromToken(parts[2]);
+        input.stableKey = parts[3];
+        input.title = std::string(129, 'T');
+        input.body = std::string(8189, 'Z') + "\xE2\x82\xAC" +
+            std::string(1000, 'Q');
+        const auto result = xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(
+            context->State(parts[1]), input);
+        const auto prefix = parts[4];
+        context->observed[prefix + ".status"] = Step3Status(result.status);
+        context->observed[prefix + ".accepted"] = Step3Bool(result.accepted);
+        context->observed[prefix + ".limited"] = Step3Bool(result.contentLimited);
+        const auto& history = context->State(parts[1])->accessory.histories[
+            Step3DrawerIndex(input.drawer)];
+        context->observed[prefix + ".stored_count"] =
+            std::to_string(history.entries.size());
+        if (!history.entries.empty()) {
+            const auto& stored = history.entries.front();
+            context->observed[prefix + ".stored_valid_utf8"] =
+                Step3Bool(Step3IsValidUtf8(stored.title) && Step3IsValidUtf8(stored.body));
+            context->observed[prefix + ".stored_marker_visible"] =
+                Step3Bool(stored.title.find("CONTENT LIMITED") != std::string::npos ||
+                          stored.body.find("CONTENT LIMITED") != std::string::npos);
+            context->observed[prefix + ".stored_bytes"] =
+                std::to_string(stored.retainedBytes);
+            context->observed[prefix + ".recounted_bytes"] =
+                std::to_string(stored.stableKey.size() + stored.title.size() + stored.body.size());
+            context->observed[prefix + ".title_bytes"] =
+                std::to_string(stored.title.size());
+            context->observed[prefix + ".body_bytes"] =
+                std::to_string(stored.body.size());
+            context->observed[prefix + ".title_within_limit"] =
+                Step3Bool(stored.title.size() <= 128);
+            context->observed[prefix + ".body_within_limit"] =
+                Step3Bool(stored.body.size() <= 8192);
+            context->observed[prefix + ".entry_within_limit"] =
+                Step3Bool(stored.retainedBytes <= 128 + 128 + 8192);
+            context->observed[prefix + ".drawer_within_limit"] =
+                Step3Bool(history.retainedBytes <= 65536);
+            const std::string marker="CONTENT LIMITED";
+            const bool markerAtEnd=
+                (stored.title.size()>=marker.size() &&
+                 stored.title.compare(stored.title.size()-marker.size(),marker.size(),marker)==0) ||
+                (stored.body.size()>=marker.size() &&
+                 stored.body.compare(stored.body.size()-marker.size(),marker.size(),marker)==0);
+            context->observed[prefix + ".marker_at_end"] = Step3Bool(markerAtEnd);
+            context->observed[prefix + ".marker_bytes_accounted"] = Step3Bool(
+                markerAtEnd && stored.retainedBytes==stored.stableKey.size()+
+                    stored.title.size()+stored.body.size());
+        } else {
+            context->observed[prefix + ".stored_valid_utf8"] = "false";
+            context->observed[prefix + ".stored_marker_visible"] = "false";
+            context->observed[prefix + ".stored_bytes"] = "0";
+            context->observed[prefix + ".recounted_bytes"] = "0";
+            context->observed[prefix + ".title_bytes"] = "0";
+            context->observed[prefix + ".body_bytes"] = "0";
+            context->observed[prefix + ".title_within_limit"] = "false";
+            context->observed[prefix + ".body_within_limit"] = "false";
+            context->observed[prefix + ".entry_within_limit"] = "false";
+            context->observed[prefix + ".drawer_within_limit"] = "false";
+            context->observed[prefix + ".marker_at_end"] = "false";
+            context->observed[prefix + ".marker_bytes_accounted"] = "false";
+        }
+        return true;
+    }
+    if (parts[0] == "accept-title-only-oversized" && parts.size() == 5) {
+        xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+        input.drawer=Step3DrawerFromToken(parts[2]);
+        input.stableKey=parts[3];
+        input.title=std::string(129,'T');
+        input.body="SHORT BODY";
+        const auto result=xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(
+            context->State(parts[1]),input);
+        const auto& history=context->State(parts[1])->accessory.histories[
+            Step3DrawerIndex(input.drawer)];
+        const auto stored=std::find_if(
+            history.entries.begin(),history.entries.end(),
+            [&](const auto& entry){return entry.stableKey==input.stableKey;});
+        const auto& prefix=parts[4];
+        context->observed[prefix+".accepted"]=Step3Bool(result.accepted);
+        context->observed[prefix+".limited"]=Step3Bool(result.contentLimited);
+        context->observed[prefix+".stored_title_marker"]=Step3Bool(
+            stored!=history.entries.end() &&
+            stored->title.find("CONTENT LIMITED")!=std::string::npos);
+        context->observed[prefix+".body_unchanged"]=Step3Bool(
+            stored!=history.entries.end() && stored->body=="SHORT BODY");
+        return true;
+    }
+    if (parts[0] == "accept-contract" && parts.size() == 5) {
+        xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+        input.drawer=Step3DrawerFromToken(parts[2]);
+        const auto& variant=parts[3];
+        if(variant=="key128") {
+            input.stableKey=std::string(128,'K'); input.title="TITLE"; input.body="BODY";
+        } else if(variant=="key129") {
+            input.stableKey=std::string(129,'K'); input.title="TITLE"; input.body="BODY";
+        } else if(variant=="empty-key") {
+            input.stableKey=""; input.title="TITLE"; input.body="BODY";
+        } else if(variant=="bad-key") {
+            input.stableKey=std::string("BAD\xC3\x28",5); input.title="TITLE"; input.body="BODY";
+        } else if(variant=="bad-title") {
+            input.stableKey="BAD_TITLE"; input.title=std::string("T\xC3\x28",3); input.body="BODY";
+        } else if(variant=="bad-body") {
+            input.stableKey="BAD_BODY"; input.title="TITLE"; input.body=std::string("B\xC3\x28",3);
+        } else if(variant=="crlf") {
+            input.stableKey="CRLF"; input.title="Title\r\nLine"; input.body="A  B\r\nC\tD";
+        } else if(variant=="case-upper") {
+            input.stableKey="CaseKey"; input.title="CASE"; input.body="UPPER";
+        } else if(variant=="case-lower") {
+            input.stableKey="casekey"; input.title="CASE"; input.body="LOWER";
+        } else if(variant=="key-crlf") {
+            input.stableKey="EQUIV\r\nKEY"; input.title="SAME"; input.body="SAME";
+        } else if(variant=="key-lf") {
+            input.stableKey="EQUIV\nKEY"; input.title="SAME"; input.body="SAME";
+        } else {
+            return fail("unknown history contract variant");
+        }
+        auto* state=context->State(parts[1]);
+        auto& history=state->accessory.histories[Step3DrawerIndex(input.drawer)];
+        const auto beforeCount=history.entries.size();
+        const auto result=xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(state,input);
+        const auto& prefix=parts[4];
+        context->observed[prefix+".status"]=Step3Status(result.status);
+        context->observed[prefix+".accepted"]=Step3Bool(result.accepted);
+        context->observed[prefix+".duplicate"]=Step3Bool(result.duplicate);
+        context->observed[prefix+".sequence"]=
+            std::to_string(result.acceptedSequence);
+        context->observed[prefix+".generation"]=
+            std::to_string(result.historyGeneration);
+        context->observed[prefix+".count_changed"]=
+            Step3Bool(history.entries.size()!=beforeCount);
+        const auto expectedStoredKey=Step3NormalizeCrlf(input.stableKey);
+        const auto stored=std::find_if(
+            history.entries.begin(),history.entries.end(),
+            [&](const auto& entry){return entry.stableKey==expectedStoredKey;});
+        context->observed[prefix+".stored"]=Step3Bool(stored!=history.entries.end());
+        context->observed[prefix+".stored_key_bytes"]=
+            stored==history.entries.end()?"0":std::to_string(stored->stableKey.size());
+        context->observed[prefix+".stored_key_exact"]=
+            Step3Bool(stored!=history.entries.end() &&
+                      stored->stableKey==expectedStoredKey);
+        context->observed[prefix+".source_digest_hex"]=
+            stored==history.entries.end()
+                ? ""
+                : Step3DigestHex(stored->sourceContentDigest);
+        context->observed[prefix+".key_crlf_normalized"]=Step3Bool(
+            stored!=history.entries.end() &&
+            stored->stableKey=="EQUIV\nKEY" &&
+            stored->stableKey.find('\r')==std::string::npos);
+        context->observed[prefix+".crlf_normalized"]=Step3Bool(
+            stored!=history.entries.end() &&
+            stored->title=="Title\nLine" && stored->body=="A  B\nC\tD");
+        context->observed[prefix+".whitespace_preserved"]=Step3Bool(
+            stored!=history.entries.end() &&
+            stored->body.find("A  B")!=std::string::npos &&
+            stored->body.find('\t')!=std::string::npos);
+        return true;
+    }
+    if (parts[0] == "accept-limited-tail-updates" && parts.size() == 4) {
+        auto* state=context->State(parts[1]);
+        const auto drawer=Step3DrawerFromToken(parts[2]);
+        const auto accept=[&](
+            const std::string& key,
+            const std::string& title,
+            const std::string& body) {
+            xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+            input.drawer=drawer;
+            input.stableKey=key;
+            input.title=title;
+            input.body=body;
+            return xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(state,input);
+        };
+        const auto& history=state->accessory.histories[Step3DrawerIndex(drawer)];
+        const auto findEntry=[&](const std::string& key) {
+            return std::find_if(
+                history.entries.begin(),history.entries.end(),
+                [&](const auto& entry){return entry.stableKey==key;});
+        };
+        const std::string titlePrefix(200,'T');
+        const auto titleFirst=accept("TAIL_TITLE",titlePrefix+"A","BODY");
+        const auto firstTitleEntry=findEntry("TAIL_TITLE");
+        const auto firstTitleDigest=firstTitleEntry==history.entries.end()
+            ? std::array<std::uint8_t,32>{}
+            : firstTitleEntry->sourceContentDigest;
+        const auto titleSecond=accept("TAIL_TITLE",titlePrefix+"B","BODY");
+        const auto secondTitleEntry=findEntry("TAIL_TITLE");
+        const auto secondTitleDigest=secondTitleEntry==history.entries.end()
+            ? std::array<std::uint8_t,32>{}
+            : secondTitleEntry->sourceContentDigest;
+        const std::string bodyPrefix(9000,'B');
+        const auto bodyFirst=accept("TAIL_BODY","TITLE",bodyPrefix+"A");
+        const auto firstBodyEntry=findEntry("TAIL_BODY");
+        const auto firstBodyDigest=firstBodyEntry==history.entries.end()
+            ? std::array<std::uint8_t,32>{}
+            : firstBodyEntry->sourceContentDigest;
+        const auto bodySecond=accept("TAIL_BODY","TITLE",bodyPrefix+"B");
+        const auto secondBodyEntry=findEntry("TAIL_BODY");
+        const auto secondBodyDigest=secondBodyEntry==history.entries.end()
+            ? std::array<std::uint8_t,32>{}
+            : secondBodyEntry->sourceContentDigest;
+        const auto storedTitle=findEntry("TAIL_TITLE");
+        const auto storedBody=findEntry("TAIL_BODY");
+        const auto& prefix=parts[3];
+        context->observed[prefix+".title_first_accepted"]=
+            Step3Bool(titleFirst.accepted);
+        context->observed[prefix+".title_update_accepted"]=
+            Step3Bool(titleSecond.accepted);
+        context->observed[prefix+".title_update_duplicate"]=
+            Step3Bool(titleSecond.duplicate);
+        context->observed[prefix+".title_sequence_advanced"]=Step3Bool(
+            titleSecond.acceptedSequence==titleFirst.acceptedSequence+1);
+        context->observed[prefix+".title_generation_advanced"]=Step3Bool(
+            titleSecond.historyGeneration==titleFirst.historyGeneration+1);
+        context->observed[prefix+".title_retained_limited"]=Step3Bool(
+            storedTitle!=history.entries.end() && storedTitle->contentLimited &&
+            storedTitle->title.size()==128);
+        context->observed[prefix+".title_sha256_changed"]=Step3Bool(
+            firstTitleDigest!=secondTitleDigest);
+        context->observed[prefix+".title_digest_bytes"]=
+            std::to_string(secondTitleDigest.size());
+        context->observed[prefix+".body_first_accepted"]=
+            Step3Bool(bodyFirst.accepted);
+        context->observed[prefix+".body_update_accepted"]=
+            Step3Bool(bodySecond.accepted);
+        context->observed[prefix+".body_update_duplicate"]=
+            Step3Bool(bodySecond.duplicate);
+        context->observed[prefix+".body_sequence_advanced"]=Step3Bool(
+            bodySecond.acceptedSequence==bodyFirst.acceptedSequence+1);
+        context->observed[prefix+".body_generation_advanced"]=Step3Bool(
+            bodySecond.historyGeneration==bodyFirst.historyGeneration+1);
+        context->observed[prefix+".body_retained_limited"]=Step3Bool(
+            storedBody!=history.entries.end() && storedBody->contentLimited &&
+            storedBody->body.size()==8192);
+        context->observed[prefix+".body_sha256_changed"]=Step3Bool(
+            firstBodyDigest!=secondBodyDigest);
+        context->observed[prefix+".body_digest_bytes"]=
+            std::to_string(secondBodyDigest.size());
+        return true;
+    }
+    if (parts[0] == "series" && parts.size() == 6) {
+        int count = 0;
+        int bodyLength = 0;
+        if (!parseInt(parts[3], &count) || !parseInt(parts[4], &bodyLength)) return fail("invalid series count");
+        auto* state = context->State(parts[1]);
+        auto drawer = Step3DrawerFromToken(parts[2]);
+        int accepted = 0;
+        for (int index = 1; index <= count; ++index) {
+            xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+            input.drawer = drawer;
+            input.stableKey = "K" + std::to_string(index);
+            input.title = "T" + std::to_string(index);
+            input.body = std::string(static_cast<std::size_t>(bodyLength), 'X');
+            if (xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(state, input).accepted) accepted++;
+        }
+        const auto& history = state->accessory.histories[Step3DrawerIndex(drawer)];
+        context->observed[parts[5] + ".accepted"] = std::to_string(accepted);
+        ObserveStep3History(history, parts[5], &context->observed);
+        context->observed[parts[5] + ".within_count_limit"] =
+            Step3Bool(history.entries.size() <= 32);
+        context->observed[parts[5] + ".within_byte_limit"] =
+            Step3Bool(history.retainedBytes <= 65536);
+        std::size_t recountedBytes = 0;
+        for (const auto& entry : history.entries) recountedBytes += entry.retainedBytes;
+        context->observed[parts[5] + ".recounted_bytes"] =
+            std::to_string(recountedBytes);
+        return true;
+    }
+    if (parts[0] == "click" && parts.size() == 5) {
+        int sequence = 0;
+        if (!parseInt(parts[3], &sequence)) return fail("invalid click sequence");
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+        request.drawer = Step3DrawerFromToken(parts[2]);
+        request.requestSequence = static_cast<std::uint64_t>(sequence);
+        const auto decision = xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+            context->State(parts[1]), request);
+        const auto prefix = parts[4];
+        context->observed[prefix + ".status"] = Step3Status(decision.status);
+        context->observed[prefix + ".action"] = Step3Action(decision.action);
+        context->observed[prefix + ".previous"] = Step3Drawer(decision.previousDrawer);
+        context->observed[prefix + ".active"] = Step3Drawer(decision.activeDrawer);
+        context->observed[prefix + ".generation"] = std::to_string(decision.selectionGeneration);
+        return true;
+    }
+    if (parts[0] == "click-from-hit" && parts.size() == 5) {
+        const auto hit = context->hits.find(parts[2]);
+        if (hit == context->hits.end()) return fail("hit result missing");
+        int sequence = 0;
+        if (!parseInt(parts[3], &sequence)) return fail("invalid click sequence");
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+        request.drawer = hit->second.drawer;
+        request.requestSequence = static_cast<std::uint64_t>(sequence);
+        const auto decision = xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+            context->State(parts[1]), request);
+        const auto& prefix = parts[4];
+        context->observed[prefix + ".hit_handled"] = Step3Bool(hit->second.handled);
+        context->observed[prefix + ".requested_drawer"] = Step3Drawer(request.drawer);
+        context->observed[prefix + ".status"] = Step3Status(decision.status);
+        context->observed[prefix + ".action"] = Step3Action(decision.action);
+        context->observed[prefix + ".previous"] = Step3Drawer(decision.previousDrawer);
+        context->observed[prefix + ".active"] = Step3Drawer(decision.activeDrawer);
+        context->observed[prefix + ".generation"] =
+            std::to_string(decision.selectionGeneration);
+        return true;
+    }
+    if (parts[0] == "click-queue-new" && parts.size() == 2) {
+        context->clickQueues[parts[1]] =
+            xvatsim::modules::overlay::AccessoryClickFactQueue{};
+        return true;
+    }
+    if (parts[0] == "click-queue-produce" && parts.size() == 5) {
+        int started = 0;
+        if(!parseInt(parts[3],&started)) return fail("invalid click start time");
+        auto& queue=context->clickQueues[parts[1]];
+        xvatsim::modules::overlay::AccessoryClickFact fact;
+        const auto produced=queue.Produce(
+            Step3DrawerFromToken(parts[2]),
+            static_cast<std::uint64_t>(started),
+            &fact);
+        const auto& prefix=parts[4];
+        context->observed[prefix+".produced"]=Step3Bool(produced);
+        context->observed[prefix+".drawer"]=Step3Drawer(fact.drawer);
+        context->observed[prefix+".sequence"]=
+            std::to_string(fact.requestSequence);
+        context->observed[prefix+".started_us"]=
+            std::to_string(fact.startedMicroseconds);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        context->observed[prefix+".next_sequence"]=
+            std::to_string(queue.NextSequence());
+        return true;
+    }
+    if (parts[0] == "click-queue-produce-hit" && parts.size() == 5) {
+        int started = 0;
+        if(!parseInt(parts[3],&started)) return fail("invalid hit click start time");
+        const auto hit=context->hits.find(parts[2]);
+        if(hit==context->hits.end()) return fail("click queue hit missing");
+        auto& queue=context->clickQueues[parts[1]];
+        xvatsim::modules::overlay::AccessoryClickFact fact;
+        const auto produced=queue.Produce(
+            hit->second.drawer,
+            static_cast<std::uint64_t>(started),
+            &fact);
+        const auto& prefix=parts[4];
+        context->observed[prefix+".hit_handled"]=
+            Step3Bool(hit->second.handled);
+        context->observed[prefix+".produced"]=Step3Bool(produced);
+        context->observed[prefix+".drawer"]=Step3Drawer(fact.drawer);
+        context->observed[prefix+".sequence"]=
+            std::to_string(fact.requestSequence);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        return true;
+    }
+    if (parts[0] == "click-queue-discard" && parts.size() == 3) {
+        auto& queue=context->clickQueues[parts[1]];
+        const auto nextBefore=queue.NextSequence();
+        const auto discarded=queue.DiscardPending();
+        const auto& prefix=parts[2];
+        context->observed[prefix+".discarded"]=std::to_string(discarded);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        context->observed[prefix+".next_sequence_unchanged"]=Step3Bool(
+            queue.NextSequence()==nextBefore);
+        context->observed[prefix+".discarded_total"]=
+            std::to_string(queue.DiscardedCount());
+        return true;
+    }
+    if (parts[0] == "click-queue-consume" && parts.size() == 3) {
+        auto& queue=context->clickQueues[parts[1]];
+        xvatsim::modules::overlay::AccessoryClickFact fact;
+        const auto consumed=queue.Consume(&fact);
+        const auto& prefix=parts[2];
+        context->observed[prefix+".consumed"]=Step3Bool(consumed);
+        context->observed[prefix+".drawer"]=
+            consumed ? Step3Drawer(fact.drawer) : "NONE";
+        context->observed[prefix+".sequence"]=
+            consumed ? std::to_string(fact.requestSequence) : "0";
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        return true;
+    }
+    if (parts[0] == "click-queue-consume-to-brain" && parts.size() == 4) {
+        auto& queue=context->clickQueues[parts[1]];
+        xvatsim::modules::overlay::AccessoryClickFact fact;
+        const auto consumed=queue.Consume(&fact);
+        const auto& prefix=parts[3];
+        context->observed[prefix+".consumed"]=Step3Bool(consumed);
+        if(!consumed) {
+            context->observed[prefix+".action"]="None";
+            return true;
+        }
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+        request.drawer=fact.drawer;
+        request.requestSequence=fact.requestSequence;
+        const auto decision=
+            xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+                context->State(parts[2]),request);
+        context->observed[prefix+".drawer"]=Step3Drawer(request.drawer);
+        context->observed[prefix+".requested_drawer"]=Step3Drawer(request.drawer);
+        context->observed[prefix+".sequence"]=
+            std::to_string(request.requestSequence);
+        context->observed[prefix+".action"]=Step3Action(decision.action);
+        context->observed[prefix+".generation"]=
+            std::to_string(decision.selectionGeneration);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        return true;
+    }
+    if (parts[0] == "dispatch-new" && parts.size() == 3) {
+        int epoch=0;
+        if(!parseInt(parts[2],&epoch)||epoch==0) {
+            return fail("invalid dispatch epoch");
+        }
+        context->inputDispatchers[parts[1]] =
+            xvatsim::modules::overlay::AccessoryInputDispatchCoordinator{};
+        auto collector=std::make_unique<
+            xvatsim::modules::overlay::AccessoryPerformanceCollector>();
+        collector->ResetForNewProcess(static_cast<std::uint64_t>(epoch));
+        context->dispatchPerformanceCollectors[parts[1]]=std::move(collector);
+        return true;
+    }
+    if (parts[0] == "dispatch-produce" && parts.size() == 6) {
+        int started=0;
+        if(!parseInt(parts[4],&started)) return fail("invalid dispatch click time");
+        auto dispatcher=context->inputDispatchers.find(parts[1]);
+        if(dispatcher==context->inputDispatchers.end()) {
+            return fail("input dispatcher missing");
+        }
+        auto& queue=context->clickQueues[parts[2]];
+        xvatsim::modules::overlay::AccessoryClickFact fact;
+        const auto produced=queue.Produce(
+            Step3DrawerFromToken(parts[3]),
+            static_cast<std::uint64_t>(started),&fact);
+        if(produced) dispatcher->second.RecordDispatchNotification();
+        const auto& prefix=parts[5];
+        context->observed[prefix+".produced"]=Step3Bool(produced);
+        context->observed[prefix+".sequence"]=
+            std::to_string(fact.requestSequence);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        ObserveStep3DispatchSnapshot(
+            dispatcher->second.Snapshot(),prefix,&context->observed);
+        return true;
+    }
+    if (parts[0] == "dispatch-begin-present" && parts.size() == 10) {
+        int layoutGeneration=0,dispatchTime=0;
+        if(!parseInt(parts[7],&layoutGeneration)||
+           !parseInt(parts[8],&dispatchTime)) {
+            return fail("invalid dispatch presentation input");
+        }
+        auto dispatcher=context->inputDispatchers.find(parts[1]);
+        auto collector=context->dispatchPerformanceCollectors.find(parts[1]);
+        const auto layout=context->layouts.find(parts[5]);
+        if(dispatcher==context->inputDispatchers.end()||
+           collector==context->dispatchPerformanceCollectors.end()) {
+            return fail("input dispatcher missing");
+        }
+        if(layout==context->layouts.end()) return fail("dispatch layout missing");
+        auto& queue=context->clickQueues[parts[2]];
+        auto* state=context->State(parts[3]);
+        auto& presenter=context->presenters[parts[4]];
+        xvatsim::modules::overlay::AccessoryClickFact fact;
+        const auto began=dispatcher->second.TryBegin(&queue,&fact);
+        const auto& prefix=parts[9];
+        context->observed[prefix+".began"]=Step3Bool(began);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        if(!began) {
+            ObserveStep3DispatchSnapshot(
+                dispatcher->second.Snapshot(),prefix,&context->observed);
+            return true;
+        }
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+        request.drawer=fact.drawer;
+        request.requestSequence=fact.requestSequence;
+        const auto decision=
+            xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+                state,request);
+        xvatsim::brain::BrainOwnedAccessoryProjectionCounters projectionCounters;
+        const auto presentation=
+            xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+                state,static_cast<std::uint64_t>(layoutGeneration),
+                &projectionCounters);
+        xvatsim::modules::overlay::AccessoryPresentationUpdateInput input;
+        input.presentation=presentation;
+        input.layout=layout->second;
+        input.preparedPlan=Step3PreparePresentationPlan(
+            context,presentation,layout->second);
+        input.measurementContext=context->measurementContext;
+        const auto main=context->mainCardSignatures.find(parts[6]);
+        if(main!=context->mainCardSignatures.end()) {
+            input.mainCardProductionSignature=main->second;
+        }
+        const auto update=
+            xvatsim::modules::overlay::UpdateAccessoryPresentation(
+                &presenter,input);
+        auto& renderGeneration=context->presenterRenderGenerations[parts[4]];
+        if(update.delta.railRasterRequests>0 ||
+           update.delta.drawerRasterRequests>0) {
+            ++renderGeneration;
+        }
+        const auto bound=dispatcher->second.BindPresentation(
+            fact.requestSequence,decision.action,
+            presenter.selectionGeneration,renderGeneration);
+        xvatsim::modules::overlay::AccessoryActionDispatchTimingInput timing;
+        timing.dispatchStartedMicroseconds=fact.startedMicroseconds;
+        timing.dispatchCompletedMicroseconds=
+            static_cast<std::uint64_t>(dispatchTime);
+        const auto timingBegan=bound && collector->second->BeginDrawerAction(
+            decision.action,fact.requestSequence,fact.startedMicroseconds,
+            presenter.selectionGeneration,renderGeneration,
+            static_cast<std::uint64_t>(dispatchTime),0,timing);
+        context->observed[prefix+".bound"]=Step3Bool(bound);
+        context->observed[prefix+".timing_began"]=Step3Bool(timingBegan);
+        context->observed[prefix+".sequence"]=
+            std::to_string(fact.requestSequence);
+        context->observed[prefix+".action"]=Step3Action(decision.action);
+        context->observed[prefix+".active"]=Step3Drawer(decision.activeDrawer);
+        context->observed[prefix+".selection_generation"]=
+            std::to_string(presenter.selectionGeneration);
+        context->observed[prefix+".render_generation"]=
+            std::to_string(renderGeneration);
+        context->observed[prefix+".dispatch_latency_us"]=
+            std::to_string(static_cast<std::uint64_t>(dispatchTime)>=
+                fact.startedMicroseconds
+                ? static_cast<std::uint64_t>(dispatchTime)-fact.startedMicroseconds
+                : 0);
+        context->observed[prefix+".projection_history_visits"]=
+            std::to_string(projectionCounters.historyVisits);
+        context->observed[prefix+".dispatch_record"]=
+            "began=true,sequence="+std::to_string(fact.requestSequence)+
+            ",action="+Step3Action(decision.action)+
+            ",dispatchLatencyUs="+
+                context->observed[prefix+".dispatch_latency_us"]+
+            ",selectionGeneration="+
+                std::to_string(presenter.selectionGeneration)+
+            ",renderGeneration="+std::to_string(renderGeneration)+
+            ",generalLoopInvocations=0";
+        ObserveStep3RenderCounters(update.delta,prefix,&context->observed);
+        ObserveStep3DispatchSnapshot(
+            dispatcher->second.Snapshot(),prefix,&context->observed);
+        return true;
+    }
+    if (parts[0] == "dispatch-draw" &&
+        (parts.size() == 8 || parts.size() == 9)) {
+        int completed=0;
+        if(!parseInt(parts[4],&completed)) return fail("invalid dispatch draw time");
+        auto dispatcher=context->inputDispatchers.find(parts[1]);
+        auto collector=context->dispatchPerformanceCollectors.find(parts[1]);
+        auto presenter=context->presenters.find(parts[3]);
+        if(dispatcher==context->inputDispatchers.end()||
+           collector==context->dispatchPerformanceCollectors.end()||
+           presenter==context->presenters.end()) {
+            return fail("dispatch draw state missing");
+        }
+        std::uint64_t selectionGeneration=presenter->second.selectionGeneration;
+        std::uint64_t renderGeneration=
+            context->presenterRenderGenerations[parts[3]];
+        if(parts[5]!="current") {
+            try { selectionGeneration=std::stoull(parts[5]); }
+            catch(...) { return fail("invalid draw selection generation"); }
+        }
+        if(parts[6]!="current") {
+            try { renderGeneration=std::stoull(parts[6]); }
+            catch(...) { return fail("invalid draw render generation"); }
+        }
+        auto selectedDrawer = presenter->second.activeSnapshot == nullptr
+                ? xvatsim::brain::BrainOwnedAccessoryDrawerId::None
+                : presenter->second.activeSnapshot->activeDrawer;
+        const auto& prefix = parts.size() == 9 ? parts[8] : parts[7];
+        if(parts.size() == 9) {
+            selectedDrawer = Step3DrawerFromToken(parts[7]);
+        }
+        const auto completion=dispatcher->second.CompleteMatchingDraw(
+            selectedDrawer,
+            selectionGeneration,renderGeneration,
+            static_cast<std::uint64_t>(completed));
+        const auto matchingPerformanceAction=
+            collector->second->HasMatchingPendingAction(
+                selectionGeneration,renderGeneration,0);
+        xvatsim::modules::overlay::AccessoryActionDrawTimingInput drawTiming;
+        drawTiming.actionDrawWallMicroseconds=1;
+        const auto performanceCompleted=
+            collector->second->CompletePendingActions(
+                static_cast<std::uint64_t>(completed),
+                selectionGeneration,renderGeneration,0,0,0,drawTiming);
+        auto& queue=context->clickQueues[parts[2]];
+        if(completion.completed && queue.PendingCount()>0) {
+            dispatcher->second.RecordDispatchNotification();
+        }
+        context->observed[prefix+".completed"]=
+            Step3Bool(completion.completed);
+        context->observed[prefix+".terminal"]=
+            Step3Bool(completion.terminal);
+        context->observed[prefix+".cancelled"]=
+            Step3Bool(completion.cancelled);
+        context->observed[prefix+".disposition"]=
+            xvatsim::modules::overlay::AccessoryInputDispatchDispositionToken(
+                completion.disposition);
+        context->observed[prefix+".sequence"]=
+            std::to_string(completion.fact.requestSequence);
+        context->observed[prefix+".action"]=Step3Action(completion.action);
+        context->observed[prefix+".performance_completed"]=
+            std::to_string(performanceCompleted);
+        context->observed[prefix+".pending"]=
+            std::to_string(queue.PendingCount());
+        context->observed[prefix+".dispatch_record"]=
+            "completed="+Step3Bool(completion.completed)+
+            ",sequence="+std::to_string(completion.fact.requestSequence)+
+            ",action="+Step3Action(completion.action)+
+            ",selectionGeneration="+std::to_string(selectionGeneration)+
+            ",renderGeneration="+std::to_string(renderGeneration)+
+            ",performanceCompleted="+
+                std::to_string(performanceCompleted);
+        ObserveStep3DispatchSnapshot(
+            dispatcher->second.Snapshot(),prefix,&context->observed);
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),prefix,&context->observed);
+        return true;
+    }
+    if (parts[0] == "dispatch-invalidate" && parts.size() == 4) {
+        auto dispatcher=context->inputDispatchers.find(parts[1]);
+        auto collector=context->dispatchPerformanceCollectors.find(parts[1]);
+        if(dispatcher==context->inputDispatchers.end()||
+           collector==context->dispatchPerformanceCollectors.end()) {
+            return fail("input dispatcher missing");
+        }
+        const auto invalidated=dispatcher->second.InvalidateInFlight();
+        collector->second->DiscardPendingActions();
+        auto& queue=context->clickQueues[parts[2]];
+        const auto discarded=queue.DiscardPending();
+        const auto& prefix=parts[3];
+        context->observed[prefix+".invalidated"]=Step3Bool(invalidated);
+        context->observed[prefix+".discarded"]=std::to_string(discarded);
+        context->observed[prefix+".next_sequence"]=
+            std::to_string(queue.NextSequence());
+        ObserveStep3DispatchSnapshot(
+            dispatcher->second.Snapshot(),prefix,&context->observed);
+        return true;
+    }
+    if (parts[0] == "dispatch-snapshot" && parts.size() == 3) {
+        const auto dispatcher=context->inputDispatchers.find(parts[1]);
+        if(dispatcher==context->inputDispatchers.end()) {
+            return fail("input dispatcher missing");
+        }
+        ObserveStep3DispatchSnapshot(
+            dispatcher->second.Snapshot(),parts[2],&context->observed);
+        const auto snapshot=dispatcher->second.Snapshot();
+        context->observed[parts[2]+".dispatch_record"]=
+            "notifications="+std::to_string(snapshot.dispatchNotifications)+
+            ",beginAttempts="+std::to_string(snapshot.beginAttempts)+
+            ",begun="+std::to_string(snapshot.requestsBegun)+
+            ",bound="+std::to_string(snapshot.presentationsBound)+
+            ",completed="+
+                std::to_string(snapshot.matchingDrawCompletions)+
+            ",mismatched="+
+                std::to_string(snapshot.mismatchedDrawAttempts);
+        return true;
+    }
+    if (parts[0] == "project" && parts.size() == 4) {
+        int generation = 0;
+        if (!parseInt(parts[2], &generation)) return fail("invalid layout generation");
+        xvatsim::brain::BrainOwnedAccessoryProjectionCounters counters;
+        auto handle = xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+            context->State(parts[1]), static_cast<std::uint64_t>(generation), &counters);
+        context->snapshots[parts[3]] = handle;
+        context->observed[parts[3] + ".available"] = Step3Bool(handle.snapshot != nullptr &&
+            handle.snapshot->status == xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available);
+        context->observed[parts[3] + ".orb_count"] =
+            handle.snapshot ? std::to_string(handle.snapshot->orbs.size()) : "0";
+        context->observed[parts[3] + ".entry_count"] =
+            handle.snapshot ? std::to_string(handle.snapshot->entries.size()) : "0";
+        context->observed[parts[3] + ".active"] =
+            handle.snapshot ? Step3Drawer(handle.snapshot->activeDrawer) : "NONE";
+        context->observed[parts[3] + ".history_visits"] = std::to_string(counters.historyVisits);
+        context->observed[parts[3] + ".entries_copied"] = std::to_string(counters.entriesCopied);
+        context->observed[parts[3] + ".snapshot_identity"] =
+            std::to_string(handle.snapshot ? handle.snapshot->snapshotIdentity : 0);
+        context->observed[parts[3] + ".selection_generation"] =
+            std::to_string(handle.snapshot == nullptr
+                ? 0 : handle.snapshot->selectionGeneration);
+        context->observed[parts[3] + ".history_generation"] =
+            std::to_string(handle.snapshot == nullptr
+                ? 0 : handle.snapshot->historyGeneration);
+        context->observed[parts[3] + ".callsign"] =
+            handle.snapshot ? handle.snapshot->callsignIdentity : "";
+        std::vector<std::string> labels;
+        int neutralCount=0,selectedCount=0,openIndicatorCount=0;
+        std::string selectedDrawer;
+        if(handle.snapshot!=nullptr) {
+            for(const auto& orb:handle.snapshot->orbs) {
+                labels.push_back(orb.label);
+                if(orb.neutral) neutralCount++;
+                if(orb.selected) {
+                    selectedCount++;
+                    selectedDrawer=Step3Drawer(orb.drawer);
+                }
+                if(orb.selectedIndicator=="OPEN") openIndicatorCount++;
+            }
+        }
+        context->observed[parts[3]+".labels"]=JoinCsv(labels);
+        context->observed[parts[3]+".neutral_count"]=std::to_string(neutralCount);
+        context->observed[parts[3]+".selected_count"]=std::to_string(selectedCount);
+        context->observed[parts[3]+".selected_drawer"]=selectedDrawer;
+        context->observed[parts[3]+".open_indicator_count"]=
+            std::to_string(openIndicatorCount);
+        context->observed[parts[3]+".empty_state_text"]=
+            handle.snapshot ? handle.snapshot->emptyStateText : "";
+        bool placeholderCached=false;
+        if(handle.snapshot!=nullptr && !handle.snapshot->emptyStateText.empty()) {
+            for(const auto& history:context->State(parts[1])->accessory.histories) {
+                for(const auto& entry:history.entries) {
+                    placeholderCached=placeholderCached ||
+                        entry.title==handle.snapshot->emptyStateText ||
+                        entry.body==handle.snapshot->emptyStateText;
+                }
+            }
+        }
+        context->observed[parts[3]+".placeholder_cached"]=Step3Bool(placeholderCached);
+        std::vector<std::string> keys;
+        std::vector<std::string> bodies;
+        std::vector<std::string> sequences;
+        if (handle.snapshot != nullptr) {
+            for (const auto& entry : handle.snapshot->entries) {
+                keys.push_back(entry.stableKey);
+                bodies.push_back(entry.body);
+                sequences.push_back(std::to_string(entry.acceptedSequence));
+            }
+        }
+        context->observed[parts[3] + ".keys"] = JoinCsv(keys);
+        context->observed[parts[3] + ".bodies"] = JoinCsv(bodies);
+        context->observed[parts[3] + ".sequences"] = JoinCsv(sequences);
+        return true;
+    }
+    if (parts[0] == "history" && parts.size() == 4) {
+        const auto drawer = Step3DrawerFromToken(parts[2]);
+        const auto& history = context->State(parts[1])->accessory.histories[Step3DrawerIndex(drawer)];
+        ObserveStep3History(history, parts[3], &context->observed);
+        return true;
+    }
+    if (parts[0] == "seed-all" && parts.size() == 4) {
+        auto* state = context->State(parts[1]);
+        const xvatsim::brain::BrainOwnedAccessoryDrawerId drawers[]{
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::Metar,
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::Atis,
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::Pdc};
+        const char* tokens[]{"M", "A", "P"};
+        int accepted = 0;
+        for (std::size_t index = 0; index < 3; ++index) {
+            xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput input;
+            input.drawer = drawers[index];
+            input.stableKey = std::string(tokens[index]) + parts[2];
+            input.title = std::string(tokens[index]) + "-TITLE";
+            input.body = std::string(tokens[index]) + "-BODY-" + parts[2];
+            if (xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(state, input).accepted) {
+                accepted++;
+            }
+        }
+        context->observed[parts[3] + ".accepted"] = std::to_string(accepted);
+        bool keysCorrect=true,bodiesCorrect=true,sequencesCorrect=true;
+        bool bytesAccounted=true,generationsAdvanced=true;
+        for (std::size_t index = 0; index < 3; ++index) {
+            const auto& history=state->accessory.histories[index];
+            ObserveStep3History(
+                history,
+                parts[3] + "." + tokens[index],
+                &context->observed);
+            keysCorrect=keysCorrect && history.entries.size()==1 &&
+                history.entries.front().stableKey==std::string(tokens[index])+parts[2];
+            bodiesCorrect=bodiesCorrect && history.entries.size()==1 &&
+                history.entries.front().body==std::string(tokens[index])+"-BODY-"+parts[2];
+            sequencesCorrect=sequencesCorrect && history.entries.size()==1 &&
+                history.entries.front().acceptedSequence==1;
+            bytesAccounted=bytesAccounted && history.entries.size()==1 &&
+                history.retainedBytes==history.entries.front().retainedBytes &&
+                history.retainedBytes==history.entries.front().stableKey.size()+
+                    history.entries.front().title.size()+history.entries.front().body.size();
+            generationsAdvanced=generationsAdvanced && history.generation==1;
+        }
+        context->observed[parts[3]+".keys_correct"]=Step3Bool(keysCorrect);
+        context->observed[parts[3]+".bodies_correct"]=Step3Bool(bodiesCorrect);
+        context->observed[parts[3]+".sequences_correct"]=Step3Bool(sequencesCorrect);
+        context->observed[parts[3]+".bytes_accounted"]=Step3Bool(bytesAccounted);
+        context->observed[parts[3]+".generations_advanced"]=
+            Step3Bool(generationsAdvanced);
+        return true;
+    }
+    if (parts[0] == "accessory-state" && parts.size() == 3) {
+        const auto* state = context->State(parts[1]);
+        context->observed[parts[2] + ".active"] =
+            Step3Drawer(state->accessory.activeDrawer);
+        context->observed[parts[2] + ".callsign"] = state->accessory.callsignIdentity;
+        context->observed[parts[2] + ".callsign_generation"] =
+            std::to_string(state->accessory.callsignIdentityGeneration);
+        context->observed[parts[2] + ".clear_generation"] =
+            std::to_string(state->accessory.historyClearGeneration);
+        const char* tokens[]{"M", "A", "P"};
+        for (std::size_t index = 0; index < 3; ++index) {
+            ObserveStep3History(
+                state->accessory.histories[index],
+                parts[2] + "." + tokens[index],
+                &context->observed);
+        }
+        return true;
+    }
+    if (parts[0] == "compare-history-observations" && parts.size() == 4) {
+        const char* drawers[]{"M", "A", "P"};
+        const char* fields[]{"keys", "bodies", "sequences", "bytes", "generation"};
+        for (const auto* field : fields) {
+            bool equal = true;
+            for (const auto* drawer : drawers) {
+                const auto before = context->observed.find(
+                    parts[1] + "." + drawer + "." + field);
+                const auto after = context->observed.find(
+                    parts[2] + "." + drawer + "." + field);
+                if (before == context->observed.end() ||
+                    after == context->observed.end()) {
+                    return fail("history observation missing");
+                }
+                equal = equal && before->second == after->second;
+            }
+            context->observed[parts[3] + "." + field + "_equal"] = Step3Bool(equal);
+        }
+        return true;
+    }
+    if (parts[0] == "compare-cleared-history-observations" && parts.size() == 4) {
+        const char* drawers[]{"M", "A", "P"};
+        bool keysCleared=true,bodiesCleared=true,sequencesCleared=true;
+        bool bytesCleared=true,generationsAdvanced=true;
+        for (const auto* drawer : drawers) {
+            const auto key = [&](const std::string& prefix, const char* field) {
+                return context->observed.find(prefix + "." + drawer + "." + field);
+            };
+            const auto beforeGeneration=key(parts[1],"generation");
+            const auto afterGeneration=key(parts[2],"generation");
+            const auto afterKeys=key(parts[2],"keys");
+            const auto afterBodies=key(parts[2],"bodies");
+            const auto afterSequences=key(parts[2],"sequences");
+            const auto afterBytes=key(parts[2],"bytes");
+            if(beforeGeneration==context->observed.end() ||
+               afterGeneration==context->observed.end() ||
+               afterKeys==context->observed.end() ||
+               afterBodies==context->observed.end() ||
+               afterSequences==context->observed.end() ||
+               afterBytes==context->observed.end()) {
+                return fail("cleared history observation missing");
+            }
+            keysCleared=keysCleared && afterKeys->second.empty();
+            bodiesCleared=bodiesCleared && afterBodies->second.empty();
+            sequencesCleared=sequencesCleared && afterSequences->second.empty();
+            bytesCleared=bytesCleared && afterBytes->second=="0";
+            try {
+                generationsAdvanced=generationsAdvanced &&
+                    std::stoull(afterGeneration->second)==
+                        std::stoull(beforeGeneration->second)+1;
+            } catch (...) {
+                return fail("invalid history generation observation");
+            }
+        }
+        context->observed[parts[3]+".keys_cleared"]=Step3Bool(keysCleared);
+        context->observed[parts[3]+".bodies_cleared"]=Step3Bool(bodiesCleared);
+        context->observed[parts[3]+".sequences_cleared"]=Step3Bool(sequencesCleared);
+        context->observed[parts[3]+".bytes_cleared"]=Step3Bool(bytesCleared);
+        context->observed[parts[3]+".generations_advanced"]=
+            Step3Bool(generationsAdvanced);
+        return true;
+    }
+    if (parts[0] == "cache-refresh" && parts.size() == 2) {
+        xvatsim::brain::ResetBrainOwnedRuntimeCachePreservingFlightContext(context->State(parts[1]));
+        context->observed[parts[1] + ".cache_refreshed"] = "true";
+        return true;
+    }
+    if (parts[0] == "boundary" && (parts.size() == 4 || parts.size() == 6)) {
+        auto* state = context->State(parts[1]);
+        xvatsim::brain::BrainOwnedAccessoryBoundaryDecision decision;
+        if (parts[2] == "close-display") decision = xvatsim::brain::CloseBrainOwnedAccessoryForDisplayClose(state);
+        else if (parts[2] == "xpilot-disconnect") decision = xvatsim::brain::CloseBrainOwnedAccessoryForTemporaryXPilotDisconnect(state);
+        else if (parts[2] == "invalid-aircraft") decision = xvatsim::brain::CloseBrainOwnedAccessoryForInvalidAircraft(state);
+        else if (parts[2] == "plugin-disable") decision = xvatsim::brain::DisableBrainOwnedAccessoryRuntime(state);
+        else if (parts[2] == "plugin-enable") decision = xvatsim::brain::EnableBrainOwnedAccessoryRuntime(state);
+        else if (parts[2] == "overlay-sleep") decision = xvatsim::brain::CloseBrainOwnedAccessoryForTemporaryOverlaySleep(state);
+        else if (parts[2] == "session-reset") decision = xvatsim::brain::ResetBrainOwnedAccessoryForSessionReset(state);
+        else if (parts[2] == "new-flight") decision = xvatsim::brain::ResetBrainOwnedAccessoryForConfirmedNewFlight(state);
+        else if (parts[2] == "cold-dark") decision = xvatsim::brain::ResetBrainOwnedAccessoryForConfirmedColdDark(state);
+        else if (parts[2] == "callsign-change" && parts.size() == 6) {
+            decision = xvatsim::brain::ResetBrainOwnedAccessoryForCallsignChange(
+                state, parts[3], parts[4]);
+        }
+        else if (parts[2] == "plugin-stop") decision = xvatsim::brain::StopBrainOwnedAccessoryRuntime(state);
+        else return fail("unknown lifecycle entry point");
+        const auto& prefix = parts.back();
+        context->observed[prefix + ".status"] = Step3Status(decision.status);
+        context->observed[prefix + ".closed"] = Step3Bool(decision.drawerClosed);
+        context->observed[prefix + ".cleared"] = Step3Bool(decision.historiesCleared);
+        context->observed[prefix + ".cleared_before_identity"] =
+            Step3Bool(decision.clearedBeforeIdentityProjection);
+        context->observed[prefix + ".previous_callsign"] = decision.previousCallsign;
+        context->observed[prefix + ".active_callsign"] = decision.activeCallsign;
+        context->observed[prefix + ".clear_generation"] =
+            std::to_string(decision.historyClearGeneration);
+        context->observed[prefix + ".identity_generation"] =
+            std::to_string(decision.callsignIdentityGeneration);
+        return true;
+    }
+    if (parts[0] == "layout" && parts.size() == 10) {
+        int width=0,height=0,left=0,top=0,open=0;
+        if (!parseInt(parts[2],&width)||!parseInt(parts[3],&height)||!parseInt(parts[5],&left)||
+            !parseInt(parts[6],&top)||!parseInt(parts[8],&open)) return fail("invalid layout integer");
+        xvatsim::modules::overlay::AccessoryLayoutInput input;
+        input.screenWidth=width; input.screenHeight=height; input.scale=std::stof(parts[4]);
+        input.windowLeft=left; input.windowTop=top; input.drawerOpen=open!=0;
+        input.cardAnimationProgress=std::stof(parts[7]);
+        auto result=ResolveStep3Layout(context,input);
+        context->layouts[parts[9]]=result;
+        context->observed[parts[9]+".status"]=Step3Status(result.status);
+        context->observed[parts[9]+".visible"]=Step3Bool(result.accessoriesVisible);
+        context->observed[parts[9]+".interactive"]=Step3Bool(result.accessoriesInteractive);
+        context->observed[parts[9]+".orb_count"]=std::to_string(result.orbs.size());
+        context->observed[parts[9]+".closed_width"]=std::to_string(result.closedWidth);
+        context->observed[parts[9]+".closed_height"]=std::to_string(result.closedHeight);
+        context->observed[parts[9]+".open_width"]=std::to_string(result.openWidth);
+        context->observed[parts[9]+".open_height"]=std::to_string(result.openHeight);
+        context->observed[parts[9]+".closed_design_width"]=
+            std::to_string(result.closedDesignWidth);
+        context->observed[parts[9]+".closed_design_height"]=
+            std::to_string(result.closedDesignHeight);
+        context->observed[parts[9]+".open_design_width"]=
+            std::to_string(result.openDesignWidth);
+        context->observed[parts[9]+".open_design_height"]=
+            std::to_string(result.openDesignHeight);
+        context->observed[parts[9]+".orb_design_diameter"]=
+            std::to_string(result.orbDiameterDesignPixels);
+        context->observed[parts[9]+".dirty"]=Step3Bool(result.positionSettingsDirty);
+        context->observed[parts[9]+".inside"]=Step3Bool(result.allPhysicalBoundsInsideScreen);
+        context->observed[parts[9]+".temporary_clamp"]=
+            Step3Bool(result.temporaryClampApplied);
+        context->observed[parts[9]+".closed_size_restored"]=
+            Step3Bool(result.closedDimensionsRestored);
+        context->observed[parts[9]+".anchor_restored"]=
+            Step3Bool(result.closedAnchorRestored);
+        context->observed[parts[9]+".drawer_content_inset"]=
+            std::to_string(result.drawerContentInset);
+        context->observed[parts[9]+".drawer_header_top"]=
+            std::to_string(result.drawerHeaderTop);
+        context->observed[parts[9]+".drawer_header_height"]=
+            std::to_string(result.drawerHeaderHeight);
+        context->observed[parts[9]+".drawer_content_top"]=
+            std::to_string(result.drawerContentTop);
+        context->observed[parts[9]+".drawer_content_bottom"]=
+            std::to_string(result.drawerContentBottom);
+        context->observed[parts[9]+".drawer_line_height"]=
+            std::to_string(result.drawerLineHeight);
+        context->observed[parts[9]+".drawer_visible_capacity"]=
+            std::to_string(result.drawerVisibleLineCapacity);
+        context->observed[parts[9]+".drawer_capacity_pixel_fit"]=
+            Step3Bool(result.drawerContentTop +
+                result.drawerVisibleLineCapacity * result.drawerLineHeight <=
+                result.drawerContentBottom);
+        context->observed[parts[9]+".drawer_next_line_clips"]=
+            Step3Bool(result.drawerContentTop +
+                (result.drawerVisibleLineCapacity + 1) * result.drawerLineHeight >
+                result.drawerContentBottom);
+        if(!result.orbs.empty()) context->observed[parts[9]+".orb_diameter"]=std::to_string(result.orbs.front().diameterPhysicalPixels);
+        return true;
+    }
+    if (parts[0] == "layout-warm" && parts.size() == 4) {
+        int iterations=0;
+        if(!parseInt(parts[1],&iterations)) return fail("invalid layout warm count");
+        xvatsim::modules::overlay::AccessoryLayoutInput input;
+        input.scale=std::stof(parts[2]);
+        input.drawerOpen=true;
+        input.cardAnimationProgress=1.0f;
+        input.typography=context->Typography(input.scale);
+        const auto gdiBefore=
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        int available=0;
+        for(int index=0;index<iterations;++index) {
+            const auto layout=
+                xvatsim::modules::overlay::ResolveAccessoryLayout(input);
+            if(layout.status==
+                xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available) {
+                available++;
+            }
+        }
+        const auto gdiAfter=
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto& prefix=parts[3];
+        context->observed[prefix+".iterations"]=std::to_string(iterations);
+        context->observed[prefix+".available"]=std::to_string(available);
+        const auto gdiDelta=Step3GdiCounterDelta(gdiBefore,gdiAfter);
+        ObserveStep3GdiCounters(
+            gdiDelta,
+            prefix,
+            &context->observed);
+        context->observed[prefix+".zero_work_record"]=
+            "iterations="+std::to_string(iterations)+
+            ",gdi="+std::to_string(gdiDelta.measurementCalls)+
+            ",bitmaps="+std::to_string(gdiDelta.bitmapConstructions)+
+            ",graphics="+std::to_string(gdiDelta.graphicsConstructions)+
+            ",fonts="+std::to_string(gdiDelta.fontConstructions);
+        return true;
+    }
+    if (parts[0] == "layout-matrix" && parts.size() == 2) {
+        const int screens[][2]{{1280,720},{1920,1080},{3840,2160}};
+        const float scales[]{0.85f,1.0f,1.35f};
+        int cases=0,available=0,violations=0,boundsPass=0;
+        int capacityCases=0,capacityHeightPass=0,capacityRemainingPass=0;
+        int exactDesignPass=0;
+        int temporaryClampPass=0,intentionalPass=0,restorePass=0;
+        int screenChangeClampPass=0,intentionalAnchorRestorePass=0;
+        for(const auto& screen:screens) for(float scale:scales) for(int edge=0;edge<4;++edge){
+            xvatsim::modules::overlay::AccessoryLayoutInput input;
+            input.screenWidth=screen[0]; input.screenHeight=screen[1]; input.scale=scale;
+            input.drawerOpen=true; input.cardAnimationProgress=1.0f;
+            input.savedClosedAnchorValid=true;
+            input.savedClosedAnchorLeft=screen[0]/2;
+            input.savedClosedAnchorTop=screen[1]/2;
+            input.windowLeft=edge==0 ? -200 : (edge==1 ? screen[0]+200 : screen[0]/2);
+            input.windowTop=edge==2 ? screen[1]+200 : (edge==3 ? -200 : screen[1]/2);
+            const auto result=ResolveStep3Layout(context,input);
+            cases++;
+            if(result.status==xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available) available++; else violations++;
+            const auto rectInside=[&](const xvatsim::modules::overlay::AccessoryRect& rect){
+                return rect.left>=0 && rect.bottom>=0 && rect.right<=screen[0] &&
+                    rect.top<=screen[1] && rect.left<=rect.right && rect.bottom<=rect.top;
+            };
+            bool physicalBounds = result.allPhysicalBoundsInsideScreen &&
+                result.resolvedBounds.left >= 0 && result.resolvedBounds.bottom >= 0 &&
+                result.resolvedBounds.right <= screen[0] && result.resolvedBounds.top <= screen[1] &&
+                rectInside(result.resolvedBounds) && rectInside(result.drawerBounds);
+            for(const auto& orb:result.orbs) physicalBounds=physicalBounds && rectInside(orb.bounds);
+            if (physicalBounds) boundsPass++; else violations++;
+            const bool exactDesign = result.closedDesignWidth==430 &&
+                result.closedDesignHeight==374 && result.openDesignWidth==430 &&
+                result.openDesignHeight==506 && result.orbDiameterDesignPixels==52 &&
+                result.railDesignBounds.top==320 && result.railDesignBounds.bottom==372 &&
+                result.drawerDesignBounds.top==378 && result.drawerDesignBounds.bottom==494 &&
+                result.mainCardToRailGapDesignPixels==2 &&
+                result.interOrbGapDesignPixels==16 &&
+                result.railToDrawerGapDesignPixels==6 &&
+                result.openBottomMarginDesignPixels==12;
+            if(exactDesign) exactDesignPass++; else violations++;
+            if(screen[1]==720 && scale==1.35f) {
+                capacityCases++;
+                if(result.openHeight==683) capacityHeightPass++; else violations++;
+                const int remainingCapacity=screen[1]-result.openHeight;
+                if(remainingCapacity==37 && remainingCapacity>=16) {
+                    capacityRemainingPass++;
+                } else {
+                    violations++;
+                }
+            }
+            const bool temporary = result.temporaryClampApplied &&
+                !result.positionSettingsDirty && !result.intentionalMoveApplied;
+            if (temporary) temporaryClampPass++; else violations++;
+
+            auto intentionalInput = input;
+            intentionalInput.anchorOperation =
+                xvatsim::modules::overlay::AccessoryAnchorOperation::IntentionalMove;
+            const auto intentional=ResolveStep3Layout(context,intentionalInput);
+            const bool intentionalOk = intentional.intentionalMoveApplied &&
+                intentional.positionSettingsDirty;
+            if (intentionalOk) intentionalPass++; else violations++;
+
+            auto closedInput = input;
+            closedInput.drawerOpen = false;
+            closedInput.anchorOperation =
+                xvatsim::modules::overlay::AccessoryAnchorOperation::CloseDrawer;
+            closedInput.windowLeft = result.resolvedLeft;
+            closedInput.windowTop = result.resolvedTop;
+            const auto closed=ResolveStep3Layout(context,closedInput);
+            const int expectedClosedLeft=std::clamp(
+                closedInput.savedClosedAnchorLeft,
+                0,
+                std::max(0,closedInput.screenWidth-closed.closedWidth));
+            const int expectedClosedTop=std::clamp(
+                closedInput.savedClosedAnchorTop,
+                std::min(closed.closedHeight,closedInput.screenHeight),
+                closedInput.screenHeight);
+            const bool restored = closed.closedDimensionsRestored &&
+                closed.closedAnchorRestored && !closed.positionSettingsDirty &&
+                closed.resolvedLeft==expectedClosedLeft &&
+                closed.resolvedTop==expectedClosedTop &&
+                closed.resolvedBounds.right-closed.resolvedBounds.left==closed.closedWidth &&
+                closed.resolvedBounds.top-closed.resolvedBounds.bottom==closed.closedHeight;
+            if (restored) restorePass++; else violations++;
+
+            auto changedScreenInput=closedInput;
+            changedScreenInput.savedClosedAnchorLeft=screen[0]+200;
+            changedScreenInput.savedClosedAnchorTop=screen[1]+200;
+            const auto changedScreen=ResolveStep3Layout(context,changedScreenInput);
+            const bool screenChangedClamped=
+                changedScreen.closedAnchorRestored &&
+                changedScreen.temporaryClampApplied &&
+                !changedScreen.positionSettingsDirty &&
+                changedScreen.allPhysicalBoundsInsideScreen;
+            if(screenChangedClamped) screenChangeClampPass++; else violations++;
+
+            auto intentionalClosedInput=closedInput;
+            intentionalClosedInput.savedClosedAnchorLeft=
+                intentional.restorableClosedAnchorLeft;
+            intentionalClosedInput.savedClosedAnchorTop=
+                intentional.restorableClosedAnchorTop;
+            intentionalClosedInput.windowLeft=intentional.resolvedLeft;
+            intentionalClosedInput.windowTop=intentional.resolvedTop;
+            const auto intentionalClosed=
+                ResolveStep3Layout(context,intentionalClosedInput);
+            const bool intentionalAnchorRestored=
+                intentional.restorableClosedAnchorLeft==intentional.resolvedLeft &&
+                intentional.restorableClosedAnchorTop==intentional.resolvedTop &&
+                intentionalClosed.closedAnchorRestored &&
+                intentionalClosed.resolvedLeft==intentional.restorableClosedAnchorLeft &&
+                intentionalClosed.resolvedTop==intentional.restorableClosedAnchorTop &&
+                !intentionalClosed.positionSettingsDirty;
+            if(intentionalAnchorRestored) intentionalAnchorRestorePass++;
+            else violations++;
+        }
+        context->observed[parts[1]+".cases"]=std::to_string(cases);
+        context->observed[parts[1]+".available_cases"]=std::to_string(available);
+        context->observed[parts[1]+".bounds_pass"]=std::to_string(boundsPass);
+        context->observed[parts[1]+".capacity_cases"]=std::to_string(capacityCases);
+        context->observed[parts[1]+".capacity_height_pass"]=
+            std::to_string(capacityHeightPass);
+        context->observed[parts[1]+".capacity_remaining_pass"]=
+            std::to_string(capacityRemainingPass);
+        context->observed[parts[1]+".exact_design_pass"]=
+            std::to_string(exactDesignPass);
+        context->observed[parts[1]+".temporary_clamp_pass"]=std::to_string(temporaryClampPass);
+        context->observed[parts[1]+".intentional_pass"]=std::to_string(intentionalPass);
+        context->observed[parts[1]+".restore_pass"]=std::to_string(restorePass);
+        context->observed[parts[1]+".screen_change_clamp_pass"]=
+            std::to_string(screenChangeClampPass);
+        context->observed[parts[1]+".intentional_anchor_restore_pass"]=
+            std::to_string(intentionalAnchorRestorePass);
+        context->observed[parts[1]+".violations"]=std::to_string(violations);
+        return true;
+    }
+    if (parts[0] == "anchor-contract" && parts.size() == 2) {
+        using xvatsim::modules::overlay::AccessoryAnchorOperation;
+        using xvatsim::modules::overlay::AccessoryAnchorState;
+        using xvatsim::modules::overlay::AccessoryAnchorUpdateInput;
+        using xvatsim::modules::overlay::AccessoryRect;
+        const auto& prefix = parts[1];
+        int violations = 0;
+        const auto updateAnchor = [context](
+            AccessoryAnchorState* state,
+            AccessoryAnchorOperation operation,
+            bool drawerOpen,
+            int left,
+            int top,
+            int screenWidth,
+            int screenHeight,
+            float scale) {
+            AccessoryAnchorUpdateInput input;
+            input.operation = operation;
+            input.layout.screenWidth = screenWidth;
+            input.layout.screenHeight = screenHeight;
+            input.layout.windowLeft = left;
+            input.layout.windowTop = top;
+            input.layout.scale = scale;
+            input.layout.cardAnimationProgress = 1.0f;
+            input.layout.drawerOpen = drawerOpen;
+            input.layout.typography = context->Typography(scale);
+            return xvatsim::modules::overlay::UpdateAccessoryAnchorState(
+                state, input);
+        };
+        const auto rectTranslated = [](const AccessoryRect& before,
+                                       const AccessoryRect& after,
+                                       int deltaX,
+                                       int deltaY) {
+            return after.left - before.left == deltaX &&
+                after.right - before.right == deltaX &&
+                after.top - before.top == deltaY &&
+                after.bottom - before.bottom == deltaY;
+        };
+        const auto allAttached = [&](const auto& before, const auto& after) {
+            const int deltaX = after.resolvedLeft - before.resolvedLeft;
+            const int deltaY = after.resolvedTop - before.resolvedTop;
+            bool attached =
+                rectTranslated(before.mainCardBounds, after.mainCardBounds,
+                    deltaX, deltaY) &&
+                rectTranslated(before.railBounds, after.railBounds,
+                    deltaX, deltaY) &&
+                before.orbs.size() == after.orbs.size();
+            if (before.drawerBounds.right > before.drawerBounds.left ||
+                after.drawerBounds.right > after.drawerBounds.left) {
+                attached = attached && rectTranslated(
+                    before.drawerBounds, after.drawerBounds, deltaX, deltaY);
+            }
+            for (std::size_t index = 0;
+                 attached && index < before.orbs.size(); ++index) {
+                attached = rectTranslated(
+                    before.orbs[index].bounds,
+                    after.orbs[index].bounds,
+                    deltaX,
+                    deltaY);
+                if (!attached) break;
+                const auto& orb = after.orbs[index];
+                const auto hit = xvatsim::modules::overlay::HitTestAccessoryOrb(
+                    after,
+                    (orb.bounds.left + orb.bounds.right) / 2,
+                    (orb.bounds.top + orb.bounds.bottom) / 2);
+                attached = hit.handled && hit.drawer == orb.drawer;
+            }
+            return attached;
+        };
+
+        int compactScalePass = 0;
+        int sixLinePass = 0;
+        int contentSeparationPass = 0;
+        std::vector<std::string> compactPhysicalSizes;
+        for (const float scale : {0.85f, 1.0f, 1.35f}) {
+            AccessoryAnchorState state;
+            const auto initialized = updateAnchor(
+                &state, AccessoryAnchorOperation::Initialize,
+                false, 300, 700, 1280, 720, scale);
+            const auto opened = updateAnchor(
+                &state, AccessoryAnchorOperation::OpenDrawer,
+                true, initialized.layout.resolvedLeft,
+                initialized.layout.resolvedTop, 1280, 720, scale);
+            const bool compact =
+                initialized.layout.closedDesignWidth == 430 &&
+                initialized.layout.closedDesignHeight == 374 &&
+                opened.layout.openDesignWidth == 430 &&
+                opened.layout.openDesignHeight == 506 &&
+                opened.layout.railDesignBounds.left == 118 &&
+                opened.layout.railDesignBounds.top == 320 &&
+                opened.layout.railDesignBounds.right == 306 &&
+                opened.layout.railDesignBounds.bottom == 372 &&
+                opened.layout.drawerDesignBounds.left == 0 &&
+                opened.layout.drawerDesignBounds.top == 378 &&
+                opened.layout.drawerDesignBounds.right == 430 &&
+                opened.layout.drawerDesignBounds.bottom == 494 &&
+                opened.layout.openBottomMarginDesignPixels == 12 &&
+                opened.layout.railToDrawerGapDesignPixels == 6 &&
+                initialized.layout.resolvedBounds.top -
+                    initialized.layout.resolvedBounds.bottom ==
+                    initialized.layout.closedHeight &&
+                initialized.layout.drawerBounds.left ==
+                    initialized.layout.drawerBounds.right;
+            if (compact) compactScalePass++; else violations++;
+            if (opened.layout.drawerVisibleLineCapacity == 6) {
+                sixLinePass++;
+            } else {
+                violations++;
+            }
+            bool separated = opened.layout.railDesignBounds.top >= 320;
+            for (const auto& orb : opened.layout.orbs) {
+                separated = separated && orb.designBounds.top == 320 &&
+                    orb.designBounds.bottom == 372 &&
+                    orb.designCenter.y == 346;
+            }
+            if (separated) contentSeparationPass++; else violations++;
+            compactPhysicalSizes.push_back(
+                std::to_string(initialized.layout.closedHeight) + "/" +
+                std::to_string(opened.layout.openHeight));
+        }
+
+        AccessoryAnchorState closedDragState;
+        auto closedPrevious = updateAnchor(
+            &closedDragState, AccessoryAnchorOperation::Initialize,
+            false, 300, 900, 1920, 1080, 1.0f);
+        int closedDragSamples = 0;
+        int closedAttachmentPass = 0;
+        for (const auto target : std::array<std::pair<int, int>, 3>{{
+                 {360, 860}, {430, 810}, {520, 760}}}) {
+            const auto moved = updateAnchor(
+                &closedDragState, AccessoryAnchorOperation::IntentionalMove,
+                false, target.first, target.second, 1920, 1080, 1.0f);
+            closedDragSamples++;
+            const bool pass = allAttached(closedPrevious.layout, moved.layout) &&
+                moved.positionSettingsDirty &&
+                closedDragState.currentAnchorLeft == moved.layout.resolvedLeft &&
+                closedDragState.currentAnchorTop == moved.layout.resolvedTop &&
+                closedDragState.savedClosedAnchorLeft == moved.layout.resolvedLeft &&
+                closedDragState.savedClosedAnchorTop == moved.layout.resolvedTop;
+            if (pass) closedAttachmentPass++; else violations++;
+            closedPrevious = moved;
+        }
+        const auto finalClosedLeft = closedPrevious.layout.resolvedLeft;
+        const auto finalClosedTop = closedPrevious.layout.resolvedTop;
+        const auto ordinaryClosed = updateAnchor(
+            &closedDragState, AccessoryAnchorOperation::OrdinaryRefresh,
+            false, finalClosedLeft, finalClosedTop, 1920, 1080, 1.0f);
+        const bool closedReleaseRetained =
+            ordinaryClosed.layout.resolvedLeft == finalClosedLeft &&
+            ordinaryClosed.layout.resolvedTop == finalClosedTop &&
+            !ordinaryClosed.positionSettingsDirty &&
+            !ordinaryClosed.layout.closedAnchorRestored;
+        if (!closedReleaseRetained) violations++;
+        const auto disableRefresh = updateAnchor(
+            &closedDragState, AccessoryAnchorOperation::OrdinaryRefresh,
+            false, finalClosedLeft, finalClosedTop, 1920, 1080, 1.0f);
+        const auto enableRefresh = updateAnchor(
+            &closedDragState, AccessoryAnchorOperation::OrdinaryRefresh,
+            false, finalClosedLeft, finalClosedTop, 1920, 1080, 1.0f);
+        const bool disableEnableRetained =
+            disableRefresh.layout.resolvedLeft == finalClosedLeft &&
+            disableRefresh.layout.resolvedTop == finalClosedTop &&
+            enableRefresh.layout.resolvedLeft == finalClosedLeft &&
+            enableRefresh.layout.resolvedTop == finalClosedTop &&
+            !disableRefresh.positionSettingsDirty &&
+            !enableRefresh.positionSettingsDirty;
+        if (!disableEnableRetained) violations++;
+
+        auto openPrevious = updateAnchor(
+            &closedDragState, AccessoryAnchorOperation::OpenDrawer,
+            true, finalClosedLeft, finalClosedTop, 1920, 1080, 1.0f);
+        int openDragSamples = 0;
+        int openAttachmentPass = 0;
+        for (const auto target : std::array<std::pair<int, int>, 3>{{
+                 {570, 800}, {640, 850}, {710, 900}}}) {
+            const auto moved = updateAnchor(
+                &closedDragState, AccessoryAnchorOperation::IntentionalMove,
+                true, target.first, target.second, 1920, 1080, 1.0f);
+            openDragSamples++;
+            const bool pass = allAttached(openPrevious.layout, moved.layout) &&
+                moved.positionSettingsDirty &&
+                closedDragState.intentionalMoveSinceOpen &&
+                closedDragState.savedClosedAnchorLeft == moved.layout.resolvedLeft &&
+                closedDragState.savedClosedAnchorTop == moved.layout.resolvedTop;
+            if (pass) openAttachmentPass++; else violations++;
+            openPrevious = moved;
+        }
+        const auto closeAfterOpenDrag = updateAnchor(
+            &closedDragState, AccessoryAnchorOperation::CloseDrawer,
+            false, openPrevious.layout.resolvedLeft,
+            openPrevious.layout.resolvedTop, 1920, 1080, 1.0f);
+        const bool openDragReplacedAnchor =
+            closeAfterOpenDrag.explicitClosedAnchorRestored &&
+            closeAfterOpenDrag.layout.resolvedLeft ==
+                openPrevious.layout.resolvedLeft &&
+            closeAfterOpenDrag.layout.resolvedTop ==
+                openPrevious.layout.resolvedTop &&
+            !closeAfterOpenDrag.positionSettingsDirty;
+        if (!openDragReplacedAnchor) violations++;
+
+        AccessoryAnchorState temporaryClampState;
+        const auto preOpen = updateAnchor(
+            &temporaryClampState, AccessoryAnchorOperation::Initialize,
+            false, 400, 520, 1280, 720, 1.35f);
+        const auto clampedOpen = updateAnchor(
+            &temporaryClampState, AccessoryAnchorOperation::OpenDrawer,
+            true, preOpen.layout.resolvedLeft, preOpen.layout.resolvedTop,
+            1280, 720, 1.35f);
+        const auto clampedOpenRefresh = updateAnchor(
+            &temporaryClampState, AccessoryAnchorOperation::OrdinaryRefresh,
+            true, clampedOpen.layout.resolvedLeft,
+            clampedOpen.layout.resolvedTop, 1280, 720, 1.35f);
+        const bool temporaryClampSurvivedRefresh =
+            temporaryClampState.temporaryOpenClampApplied &&
+            clampedOpenRefresh.layout.resolvedLeft ==
+                clampedOpen.layout.resolvedLeft &&
+            clampedOpenRefresh.layout.resolvedTop ==
+                clampedOpen.layout.resolvedTop;
+        const auto restoredClose = updateAnchor(
+            &temporaryClampState, AccessoryAnchorOperation::CloseDrawer,
+            false, clampedOpenRefresh.layout.resolvedLeft,
+            clampedOpenRefresh.layout.resolvedTop, 1280, 720, 1.35f);
+        const bool temporaryClampRestored =
+            clampedOpen.savedClosedAnchorCaptured &&
+            clampedOpen.temporaryOpenClampApplied &&
+            temporaryClampSurvivedRefresh &&
+            preOpen.layout.resolvedTop == 520 &&
+            clampedOpen.layout.resolvedTop == 683 &&
+            restoredClose.explicitClosedAnchorRestored &&
+            restoredClose.layout.resolvedLeft == preOpen.layout.resolvedLeft &&
+            restoredClose.layout.resolvedTop == preOpen.layout.resolvedTop &&
+            !restoredClose.positionSettingsDirty;
+        if (!temporaryClampRestored) violations++;
+
+        AccessoryAnchorState screenClampState;
+        updateAnchor(&screenClampState, AccessoryAnchorOperation::Initialize,
+            false, 1400, 900, 1920, 1080, 1.0f);
+        const auto technicalClamp = updateAnchor(
+            &screenClampState, AccessoryAnchorOperation::ScreenBoundsChanged,
+            false, 1400, 900, 1280, 720, 1.0f);
+        const auto afterTechnicalRefresh = updateAnchor(
+            &screenClampState, AccessoryAnchorOperation::OrdinaryRefresh,
+            false, technicalClamp.layout.resolvedLeft,
+            technicalClamp.layout.resolvedTop, 1280, 720, 1.0f);
+        const bool technicalClampPass =
+            technicalClamp.layout.temporaryClampApplied &&
+            !technicalClamp.positionSettingsDirty &&
+            screenClampState.savedClosedAnchorLeft ==
+                technicalClamp.layout.resolvedLeft &&
+            screenClampState.savedClosedAnchorTop ==
+                technicalClamp.layout.resolvedTop &&
+            afterTechnicalRefresh.layout.resolvedLeft ==
+                technicalClamp.layout.resolvedLeft &&
+            afterTechnicalRefresh.layout.resolvedTop ==
+                technicalClamp.layout.resolvedTop &&
+            !afterTechnicalRefresh.layout.closedAnchorRestored;
+        if (!technicalClampPass) violations++;
+
+        xvatsim::brain::BrainOwnedRuntimeState brainState;
+        xvatsim::brain::BrainOwnedAccessoryHistoryEntryInput historyInput;
+        historyInput.drawer = xvatsim::brain::BrainOwnedAccessoryDrawerId::Metar;
+        historyInput.stableKey = "TRANSLATION";
+        historyInput.title = "Translation proof";
+        historyInput.body = "Texture-local content remains unchanged.";
+        const auto accepted =
+            xvatsim::brain::AcceptBrainOwnedAccessoryHistoryEntry(
+                &brainState, historyInput);
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest selection;
+        selection.drawer = xvatsim::brain::BrainOwnedAccessoryDrawerId::Metar;
+        selection.requestSequence = 1;
+        const auto selected =
+            xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+                &brainState, selection);
+        AccessoryAnchorState translationState;
+        const auto translationClosed = updateAnchor(
+            &translationState, AccessoryAnchorOperation::Initialize,
+            false, 300, 900, 1920, 1080, 1.0f);
+        const auto translationOpen = updateAnchor(
+            &translationState, AccessoryAnchorOperation::OpenDrawer,
+            true, translationClosed.layout.resolvedLeft,
+            translationClosed.layout.resolvedTop, 1920, 1080, 1.0f);
+        const auto presentation =
+            xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+                &brainState, 1, nullptr);
+        xvatsim::modules::overlay::AccessoryPresentationState presenter;
+        xvatsim::modules::overlay::AccessoryPresentationUpdateInput warmInput;
+        warmInput.presentation = presentation;
+        warmInput.layout = translationOpen.layout;
+        warmInput.preparedPlan = Step3PreparePresentationPlan(
+            context, presentation, translationOpen.layout);
+        warmInput.mainCardProductionSignature = "translation-main";
+        warmInput.measurementContext = context->measurementContext;
+        const auto warm = xvatsim::modules::overlay::UpdateAccessoryPresentation(
+            &presenter, warmInput);
+        const auto railSignature = presenter.railRenderSignature;
+        const auto drawerSignature = presenter.drawerRenderSignature;
+        const auto snapshotIdentity = presenter.activeSnapshotIdentity;
+        const auto gdiBefore =
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto translated = updateAnchor(
+            &translationState, AccessoryAnchorOperation::IntentionalMove,
+            true, 480, 780, 1920, 1080, 1.0f);
+        auto translatedInput = warmInput;
+        translatedInput.layout = translated.layout;
+        const auto translatedUpdate =
+            xvatsim::modules::overlay::UpdateAccessoryPresentation(
+                &presenter, translatedInput);
+        const auto gdiAfter =
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto gdiDelta = Step3GdiCounterDelta(gdiBefore, gdiAfter);
+        const auto& delta = translatedUpdate.delta;
+        const bool translationZeroWork = accepted.accepted &&
+            selected.action ==
+                xvatsim::brain::BrainOwnedAccessoryDrawerAction::Opened &&
+            warm.delta.railRasterRequests == 1 &&
+            warm.delta.drawerRasterRequests == 1 &&
+            allAttached(translationOpen.layout, translated.layout) &&
+            delta.historyVisits == 0 && delta.entryCopies == 0 &&
+            delta.wrapVisits == 0 && delta.mainCardRasterRequests == 0 &&
+            delta.railRasterRequests == 0 &&
+            delta.drawerRasterRequests == 0 && delta.uploadRequests == 0 &&
+            gdiDelta.measurementCalls == 0 &&
+            gdiDelta.bitmapConstructions == 0 &&
+            gdiDelta.graphicsConstructions == 0 &&
+            gdiDelta.fontConstructions == 0 &&
+            presenter.railRenderSignature == railSignature &&
+            presenter.drawerRenderSignature == drawerSignature &&
+            presenter.activeSnapshotIdentity == snapshotIdentity &&
+            presenter.layoutGeneration == 1;
+        if (!translationZeroWork) violations++;
+
+        context->observed[prefix + ".compact_scale_pass"] =
+            std::to_string(compactScalePass);
+        context->observed[prefix + ".compact_physical_sizes"] =
+            JoinCsv(compactPhysicalSizes);
+        context->observed[prefix + ".six_line_pass"] =
+            std::to_string(sixLinePass);
+        context->observed[prefix + ".content_separation_pass"] =
+            std::to_string(contentSeparationPass);
+        context->observed[prefix + ".closed_drag_samples"] =
+            std::to_string(closedDragSamples);
+        context->observed[prefix + ".closed_attachment_pass"] =
+            std::to_string(closedAttachmentPass);
+        context->observed[prefix + ".closed_release_retained"] =
+            Step3Bool(closedReleaseRetained);
+        context->observed[prefix + ".ordinary_refresh_retained"] =
+            Step3Bool(closedReleaseRetained);
+        context->observed[prefix + ".disable_enable_retained"] =
+            Step3Bool(disableEnableRetained);
+        context->observed[prefix + ".open_drag_samples"] =
+            std::to_string(openDragSamples);
+        context->observed[prefix + ".open_attachment_pass"] =
+            std::to_string(openAttachmentPass);
+        context->observed[prefix + ".open_drag_replaced_anchor"] =
+            Step3Bool(openDragReplacedAnchor);
+        context->observed[prefix + ".temporary_clamp_restored"] =
+            Step3Bool(temporaryClampRestored);
+        context->observed[prefix + ".technical_clamp_pass"] =
+            Step3Bool(technicalClampPass);
+        context->observed[prefix + ".translation_zero_work"] =
+            Step3Bool(translationZeroWork);
+        context->observed[prefix + ".translation_history_visits"] =
+            std::to_string(delta.historyVisits);
+        context->observed[prefix + ".translation_copies"] =
+            std::to_string(delta.entryCopies);
+        context->observed[prefix + ".translation_wraps"] =
+            std::to_string(delta.wrapVisits);
+        context->observed[prefix + ".translation_rail"] =
+            std::to_string(delta.railRasterRequests);
+        context->observed[prefix + ".translation_drawer"] =
+            std::to_string(delta.drawerRasterRequests);
+        context->observed[prefix + ".translation_uploads"] =
+            std::to_string(delta.uploadRequests);
+        context->observed[prefix + ".translation_gdi"] =
+            std::to_string(gdiDelta.measurementCalls);
+        context->observed[prefix + ".violations"] =
+            std::to_string(violations);
+        return true;
+    }
+    if (parts[0] == "hit-matrix" && parts.size() == 2) {
+        const float scales[]{0.85f,1.0f,1.35f};
+        int layouts=0,visibleOrbs=0,centerHits=0,edgeHits=0,outsideMisses=0;
+        int gapMisses=0,drawerIdentityMatches=0,labelFits=0,openFits=0;
+        int designDiameterPass=0,physicalDiameterPass=0,coordinatePass=0;
+        int labelMeasurementPass=0,indicatorMeasurementPass=0;
+        std::vector<std::string> physicalDiameters;
+        std::vector<std::string> labelMeasurements;
+        std::vector<std::string> indicatorMeasurements;
+        for(float scale:scales){
+            xvatsim::modules::overlay::AccessoryLayoutInput input;
+            input.scale=scale; input.cardAnimationProgress=1.0f;
+            const auto layout=ResolveStep3Layout(context,input);
+            if(layout.status==xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available) layouts++;
+            if(layout.orbDiameterDesignPixels==52) designDiameterPass++;
+            const int expectedPhysical=static_cast<int>(std::lround(52.0f*scale));
+            physicalDiameters.push_back(layout.orbs.empty()
+                ? "0"
+                : std::to_string(layout.orbs.front().diameterPhysicalPixels));
+            bool layoutPhysicalPass=layout.orbs.size()==3;
+            bool layoutCoordinatePass=layout.orbs.size()==3 &&
+                layout.railDesignBounds.top==320 && layout.railDesignBounds.bottom==372 &&
+                layout.drawerDesignBounds.top==378 && layout.drawerDesignBounds.bottom==494 &&
+                layout.interOrbGapDesignPixels==16;
+            for(const auto& orb:layout.orbs){
+                if(orb.visible) visibleOrbs++;
+                if(orb.labelFits) labelFits++;
+                if(orb.openIndicatorFits) openFits++;
+                const bool labelMeasured=
+                    orb.labelMeasuredWidth>0 && orb.labelMeasuredHeight>0 &&
+                    orb.labelMeasuredWidth<=orb.labelAvailableWidth &&
+                    orb.labelMeasuredHeight<=orb.labelAvailableHeight;
+                const bool indicatorMeasured=
+                    orb.openIndicatorMeasuredWidth>0 &&
+                    orb.openIndicatorMeasuredHeight>0 &&
+                    orb.openIndicatorMeasuredWidth<=orb.openIndicatorAvailableWidth &&
+                    orb.openIndicatorMeasuredHeight<=orb.openIndicatorAvailableHeight;
+                if(labelMeasured) labelMeasurementPass++;
+                if(indicatorMeasured) indicatorMeasurementPass++;
+                std::ostringstream labelRecord;
+                labelRecord << scale << ':' << Step3Drawer(orb.drawer) << '='
+                    << orb.labelMeasuredWidth << 'x' << orb.labelMeasuredHeight
+                    << '/' << orb.labelAvailableWidth << 'x'
+                    << orb.labelAvailableHeight;
+                labelMeasurements.push_back(labelRecord.str());
+                std::ostringstream indicatorRecord;
+                indicatorRecord << scale << ':' << Step3Drawer(orb.drawer) << '='
+                    << orb.openIndicatorMeasuredWidth << 'x'
+                    << orb.openIndicatorMeasuredHeight << '/'
+                    << orb.openIndicatorAvailableWidth << 'x'
+                    << orb.openIndicatorAvailableHeight;
+                indicatorMeasurements.push_back(indicatorRecord.str());
+                const int x=(orb.bounds.left+orb.bounds.right)/2;
+                const int y=(orb.bounds.top+orb.bounds.bottom)/2;
+                const int radius=orb.diameterPhysicalPixels/2;
+                const auto center=xvatsim::modules::overlay::HitTestAccessoryOrb(layout,x,y);
+                const auto edge=xvatsim::modules::overlay::HitTestAccessoryOrb(layout,x+radius-1,y);
+                const auto outside=xvatsim::modules::overlay::HitTestAccessoryOrb(layout,x+radius+1,y);
+                if(center.handled) centerHits++;
+                if(edge.handled) edgeHits++;
+                if(!outside.handled) outsideMisses++;
+                if(center.handled && center.drawer==orb.drawer) drawerIdentityMatches++;
+                layoutPhysicalPass=layoutPhysicalPass &&
+                    orb.diameterPhysicalPixels==expectedPhysical;
+            }
+            if(layout.orbs.size()==3) {
+                const int expectedLeft[]{118,186,254};
+                const int expectedRight[]{170,238,306};
+                const int expectedCenterX[]{144,212,280};
+                for(std::size_t index=0;index<3;++index) {
+                    const auto& orb=layout.orbs[index];
+                    layoutCoordinatePass=layoutCoordinatePass &&
+                        orb.designBounds.left==expectedLeft[index] &&
+                        orb.designBounds.right==expectedRight[index] &&
+                        orb.designBounds.top==320 && orb.designBounds.bottom==372 &&
+                        orb.designCenter.x==expectedCenterX[index] &&
+                        orb.designCenter.y==346;
+                }
+            }
+            if(layoutPhysicalPass) physicalDiameterPass++;
+            if(layoutCoordinatePass) coordinatePass++;
+            for(std::size_t index=1;index<layout.orbs.size();++index){
+                const int gapX=(layout.orbs[index-1].bounds.right+layout.orbs[index].bounds.left)/2;
+                const int gapY=(layout.orbs[index].bounds.top+layout.orbs[index].bounds.bottom)/2;
+                if(!xvatsim::modules::overlay::HitTestAccessoryOrb(layout,gapX,gapY).handled) gapMisses++;
+            }
+        }
+        context->observed[parts[1]+".layouts"]=std::to_string(layouts);
+        context->observed[parts[1]+".visible_orbs"]=std::to_string(visibleOrbs);
+        context->observed[parts[1]+".center_hits"]=std::to_string(centerHits);
+        context->observed[parts[1]+".edge_hits"]=std::to_string(edgeHits);
+        context->observed[parts[1]+".outside_misses"]=std::to_string(outsideMisses);
+        context->observed[parts[1]+".gap_misses"]=std::to_string(gapMisses);
+        context->observed[parts[1]+".identity_matches"]=std::to_string(drawerIdentityMatches);
+        context->observed[parts[1]+".design_diameter_pass"]=
+            std::to_string(designDiameterPass);
+        context->observed[parts[1]+".physical_diameter_pass"]=
+            std::to_string(physicalDiameterPass);
+        context->observed[parts[1]+".physical_diameters"]=JoinCsv(physicalDiameters);
+        context->observed[parts[1]+".coordinate_pass"]=
+            std::to_string(coordinatePass);
+        context->observed[parts[1]+".label_fits"]=std::to_string(labelFits);
+        context->observed[parts[1]+".open_fits"]=std::to_string(openFits);
+        context->observed[parts[1]+".label_measurement_pass"]=
+            std::to_string(labelMeasurementPass);
+        context->observed[parts[1]+".indicator_measurement_pass"]=
+            std::to_string(indicatorMeasurementPass);
+        context->observed[parts[1]+".label_measurement_record"]=
+            JoinCsv(labelMeasurements);
+        context->observed[parts[1]+".indicator_measurement_record"]=
+            JoinCsv(indicatorMeasurements);
+        return true;
+    }
+    if (parts[0] == "hit" && parts.size() == 5) {
+        int x=0,y=0; if(!parseInt(parts[2],&x)||!parseInt(parts[3],&y)) return fail("invalid hit point");
+        auto found=context->layouts.find(parts[1]); if(found==context->layouts.end()) return fail("layout missing");
+        auto result=xvatsim::modules::overlay::HitTestAccessoryOrb(found->second,x,y);
+        context->hits[parts[4]]=result;
+        context->observed[parts[4]+".status"]=Step3Status(result.status);
+        context->observed[parts[4]+".handled"]=Step3Bool(result.handled);
+        context->observed[parts[4]+".drawer"]=Step3Drawer(result.drawer);
+        return true;
+    }
+    if (parts[0] == "hit-orb" && parts.size() == 5) {
+        const auto layout=context->layouts.find(parts[1]);
+        if(layout==context->layouts.end()) return fail("layout missing");
+        const auto drawer=Step3DrawerFromToken(parts[2]);
+        const auto orb=std::find_if(
+            layout->second.orbs.begin(),layout->second.orbs.end(),
+            [&](const auto& candidate){return candidate.drawer==drawer;});
+        if(orb==layout->second.orbs.end()) {
+            context->hits[parts[4]]={};
+            context->observed[parts[4]+".status"]="unavailable";
+            context->observed[parts[4]+".handled"]="false";
+            context->observed[parts[4]+".drawer"]="NONE";
+            return true;
+        }
+        const int centerX=(orb->bounds.left+orb->bounds.right)/2;
+        const int centerY=(orb->bounds.top+orb->bounds.bottom)/2;
+        const int radius=orb->diameterPhysicalPixels/2;
+        int x=centerX;
+        if(parts[3]=="edge") x=centerX+radius-1;
+        else if(parts[3]=="outside") x=centerX+radius+1;
+        const auto result=xvatsim::modules::overlay::HitTestAccessoryOrb(
+            layout->second,x,centerY);
+        context->hits[parts[4]]=result;
+        context->observed[parts[4]+".status"]=Step3Status(result.status);
+        context->observed[parts[4]+".handled"]=Step3Bool(result.handled);
+        context->observed[parts[4]+".drawer"]=Step3Drawer(result.drawer);
+        return true;
+    }
+    if (parts[0] == "wrap" && parts.size() == 3) {
+        xvatsim::modules::overlay::AccessoryTextLayoutInput input;
+        if(parts[1]=="normal") input.text="METAR data is not enabled in Step 3.";
+        else if(parts[1]=="words") input.text=
+            "Measured wrapping keeps complete words together whenever the next word "
+            "would exceed the available drawer width.";
+        else if(parts[1]=="whitespace") input.text="A  B\r\nC\tD";
+        else if(parts[1]=="token") input.text=std::string(256,'A');
+        else if(parts[1]=="long") input.text=std::string(4096,'L');
+        else input.text=std::string(8189,'Z') + "\xE2\x82\xAC" + std::string(1000,'Q');
+        input.contentWidth=340; input.maxRetainedBytes=8192;
+        auto result=xvatsim::modules::overlay::BuildAccessoryTextLayout(
+            context->measurementContext,input);
+        context->observed[parts[2]+".status"]=Step3Status(result.status);
+        context->observed[parts[2]+".fits"]=Step3Bool(result.allLinesFit);
+        context->observed[parts[2]+".measurement_available"]=
+            Step3Bool(result.measurementAvailable);
+        context->observed[parts[2]+".word_wrapped"]=
+            Step3Bool(result.usedWordWrapping);
+        context->observed[parts[2]+".character_fallback"]=
+            Step3Bool(result.usedCharacterFallback);
+        context->observed[parts[2]+".maximum_measured_width"]=
+            std::to_string(result.maximumMeasuredLineWidth);
+        context->observed[parts[2]+".measured_within_width"]=Step3Bool(
+            result.maximumMeasuredLineWidth<=input.contentWidth);
+        context->observed[parts[2]+".limited"]=Step3Bool(result.contentLimited);
+        context->observed[parts[2]+".valid_utf8"]=Step3Bool(result.validUtf8);
+        context->observed[parts[2]+".valid_boundary"]=
+            Step3Bool(result.endedAtValidUtf8Boundary &&
+                      Step3IsValidUtf8(result.reconstructedText));
+        context->observed[parts[2]+".marker_visible"]=
+            Step3Bool(result.contentLimitedMarkerVisible &&
+                      result.reconstructedText.find("CONTENT LIMITED") != std::string::npos);
+        context->observed[parts[2]+".retained_bytes"]=
+            std::to_string(result.retainedBytes);
+        context->observed[parts[2]+".reconstructed_exact"]=
+            Step3Bool(result.reconstructedText == input.text);
+        const std::string permittedNormalized = parts[1]=="whitespace"
+            ? std::string("A  B\nC\tD")
+            : input.text;
+        context->observed[parts[2]+".normalization_contract"]=
+            Step3Bool(result.reconstructedText == permittedNormalized);
+        context->observed[parts[2]+".reconstructed_matches_lines"]=
+            Step3Bool(
+                Step3RemoveLineFeeds(result.reconstructedText)==
+                Step3ConcatenateLines(result.lines));
+        context->observed[parts[2]+".line_count"]=std::to_string(result.lines.size());
+        context->observed[parts[2]+".duration_us"]=
+            std::to_string(result.elapsedMicroseconds);
+        context->observed[parts[2]+".within_16_7ms"]=
+            Step3Bool(result.elapsedMicroseconds<=16700);
+        context->observed[parts[2]+".timing_record"]=
+            std::to_string(result.elapsedMicroseconds)+"us";
+        context->observed[parts[2]+".final_marker"]=result.finalMarker;
+        return true;
+    }
+    if (parts[0] == "wrap-measurement-matrix" && parts.size() == 2) {
+        const float scales[]{0.85f,1.0f,1.35f};
+        const std::string words=
+            "Measured wrapping keeps complete words together whenever the next word "
+            "would exceed the available drawer width.";
+        const std::string token(256,'A');
+        int availableCases=0,wordFitCases=0,wordWrapCases=0;
+        int tokenFitCases=0,tokenFallbackCases=0,violations=0;
+        std::vector<std::string> records;
+        for(const auto scale:scales) {
+            const int contentWidth=static_cast<int>(std::lround(340.0f*scale));
+            xvatsim::modules::overlay::AccessoryTextLayoutInput wordInput;
+            wordInput.text=words;
+            wordInput.contentWidth=contentWidth;
+            wordInput.maxRetainedBytes=8192;
+            wordInput.scale=scale;
+            wordInput.fontRole=
+                xvatsim::modules::overlay::AccessoryFontRole::DrawerBody;
+            const auto wordResult=
+                xvatsim::modules::overlay::BuildAccessoryTextLayout(
+                    context->measurementContext,wordInput);
+            auto tokenInput=wordInput;
+            tokenInput.text=token;
+            const auto tokenResult=
+                xvatsim::modules::overlay::BuildAccessoryTextLayout(
+                    context->measurementContext,tokenInput);
+            const bool available=
+                wordResult.measurementAvailable && tokenResult.measurementAvailable;
+            const bool wordFit=wordResult.allLinesFit &&
+                wordResult.maximumMeasuredLineWidth<=contentWidth;
+            const bool tokenFit=tokenResult.allLinesFit &&
+                tokenResult.maximumMeasuredLineWidth<=contentWidth;
+            if(available) availableCases++; else violations++;
+            if(wordFit) wordFitCases++; else violations++;
+            if(wordResult.usedWordWrapping) wordWrapCases++; else violations++;
+            if(tokenFit) tokenFitCases++; else violations++;
+            if(tokenResult.usedCharacterFallback) tokenFallbackCases++;
+            else violations++;
+            std::ostringstream record;
+            record << scale << ":words="
+                   << wordResult.maximumMeasuredLineWidth << '/' << contentWidth
+                   << ":token=" << tokenResult.maximumMeasuredLineWidth
+                   << '/' << contentWidth;
+            records.push_back(record.str());
+        }
+        const auto& prefix=parts[1];
+        context->observed[prefix+".cases"]="3";
+        context->observed[prefix+".available_cases"]=
+            std::to_string(availableCases);
+        context->observed[prefix+".word_fit_cases"]=
+            std::to_string(wordFitCases);
+        context->observed[prefix+".word_wrap_cases"]=
+            std::to_string(wordWrapCases);
+        context->observed[prefix+".token_fit_cases"]=
+            std::to_string(tokenFitCases);
+        context->observed[prefix+".token_fallback_cases"]=
+            std::to_string(tokenFallbackCases);
+        context->observed[prefix+".violations"]=std::to_string(violations);
+        context->observed[prefix+".measurement_record"]=JoinCsv(records);
+        return true;
+    }
+    if (parts[0] == "wrap-performance-matrix" && parts.size() == 2) {
+        const auto fillExact=[](
+            const std::string& pattern,
+            std::size_t bytes,
+            const std::string& tail=std::string{}) {
+            std::string value;
+            value.reserve(bytes);
+            const auto bodyBytes=bytes-tail.size();
+            while(value.size()+pattern.size()<=bodyBytes) value+=pattern;
+            while(value.size()<bodyBytes) value.push_back('X');
+            value+=tail;
+            return value;
+        };
+        std::vector<std::string> inputs{
+            fillExact("W",8192),
+            fillExact("M",8192),
+            fillExact("Q",8192),
+            fillExact("i",8192),
+            fillExact("l",8192),
+            fillExact(".",8192),
+            fillExact("1",8192),
+            fillExact("WiM1",8192),
+            fillExact("Ab9Z",8192),
+            fillExact(".,;!",8192),
+            fillExact("Wili",8192),
+            fillExact("Q1iM",8192),
+            fillExact("A",8192,"X"),
+            fillExact("A",8192,"Y"),
+            fillExact("B",8192,"Z"),
+            fillExact("B",8192,"Q"),
+            fillExact("\xC3\xA9",8192),
+            fillExact("\xE2\x82\xAC",8192,"XX"),
+            fillExact("\xF0\x9F\x9B\xA9",8192),
+            fillExact("W\xC3\xA9\xE2\x82\xAC",8192,"Z")};
+        int validInputs=0,fitPass=0,reconstructionPass=0;
+        int fallbackPass=0,withinPass=0;
+        std::vector<std::uint64_t> durations;
+        std::vector<std::string> durationRecords;
+        for(std::size_t index=0;index<inputs.size();++index) {
+            xvatsim::modules::overlay::AccessoryTextLayoutInput input;
+            input.text=inputs[index];
+            input.contentWidth=340;
+            input.maxRetainedBytes=8192;
+            input.scale=1.0f;
+            input.fontRole=
+                xvatsim::modules::overlay::AccessoryFontRole::DrawerBody;
+            const auto result=
+                xvatsim::modules::overlay::BuildAccessoryTextLayout(
+                    context->measurementContext,input);
+            if(Step3IsValidUtf8(input.text) && input.text.size()==8192) {
+                validInputs++;
+            }
+            if(result.allLinesFit && result.maximumMeasuredLineWidth<=340) {
+                fitPass++;
+            }
+            if(result.reconstructedText==input.text &&
+                Step3ConcatenateLines(result.lines)==input.text) {
+                reconstructionPass++;
+            }
+            if(result.usedCharacterFallback) fallbackPass++;
+            if(result.elapsedMicroseconds<=16700) withinPass++;
+            durations.push_back(result.elapsedMicroseconds);
+            durationRecords.push_back(
+                std::to_string(index+1)+"="+
+                std::to_string(result.elapsedMicroseconds)+"us");
+        }
+        auto sortedDurations=durations;
+        std::sort(sortedDurations.begin(),sortedDurations.end());
+        const auto percentile=[&](double fraction) {
+            const auto rank=static_cast<std::size_t>(
+                std::ceil(fraction*static_cast<double>(sortedDurations.size())));
+            return sortedDurations[std::max<std::size_t>(1,rank)-1];
+        };
+        const auto& prefix=parts[1];
+        context->observed[prefix+".count"]=std::to_string(inputs.size());
+        context->observed[prefix+".distinct_count"]=std::to_string(
+            std::unordered_set<std::string>(inputs.begin(),inputs.end()).size());
+        context->observed[prefix+".valid_inputs"]=std::to_string(validInputs);
+        context->observed[prefix+".fit_pass"]=std::to_string(fitPass);
+        context->observed[prefix+".reconstruction_pass"]=
+            std::to_string(reconstructionPass);
+        context->observed[prefix+".fallback_pass"]=
+            std::to_string(fallbackPass);
+        context->observed[prefix+".within_pass"]=std::to_string(withinPass);
+        context->observed[prefix+".p50_us"]=std::to_string(percentile(0.50));
+        context->observed[prefix+".p95_us"]=std::to_string(percentile(0.95));
+        context->observed[prefix+".maximum_us"]=
+            std::to_string(sortedDurations.back());
+        context->observed[prefix+".timing_record"]=
+            JoinCsv(durationRecords)+",p50="+
+            context->observed[prefix+".p50_us"]+"us,p95="+
+            context->observed[prefix+".p95_us"]+"us,max="+
+            context->observed[prefix+".maximum_us"]+"us";
+        return true;
+    }
+    if (parts[0] == "history-layout" && parts.size() == 4) {
+        const auto found=context->snapshots.find(parts[1]);
+        const auto layout=context->layouts.find(parts[2]);
+        if(found==context->snapshots.end() || found->second.snapshot==nullptr) {
+            context->observed[parts[3]+".status"]="unavailable";
+            context->observed[parts[3]+".drawer"]="NONE";
+            context->observed[parts[3]+".keys"]="";
+            context->observed[parts[3]+".titles"]="";
+            context->observed[parts[3]+".bodies"]="";
+            context->observed[parts[3]+".sequences"]="";
+            context->observed[parts[3]+".maximum_offset"]="0";
+            context->observed[parts[3]+".final_marker"]="";
+            context->observed[parts[3]+".marker_owned"]="false";
+            return true;
+        }
+        if(layout==context->layouts.end()) return fail("history layout geometry missing");
+        const auto result=xvatsim::modules::overlay::BuildAccessoryHistoryLayout(
+            context->measurementContext,*found->second.snapshot,layout->second);
+        context->observed[parts[3]+".status"]=Step3Status(result.status);
+        context->observed[parts[3]+".drawer"]=Step3Drawer(result.drawer);
+        context->observed[parts[3]+".keys"]=JoinCsv(result.renderedEntryKeys);
+        context->observed[parts[3]+".titles"]=JoinCsv(result.renderedEntryTitles);
+        context->observed[parts[3]+".bodies"]=JoinCsv(result.renderedEntryBodies);
+        context->observed[parts[3]+".pairing_intact"]=Step3Bool(
+            result.renderedEntryKeys.size()==result.renderedEntryTitles.size() &&
+            result.renderedEntryKeys.size()==result.renderedEntryBodies.size() &&
+            result.renderedEntryKeys.size()==result.renderedTitleLines.size() &&
+            result.renderedEntryKeys.size()==result.renderedBodyLines.size());
+        bool titleMarkerVisible=false;
+        std::size_t measuredTitleLines=0;
+        std::size_t measuredBodyLines=0;
+        for(const auto& lines:result.renderedTitleLines) {
+            measuredTitleLines+=lines.size();
+            titleMarkerVisible=titleMarkerVisible ||
+                Step3ConcatenateLines(lines).find("CONTENT LIMITED")!=
+                    std::string::npos;
+        }
+        for(const auto& lines:result.renderedBodyLines) {
+            measuredBodyLines+=lines.size();
+        }
+        context->observed[parts[3]+".title_marker_visible"]=
+            Step3Bool(titleMarkerVisible);
+        context->observed[parts[3]+".title_line_count"]=
+            std::to_string(measuredTitleLines);
+        context->observed[parts[3]+".body_line_count"]=
+            std::to_string(measuredBodyLines);
+        std::vector<std::string> sequences;
+        for(const auto value:result.renderedAcceptedSequences) {
+            sequences.push_back(std::to_string(value));
+        }
+        context->observed[parts[3]+".sequences"]=JoinCsv(sequences);
+        context->observed[parts[3]+".maximum_offset"]=std::to_string(result.maximumOffset);
+        context->observed[parts[3]+".visible_capacity"]=
+            std::to_string(result.visibleLineCapacity);
+        context->observed[parts[3]+".total_lines"]=
+            std::to_string(result.totalScrollableLineCount);
+        context->observed[parts[3]+".capacity_matches_layout"]=Step3Bool(
+            result.visibleLineCapacity==layout->second.drawerVisibleLineCapacity);
+        context->observed[parts[3]+".all_wrapped_lines_fit"]=
+            Step3Bool(result.allWrappedLinesFit);
+        context->observed[parts[3]+".final_marker"]=result.finalMarker;
+        context->observed[parts[3]+".marker_owned"]=
+            Step3Bool(result.finalMarkerBelongsToSelectedHistory);
+        return true;
+    }
+    if (parts[0] == "wheel-point" && parts.size() == 7) {
+        int clicks=0,offset=0,maximum=0;
+        try { clicks=std::stoi(parts[3]); } catch (...) { return fail("invalid wheel clicks"); }
+        if(!parseInt(parts[4],&offset)||!parseInt(parts[5],&maximum)) {
+            return fail("invalid wheel input");
+        }
+        const auto layout=context->layouts.find(parts[1]);
+        if(layout==context->layouts.end()) return fail("wheel layout missing");
+        xvatsim::modules::overlay::AccessoryWheelInput input;
+        input.layout=layout->second;
+        const auto center=[](const auto& rect){
+            return std::pair<int,int>{(rect.left+rect.right)/2,(rect.top+rect.bottom)/2};
+        };
+        std::pair<int,int> point;
+        if(parts[2]=="drawer") point=center(layout->second.drawerBounds);
+        else if(parts[2]=="main") point=center(layout->second.mainCardBounds);
+        else point={layout->second.resolvedBounds.right+1,layout->second.resolvedBounds.top+1};
+        input.pointerX=point.first;
+        input.pointerY=point.second;
+        input.wheelClicks=clicks;
+        input.drawerOffset=offset;
+        input.drawerMaximumOffset=maximum;
+        input.mainCardOffset=offset;
+        input.mainCardMaximumOffset=maximum;
+        auto result=xvatsim::modules::overlay::ApplyAccessoryWheel(input);
+        context->observed[parts[6]+".status"]=Step3Status(result.status);
+        context->observed[parts[6]+".scope"]=Step3WheelScope(result.scope);
+        context->observed[parts[6]+".handled"]=Step3Bool(result.handled);
+        context->observed[parts[6]+".drawer_changed"]=Step3Bool(result.drawerChanged);
+        context->observed[parts[6]+".main_changed"]=Step3Bool(result.mainCardChanged);
+        context->observed[parts[6]+".raster"]=Step3Bool(result.accessoryRasterRequested);
+        context->observed[parts[6]+".drawer_offset"]=std::to_string(result.drawerOffset);
+        context->observed[parts[6]+".main_offset"]=std::to_string(result.mainCardOffset);
+        context->observed[parts[6]+".pointer_x"]=std::to_string(input.pointerX);
+        context->observed[parts[6]+".pointer_y"]=std::to_string(input.pointerY);
+        return true;
+    }
+    if (parts[0] == "perf-new" && parts.size() == 3) {
+        int epoch=0;
+        if(!parseInt(parts[2],&epoch) || epoch==0) return fail("invalid performance epoch");
+        auto collector=std::make_unique<
+            xvatsim::modules::overlay::AccessoryPerformanceCollector>();
+        collector->ResetForNewProcess(static_cast<std::uint64_t>(epoch));
+        context->performanceCollectors[parts[1]]=std::move(collector);
+        return true;
+    }
+    if (parts[0] == "perf-record-series" && parts.size() == 5) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        const auto category=Step3PerformanceCategoryFromToken(parts[2]);
+        if(category==xvatsim::modules::overlay::AccessoryPerformanceCategory::Count) {
+            return fail("invalid performance category");
+        }
+        int recorded=0;
+        for(const auto& value:Split(parts[3],',')) {
+            try {
+                collector->second->Record(category,std::stoull(value));
+                ++recorded;
+            } catch (...) {
+                return fail("invalid performance series");
+            }
+        }
+        context->observed[parts[4]+".recorded"]=std::to_string(recorded);
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),parts[4],&context->observed);
+        return true;
+    }
+    if (parts[0] == "perf-raster-reason" && parts.size() == 6) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        const bool drawer=parts[2]=="drawer";
+        if(!drawer && parts[2]!="rail") return fail("invalid raster surface");
+        const auto reason=Step3RasterReasonFromToken(parts[3]);
+        if(reason==xvatsim::modules::overlay::AccessoryRasterReason::Count) {
+            return fail("invalid raster reason");
+        }
+        int count=0;
+        if(!parseInt(parts[4],&count) || count<0) {
+            return fail("invalid raster reason count");
+        }
+        for(int index=0;index<count;++index) {
+            collector->second->RecordRasterReason(drawer,reason);
+        }
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),parts[5],&context->observed);
+        return true;
+    }
+    if (parts[0] == "perf-begin-dual-action" && parts.size() == 18) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        using Action=xvatsim::brain::BrainOwnedAccessoryDrawerAction;
+        Action action=Action::None;
+        if(parts[2]=="Opened") action=Action::Opened;
+        else if(parts[2]=="Switched") action=Action::Switched;
+        else if(parts[2]=="Closed") action=Action::Closed;
+        const bool cpuAvailable=parts[10]=="true";
+        if(!cpuAvailable && parts[10]!="false") {
+            return fail("invalid thread CPU availability");
+        }
+        try {
+            xvatsim::modules::overlay::AccessoryActionDispatchTimingInput timing;
+            timing.dispatchStartedMicroseconds=std::stoull(parts[5]);
+            timing.dispatchCompletedMicroseconds=std::stoull(parts[6]);
+            for(std::size_t index=0;index<5;++index) {
+                timing.stages.elapsedMicroseconds[index]=
+                    std::stoull(parts[12+index]);
+            }
+            const auto began=collector->second->BeginDrawerAction(
+                action,std::stoull(parts[3]),std::stoull(parts[4]),
+                std::stoull(parts[7]),std::stoull(parts[8]),
+                std::stoull(parts[6]),std::stoull(parts[9]),timing);
+            context->observed[parts[17]+".began"]=Step3Bool(began);
+        } catch (...) {
+            return fail("invalid dual-clock action input");
+        }
+        return true;
+    }
+    if (parts[0] == "perf-complete-dual" && parts.size() == 14) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        const bool cpuAvailable=parts[9]=="true";
+        if(!cpuAvailable && parts[9]!="false") {
+            return fail("invalid draw thread CPU availability");
+        }
+        try {
+            xvatsim::modules::overlay::AccessoryActionDrawTimingInput timing;
+            timing.actionDrawWallMicroseconds=std::stoull(parts[8]);
+            timing.renderWallFailure=parts[11]!="none";
+            if(timing.renderWallFailure) {
+                timing.renderWallFailureCategory=
+                    Step3PerformanceCategoryFromToken(parts[11]);
+                if(timing.renderWallFailureCategory==
+                    xvatsim::modules::overlay::AccessoryPerformanceCategory::Count) {
+                    return fail("invalid render wall failure category");
+                }
+            }
+            timing.renderWallFailureMicroseconds=std::stoull(parts[12]);
+            const auto matching=collector->second->HasMatchingPendingAction(
+                std::stoull(parts[3]),std::stoull(parts[4]),
+                std::stoull(parts[7]));
+            const auto completed=collector->second->CompletePendingActions(
+                std::stoull(parts[2]),std::stoull(parts[3]),
+                std::stoull(parts[4]),std::stoull(parts[5]),
+                std::stoull(parts[6]),std::stoull(parts[7]),timing);
+            context->observed[parts[13]+".completed"]=
+                std::to_string(completed);
+            ObserveStep3PerformanceSnapshot(
+                collector->second->Snapshot(),parts[13],&context->observed);
+        } catch (...) {
+            return fail("invalid dual-clock completion input");
+        }
+        return true;
+    }
+    if (parts[0] == "perf-begin-phased-action" && parts.size() == 10) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        using Action=xvatsim::brain::BrainOwnedAccessoryDrawerAction;
+        Action action=Action::None;
+        if(parts[2]=="Opened") action=Action::Opened;
+        else if(parts[2]=="Switched") action=Action::Switched;
+        else if(parts[2]=="Closed") action=Action::Closed;
+        try {
+            xvatsim::modules::overlay::AccessoryActionDispatchTimingInput timing;
+            timing.dispatchStartedMicroseconds=std::stoull(parts[4]);
+            timing.dispatchCompletedMicroseconds=std::stoull(parts[5]);
+            const auto began=collector->second->BeginDrawerAction(
+                action,std::stoull(parts[3]),std::stoull(parts[4]),
+                std::stoull(parts[6]),std::stoull(parts[7]),
+                std::stoull(parts[5]),std::stoull(parts[8]),timing);
+            context->observed[parts[9]+".began"]=Step3Bool(began);
+        } catch (...) {
+            return fail("invalid phased action input");
+        }
+        return true;
+    }
+    if (parts[0] == "perf-complete-phased" && parts.size() == 10) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        try {
+            xvatsim::modules::overlay::AccessoryActionDrawTimingInput timing;
+            timing.actionDrawWallMicroseconds=std::stoull(parts[8]);
+            const auto completed=collector->second->CompletePendingActions(
+                std::stoull(parts[2]),std::stoull(parts[3]),
+                std::stoull(parts[4]),std::stoull(parts[5]),
+                std::stoull(parts[6]),std::stoull(parts[7]),
+                timing);
+            context->observed[parts[9]+".completed"]=
+                std::to_string(completed);
+            ObserveStep3PerformanceSnapshot(
+                collector->second->Snapshot(),parts[9],&context->observed);
+        } catch (...) {
+            return fail("invalid phased completion input");
+        }
+        return true;
+    }
+    if (parts[0] == "perf-begin-action" && parts.size() == 6) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        int sequence=0,started=0;
+        if(!parseInt(parts[3],&sequence)||!parseInt(parts[4],&started)) {
+            return fail("invalid performance action input");
+        }
+        using Action=xvatsim::brain::BrainOwnedAccessoryDrawerAction;
+        Action action=Action::None;
+        if(parts[2]=="Opened") action=Action::Opened;
+        else if(parts[2]=="Switched") action=Action::Switched;
+        else if(parts[2]=="Closed") action=Action::Closed;
+        const auto began=collector->second->BeginDrawerAction(
+            action,static_cast<std::uint64_t>(sequence),
+            static_cast<std::uint64_t>(started));
+        context->observed[parts[5]+".began"]=Step3Bool(began);
+        return true;
+    }
+    if (parts[0] == "perf-begin-scroll" && parts.size() == 4) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        int started=0;
+        if(!parseInt(parts[2],&started)) return fail("invalid scroll start");
+        context->observed[parts[3]+".began"]=Step3Bool(
+            collector->second->BeginEffectiveScroll(
+                static_cast<std::uint64_t>(started)));
+        return true;
+    }
+    if (parts[0] == "perf-complete" && parts.size() == 4) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        int completed=0;
+        if(!parseInt(parts[2],&completed)) return fail("invalid completion time");
+        context->observed[parts[3]+".completed"]=std::to_string(
+            collector->second->CompletePendingActions(
+                static_cast<std::uint64_t>(completed)));
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),parts[3],&context->observed);
+        return true;
+    }
+    if (parts[0] == "perf-warning" && parts.size() == 3) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        xvatsim::modules::overlay::AccessoryPerformanceCategory category;
+        std::uint64_t elapsed=0;
+        const auto emitted=collector->second->ConsumeFirstViolationWarning(
+            &category,&elapsed);
+        context->observed[parts[2]+".emitted"]=Step3Bool(emitted);
+        context->observed[parts[2]+".category"]=emitted
+            ? xvatsim::modules::overlay::AccessoryPerformanceCategoryToken(category)
+            : "none";
+        context->observed[parts[2]+".elapsed_us"]=std::to_string(elapsed);
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),parts[2],&context->observed);
+        return true;
+    }
+    if (parts[0] == "perf-publish" && parts.size() == 3) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        xvatsim::modules::overlay::AccessoryPerformanceSnapshot snapshot;
+        const auto published=
+            collector->second->BeginAggregatePublication(&snapshot);
+        context->observed[parts[2]+".published"]=Step3Bool(published);
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),parts[2],&context->observed);
+        return true;
+    }
+    if (parts[0] == "perf-snapshot" && parts.size() == 3) {
+        const auto collector=context->performanceCollectors.find(parts[1]);
+        if(collector==context->performanceCollectors.end()) {
+            return fail("performance collector missing");
+        }
+        ObserveStep3PerformanceSnapshot(
+            collector->second->Snapshot(),parts[2],&context->observed);
+        return true;
+    }
+    if (parts[0] == "presenter-new" && parts.size() == 2) {
+        context->presenters[parts[1]] =
+            xvatsim::modules::overlay::AccessoryPresentationState{};
+        return true;
+    }
+    if (parts[0] == "presenter-update" && parts.size() == 6) {
+        const auto snapshot=context->snapshots.find(parts[2]);
+        const auto layout=context->layouts.find(parts[3]);
+        if(snapshot==context->snapshots.end()) return fail("presentation snapshot missing");
+        if(layout==context->layouts.end()) return fail("presentation layout missing");
+        xvatsim::modules::overlay::AccessoryPresentationUpdateInput input;
+        input.presentation=snapshot->second;
+        input.layout=layout->second;
+        input.preparedPlan=Step3PreparePresentationPlan(
+            context,snapshot->second,layout->second);
+        input.measurementContext=context->measurementContext;
+        const auto main=context->mainCardSignatures.find(parts[4]);
+        if(main!=context->mainCardSignatures.end()) input.mainCardProductionSignature=main->second;
+        auto& presenter=context->presenters[parts[1]];
+        const auto gdiBefore=
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto result=xvatsim::modules::overlay::UpdateAccessoryPresentation(&presenter,input);
+        const auto gdiAfter=
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto& prefix=parts[5];
+        context->observed[prefix+".status"]=Step3Status(result.status);
+        context->observed[prefix+".snapshot_changed"]=Step3Bool(result.snapshotChanged);
+        context->observed[prefix+".selection_changed"]=Step3Bool(result.selectionChanged);
+        context->observed[prefix+".history_changed"]=Step3Bool(result.historyChanged);
+        context->observed[prefix+".layout_changed"]=Step3Bool(result.layoutChanged);
+        context->observed[prefix+".plan_built"]=Step3Bool(result.cachedPlanBuilt);
+        context->observed[prefix+".offset_reset"]=Step3Bool(result.drawerOffsetReset);
+        context->observed[prefix+".main_unchanged"]=Step3Bool(result.mainCardUnchanged);
+        context->observed[prefix+".published_count"]=
+            std::to_string(result.publishedSnapshotCount);
+        context->observed[prefix+".published_drawer"]=Step3Drawer(result.publishedDrawer);
+        context->observed[prefix+".intermediate_none"]=
+            Step3Bool(result.intermediateNonePublished);
+        ObserveStep3RenderCounters(result.delta,prefix,&context->observed);
+        ObserveStep3GdiCounters(
+            Step3GdiCounterDelta(gdiBefore,gdiAfter),
+            prefix,
+            &context->observed);
+        context->observed[prefix+".offset"]=std::to_string(presenter.drawerOffset);
+        context->observed[prefix+".maximum_offset"]=
+            std::to_string(presenter.drawerMaximumOffset);
+        context->observed[prefix+".snapshot_identity"]=
+            std::to_string(presenter.activeSnapshotIdentity);
+        context->observed[prefix+".selection_generation"]=
+            std::to_string(presenter.selectionGeneration);
+        context->observed[prefix+".history_generation"]=
+            std::to_string(presenter.historyGeneration);
+        context->observed[prefix+".layout_generation"]=
+            std::to_string(presenter.layoutGeneration);
+        context->observed[prefix+".keys"]=presenter.preparedPlan ?
+            JoinCsv(presenter.preparedPlan->layout.renderedEntryKeys) : "";
+        context->observed[prefix+".titles"]=presenter.preparedPlan ?
+            JoinCsv(presenter.preparedPlan->layout.renderedEntryTitles) : "";
+        context->observed[prefix+".bodies"]=presenter.preparedPlan ?
+            JoinCsv(presenter.preparedPlan->layout.renderedEntryBodies) : "";
+        context->observed[prefix+".title_marker_visible"]=
+            Step3Bool(Step3PresenterTitleMarkerVisible(presenter));
+        context->observed[prefix+".pairing_intact"]=
+            Step3Bool(Step3PresenterPairingIntact(presenter));
+        return true;
+    }
+    if (parts[0] == "presenter-warm" && parts.size() == 7) {
+        int iterations=0;
+        if(!parseInt(parts[5],&iterations)) return fail("invalid warm iteration count");
+        const auto snapshot=context->snapshots.find(parts[2]);
+        const auto layout=context->layouts.find(parts[3]);
+        if(snapshot==context->snapshots.end()) return fail("warm snapshot missing");
+        if(layout==context->layouts.end()) return fail("warm layout missing");
+        xvatsim::modules::overlay::AccessoryPresentationUpdateInput input;
+        input.presentation=snapshot->second;
+        input.layout=layout->second;
+        input.preparedPlan=Step3PreparePresentationPlan(
+            context,snapshot->second,layout->second);
+        input.measurementContext=context->measurementContext;
+        const auto main=context->mainCardSignatures.find(parts[4]);
+        if(main!=context->mainCardSignatures.end()) input.mainCardProductionSignature=main->second;
+        auto& presenter=context->presenters[parts[1]];
+        const auto gdiBefore=
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto result=
+            xvatsim::modules::overlay::RunUnchangedAccessoryPresentationUpdates(
+                &presenter,input,iterations);
+        const auto gdiAfter=
+            xvatsim::modules::overlay::GetAccessoryGdiMeasurementCounters(
+                context->measurementContext);
+        const auto& prefix=parts[6];
+        context->observed[prefix+".status"]=Step3Status(result.status);
+        context->observed[prefix+".iterations"]=std::to_string(result.iterations);
+        ObserveStep3RenderCounters(result.delta,prefix,&context->observed);
+        const auto gdiDelta=Step3GdiCounterDelta(gdiBefore,gdiAfter);
+        ObserveStep3GdiCounters(
+            gdiDelta,
+            prefix,
+            &context->observed);
+        context->observed[prefix+".zero_work_record"]=
+            "iterations="+std::to_string(result.iterations)+
+            ",gdi="+std::to_string(gdiDelta.measurementCalls)+
+            ",history="+std::to_string(result.delta.historyVisits)+
+            ",copies="+std::to_string(result.delta.entryCopies)+
+            ",wraps="+std::to_string(result.delta.wrapVisits)+
+            ",main="+std::to_string(result.delta.mainCardRasterRequests)+
+            ",rail="+std::to_string(result.delta.railRasterRequests)+
+            ",drawer="+std::to_string(result.delta.drawerRasterRequests)+
+            ",uploads="+std::to_string(result.delta.uploadRequests);
+        return true;
+    }
+    if (parts[0] == "presenter-scroll" && parts.size() == 6) {
+        int clicks=0;
+        try { clicks=std::stoi(parts[4]); } catch (...) { return fail("invalid presenter scroll"); }
+        const auto layout=context->layouts.find(parts[2]);
+        if(layout==context->layouts.end()) return fail("presenter scroll layout missing");
+        xvatsim::modules::overlay::AccessoryPresentationScrollInput input;
+        input.layout=layout->second;
+        if(parts[3]=="drawer") {
+            input.pointerX=(input.layout.drawerBounds.left+input.layout.drawerBounds.right)/2;
+            input.pointerY=(input.layout.drawerBounds.top+input.layout.drawerBounds.bottom)/2;
+        } else if(parts[3]=="main") {
+            input.pointerX=(input.layout.mainCardBounds.left+input.layout.mainCardBounds.right)/2;
+            input.pointerY=(input.layout.mainCardBounds.top+input.layout.mainCardBounds.bottom)/2;
+        } else if(parts[3]=="outside") {
+            input.pointerX=input.layout.resolvedBounds.right+1;
+            input.pointerY=input.layout.resolvedBounds.bottom+1;
+        } else {
+            return fail("invalid presenter scroll pointer region");
+        }
+        input.wheelClicks=clicks;
+        auto& presenter=context->presenters[parts[1]];
+        const auto result=xvatsim::modules::overlay::ScrollAccessoryPresentation(
+            &presenter,input);
+        const auto& prefix=parts[5];
+        context->observed[prefix+".status"]=Step3Status(result.status);
+        context->observed[prefix+".scope"]=Step3WheelScope(result.scope);
+        context->observed[prefix+".handled"]=Step3Bool(result.handled);
+        context->observed[prefix+".changed"]=Step3Bool(result.changed);
+        context->observed[prefix+".reached_final"]=Step3Bool(result.reachedFinalMarker);
+        context->observed[prefix+".previous_offset"]=std::to_string(result.previousOffset);
+        context->observed[prefix+".offset"]=std::to_string(result.drawerOffset);
+        context->observed[prefix+".maximum_offset"]=
+            std::to_string(result.drawerMaximumOffset);
+        context->observed[prefix+".snapshot_identity"]=
+            std::to_string(presenter.activeSnapshotIdentity);
+        context->observed[prefix+".selection_generation"]=
+            std::to_string(presenter.selectionGeneration);
+        context->observed[prefix+".history_generation"]=
+            std::to_string(presenter.historyGeneration);
+        context->observed[prefix+".layout_generation"]=
+            std::to_string(presenter.layoutGeneration);
+        ObserveStep3RenderCounters(result.delta,prefix,&context->observed);
+        return true;
+    }
+    if (parts[0] == "presenter-scroll-to-max" && parts.size() == 4) {
+        const auto layout=context->layouts.find(parts[2]);
+        if(layout==context->layouts.end()) return fail("presenter max scroll layout missing");
+        auto& presenter=context->presenters[parts[1]];
+        const int measuredMaximum=presenter.drawerMaximumOffset;
+        const int requiredClicks=std::max(1,measuredMaximum-presenter.drawerOffset+1);
+        xvatsim::modules::overlay::AccessoryPresentationScrollInput input;
+        input.layout=layout->second;
+        input.pointerX=(input.layout.drawerBounds.left+input.layout.drawerBounds.right)/2;
+        input.pointerY=(input.layout.drawerBounds.top+input.layout.drawerBounds.bottom)/2;
+        input.wheelClicks=requiredClicks;
+        const auto result=xvatsim::modules::overlay::ScrollAccessoryPresentation(
+            &presenter,input);
+        const auto& prefix=parts[3];
+        context->observed[prefix+".status"]=Step3Status(result.status);
+        context->observed[prefix+".scope"]=Step3WheelScope(result.scope);
+        context->observed[prefix+".measured_maximum"]=std::to_string(measuredMaximum);
+        context->observed[prefix+".requested_clicks"]=std::to_string(requiredClicks);
+        context->observed[prefix+".offset"]=std::to_string(result.drawerOffset);
+        context->observed[prefix+".maximum_offset"]=
+            std::to_string(result.drawerMaximumOffset);
+        context->observed[prefix+".at_measured_maximum"]=
+            Step3Bool(result.drawerOffset==measuredMaximum);
+        context->observed[prefix+".reached_final"]=Step3Bool(result.reachedFinalMarker);
+        context->observed[prefix+".snapshot_identity"]=
+            std::to_string(presenter.activeSnapshotIdentity);
+        context->observed[prefix+".selection_generation"]=
+            std::to_string(presenter.selectionGeneration);
+        context->observed[prefix+".history_generation"]=
+            std::to_string(presenter.historyGeneration);
+        context->observed[prefix+".layout_generation"]=
+            std::to_string(presenter.layoutGeneration);
+        ObserveStep3RenderCounters(result.delta,prefix,&context->observed);
+        const auto renderPlan=
+            xvatsim::modules::overlay::BuildAccessoryDrawerRenderPlan(
+                presenter,layout->second);
+        context->observed[prefix+".render_capacity"]=
+            std::to_string(renderPlan.visibleLineCapacity);
+        context->observed[prefix+".render_visible_count"]=
+            std::to_string(renderPlan.visibleLines.size());
+        context->observed[prefix+".render_total_lines"]=
+            std::to_string(renderPlan.totalLineCount);
+        context->observed[prefix+".render_pixel_fit"]=
+            Step3Bool(renderPlan.everyLineFitsPixelGeometry);
+        context->observed[prefix+".render_final_marker_visible"]=
+            Step3Bool(renderPlan.finalMarkerVisible);
+        return true;
+    }
+    if (parts[0] == "drawer-render-plan" && parts.size() == 4) {
+        const auto presenter=context->presenters.find(parts[1]);
+        const auto layout=context->layouts.find(parts[2]);
+        if(presenter==context->presenters.end()) return fail("render presenter missing");
+        if(layout==context->layouts.end()) return fail("render layout missing");
+        const auto result=
+            xvatsim::modules::overlay::BuildAccessoryDrawerRenderPlan(
+                presenter->second,layout->second);
+        const auto& prefix=parts[3];
+        context->observed[prefix+".status"]=Step3Status(result.status);
+        context->observed[prefix+".capacity"]=
+            std::to_string(result.visibleLineCapacity);
+        context->observed[prefix+".visible_count"]=
+            std::to_string(result.visibleLines.size());
+        context->observed[prefix+".first_line"]=
+            std::to_string(result.firstVisibleLine);
+        context->observed[prefix+".total_lines"]=
+            std::to_string(result.totalLineCount);
+        context->observed[prefix+".pixel_fit"]=
+            Step3Bool(result.everyLineFitsPixelGeometry);
+        context->observed[prefix+".final_marker_visible"]=
+            Step3Bool(result.finalMarkerVisible);
+        context->observed[prefix+".visible_count_within_capacity"]=Step3Bool(
+            static_cast<int>(result.visibleLines.size())<=
+                result.visibleLineCapacity);
+        return true;
+    }
+    if (parts[0] == "presenter-observe" && parts.size() == 3) {
+        const auto& presenter=context->presenters[parts[1]];
+        const auto& prefix=parts[2];
+        context->observed[prefix+".offset"]=std::to_string(presenter.drawerOffset);
+        context->observed[prefix+".maximum_offset"]=
+            std::to_string(presenter.drawerMaximumOffset);
+        context->observed[prefix+".snapshot_identity"]=
+            std::to_string(presenter.activeSnapshotIdentity);
+        context->observed[prefix+".selection_generation"]=
+            std::to_string(presenter.selectionGeneration);
+        context->observed[prefix+".history_generation"]=
+            std::to_string(presenter.historyGeneration);
+        context->observed[prefix+".layout_generation"]=
+            std::to_string(presenter.layoutGeneration);
+        context->observed[prefix+".plan_available"]=Step3Bool(presenter.cachedPlanAvailable);
+        context->observed[prefix+".keys"]=presenter.preparedPlan ?
+            JoinCsv(presenter.preparedPlan->layout.renderedEntryKeys) : "";
+        context->observed[prefix+".titles"]=presenter.preparedPlan ?
+            JoinCsv(presenter.preparedPlan->layout.renderedEntryTitles) : "";
+        context->observed[prefix+".bodies"]=presenter.preparedPlan ?
+            JoinCsv(presenter.preparedPlan->layout.renderedEntryBodies) : "";
+        context->observed[prefix+".title_marker_visible"]=
+            Step3Bool(Step3PresenterTitleMarkerVisible(presenter));
+        context->observed[prefix+".pairing_intact"]=
+            Step3Bool(Step3PresenterPairingIntact(presenter));
+        context->observed[prefix+".final_marker"]=presenter.finalHistoryMarker;
+        context->observed[prefix+".main_signature"]=presenter.mainCardProductionSignature;
+        ObserveStep3RenderCounters(presenter.counters,prefix,&context->observed);
+        return true;
+    }
+    if ((parts[0] == "pipeline" || parts[0] == "pipeline-alternate") &&
+        parts.size() == 2) {
+        xvatsim::brain::FinalDisplaySnapshot display;
+        display.available = true;
+        display.source = xvatsim::brain::BoardSource::Enroute;
+        xvatsim::brain::FinalDisplayStationSnapshot station;
+        const bool alternate=parts[0]=="pipeline-alternate";
+        station.role = alternate
+            ? xvatsim::brain::StationRole::Approach
+            : xvatsim::brain::StationRole::Center;
+        station.callsign = alternate ? "SOCAL_APP" : "LAX_CTR";
+        station.frequency = alternate ? "124.300" : "125.800";
+        station.online = true;
+        display.stations.push_back(station);
+        xvatsim::brain::AircraftStateSnapshot aircraft;
+        aircraft.valid = true;
+        xvatsim::brain::XPilotSessionSnapshot xpilot;
+        xpilot.connected = true;
+        const auto view=xvatsim::brain::BrainOrchestrator::BuildOverlayViewModel(
+            xvatsim::brain::WorkflowStage::Enroute,
+            aircraft,
+            xpilot,
+            {}, {}, {}, {}, display, {}, {});
+        context->observed[parts[1]+".visible"]=Step3Bool(view.visible);
+        context->observed[parts[1]+".title"]=view.title;
+        context->observed[parts[1]+".body_count"]=std::to_string(view.bodyLines.size());
+        std::ostringstream signature;
+        signature << (view.visible ? "visible" : "hidden") << '|' << view.title;
+        for(const auto& line:view.bodyLines) signature << '|' << line.text;
+        context->mainCardSignatures[parts[1]]=signature.str();
+        context->observed[parts[1]+".signature"]=signature.str();
+        return true;
+    }
+    return fail("unknown Step 3 action");
+}
+
+int RunStep3ContractProbe(const ScenarioData& scenario) {
+    if (scenario.step3.actions.empty() || scenario.step3.expectations.empty()) {
+        std::cerr << "STEP3_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                  << ": executable actions and expectations are required\n";
+        return 2;
+    }
+
+    Step3ExecutionContext context;
+    for (const auto& action : scenario.step3.actions) {
+        std::string error;
+        if (!ExecuteStep3Action(action, &context, &error)) {
+            std::cerr << "STEP3_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                      << ": " << error << "\n";
+            return 2;
+        }
+    }
+
+    int failures = 0;
+    for (const auto& expectation : scenario.step3.expectations) {
+        const auto separator = expectation.find('=');
+        if (separator == std::string::npos || separator == 0) {
+            std::cerr << "STEP3_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                      << ": invalid expectation: " << expectation << "\n";
+            return 2;
+        }
+        const auto key = expectation.substr(0, separator);
+        const auto expectedToken = expectation.substr(separator + 1);
+        auto observed = context.observed.find(key);
+        if (observed == context.observed.end()) {
+            std::cerr << "STEP3_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                      << ": expectation has no operation-produced observation: " << key << "\n";
+            return 2;
+        }
+        std::string expected = expectedToken;
+        if (!expectedToken.empty() && expectedToken.front() == '@') {
+            const auto reference = context.observed.find(expectedToken.substr(1));
+            if (reference == context.observed.end()) {
+                std::cerr << "STEP3_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                          << ": missing expectation reference: " << expectedToken << "\n";
+                return 2;
+            }
+            expected = reference->second;
+        }
+        if (observed->second != expected) {
+            std::cerr << "STEP3_ASSERTION_FAILED: " << scenario.name << ": " << key
+                      << " expected=" << expected << " observed=" << observed->second << "\n";
+            failures++;
+        }
+    }
+    if (failures != 0) return 1;
+    std::vector<std::pair<std::string,std::string>> measurementRecords;
+    std::vector<std::pair<std::string,std::string>> timingRecords;
+    std::vector<std::pair<std::string,std::string>> zeroWorkRecords;
+    std::vector<std::pair<std::string,std::string>> dispatchRecords;
+    for(const auto& observation:context.observed) {
+        if(observation.first.size()>=18 &&
+           observation.first.compare(
+               observation.first.size()-18,
+               18,
+               "measurement_record")==0) {
+            measurementRecords.push_back(observation);
+        }
+        if(observation.first.size()>=13 &&
+           observation.first.compare(
+               observation.first.size()-13,
+               13,
+               "timing_record")==0) {
+            timingRecords.push_back(observation);
+        }
+        if(observation.first.size()>=16 &&
+           observation.first.compare(
+               observation.first.size()-16,
+               16,
+               "zero_work_record")==0) {
+            zeroWorkRecords.push_back(observation);
+        }
+        if(observation.first.size()>=15 &&
+           observation.first.compare(
+               observation.first.size()-15,
+               15,
+               "dispatch_record")==0) {
+            dispatchRecords.push_back(observation);
+        }
+    }
+    std::sort(measurementRecords.begin(),measurementRecords.end());
+    for(const auto& record:measurementRecords) {
+        std::cout << "STEP3_GDIPLUS_MEASUREMENT: " << record.first
+                  << '=' << record.second << "\n";
+    }
+    std::sort(timingRecords.begin(),timingRecords.end());
+    for(const auto& record:timingRecords) {
+        std::cout << "STEP3_GDIPLUS_TIMING: " << record.first
+                  << '=' << record.second << "\n";
+    }
+    std::sort(zeroWorkRecords.begin(),zeroWorkRecords.end());
+    for(const auto& record:zeroWorkRecords) {
+        std::cout << "STEP3_ZERO_WORK: " << record.first
+                  << '=' << record.second << "\n";
+    }
+    std::sort(dispatchRecords.begin(),dispatchRecords.end());
+    for(const auto& record:dispatchRecords) {
+        std::cout << "STEP3_EVENT_DISPATCH: " << record.first
+                  << '=' << record.second << "\n";
+    }
+    std::cout << "Scenario passed: " << scenario.name << "\n";
+    return 0;
+}
+
+class Step4FakeWorker final : public xvatsim::brain::BrainMetarWorker {
+public:
+    bool Start(const xvatsim::brain::BrainMetarWorkerRequest& request) override {
+        if (running || !startAllowed) return false;
+        requests.push_back(request);
+        running = true;
+        return true;
+    }
+
+    bool TryHarvest(xvatsim::brain::BrainMetarWorkerFact* fact) override {
+        if (fact == nullptr || !ready.has_value()) return false;
+        *fact = *ready;
+        ready.reset();
+        running = false;
+        return true;
+    }
+
+    bool IsRunning() const override { return running; }
+
+    void CancelAndJoin() override {
+        running = false;
+        ++cancelCount;
+    }
+
+    xvatsim::brain::BrainMetarWorkerShutdownSnapshot ShutdownSnapshot()
+        const override {
+        xvatsim::brain::BrainMetarWorkerShutdownSnapshot snapshot;
+        snapshot.running = running;
+        snapshot.handlesClosed = !running;
+        snapshot.callbacksClosed = !running;
+        return snapshot;
+    }
+
+    void Complete(
+        xvatsim::brain::BrainMetarWorkerStatus status,
+        std::string station = {},
+        std::string raw = {}) {
+        if (requests.empty()) return;
+        CompleteRequest(requests.back(), status, std::move(station), std::move(raw));
+    }
+
+    void CompleteRequest(
+        const xvatsim::brain::BrainMetarWorkerRequest& request,
+        xvatsim::brain::BrainMetarWorkerStatus status,
+        std::string station = {},
+        std::string raw = {}) {
+        xvatsim::brain::BrainMetarWorkerFact fact;
+        fact.request = request;
+        fact.status = status;
+        fact.stationIcao = station.empty() ? request.airportIcao : std::move(station);
+        fact.rawMetar = std::move(raw);
+        if (status == xvatsim::brain::BrainMetarWorkerStatus::Success) {
+            fact.decodeStatus = xvatsim::brain::BrainMetarDecodeStatus::Decoded;
+            fact.reportCardinality = 1;
+            fact.stationFieldType =
+                xvatsim::brain::BrainMetarDecodedFieldType::String;
+            fact.metarFieldType =
+                xvatsim::brain::BrainMetarDecodedFieldType::String;
+            fact.stationFieldMissing = false;
+            fact.metarFieldMissing = false;
+        }
+        fact.httpStatus = status == xvatsim::brain::BrainMetarWorkerStatus::Success
+            ? 200 : 0;
+        fact.payloadBytes = fact.rawMetar.size();
+        fact.networkElapsedUs = 2'500'000;
+        fact.diagnostic = status == xvatsim::brain::BrainMetarWorkerStatus::Success
+            ? "fixture-success" : "fixture-failure";
+        ready = std::move(fact);
+        running = false;
+    }
+
+    bool startAllowed = true;
+    bool running = false;
+    int cancelCount = 0;
+    std::vector<xvatsim::brain::BrainMetarWorkerRequest> requests;
+    std::optional<xvatsim::brain::BrainMetarWorkerFact> ready;
+};
+
+#if defined(_WIN32)
+class Step4LoopbackHttpPeer {
+public:
+    struct Response {
+        int status = 200;
+        std::string body;
+        bool stall = false;
+    };
+
+    explicit Step4LoopbackHttpPeer(Response response)
+        : response_(std::move(response)) {
+        WSADATA data{};
+        if (WSAStartup(MAKEWORD(2, 2), &data) != 0) return;
+        winsockStarted_ = true;
+        listener_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (listener_ == INVALID_SOCKET) return;
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = 0;
+        if (bind(listener_, reinterpret_cast<const sockaddr*>(&address),
+                 sizeof(address)) == SOCKET_ERROR ||
+            listen(listener_, 1) == SOCKET_ERROR) {
+            return;
+        }
+        int addressSize = sizeof(address);
+        if (getsockname(listener_, reinterpret_cast<sockaddr*>(&address),
+                        &addressSize) == SOCKET_ERROR) {
+            return;
+        }
+        port_ = ntohs(address.sin_port);
+        thread_ = std::thread([this]() {
+            const auto client = accept(listener_, nullptr, nullptr);
+            if (client == INVALID_SOCKET) return;
+            client_.store(client, std::memory_order_release);
+            std::string request;
+            char chunk[1024]{};
+            while (request.find("\r\n\r\n") == std::string::npos &&
+                   request.size() < 8192) {
+                const auto received = recv(client, chunk, sizeof(chunk), 0);
+                if (received <= 0) break;
+                request.append(chunk, static_cast<std::size_t>(received));
+            }
+            const auto lineEnd = request.find("\r\n");
+            const auto firstLine = request.substr(0, lineEnd);
+            const auto firstSpace = firstLine.find(' ');
+            const auto secondSpace = firstSpace == std::string::npos
+                ? std::string::npos : firstLine.find(' ', firstSpace + 1);
+            if (firstSpace != std::string::npos &&
+                secondSpace != std::string::npos) {
+                {
+                    std::lock_guard<std::mutex> lock(requestMutex_);
+                    requestPath_ = firstLine.substr(
+                        firstSpace + 1, secondSpace - firstSpace - 1);
+                }
+                accepted_.store(true, std::memory_order_release);
+            }
+            if (response_.stall) {
+                while (!stop_.load(std::memory_order_acquire)) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            } else {
+                const auto reason = response_.status == 200 ? "OK" : "ERROR";
+                std::ostringstream response;
+                response << "HTTP/1.1 " << response_.status << ' ' << reason
+                         << "\r\nContent-Type: application/json"
+                         << "\r\nContent-Length: " << response_.body.size()
+                         << "\r\nConnection: close\r\n\r\n"
+                         << response_.body;
+                const auto bytes = response.str();
+                std::size_t sent = 0;
+                while (sent < bytes.size()) {
+                    const auto count = send(
+                        client, bytes.data() + sent,
+                        static_cast<int>(bytes.size() - sent), 0);
+                    if (count <= 0) break;
+                    sent += static_cast<std::size_t>(count);
+                }
+                responseCompleted_.store(
+                    sent == bytes.size(), std::memory_order_release);
+            }
+            const auto owned = client_.exchange(
+                INVALID_SOCKET, std::memory_order_acq_rel);
+            if (owned != INVALID_SOCKET) {
+                shutdown(owned, SD_BOTH);
+                closesocket(owned);
+            }
+        });
+    }
+
+    ~Step4LoopbackHttpPeer() {
+        stop_.store(true, std::memory_order_release);
+        const auto client = client_.exchange(
+            INVALID_SOCKET, std::memory_order_acq_rel);
+        if (client != INVALID_SOCKET) {
+            shutdown(client, SD_BOTH);
+            closesocket(client);
+        }
+        if (listener_ != INVALID_SOCKET) {
+            closesocket(listener_);
+            listener_ = INVALID_SOCKET;
+        }
+        if (thread_.joinable()) thread_.join();
+        if (winsockStarted_) WSACleanup();
+    }
+
+    bool Ready() const { return port_ != 0 && thread_.joinable(); }
+    bool Accepted() const {
+        return accepted_.load(std::memory_order_acquire);
+    }
+    bool ResponseCompleted() const {
+        return responseCompleted_.load(std::memory_order_acquire);
+    }
+    std::string RequestPath() const {
+        std::lock_guard<std::mutex> lock(requestMutex_);
+        return requestPath_;
+    }
+    unsigned short Port() const { return port_; }
+
+private:
+    Response response_;
+    bool winsockStarted_ = false;
+    SOCKET listener_ = INVALID_SOCKET;
+    std::atomic<SOCKET> client_{INVALID_SOCKET};
+    unsigned short port_ = 0;
+    std::atomic<bool> accepted_{false};
+    std::atomic<bool> responseCompleted_{false};
+    std::atomic<bool> stop_{false};
+    mutable std::mutex requestMutex_;
+    std::string requestPath_;
+    std::thread thread_;
+};
+#endif
+
+struct Step4Fixture {
+    xvatsim::brain::BrainOwnedRuntimeState state;
+    Step4FakeWorker worker;
+    xvatsim::brain::BrainOwnedAsyncFactCycleInput input;
+
+    Step4Fixture() {
+        xvatsim::brain::EnableBrainOwnedAccessoryRuntime(&state);
+        input.pluginEnabled = true;
+        input.xpilotConnected = true;
+        input.workflowStage = WorkflowStage::Departure;
+        input.operatingMode = xvatsim::brain::BrainOwnedOperatingMode::IFR;
+        input.flightContext.active = true;
+        input.flightContext.callsign = "N123XV";
+        input.flightContext.departureIcao = "KDFW";
+        input.flightContext.destinationIcao = "KSAN";
+        input.monotonicMs = 1'000;
+        input.utcUnixSeconds = 1'787'860'800;
+    }
+
+    xvatsim::brain::BrainOwnedAsyncFactCycleOutput Cycle(long long advanceMs = 0) {
+        input.monotonicMs += advanceMs;
+        xvatsim::brain::BrainOwnedAsyncWorkerBindings bindings;
+        bindings.metar = &worker;
+        return xvatsim::brain::RunBrainOwnedAsyncFactCycle(
+            &state, input, bindings);
+    }
+
+    xvatsim::brain::BrainOwnedAsyncFactCycleOutput AcceptPrimary(
+        const std::string& raw = "KDFW 271951Z 18010KT 10SM FEW050") {
+        if (worker.requests.empty() || !worker.running) Cycle();
+        worker.Complete(
+            xvatsim::brain::BrainMetarWorkerStatus::Success,
+            worker.requests.back().airportIcao,
+            raw);
+        return Cycle(1);
+    }
+
+    xvatsim::brain::BrainOwnedTextEntryDecision SubmitLookup(
+        const std::string& icao,
+        long long advanceMs = 1) {
+        input.monotonicMs += advanceMs;
+        xvatsim::brain::BrainOwnedTextEntryFact fact;
+        fact.mode = xvatsim::brain::BrainOwnedTextEntryMode::MetarAirportLookup;
+        fact.text = icao;
+        fact.monotonicMs = input.monotonicMs;
+        return xvatsim::brain::CommitBrainOwnedTextEntryFact(&state, fact);
+    }
+
+    xvatsim::brain::BrainOwnedAsyncFactCycleOutput AcceptLookup(
+        const std::string& raw = "KABQ 271953Z 18012KT 4SM BKN020") {
+        Cycle();
+        worker.Complete(
+            xvatsim::brain::BrainMetarWorkerStatus::Success,
+            worker.requests.back().airportIcao,
+            raw);
+        return Cycle(1);
+    }
+};
+
+#if defined(_WIN32)
+struct Step4LoopbackRunResult {
+    bool dispatched = false;
+    bool terminal = false;
+    bool disposition = false;
+    bool responseCompleted = false;
+    std::string requestPath;
+    xvatsim::brain::BrainMetarTerminalDiagnostic terminalDiagnostic;
+    xvatsim::brain::BrainMetarDispositionDiagnostic dispositionDiagnostic;
+    xvatsim::brain::BrainMetarWorkerShutdownSnapshot shutdown;
+    std::uint64_t parseCount = 0;
+    std::uint64_t historyMutationCount = 0;
+    bool primaryValid = false;
+    xvatsim::brain::BrainMetarFlightCategory category =
+        xvatsim::brain::BrainMetarFlightCategory::Unknown;
+    long long elapsedMs = 0;
+};
+
+Step4LoopbackRunResult RunStep4LoopbackLifecycle(
+    Step4LoopbackHttpPeer::Response response) {
+    Step4LoopbackRunResult result;
+    Step4LoopbackHttpPeer peer(std::move(response));
+    if (!peer.Ready()) return result;
+    xvatsim::modules::metar::VatsimMetarClient::ProofEndpoint endpoint;
+    endpoint.host = L"127.0.0.1";
+    endpoint.port = peer.Port();
+    endpoint.secure = false;
+    xvatsim::modules::metar::VatsimMetarClient client(endpoint);
+    xvatsim::brain::BrainOwnedRuntimeState state;
+    xvatsim::brain::EnableBrainOwnedAccessoryRuntime(&state);
+    xvatsim::brain::BrainOwnedAsyncFactCycleInput input;
+    input.pluginEnabled = true;
+    input.xpilotConnected = true;
+    input.workflowStage = xvatsim::brain::WorkflowStage::Departure;
+    input.operatingMode = xvatsim::brain::BrainOwnedOperatingMode::IFR;
+    input.flightContext.active = true;
+    input.flightContext.callsign = "N123XV";
+    input.flightContext.departureIcao = "KDFW";
+    input.flightContext.destinationIcao = "KSAN";
+    input.monotonicMs = 1'000;
+    input.utcUnixSeconds = 1'787'860'800;
+    xvatsim::brain::BrainOwnedAsyncWorkerBindings bindings;
+    bindings.metar = &client;
+    const auto started = std::chrono::steady_clock::now();
+    auto cycle = xvatsim::brain::RunBrainOwnedAsyncFactCycle(
+        &state, input, bindings);
+    result.dispatched = cycle.dispatchDiagnostic.available;
+    const auto deadline = started + std::chrono::seconds(2);
+    while (std::chrono::steady_clock::now() < deadline) {
+        ++input.monotonicMs;
+        cycle = xvatsim::brain::RunBrainOwnedAsyncFactCycle(
+            &state, input, bindings);
+        if (cycle.terminalDiagnostic.available) {
+            result.terminal = true;
+            result.disposition = cycle.dispositionDiagnostic.available;
+            result.terminalDiagnostic = cycle.terminalDiagnostic;
+            result.dispositionDiagnostic = cycle.dispositionDiagnostic;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    result.elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - started).count();
+    result.requestPath = peer.RequestPath();
+    result.responseCompleted = peer.ResponseCompleted();
+    result.parseCount = state.metar.parseCount;
+    result.historyMutationCount = state.metar.historyMutationCount;
+    result.primaryValid = state.metar.primaryObservation.valid;
+    result.category = state.metar.primaryObservation.category;
+    client.CancelAndJoin();
+    result.shutdown = client.ShutdownSnapshot();
+    return result;
+}
+#endif
+
+const xvatsim::brain::BrainOwnedAccessoryOrbPresentation* Step4MetarOrb(
+    const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& handle) {
+    if (!handle.snapshot) return nullptr;
+    for (const auto& orb : handle.snapshot->orbs) {
+        if (orb.drawer == xvatsim::brain::BrainOwnedAccessoryDrawerId::Metar) {
+            return &orb;
+        }
+    }
+    return nullptr;
+}
+
+bool Step4HasTitle(
+    xvatsim::brain::BrainOwnedRuntimeState* state,
+    const std::string& token) {
+    const auto handle = xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+        state, 1, nullptr);
+    if (!handle.snapshot) return false;
+    return std::any_of(
+        handle.snapshot->entries.begin(), handle.snapshot->entries.end(),
+        [&](const auto& entry) {
+            return entry.title.find(token) != std::string::npos;
+        });
+}
+
+void Step4SelectDrawer(
+    xvatsim::brain::BrainOwnedRuntimeState* state,
+    xvatsim::brain::BrainOwnedAccessoryDrawerId drawer,
+    std::uint64_t sequence = 1) {
+    xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+    request.drawer = drawer;
+    request.requestSequence = sequence;
+    (void)xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+        state, request);
+}
+
+void Step4Require(
+    bool condition,
+    const std::string& message,
+    std::vector<std::string>* failures) {
+    if (!condition && failures != nullptr) failures->push_back(message);
+}
+
+bool Step4FileContains(
+    const std::filesystem::path& path,
+    const std::string& token) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return false;
+    const std::string content{
+        std::istreambuf_iterator<char>(input),
+        std::istreambuf_iterator<char>()};
+    return content.find(token) != std::string::npos;
+}
+
+std::string Step4ReadFile(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return {};
+    return {
+        std::istreambuf_iterator<char>(input),
+        std::istreambuf_iterator<char>()};
+}
+
+int RunStep4ContractProbe(const ScenarioData& scenario) {
+    using namespace xvatsim::brain;
+    using xvatsim::modules::metar::BuildVatsimMetarRequestPath;
+    using xvatsim::modules::metar::DecodeVatsimMetarPayload;
+    using xvatsim::modules::metar::VatsimMetarDecodeStatus;
+    const auto& probe = scenario.step4.probe;
+    std::vector<std::string> failures;
+    auto require = [&](bool condition, const std::string& message) {
+        Step4Require(condition, message, &failures);
+    };
+    const std::string primaryVfr = "KDFW 271951Z 18010KT 10SM FEW050";
+    const std::string primaryIfr = "KSAN 271952Z 24009KT 2SM BKN008";
+    const std::string lookupMvfr = "KABQ 271953Z 18012KT 4SM BKN020";
+
+    const auto requireNeutralMetarOrb = [&](BrainOwnedRuntimeState* state) {
+        const auto handle = ProjectBrainOwnedAccessoryPresentation(
+            state, 1, nullptr);
+        const auto* orb = Step4MetarOrb(handle);
+        require(orb != nullptr, "METAR ORB missing");
+        if (orb == nullptr) return;
+        require(orb->label == "METAR", "neutral ORB must contain METAR");
+        require(orb->airportIcao.empty() && orb->categoryText.empty() &&
+                    orb->stateText.empty() && orb->selectedIndicator.empty(),
+                "neutral ORB contains forbidden additional text");
+        require(orb->tone == BrainOwnedAccessoryOrbPresentation::Tone::Gray &&
+                    orb->neutral,
+                "neutral ORB must use neutral gray tone");
+    };
+    const auto requireSuccessfulMetarOrb = [&](
+        BrainOwnedRuntimeState* state,
+        const std::string& airport,
+        const std::string& category,
+        BrainOwnedAccessoryOrbPresentation::Tone tone) {
+        const auto handle = ProjectBrainOwnedAccessoryPresentation(
+            state, 1, nullptr);
+        const auto* orb = Step4MetarOrb(handle);
+        require(orb != nullptr, "METAR ORB missing");
+        if (orb == nullptr) return;
+        require(orb->label.empty(),
+                "successful ORB must remove METAR title");
+        require(orb->airportIcao == airport &&
+                    orb->categoryText == category,
+                "successful ORB must contain exact ICAO/category lines");
+        require(orb->stateText.empty() &&
+                    orb->selectedIndicator.empty(),
+                "successful ORB contains forbidden state/open text");
+        require(orb->tone == tone && !orb->neutral,
+                "successful ORB tone mismatch");
+    };
+
+    if (probe == "plugin_suspend_resume_fresh_enroute_state_survives") {
+        using namespace xvatsim::modules::overlay;
+        auto fixtureStorage = std::make_unique<Step4Fixture>();
+        auto& fixture = *fixtureStorage;
+        fixture.input.flightContext.callsign = "ASA551";
+        fixture.input.workflowStage = WorkflowStage::Enroute;
+        fixture.state.flightContext = fixture.input.flightContext;
+        fixture.state.lastWorkflowStage = WorkflowStage::Enroute;
+        fixture.state.lastPilotIdentitySnapshot.connected = true;
+        fixture.state.lastPilotIdentitySnapshot.ready = true;
+        fixture.state.lastPilotIdentitySnapshot.normalizedCallsign = "ASA551";
+        fixture.state.lastNetworkPlanSnapshot.feedAvailable = true;
+        fixture.state.lastNetworkPlanSnapshot.stale = false;
+        fixture.state.lastNetworkPlanSnapshot.matched = true;
+        fixture.state.lastNetworkPlanSnapshot.matchedCallsign = "ASA551";
+        fixture.state.lastNetworkPlanSnapshot.departureIcao = "KDFW";
+        fixture.state.lastNetworkPlanSnapshot.destinationIcao = "KSAN";
+        const auto accepted = fixture.AcceptPrimary(primaryIfr);
+        require(accepted.completionAccepted && accepted.contentChanged &&
+                    fixture.state.metar.primaryAirportIcao == "KSAN" &&
+                    fixture.state.metar.primaryObservation.valid,
+                "red precondition did not establish accepted KSAN Enroute state");
+
+        AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 100;
+        layoutInput.windowTop = 900;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = false;
+        const auto layout = ResolveAccessoryLayout(layoutInput);
+        AccessoryPresentationState presenter;
+        AccessoryVisiblePublicationState visibility;
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "red seam text measurement unavailable");
+        auto publicationQueueStorage =
+            std::make_unique<AccessoryPublicationFactQueue>();
+        auto& publicationQueue = *publicationQueueStorage;
+        AccessoryPublicationDiagnosticAccounting diagnosticAccounting;
+        std::uint64_t now = 10'000;
+        const auto publishCurrentRail = [&]() {
+            BrainOwnedAccessoryProjectionCounters counters;
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &counters);
+            require(command.snapshot != nullptr && counters.snapshotBuilds == 1,
+                    "red seam did not project one immutable current command");
+            AccessoryPresentationUpdateInput update;
+            update.presentation = command;
+            update.layout = layout;
+            update.mechanicalLayoutGeneration = 1;
+            update.mainCardProductionSignature = "plugin-suspend-resume-red";
+            update.measurementContext = measurement;
+            const auto committed = UpdateAccessoryPresentation(&presenter, update);
+            require(presenter.activeSnapshot.get() == command.snapshot.get(),
+                    "red seam did not commit the immutable command");
+            AccessoryVisiblePublicationKey key;
+            key.commandIdentity = command.snapshot->commandIdentity;
+            key.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            key.railRevision = command.snapshot->railPresentationRevision;
+            key.drawerRevision = 0;
+            key.drawerOpen = false;
+            const auto began = visibility.Observe(
+                {key, true, true, committed.delta.uploadRequests != 0,
+                 now++, true});
+            const auto terminal = visibility.CompleteFirstFrame(
+                key, true, true, now++);
+            BrainOwnedAccessoryPublicationFact fact;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &fact);
+            fact.activeDrawerRendered = BrainOwnedAccessoryDrawerId::None;
+            fact.issueToCommitMicroseconds = 50;
+            fact.commandElapsedMicroseconds = 100;
+            require(began.started && terminal.terminal &&
+                        publicationQueue.Produce(fact),
+                    "red seam terminal did not enter production queue");
+            BrainOwnedAccessoryPublicationFact dequeued;
+            require(publicationQueue.Consume(&dequeued),
+                    "red seam terminal did not leave production queue");
+            const auto disposition = ConsumeBrainOwnedAccessoryPublicationFact(
+                &fixture.state, dequeued);
+            require(disposition.consumed &&
+                        disposition.commandTerminalAccepted &&
+                        disposition.visibleAttemptTerminalAccepted,
+                    "red seam Brain did not accept exact terminal roles");
+            const auto diagnostic = SerializeAccessoryPublicationDiagnostic(
+                dequeued, disposition, &diagnosticAccounting);
+            require(diagnostic.find("event=accessory-publication-terminal") !=
+                        std::string::npos,
+                    "red seam production diagnostic did not serialize");
+            return command;
+        };
+
+        const auto beforeCommand = publishCurrentRail();
+        const auto* beforeOrb = Step4MetarOrb(beforeCommand);
+        require(beforeOrb != nullptr && beforeOrb->airportIcao == "KSAN" &&
+                    beforeOrb->categoryText == "IFR" && !beforeOrb->neutral &&
+                    publicationQueue.PendingCount() == 0 &&
+                    publicationQueue.RejectedCount() == 0 &&
+                    diagnosticAccounting.factsAcceptedByBrain == 1,
+                "red seam pre-disable presentation/accounting was not settled");
+
+        BrainOwnedAsyncWorkerBindings bindings;
+        bindings.metar = &fixture.worker;
+        fixture.input.pluginEnabled = false;
+        const auto suspension = SuspendBrainOwnedRuntimeForPluginAdmin(
+            &fixture.state, bindings);
+        presenter = {};
+        visibility = {};
+        const auto resume = ResumeBrainOwnedRuntimeFromPluginAdmin(
+            &fixture.state);
+        fixture.input.pluginEnabled = true;
+        fixture.input.flightContext = fixture.state.flightContext;
+        fixture.input.workflowStage = fixture.state.lastWorkflowStage;
+        const auto postEnableCycle = fixture.Cycle(1);
+        const auto afterCommand = publishCurrentRail();
+        const auto* afterOrb = Step4MetarOrb(afterCommand);
+        const bool contextPreserved = fixture.state.flightContext.active;
+        const bool stagePreserved =
+            fixture.state.lastWorkflowStage == WorkflowStage::Enroute;
+        const bool primaryPreserved =
+            fixture.state.metar.primaryAirportIcao == "KSAN" &&
+            fixture.state.metar.primaryObservation.valid;
+        const bool orbPreserved = afterOrb != nullptr &&
+            afterOrb->airportIcao == "KSAN" &&
+            afterOrb->categoryText == "IFR" && !afterOrb->neutral;
+        std::cout
+            << "PLUGIN_SUSPEND_RESUME_LEDGER: before_context=1 before_stage=ENR"
+            << " before_primary=KSAN before_category=IFR"
+            << " disable_worker_running="
+            << (suspension.workerShutdown.running ? 1 : 0)
+            << " disable_handles_closed="
+            << (suspension.workerShutdown.handlesClosed ? 1 : 0)
+            << " disable_ui_mechanical_work=0"
+            << " after_context=" << (contextPreserved ? 1 : 0)
+            << " after_stage=" << (stagePreserved ? "ENR" : "NONE")
+            << " after_primary="
+            << (fixture.state.metar.primaryAirportIcao.empty()
+                    ? "UNAVAILABLE" : fixture.state.metar.primaryAirportIcao)
+            << " after_orb=" << (orbPreserved ? "KSAN-IFR" : "NEUTRAL")
+            << " post_enable_dispatch="
+            << (postEnableCycle.requestDispatched ? 1 : 0)
+            << " suspension_generation="
+            << suspension.suspensionGeneration
+            << " resume_changed=" << (resume.stateChanged ? 1 : 0)
+            << " user_actions=0 reset_invoked=0 recover_invoked=0"
+            << " publication_pending=" << publicationQueue.PendingCount()
+            << " publication_rejected=" << publicationQueue.RejectedCount()
+            << " liveness_failures="
+            << fixture.state.accessory.publicationLivenessFailureCount << "\n";
+        ShutdownAccessoryTextMeasurement(measurement);
+        require(suspension.stateChanged && suspension.suspended &&
+                    resume.stateChanged && resume.resumed &&
+                    contextPreserved && stagePreserved && primaryPreserved &&
+                    orbPreserved && !postEnableCycle.requestDispatched &&
+                    diagnosticAccounting.factsAcceptedByBrain == 2,
+                "Plugin Admin disable/re-enable lost accepted Enroute context or primary presentation");
+    } else if (probe.rfind("plugin_suspend_resume_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+
+        if (probe == "plugin_suspend_resume_cold_startup_neutral") {
+            auto state = std::make_unique<BrainOwnedRuntimeState>();
+            Step4FakeWorker worker;
+            BrainOwnedAsyncWorkerBindings bindings;
+            bindings.metar = &worker;
+            EnableBrainOwnedAccessoryRuntime(state.get());
+            const auto suspension = SuspendBrainOwnedRuntimeForPluginAdmin(
+                state.get(), bindings);
+            const auto resume = ResumeBrainOwnedRuntimeFromPluginAdmin(
+                state.get());
+            BrainOwnedAccessoryProjectionCounters counters;
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                state.get(), &counters);
+            const auto* orb = Step4MetarOrb(command);
+            require(suspension.stateChanged && resume.stateChanged &&
+                        !state->flightContext.active &&
+                        state->lastWorkflowStage == WorkflowStage::None &&
+                        state->metar.primaryAirportIcao.empty() &&
+                        orb != nullptr && orb->neutral &&
+                        orb->airportIcao.empty() &&
+                        orb->label == "METAR",
+                    "cold startup resurrected flight or METAR state");
+            std::cout
+                << "PLUGIN_SUSPEND_RESUME_COLD_START: context=0 stage=NONE"
+                << " primary=UNAVAILABLE orb=NEUTRAL dispatches=0"
+                << " generation=" << suspension.suspensionGeneration << "\n";
+        } else {
+            auto fixtureStorage = std::make_unique<Step4Fixture>();
+            auto& fixture = *fixtureStorage;
+            fixture.input.flightContext.callsign = "ASA551";
+            fixture.input.workflowStage = WorkflowStage::Enroute;
+            fixture.state.flightContext = fixture.input.flightContext;
+            fixture.state.lastWorkflowStage = WorkflowStage::Enroute;
+            fixture.state.lastPilotIdentitySnapshot.connected = true;
+            fixture.state.lastPilotIdentitySnapshot.ready = true;
+            fixture.state.lastPilotIdentitySnapshot.normalizedCallsign =
+                "ASA551";
+            fixture.state.lastNetworkPlanSnapshot.feedAvailable = true;
+            fixture.state.lastNetworkPlanSnapshot.stale = false;
+            fixture.state.lastNetworkPlanSnapshot.matched = true;
+            fixture.state.lastNetworkPlanSnapshot.matchedCallsign = "ASA551";
+            fixture.state.lastNetworkPlanSnapshot.departureIcao = "KDFW";
+            fixture.state.lastNetworkPlanSnapshot.destinationIcao = "KSAN";
+            fixture.state.lastNetworkPlanSnapshot.routeText = "DCT";
+            const auto accepted = fixture.AcceptPrimary(primaryIfr);
+            require(accepted.completionAccepted && accepted.contentChanged &&
+                        fixture.state.metar.primaryObservation.valid,
+                    "suspend/resume fixture did not accept fresh KSAN state");
+            BrainOwnedAsyncWorkerBindings bindings;
+            bindings.metar = &fixture.worker;
+            const auto suspendResume = [&]() {
+                fixture.input.pluginEnabled = false;
+                const auto suspended = SuspendBrainOwnedRuntimeForPluginAdmin(
+                    &fixture.state, bindings);
+                const auto resumed = ResumeBrainOwnedRuntimeFromPluginAdmin(
+                    &fixture.state);
+                fixture.input.pluginEnabled = true;
+                fixture.input.flightContext = fixture.state.flightContext;
+                fixture.input.workflowStage = fixture.state.lastWorkflowStage;
+                require(suspended.status ==
+                            BrainOwnedAccessoryOperationStatus::Available &&
+                            resumed.status ==
+                            BrainOwnedAccessoryOperationStatus::Available,
+                        "Brain lifecycle coordinator was unavailable");
+                return std::pair{suspended, resumed};
+            };
+            const auto projectCurrent = [&]() {
+                BrainOwnedAccessoryProjectionCounters counters;
+                auto command = ProjectBrainOwnedAccessoryPresentation(
+                    &fixture.state, &counters);
+                require(command.snapshot != nullptr,
+                        "resume did not project an immutable command");
+                return command;
+            };
+
+            if (probe ==
+                "plugin_suspend_resume_open_drawer_closes_and_reopens") {
+                auto* measurement = InitializeAccessoryTextMeasurement();
+                require(measurement != nullptr,
+                        "drawer lifecycle text measurement unavailable");
+                AccessoryPreparationWorker preparationWorker;
+                require(preparationWorker.Start(GetCurrentThreadId()),
+                        "drawer lifecycle preparation worker did not start");
+                const auto startupDeadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(2);
+                while (preparationWorker.State() ==
+                           AccessoryPreparationWorkerState::Starting &&
+                       std::chrono::steady_clock::now() < startupDeadline) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                const auto typography =
+                    PrepareAccessoryTypography(measurement, 1.0f);
+                AccessoryLayoutInput layoutInput;
+                layoutInput.screenWidth = 1920;
+                layoutInput.screenHeight = 1080;
+                layoutInput.windowLeft = 100;
+                layoutInput.windowTop = 900;
+                layoutInput.scale = 1.0f;
+                layoutInput.cardAnimationProgress = 1.0f;
+                layoutInput.drawerOpen = true;
+                layoutInput.typography = &typography;
+                const auto layout = ResolveAccessoryLayout(layoutInput);
+                AccessoryPresentationState presenter;
+                AccessoryVisiblePublicationState visibility;
+                auto publicationStorage =
+                    std::make_unique<AccessoryPublicationFactQueue>();
+                auto& publications = *publicationStorage;
+                AccessoryPublicationDiagnosticAccounting diagnosticAccounting;
+                std::uint64_t now = 20'000;
+                std::uint64_t preparationRequests = 0;
+                std::uint64_t commits = 0;
+                std::uint64_t terminals = 0;
+                const auto renderAndPublish = [&](const auto& command) {
+                    AccessoryPreparationKeyInput keyInput;
+                    keyInput.drawer = command.snapshot->activeDrawer;
+                    keyInput.layoutGeneration = 1;
+                    keyInput.commandIdentity =
+                        command.snapshot->commandIdentity;
+                    keyInput.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+                    keyInput.selectedDrawerContentRevision =
+                        command.snapshot->selectedDrawerContentRevision;
+                    keyInput.typographyGeneration = typography.generation;
+                    keyInput.scaleThousandths = 1000;
+                    keyInput.contentWidth = std::max(
+                        1, layout.drawerBounds.right -
+                            layout.drawerBounds.left -
+                            (2 * layout.drawerContentInset));
+                    keyInput.visibleLineCapacity =
+                        layout.drawerVisibleLineCapacity;
+                    AccessoryPreparationRequest request;
+                    request.key = BuildAccessoryPreparationKeyForCommand(
+                        keyInput);
+                    request.snapshot = command.snapshot;
+                    request.layout = layout;
+                    request.requestedMicroseconds = now++;
+                    require(preparationWorker.Request(request),
+                            "drawer lifecycle exact command was not prepared");
+                    ++preparationRequests;
+                    std::shared_ptr<const AccessoryPreparedDrawerPlan> plan;
+                    const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::seconds(2);
+                    while (plan == nullptr &&
+                           std::chrono::steady_clock::now() < deadline) {
+                        plan = preparationWorker.TryTakeReady(
+                            request.key, nullptr);
+                        if (plan == nullptr) {
+                            std::this_thread::sleep_for(
+                                std::chrono::milliseconds(1));
+                        }
+                    }
+                    require(plan != nullptr &&
+                                plan->snapshot.get() == command.snapshot.get(),
+                            "drawer lifecycle worker returned wrong command");
+                    AccessoryPresentationUpdateInput update;
+                    update.presentation = command;
+                    update.layout = layout;
+                    update.mechanicalLayoutGeneration = 1;
+                    update.mainCardProductionSignature =
+                        "plugin-suspend-resume-drawer";
+                    update.measurementContext = measurement;
+                    update.preparedPlan = plan;
+                    const auto committed = UpdateAccessoryPresentation(
+                        &presenter, update);
+                    const auto render = BuildAccessoryDrawerRenderPlan(
+                        presenter, layout);
+                    require(!committed.preparationPending &&
+                                committed.publishedSnapshotCount == 1 &&
+                                render.status ==
+                                    BrainOwnedAccessoryOperationStatus::Available,
+                            "drawer lifecycle command did not commit and render");
+                    ++commits;
+                    AccessoryVisiblePublicationKey key;
+                    key.commandIdentity = command.snapshot->commandIdentity;
+                    key.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+                    key.railRevision =
+                        command.snapshot->railPresentationRevision;
+                    key.drawerRevision =
+                        command.snapshot->selectedDrawerContentRevision;
+                    key.drawerOpen = true;
+                    const auto began = visibility.Observe(
+                        {key, true, true,
+                         committed.delta.uploadRequests != 0, now++, true});
+                    const auto terminal = visibility.CompleteFirstFrame(
+                        key, true, true, now++);
+                    BrainOwnedAccessoryPublicationFact fact;
+                    ApplyAccessoryVisiblePublicationTerminal(terminal, &fact);
+                    fact.activeDrawerRendered =
+                        BrainOwnedAccessoryDrawerId::Metar;
+                    fact.originatingClickSequence =
+                        command.snapshot->originatingClickSequence;
+                    fact.originatingClickAcceptedMicroseconds =
+                        command.snapshot
+                            ->originatingClickAcceptedMicroseconds;
+                    fact.originatingMouseCallbackExitedMicroseconds =
+                        command.snapshot
+                            ->originatingMouseCallbackExitedMicroseconds;
+                    fact.issueToCommitMicroseconds = 50;
+                    fact.clickTimingApplicable =
+                        fact.originatingClickSequence != 0;
+                    fact.clickToTerminalMicroseconds =
+                        fact.clickTimingApplicable ? 100 : 0;
+                    require(began.started && terminal.terminal &&
+                                publications.Produce(fact),
+                            "drawer lifecycle terminal was not queued");
+                    BrainOwnedAccessoryPublicationFact dequeued;
+                    require(publications.Consume(&dequeued),
+                            "drawer lifecycle terminal was not dequeued");
+                    const auto disposition =
+                        ConsumeBrainOwnedAccessoryPublicationFact(
+                            &fixture.state, dequeued);
+                    const auto diagnostic =
+                        SerializeAccessoryPublicationDiagnostic(
+                            dequeued, disposition, &diagnosticAccounting);
+                    require(disposition.consumed &&
+                                disposition.commandTerminalAccepted &&
+                                disposition.visibleAttemptTerminalAccepted &&
+                                diagnostic.find(
+                                    "event=accessory-publication-terminal") !=
+                                    std::string::npos,
+                            "drawer lifecycle terminal was not accepted and serialized");
+                    ++terminals;
+                    bool visibleKsan = false;
+                    for (const auto& line : render.visibleLines) {
+                        visibleKsan = visibleKsan ||
+                            line.text.find("KSAN") != std::string::npos;
+                    }
+                    return visibleKsan;
+                };
+                BrainOwnedAccessorySelectionRequest selection;
+                selection.drawer = BrainOwnedAccessoryDrawerId::Metar;
+                selection.requestSequence = 1;
+                selection.clickAcceptedMicroseconds = now++;
+                selection.mouseCallbackEnteredMicroseconds = now++;
+                selection.mouseCallbackExitedMicroseconds = now++;
+                const auto opened = RequestBrainOwnedAccessoryDrawerSelection(
+                    &fixture.state, selection);
+                const auto openCommand = projectCurrent();
+                require(opened.activeDrawer ==
+                            BrainOwnedAccessoryDrawerId::Metar &&
+                            openCommand.snapshot->activeDrawer ==
+                                BrainOwnedAccessoryDrawerId::Metar,
+                        "pre-disable METAR drawer did not open");
+                require(renderAndPublish(openCommand),
+                        "pre-disable drawer did not visibly render KSAN");
+                preparationWorker.Stop();
+                const auto lifecycle = suspendResume();
+                presenter = {};
+                visibility = {};
+                const auto closedCommand = projectCurrent();
+                require(fixture.state.accessory.activeDrawer ==
+                            BrainOwnedAccessoryDrawerId::None &&
+                            closedCommand.snapshot->activeDrawer ==
+                                BrainOwnedAccessoryDrawerId::None,
+                        "disable did not close the open drawer safely");
+                require(preparationWorker.Start(GetCurrentThreadId()),
+                        "drawer lifecycle preparation worker did not restart");
+                const auto restartDeadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(2);
+                while (preparationWorker.State() ==
+                           AccessoryPreparationWorkerState::Starting &&
+                       std::chrono::steady_clock::now() < restartDeadline) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                selection.requestSequence = 2;
+                selection.clickAcceptedMicroseconds = now++;
+                selection.mouseCallbackEnteredMicroseconds = now++;
+                selection.mouseCallbackExitedMicroseconds = now++;
+                (void)RequestBrainOwnedAccessoryDrawerSelection(
+                    &fixture.state, selection);
+                const auto reopenedCommand = projectCurrent();
+                bool retainedKsan = false;
+                for (const auto& entry : reopenedCommand.snapshot->entries) {
+                    retainedKsan = retainedKsan ||
+                        entry.title.find("KSAN") != std::string::npos ||
+                        entry.body.find("KSAN") != std::string::npos;
+                }
+                const bool visibleKsan = renderAndPublish(reopenedCommand);
+                preparationWorker.Stop();
+                ShutdownAccessoryTextMeasurement(measurement);
+                require(lifecycle.first.stateChanged &&
+                            lifecycle.second.stateChanged && retainedKsan &&
+                            visibleKsan && preparationRequests == 2 &&
+                            commits == 2 && terminals == 2 &&
+                            publications.ProducedCount() == 2 &&
+                            publications.ConsumedCount() == 2 &&
+                            publications.RejectedCount() == 0 &&
+                            diagnosticAccounting.factsAcceptedByBrain == 2 &&
+                            reopenedCommand.snapshot->activeDrawer ==
+                                BrainOwnedAccessoryDrawerId::Metar &&
+                            reopenedCommand.snapshot
+                                    ->selectedDrawerContentRevision ==
+                                fixture.state.accessory.drawerContentRevisions[0],
+                        "reopened drawer did not consume retained KSAN content");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_DRAWER: before=METAR"
+                    << " disabled=NONE after=METAR retained=KSAN"
+                    << " preparations=" << preparationRequests
+                    << " commits=" << commits
+                    << " terminals=" << terminals
+                    << " queue_rejections=" << publications.RejectedCount()
+                    << " user_actions=2\n";
+            } else if (probe ==
+                "plugin_suspend_resume_fresh_retained_cadence_no_duplicate") {
+                const auto requestsBefore = fixture.worker.requests.size();
+                const auto eligibleBefore =
+                    fixture.state.metar.nextPrimaryEligibleMonotonicMs;
+                (void)suspendResume();
+                const auto cycle = fixture.Cycle(1);
+                require(!cycle.requestDispatched &&
+                            fixture.worker.requests.size() == requestsBefore &&
+                            fixture.state.metar.nextPrimaryEligibleMonotonicMs ==
+                                eligibleBefore,
+                        "fresh resume fabricated an immediate METAR request");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_FRESH_CADENCE: immediate=0"
+                    << " requests_before=" << requestsBefore
+                    << " requests_after=" << fixture.worker.requests.size()
+                    << " eligible_ms=" << eligibleBefore << "\n";
+            } else if (probe ==
+                "plugin_suspend_resume_due_retained_one_existing_cadence_refresh") {
+                const auto requestsBefore = fixture.worker.requests.size();
+                const auto due = std::max(
+                    fixture.state.metar.nextPrimaryEligibleMonotonicMs,
+                    fixture.state.metar.freshUntilMonotonicMs) + 1;
+                (void)suspendResume();
+                fixture.input.monotonicMs = due;
+                const auto first = fixture.Cycle();
+                const auto second = fixture.Cycle(1);
+                require(first.requestDispatched &&
+                            first.dispatchDiagnostic.request.airportIcao ==
+                                "KSAN" &&
+                            first.dispatchDiagnostic.request.purpose ==
+                                BrainMetarRequestPurpose::PrimaryRefresh &&
+                            !second.requestDispatched &&
+                            fixture.worker.requests.size() == requestsBefore + 1,
+                        "due resume did not use exactly one existing-cadence refresh");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_DUE_CADENCE: dispatches="
+                    << (fixture.worker.requests.size() - requestsBefore)
+                    << " airport="
+                    << first.dispatchDiagnostic.request.airportIcao
+                    << " purpose=primary-refresh overlap="
+                    << (second.requestDispatched ? 1 : 0) << "\n";
+            } else if (probe ==
+                "plugin_suspend_resume_late_pre_disable_completion_rejected") {
+                const auto due =
+                    fixture.state.metar.nextPrimaryEligibleMonotonicMs + 1;
+                fixture.input.monotonicMs = due;
+                const auto dispatched = fixture.Cycle();
+                require(dispatched.requestDispatched && fixture.worker.running,
+                        "late-fact probe did not dispatch pre-disable work");
+                fixture.worker.Complete(
+                    BrainMetarWorkerStatus::Success, "KSAN",
+                    "KSAN 271953Z 25011KT 1SM OVC004");
+                fixture.input.pluginEnabled = false;
+                const auto suspended = SuspendBrainOwnedRuntimeForPluginAdmin(
+                    &fixture.state, bindings);
+                const auto retainedRaw =
+                    fixture.state.metar.primaryObservation.rawMetar;
+                (void)ResumeBrainOwnedRuntimeFromPluginAdmin(&fixture.state);
+                fixture.input.pluginEnabled = true;
+                fixture.input.flightContext = fixture.state.flightContext;
+                fixture.input.workflowStage = fixture.state.lastWorkflowStage;
+                const auto resumed = fixture.Cycle(1);
+                require(suspended.workerShutdown.terminalFactDrained &&
+                            suspended.workerShutdown.dispositionDiagnostic
+                                .available &&
+                            !suspended.workerShutdown.dispositionDiagnostic
+                                 .accepted &&
+                            retainedRaw == primaryIfr &&
+                            !resumed.completionAccepted &&
+                            fixture.state.metar.primaryObservation.rawMetar ==
+                                primaryIfr,
+                        "late pre-disable completion mutated resumed state");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_LATE_FACT: drained=1"
+                    << " accepted=0 prior_primary_retained=1\n";
+            } else if (probe ==
+                "plugin_suspend_resume_repeated_cycles_zero_duplicate_work") {
+                std::set<std::uint64_t> commands;
+                std::set<std::uint64_t> lifecycles;
+                const auto dispatchBefore =
+                    fixture.state.metar.requestDispatchCount;
+                for (int cycle = 0; cycle < 3; ++cycle) {
+                    const auto transition = suspendResume();
+                    const auto command = projectCurrent();
+                    commands.insert(command.snapshot->commandIdentity);
+                    lifecycles.insert(command.snapshot->lifecycleEpoch);
+                    require(transition.first.stateChanged &&
+                                transition.second.stateChanged,
+                            "repeated lifecycle transition did not occur once");
+                }
+                const auto stateBeforeIdle = fixture.state;
+                for (int frame = 0; frame < 10; ++frame) {
+                    require(!fixture.state.pluginAdminSuspended,
+                            "settled resumed state changed during idle");
+                }
+                require(commands.size() == 3 && lifecycles.size() == 3 &&
+                            fixture.state.metar.requestDispatchCount ==
+                                dispatchBefore &&
+                            fixture.state.accessory
+                                    .publicationLivenessFailureCount == 0 &&
+                            fixture.state.metar.primaryObservation.rawMetar ==
+                                stateBeforeIdle.metar.primaryObservation.rawMetar,
+                        "repeated lifecycle created duplicate or recurring work");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_REPEAT: cycles=3 commands=3"
+                    << " lifecycles=3 requests=0 idle_frames=10 idle_work=0\n";
+            } else if (probe ==
+                "plugin_suspend_resume_callsign_change_while_disabled_rejects_prior") {
+                fixture.state.xPilotSessionBoundaryState.lastXPilotConnected =
+                    true;
+                fixture.state.xPilotSessionBoundaryState
+                    .lastConnectedPilotCallsign = "ASA551";
+                fixture.input.pluginEnabled = false;
+                (void)SuspendBrainOwnedRuntimeForPluginAdmin(
+                    &fixture.state, bindings);
+                xvatsim::brain::workflow::XPilotSessionBoundaryInput input;
+                input.state = fixture.state.xPilotSessionBoundaryState;
+                input.xPilotSession.connected = true;
+                input.xPilotSession.callsign = "UAL900";
+                input.pilotIdentity.connected = true;
+                input.pilotIdentity.ready = true;
+                input.pilotIdentity.normalizedCallsign = "UAL900";
+                const auto boundary =
+                    xvatsim::brain::workflow::ResolveXPilotSessionBoundary(input);
+                require(boundary.shouldResetFlightScopedState,
+                        "different callsign did not select existing hard boundary");
+                (void)ResetBrainOwnedAccessoryForCallsignChange(
+                    &fixture.state, "ASA551", "UAL900");
+                (void)ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+                    &fixture.state, bindings, true);
+                ExecuteHarnessPluginRuntimeReset(&fixture.state);
+                ApplyBrainOwnedXPilotSessionBoundaryDecision(
+                    &fixture.state, boundary);
+                (void)ResumeBrainOwnedRuntimeFromPluginAdmin(&fixture.state);
+                const auto command = projectCurrent();
+                const auto* orb = Step4MetarOrb(command);
+                require(!fixture.state.flightContext.active &&
+                            fixture.state.metar.primaryAirportIcao.empty() &&
+                            orb != nullptr && orb->neutral,
+                        "callsign change exposed prior flight or primary");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_CALLSIGN: old=ASA551 new=UAL900"
+                    << " hard_boundary=1 prior_exposed=0\n";
+            } else if (probe ==
+                "plugin_suspend_resume_confirmed_new_flight_clears_prior") {
+                (void)suspendResume();
+                (void)ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+                    &fixture.state, bindings, true);
+                (void)ResetBrainOwnedAccessoryForConfirmedNewFlight(
+                    &fixture.state);
+                ExecuteHarnessPluginRuntimeReset(&fixture.state);
+                workflow::FlightContext next;
+                next.active = true;
+                next.callsign = "ASA551";
+                next.departureIcao = "KSEA";
+                next.destinationIcao = "KLAX";
+                CommitBrainOwnedFlightContext(&fixture.state, next);
+                fixture.state.lastWorkflowStage = WorkflowStage::Departure;
+                (void)ResumeBrainOwnedRuntimeFromPluginAdmin(&fixture.state);
+                fixture.input.flightContext = next;
+                fixture.input.workflowStage = WorkflowStage::Departure;
+                const auto cycle = fixture.Cycle(1);
+                const auto command = projectCurrent();
+                const auto* orb = Step4MetarOrb(command);
+                require(cycle.requestDispatched &&
+                            cycle.dispatchDiagnostic.request.airportIcao ==
+                                "KSEA" &&
+                            fixture.state.metar.primaryAirportIcao == "KSEA" &&
+                            !fixture.state.metar.primaryObservation.valid &&
+                            orb != nullptr && orb->airportIcao != "KSAN",
+                        "confirmed next flight inherited old KSAN state");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_NEW_FLIGHT: route=KSEA-KLAX"
+                    << " dispatch=KSEA old_primary_inherited=0\n";
+            } else if (probe ==
+                "plugin_suspend_resume_session_reset_after_resume_remains_destructive") {
+                (void)suspendResume();
+                (void)ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+                    &fixture.state, bindings, true);
+                (void)ResetBrainOwnedAccessoryForSessionReset(&fixture.state);
+                ExecuteHarnessPluginRuntimeReset(&fixture.state);
+                const auto command = projectCurrent();
+                const auto* orb = Step4MetarOrb(command);
+                require(!fixture.state.flightContext.active &&
+                            fixture.state.lastWorkflowStage ==
+                                WorkflowStage::None &&
+                            fixture.state.metar.primaryAirportIcao.empty() &&
+                            orb != nullptr && orb->neutral,
+                        "Reset XVatsim no longer performed destructive reset");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_SESSION_RESET: destructive=1"
+                    << " context=0 primary=UNAVAILABLE\n";
+            } else if (probe ==
+                "plugin_suspend_resume_recover_current_flight_unchanged") {
+                (void)suspendResume();
+                AircraftStateSnapshot aircraft;
+                aircraft.valid = true;
+                aircraft.batteryOn = true;
+                aircraft.onGround = false;
+                FlightPlanSnapshot plan;
+                NetworkPlanSnapshot network;
+                network.feedAvailable = true;
+                network.stale = false;
+                network.matched = true;
+                network.matchedCallsign = "ASA551";
+                network.departureIcao = "KDFW";
+                network.destinationIcao = "KSAN";
+                network.routeText = "DCT";
+                const auto recovery =
+                    xvatsim::brain::workflow::ResolveCurrentFlightRecovery(
+                        aircraft, plan, network,
+                        fixture.state.flightContext,
+                        xvatsim::brain::workflow::RecoveryRequestMode::Manual);
+                require(recovery.accepted && recovery.usedPreservedContext &&
+                            recovery.stage == WorkflowStage::Enroute &&
+                            recovery.flightContext.departureIcao == "KDFW" &&
+                            recovery.flightContext.destinationIcao == "KSAN" &&
+                            fixture.state.metar.primaryAirportIcao == "KSAN",
+                        "Recover Current Flight behavior changed after resume");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_RECOVERY: accepted=1 stage=ENR"
+                    << " preserved=1 primary=KSAN\n";
+            } else if (probe ==
+                "plugin_suspend_resume_disabled_warm_idle_zero_work") {
+                fixture.input.pluginEnabled = false;
+                const auto suspended = SuspendBrainOwnedRuntimeForPluginAdmin(
+                    &fixture.state, bindings);
+                const auto requests = fixture.state.metar.requestDispatchCount;
+                const auto semantic =
+                    BrainOwnedAccessorySemanticPresentationGeneration(
+                        fixture.state);
+                const auto command =
+                    fixture.state.accessory.nextPresentationCommandIdentity;
+                const auto lifecycle = fixture.state.accessory.lifecycleEpoch;
+                for (int cycle = 0; cycle < 100'000; ++cycle) {
+                    require(fixture.state.pluginAdminSuspended,
+                            "disabled coordinator left suspension during idle");
+                }
+                require(suspended.stateChanged && !fixture.worker.running &&
+                            fixture.state.metar.requestDispatchCount == requests &&
+                            BrainOwnedAccessorySemanticPresentationGeneration(
+                                fixture.state) == semantic &&
+                            fixture.state.accessory
+                                    .nextPresentationCommandIdentity == command &&
+                            fixture.state.accessory.lifecycleEpoch == lifecycle,
+                        "disabled warm idle performed recurring work");
+                std::cout
+                    << "PLUGIN_SUSPEND_RESUME_DISABLED_IDLE: cycles=100000"
+                    << " projections=0 requests=0 commands=0 publications=0"
+                    << " worker_running=0\n";
+            } else {
+                require(false, "unknown plugin suspend/resume probe");
+            }
+        }
+    } else if (probe == "single_snapshot_kdfw_metar_atis_pdc_metar_production_seam") {
+        using namespace xvatsim::modules::overlay;
+        auto fixtureStorage = std::make_unique<Step4Fixture>();
+        auto& fixture = *fixtureStorage;
+        fixture.Cycle();
+        const auto accepted = fixture.AcceptPrimary(primaryVfr);
+        require(accepted.completionAccepted && accepted.contentChanged,
+                "KDFW METAR was not accepted for the production seam");
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "production-seam text measurement unavailable");
+        AccessoryPreparationWorker worker;
+        require(worker.Start(GetCurrentThreadId()),
+                "production-seam worker did not start");
+        const auto startupDeadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (worker.State() == AccessoryPreparationWorkerState::Starting &&
+               std::chrono::steady_clock::now() < startupDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(worker.State() == AccessoryPreparationWorkerState::Ready,
+                "production-seam worker unavailable");
+        AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 100;
+        layoutInput.windowTop = 900;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = true;
+        const auto typography = PrepareAccessoryTypography(measurement, 1.0f);
+        layoutInput.typography = &typography;
+        const auto layout = ResolveAccessoryLayout(layoutInput);
+        require(layout.status == BrainOwnedAccessoryOperationStatus::Available,
+                "production-seam layout unavailable");
+
+        AccessoryClickFactQueue clicks;
+        auto publicationsStorage =
+            std::make_unique<AccessoryPublicationFactQueue>();
+        auto& publications = *publicationsStorage;
+        AccessoryVisiblePublicationState visibility;
+        AccessoryPublicationDiagnosticAccounting diagnostics;
+        AccessoryPresentationState presenter;
+        std::uint64_t now = 1'000;
+        std::uint64_t decisions = 0;
+        std::uint64_t commands = 0;
+        std::uint64_t requests = 0;
+        std::uint64_t plans = 0;
+        std::uint64_t commits = 0;
+        std::uint64_t terminals = 0;
+        std::uint64_t serialized = 0;
+        std::uint64_t maximumClickUs = 0;
+        BrainOwnedAccessoryPresentationHandle lastCommand;
+        AccessoryPresentationUpdateInput lastUpdateInput;
+
+        const auto runSelection = [&](BrainOwnedAccessoryDrawerId drawer,
+                                      std::uint64_t sequence) {
+            AccessoryClickFact captured;
+            require(clicks.Produce(drawer, now++, &captured),
+                    "production-seam click was not captured");
+            require(clicks.MarkMouseCallbackExited(
+                        captured.requestSequence, now++),
+                    "production-seam callback exit was not recorded");
+            AccessoryClickFact consumed;
+            require(clicks.Consume(&consumed),
+                    "production-seam click was not consumed");
+            BrainOwnedAccessorySelectionRequest request;
+            request.drawer = consumed.drawer;
+            request.requestSequence = consumed.requestSequence;
+            request.clickAcceptedMicroseconds = consumed.startedMicroseconds;
+            request.mouseCallbackEnteredMicroseconds =
+                consumed.mouseCallbackEnteredMicroseconds;
+            request.mouseCallbackExitedMicroseconds =
+                consumed.mouseCallbackExitedMicroseconds;
+            const auto selection = RequestBrainOwnedAccessoryDrawerSelection(
+                &fixture.state, request);
+            ++decisions;
+            require(selection.status ==
+                        BrainOwnedAccessoryOperationStatus::Available &&
+                    selection.activeDrawer == drawer,
+                    "Brain did not select requested production-seam drawer");
+            BrainOwnedAccessoryProjectionCounters projection;
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &projection);
+            ++commands;
+            require(command.snapshot != nullptr &&
+                        projection.snapshotBuilds == 1 &&
+                        command.snapshot->activeDrawer == drawer &&
+                        command.snapshot->originatingClickSequence == sequence,
+                    "Brain did not project one exact immutable command");
+
+            AccessoryPreparationKeyInput keyInput;
+            keyInput.drawer = command.snapshot->activeDrawer;
+            keyInput.layoutGeneration = 1;
+            keyInput.commandIdentity = command.snapshot->commandIdentity;
+            keyInput.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            keyInput.selectedDrawerContentRevision =
+                command.snapshot->selectedDrawerContentRevision;
+            keyInput.typographyGeneration = typography.generation;
+            keyInput.scaleThousandths = 1000;
+            keyInput.contentWidth = std::max(1,
+                layout.drawerBounds.right - layout.drawerBounds.left -
+                    (2 * layout.drawerContentInset));
+            keyInput.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+            AccessoryPreparationRequest preparation;
+            preparation.key = BuildAccessoryPreparationKeyForCommand(keyInput);
+            preparation.snapshot = command.snapshot;
+            preparation.layout = layout;
+            preparation.requestedMicroseconds = now++;
+            require(worker.Request(preparation),
+                    "exact immutable command was not submitted once");
+            ++requests;
+            std::shared_ptr<const AccessoryPreparedDrawerPlan> plan;
+            const auto deadline = std::chrono::steady_clock::now() +
+                std::chrono::seconds(2);
+            while (plan == nullptr &&
+                   std::chrono::steady_clock::now() < deadline) {
+                plan = worker.TryTakeReady(preparation.key, nullptr);
+                if (plan == nullptr)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            require(plan != nullptr &&
+                        plan->snapshot.get() == command.snapshot.get() &&
+                        plan->key == preparation.key,
+                    "generic worker did not return the exact command plan");
+            ++plans;
+            AccessoryPresentationUpdateInput update;
+            update.presentation = command;
+            update.mechanicalLayoutGeneration = 1;
+            update.layout = layout;
+            update.mainCardProductionSignature = "single-snapshot-seam";
+            update.measurementContext = measurement;
+            update.preparedPlan = plan;
+            const auto committed = UpdateAccessoryPresentation(
+                &presenter, update);
+            require(!committed.preparationPending &&
+                        committed.publishedSnapshotCount == 1 &&
+                        presenter.activeSnapshot.get() == command.snapshot.get() &&
+                        presenter.activeSnapshot->activeDrawer == drawer,
+                    "exact prepared command did not commit to requested drawer");
+            ++commits;
+            const auto drawerRender = BuildAccessoryDrawerRenderPlan(
+                presenter, layout);
+            require(drawerRender.status ==
+                        BrainOwnedAccessoryOperationStatus::Available,
+                    "committed drawer did not produce its render plan");
+
+            AccessoryVisiblePublicationKey visibleKey;
+            visibleKey.commandIdentity = command.snapshot->commandIdentity;
+            visibleKey.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            visibleKey.railRevision =
+                command.snapshot->railPresentationRevision;
+            visibleKey.drawerRevision =
+                command.snapshot->selectedDrawerContentRevision;
+            visibleKey.drawerOpen = true;
+            const auto began = visibility.Observe(
+                {visibleKey, true, true, committed.delta.uploadRequests != 0,
+                 now++, true});
+            require(began.started && began.attemptIdentity != 0,
+                    "first qualifying draw did not open publication attempt");
+            const auto terminal = visibility.CompleteFirstFrame(
+                visibleKey, true, true, now++);
+            BrainOwnedAccessoryPublicationFact fact;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &fact);
+            fact.originatingClickSequence =
+                command.snapshot->originatingClickSequence;
+            fact.originatingClickAcceptedMicroseconds =
+                command.snapshot->originatingClickAcceptedMicroseconds;
+            fact.originatingMouseCallbackExitedMicroseconds =
+                command.snapshot->originatingMouseCallbackExitedMicroseconds;
+            fact.activeDrawerRendered = drawer;
+            fact.issueToCommitMicroseconds = 50;
+            fact.commandElapsedMicroseconds = 100;
+            fact.clickTimingApplicable = true;
+            fact.clickToTerminalMicroseconds = 100;
+            require(publications.Produce(fact),
+                    "terminal fact was not accepted by production queue");
+            BrainOwnedAccessoryPublicationFact dequeued;
+            require(publications.Consume(&dequeued),
+                    "terminal fact was not dequeued");
+            const auto disposition = ConsumeBrainOwnedAccessoryPublicationFact(
+                &fixture.state, dequeued);
+            require(disposition.consumed &&
+                        disposition.commandTerminalAccepted &&
+                        disposition.visibleAttemptTerminalAccepted,
+                    "Brain did not accept both terminal roles");
+            const auto diagnostic = SerializeAccessoryPublicationDiagnostic(
+                dequeued, disposition, &diagnostics);
+            require(diagnostic.find("event=accessory-publication-terminal") !=
+                        std::string::npos,
+                    "production diagnostic serializer did not execute");
+            ++serialized;
+            ++terminals;
+            maximumClickUs = std::max(
+                maximumClickUs, dequeued.clickToTerminalMicroseconds);
+            lastCommand = command;
+            lastUpdateInput = update;
+        };
+
+        runSelection(BrainOwnedAccessoryDrawerId::Metar, 1);
+        runSelection(BrainOwnedAccessoryDrawerId::Atis, 2);
+        require(lastCommand.snapshot != nullptr &&
+                    lastCommand.snapshot->drawerState ==
+                        BrainOwnedAccessoryDrawerState::Empty &&
+                    lastCommand.snapshot->contentGeneration == 0,
+                "ATIS did not carry its truthful independent empty state");
+        runSelection(BrainOwnedAccessoryDrawerId::Pdc, 3);
+        require(lastCommand.snapshot != nullptr &&
+                    lastCommand.snapshot->drawerState ==
+                        BrainOwnedAccessoryDrawerState::Empty &&
+                    lastCommand.snapshot->contentGeneration == 0,
+                "PDC did not carry its truthful independent empty state");
+        runSelection(BrainOwnedAccessoryDrawerId::Metar, 4);
+        require(lastCommand.snapshot != nullptr &&
+                    lastCommand.snapshot->contentGeneration != 0,
+                "returning METAR lost accepted KDFW content");
+
+        const auto workerBeforeIdle = worker.SnapshotCounters();
+        const auto publicationsBeforeIdle = publications.ProducedCount();
+        const auto idle = RunUnchangedAccessoryPresentationUpdates(
+            &presenter, lastUpdateInput, 10);
+        const auto workerAfterIdle = worker.SnapshotCounters();
+        require(idle.delta.historyVisits == 0 &&
+                    idle.delta.entryCopies == 0 &&
+                    idle.delta.wrapVisits == 0 &&
+                    idle.delta.railRasterRequests == 0 &&
+                    idle.delta.drawerRasterRequests == 0 &&
+                    idle.delta.uploadRequests == 0 &&
+                    workerAfterIdle.readinessCheckCount ==
+                        workerBeforeIdle.readinessCheckCount &&
+                    workerAfterIdle.jobsRequested ==
+                        workerBeforeIdle.jobsRequested &&
+                    publications.ProducedCount() == publicationsBeforeIdle,
+                "terminal publication did not settle to zero work");
+        require(decisions == 4 && commands == 4 && requests == 4 &&
+                    plans == 4 && commits == 4 && terminals == 4 &&
+                    serialized == 4 && clicks.PendingCount() == 0 &&
+                    clicks.DroppedCount() == 0 &&
+                    publications.RejectedCount() == 0 &&
+                    diagnostics.factsAcceptedByBrain == 4 &&
+                    diagnostics.commandTerminalsAccepted == 4 &&
+                    diagnostics.visibleAttemptTerminalsAccepted == 4 &&
+                    fixture.state.accessory.publicationLivenessFailureCount == 0 &&
+                    maximumClickUs < 500'000,
+                "production-seam accounting was not exact");
+        std::cout << "SINGLE_SNAPSHOT_PRODUCTION_SEAM: clicks=4 decisions="
+                  << decisions << " commands=" << commands
+                  << " requests=" << requests << " plans=" << plans
+                  << " commits=" << commits << " terminals=" << terminals
+                  << " diagnostics=" << serialized
+                  << " max_click_us=" << maximumClickUs
+                  << " idle_requests=0 idle_facts=0\n";
+        worker.Stop();
+        ShutdownAccessoryTextMeasurement(measurement);
+    }
+    else if (probe.rfind("single_snapshot_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        auto fixtureStorage = std::make_unique<Step4Fixture>();
+        auto& fixture = *fixtureStorage;
+        fixture.Cycle();
+        const auto accepted = fixture.AcceptPrimary(primaryVfr);
+        require(accepted.completionAccepted && accepted.contentChanged,
+                "single-snapshot focused fixture did not accept KDFW");
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "single-snapshot focused measurement unavailable");
+        AccessoryPreparationWorker worker;
+        require(worker.Start(GetCurrentThreadId()),
+                "single-snapshot focused worker did not start");
+        const auto startupDeadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (worker.State() == AccessoryPreparationWorkerState::Starting &&
+               std::chrono::steady_clock::now() < startupDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 100;
+        layoutInput.windowTop = 900;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = true;
+        const auto typography = PrepareAccessoryTypography(measurement, 1.0f);
+        layoutInput.typography = &typography;
+        const auto layout = ResolveAccessoryLayout(layoutInput);
+        AccessoryPresentationState presenter;
+        AccessoryPresentationUpdateInput lastInput;
+
+        const auto commandFor = [&](BrainOwnedAccessoryDrawerId drawer,
+                                    std::uint64_t sequence) {
+            BrainOwnedAccessorySelectionRequest request;
+            request.drawer = drawer;
+            request.requestSequence = sequence;
+            request.clickAcceptedMicroseconds = sequence * 1'000;
+            request.mouseCallbackExitedMicroseconds =
+                request.clickAcceptedMicroseconds + 1;
+            const auto decision = RequestBrainOwnedAccessoryDrawerSelection(
+                &fixture.state, request);
+            require(decision.activeDrawer == drawer,
+                    "focused Brain selection did not choose requested drawer");
+            BrainOwnedAccessoryProjectionCounters counters;
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &counters);
+            require(command.snapshot != nullptr && counters.snapshotBuilds == 1,
+                    "focused command was not projected exactly once");
+            return command;
+        };
+        const auto prepare = [&](AccessoryPreparationWorker* target,
+                                 const BrainOwnedAccessoryPresentationHandle& command,
+                                 const AccessoryLayoutResult& selectedLayout,
+                                 std::uint64_t mechanicalGeneration,
+                                 bool supersessionAccounted = true) {
+            std::shared_ptr<const AccessoryPreparedDrawerPlan> plan;
+            if (target == nullptr || command.snapshot == nullptr) return plan;
+            AccessoryPreparationKeyInput keyInput;
+            keyInput.drawer = command.snapshot->activeDrawer;
+            keyInput.layoutGeneration = mechanicalGeneration;
+            keyInput.commandIdentity = command.snapshot->commandIdentity;
+            keyInput.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            keyInput.selectedDrawerContentRevision =
+                command.snapshot->selectedDrawerContentRevision;
+            keyInput.typographyGeneration = typography.generation;
+            keyInput.scaleThousandths = static_cast<int>(
+                std::lround(selectedLayout.scale * 1'000.0f));
+            keyInput.contentWidth = std::max(1,
+                selectedLayout.drawerBounds.right -
+                    selectedLayout.drawerBounds.left -
+                    (2 * selectedLayout.drawerContentInset));
+            keyInput.visibleLineCapacity =
+                selectedLayout.drawerVisibleLineCapacity;
+            AccessoryPreparationRequest request;
+            request.key = BuildAccessoryPreparationKeyForCommand(keyInput);
+            request.snapshot = command.snapshot;
+            request.layout = selectedLayout;
+            request.supersessionTerminalAccounted = supersessionAccounted;
+            if (!target->Request(request)) return plan;
+            const auto deadline = std::chrono::steady_clock::now() +
+                std::chrono::seconds(2);
+            while (plan == nullptr &&
+                   std::chrono::steady_clock::now() < deadline) {
+                plan = target->TryTakeReady(request.key, nullptr);
+                if (plan == nullptr)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return plan;
+        };
+        const auto commit = [&](const BrainOwnedAccessoryPresentationHandle& command,
+                                const AccessoryLayoutResult& selectedLayout,
+                                std::uint64_t mechanicalGeneration,
+                                const std::shared_ptr<const
+                                    AccessoryPreparedDrawerPlan>& plan) {
+            AccessoryPresentationUpdateInput input;
+            input.presentation = command;
+            input.layout = selectedLayout;
+            input.mainCardProductionSignature = "single-snapshot-focused";
+            input.measurementContext = measurement;
+            input.preparedPlan = plan;
+            input.mechanicalLayoutGeneration = mechanicalGeneration;
+            const auto result = UpdateAccessoryPresentation(&presenter, input);
+            lastInput = input;
+            return result;
+        };
+        const auto publish = [&require](
+            BrainOwnedRuntimeState* state,
+            AccessoryVisiblePublicationState* visibility,
+            AccessoryPublicationFactQueue* queue,
+            const BrainOwnedAccessoryPresentationHandle& command,
+            bool drawerOpen,
+            std::uint64_t* now) {
+            require(state != nullptr && visibility != nullptr &&
+                        queue != nullptr && command.snapshot != nullptr &&
+                        now != nullptr,
+                    "classification publication seam input unavailable");
+            if (state == nullptr || visibility == nullptr || queue == nullptr ||
+                command.snapshot == nullptr || now == nullptr) return false;
+            AccessoryVisiblePublicationKey key;
+            key.commandIdentity = command.snapshot->commandIdentity;
+            key.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            key.railRevision = command.snapshot->railPresentationRevision;
+            key.drawerRevision =
+                command.snapshot->selectedDrawerContentRevision;
+            key.drawerOpen = drawerOpen;
+            const auto began = visibility->Observe(
+                {key, true, true, true, (*now)++, true});
+            const auto terminal = visibility->CompleteFirstFrame(
+                key, true, !drawerOpen ||
+                    command.snapshot->activeDrawer !=
+                        BrainOwnedAccessoryDrawerId::None,
+                (*now)++);
+            BrainOwnedAccessoryPublicationFact fact;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &fact);
+            fact.originatingClickSequence =
+                command.snapshot->originatingClickSequence;
+            fact.originatingClickAcceptedMicroseconds =
+                command.snapshot->originatingClickAcceptedMicroseconds;
+            fact.originatingMouseCallbackExitedMicroseconds =
+                command.snapshot->originatingMouseCallbackExitedMicroseconds;
+            fact.activeDrawerRendered = command.snapshot->activeDrawer;
+            fact.issueToCommitMicroseconds = 50;
+            fact.commandElapsedMicroseconds = 100;
+            if (fact.originatingClickSequence != 0) {
+                fact.clickTimingApplicable = true;
+                fact.clickToTerminalMicroseconds = 100;
+            }
+            require(began.started && terminal.terminal && queue->Produce(fact),
+                    "classification terminal did not enter production queue");
+            BrainOwnedAccessoryPublicationFact dequeued;
+            require(queue->Consume(&dequeued),
+                    "classification terminal did not leave production queue");
+            const auto decision = ConsumeBrainOwnedAccessoryPublicationFact(
+                state, dequeued);
+            require(decision.consumed &&
+                        decision.commandTerminalAccepted &&
+                        decision.visibleAttemptTerminalAccepted,
+                    "classification terminal was not accepted by Brain");
+            AccessoryPublicationDiagnosticAccounting diagnostics;
+            const auto serialized = SerializeAccessoryPublicationDiagnostic(
+                dequeued, decision, &diagnostics);
+            require(serialized.find("event=accessory-publication-terminal") !=
+                        std::string::npos &&
+                        diagnostics.factsAcceptedByBrain == 1,
+                    "classification terminal was not serialized from acceptance");
+            return decision.consumed;
+        };
+
+        if (probe == "single_snapshot_nonzero_metar_to_atis_empty_state" ||
+            probe == "single_snapshot_nonzero_metar_to_pdc_empty_state" ||
+            probe == "single_snapshot_atis_to_pdc_metar_initialized") {
+            const auto firstDrawer =
+                probe == "single_snapshot_atis_to_pdc_metar_initialized"
+                ? BrainOwnedAccessoryDrawerId::Atis
+                : BrainOwnedAccessoryDrawerId::Metar;
+            const auto targetDrawer =
+                probe == "single_snapshot_nonzero_metar_to_atis_empty_state"
+                ? BrainOwnedAccessoryDrawerId::Atis
+                : BrainOwnedAccessoryDrawerId::Pdc;
+            const auto first = commandFor(firstDrawer, 1);
+            const auto firstPlan = prepare(&worker, first, layout, 1);
+            const auto firstCommit = commit(first, layout, 1, firstPlan);
+            const auto target = commandFor(targetDrawer, 2);
+            const auto targetPlan = prepare(&worker, target, layout, 1);
+            const auto targetCommit = commit(target, layout, 1, targetPlan);
+            require(!firstCommit.preparationPending &&
+                        !targetCommit.preparationPending &&
+                        targetPlan != nullptr &&
+                        targetPlan->snapshot.get() == target.snapshot.get() &&
+                        presenter.activeSnapshot.get() == target.snapshot.get() &&
+                        target.snapshot->activeDrawer == targetDrawer &&
+                        target.snapshot->drawerState ==
+                            BrainOwnedAccessoryDrawerState::Empty &&
+                        target.snapshot->contentGeneration == 0 &&
+                        fixture.state.metar.presentationGeneration != 0,
+                    "nonzero METAR contaminated empty ATIS/PDC command");
+        } else if (probe == "single_snapshot_newer_click_discards_stale_plan_once") {
+            worker.Stop();
+            std::mutex gateMutex;
+            std::condition_variable gateChanged;
+            bool oldPlanReachedPublication = false;
+            bool releaseOldPlan = false;
+            AccessoryPreparationWorkerHooks hooks;
+            hooks.beforeReadyPublicationUnlocked = [&] {
+                std::unique_lock<std::mutex> lock(gateMutex);
+                oldPlanReachedPublication = true;
+                gateChanged.notify_all();
+                gateChanged.wait(lock, [&] { return releaseOldPlan; });
+            };
+            AccessoryPreparationWorker staleWorker(std::move(hooks));
+            require(staleWorker.Start(GetCurrentThreadId()),
+                    "stale-plan worker did not start");
+            while (staleWorker.State() ==
+                       AccessoryPreparationWorkerState::Starting) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            const auto older = commandFor(
+                BrainOwnedAccessoryDrawerId::Atis, 1);
+            AccessoryPreparationKeyInput oldKeyInput;
+            oldKeyInput.drawer = older.snapshot->activeDrawer;
+            oldKeyInput.layoutGeneration = 1;
+            oldKeyInput.commandIdentity = older.snapshot->commandIdentity;
+            oldKeyInput.lifecycleEpoch = older.snapshot->lifecycleEpoch;
+            oldKeyInput.selectedDrawerContentRevision =
+                older.snapshot->selectedDrawerContentRevision;
+            oldKeyInput.typographyGeneration = typography.generation;
+            oldKeyInput.scaleThousandths = 1000;
+            oldKeyInput.contentWidth = std::max(1,
+                layout.drawerBounds.right - layout.drawerBounds.left -
+                    (2 * layout.drawerContentInset));
+            oldKeyInput.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+            AccessoryPreparationRequest olderRequest;
+            olderRequest.key = BuildAccessoryPreparationKeyForCommand(
+                oldKeyInput);
+            olderRequest.snapshot = older.snapshot;
+            olderRequest.layout = layout;
+            require(staleWorker.Request(olderRequest),
+                    "older exact command was not admitted");
+            {
+                std::unique_lock<std::mutex> lock(gateMutex);
+                gateChanged.wait_for(lock, std::chrono::seconds(2), [&] {
+                    return oldPlanReachedPublication;
+                });
+            }
+            auto queueStorage =
+                std::make_unique<AccessoryPublicationFactQueue>();
+            auto& queue = *queueStorage;
+            BrainOwnedAccessoryPublicationFact superseded;
+            superseded.commandIdentity = older.snapshot->commandIdentity;
+            superseded.lifecycleEpoch = older.snapshot->lifecycleEpoch;
+            superseded.appliedCommandIdentity = 0;
+            superseded.commandTerminal = true;
+            superseded.disposition =
+                BrainOwnedAccessoryPublicationDisposition::SupersededBeforeCommit;
+            require(queue.Produce(superseded),
+                    "older supersession terminal was not retained");
+            BrainOwnedAccessoryPublicationFact delivered;
+            require(queue.Consume(&delivered),
+                    "older supersession terminal was not delivered");
+            const auto supersession = ConsumeBrainOwnedAccessoryPublicationFact(
+                &fixture.state, delivered);
+            require(supersession.consumed &&
+                        supersession.commandTerminalAccepted,
+                    "older command was not truthfully terminal before replacement");
+            const auto newer = commandFor(
+                BrainOwnedAccessoryDrawerId::Pdc, 2);
+            AccessoryPreparationKeyInput newKeyInput = oldKeyInput;
+            newKeyInput.drawer = newer.snapshot->activeDrawer;
+            newKeyInput.commandIdentity = newer.snapshot->commandIdentity;
+            newKeyInput.lifecycleEpoch = newer.snapshot->lifecycleEpoch;
+            newKeyInput.selectedDrawerContentRevision =
+                newer.snapshot->selectedDrawerContentRevision;
+            AccessoryPreparationRequest newerRequest;
+            newerRequest.key = BuildAccessoryPreparationKeyForCommand(
+                newKeyInput);
+            newerRequest.snapshot = newer.snapshot;
+            newerRequest.layout = layout;
+            newerRequest.supersessionTerminalAccounted = true;
+            require(staleWorker.Request(newerRequest),
+                    "newer command was not admitted after supersession");
+            {
+                std::lock_guard<std::mutex> lock(gateMutex);
+                releaseOldPlan = true;
+            }
+            gateChanged.notify_all();
+            std::shared_ptr<const AccessoryPreparedDrawerPlan> newerPlan;
+            const auto deadline = std::chrono::steady_clock::now() +
+                std::chrono::seconds(2);
+            while (newerPlan == nullptr &&
+                   std::chrono::steady_clock::now() < deadline) {
+                newerPlan = staleWorker.TryTakeReady(
+                    newerRequest.key, nullptr);
+                if (newerPlan == nullptr)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            const auto counters = staleWorker.SnapshotCounters();
+            require(staleWorker.TryTakeReady(olderRequest.key, nullptr) == nullptr &&
+                        newerPlan != nullptr &&
+                        newerPlan->snapshot.get() == newer.snapshot.get() &&
+                        counters.staleResultsRejected == 1,
+                    "late older plan was not discarded exactly once");
+            staleWorker.Stop();
+        } else if (probe == "single_snapshot_terminal_publication_then_idle_zero_work") {
+            const auto command = commandFor(
+                BrainOwnedAccessoryDrawerId::Atis, 1);
+            const auto plan = prepare(&worker, command, layout, 1);
+            const auto committed = commit(command, layout, 1, plan);
+            auto queueStorage =
+                std::make_unique<AccessoryPublicationFactQueue>();
+            auto& queue = *queueStorage;
+            AccessoryVisiblePublicationState visibility;
+            AccessoryVisiblePublicationKey key{
+                command.snapshot->commandIdentity,
+                command.snapshot->lifecycleEpoch,
+                command.snapshot->railPresentationRevision,
+                command.snapshot->selectedDrawerContentRevision,
+                true};
+            const auto began = visibility.Observe(
+                {key, true, true, true, 1'000, true});
+            const auto terminal = visibility.CompleteFirstFrame(
+                key, true, true, 1'100);
+            BrainOwnedAccessoryPublicationFact fact;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &fact);
+            require(began.started && queue.Produce(fact),
+                    "terminal publication did not enter queue");
+            BrainOwnedAccessoryPublicationFact dequeued;
+            require(queue.Consume(&dequeued) &&
+                        ConsumeBrainOwnedAccessoryPublicationFact(
+                            &fixture.state, dequeued).consumed,
+                    "terminal publication was not consumed");
+            const auto before = worker.SnapshotCounters();
+            const auto producedBefore = queue.ProducedCount();
+            const auto idle = RunUnchangedAccessoryPresentationUpdates(
+                &presenter, lastInput, 10'000);
+            const auto after = worker.SnapshotCounters();
+            require(!committed.preparationPending &&
+                        idle.delta.historyVisits == 0 &&
+                        idle.delta.entryCopies == 0 &&
+                        idle.delta.wrapVisits == 0 &&
+                        idle.delta.railRasterRequests == 0 &&
+                        idle.delta.drawerRasterRequests == 0 &&
+                        idle.delta.uploadRequests == 0 &&
+                        before.readinessCheckCount == after.readinessCheckCount &&
+                        before.jobsRequested == after.jobsRequested &&
+                        producedBefore == queue.ProducedCount(),
+                    "terminal publication retained recurring idle work");
+        } else if (probe == "single_snapshot_per_drawer_revision_cross_contamination") {
+            const auto before = fixture.state.accessory.drawerContentRevisions;
+            const auto atis = commandFor(
+                BrainOwnedAccessoryDrawerId::Atis, 1);
+            const auto atisRevision =
+                atis.snapshot->selectedDrawerContentRevision;
+            fixture.state.metar.nextPrimaryEligibleMonotonicMs =
+                fixture.input.monotonicMs;
+            fixture.Cycle();
+            fixture.worker.Complete(
+                BrainMetarWorkerStatus::Success, "KDFW",
+                "SPECI KDFW 271954Z 18010KT 4SM BKN020");
+            const auto changed = fixture.Cycle(1);
+            const auto after = fixture.state.accessory.drawerContentRevisions;
+            const auto refreshed = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, nullptr);
+            require(changed.contentChanged && after[0] > before[0] &&
+                        after[1] == before[1] && after[2] == before[2] &&
+                        refreshed.snapshot->activeDrawer ==
+                            BrainOwnedAccessoryDrawerId::Atis &&
+                        refreshed.snapshot->selectedDrawerContentRevision ==
+                            atisRevision &&
+                        refreshed.snapshot->contentGeneration == 0,
+                    "METAR mutation cross-contaminated ATIS/PDC revision");
+        } else if (probe == "single_snapshot_closed_drawer_and_neutral_startup_unchanged") {
+            auto neutralStorage = std::make_unique<BrainOwnedRuntimeState>();
+            auto& neutral = *neutralStorage;
+            EnableBrainOwnedAccessoryRuntime(&neutral);
+            BrainOwnedAccessoryProjectionCounters projection;
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                &neutral, &projection);
+            AccessoryLayoutInput closedInput = layoutInput;
+            closedInput.drawerOpen = false;
+            const auto closedLayout = ResolveAccessoryLayout(closedInput);
+            AccessoryPresentationState neutralPresenter;
+            AccessoryPresentationUpdateInput input;
+            input.presentation = command;
+            input.layout = closedLayout;
+            input.mainCardProductionSignature = "neutral-startup";
+            input.measurementContext = measurement;
+            input.mechanicalLayoutGeneration = 1;
+            const auto update = UpdateAccessoryPresentation(
+                &neutralPresenter, input);
+            AccessoryVisiblePublicationState visibility;
+            auto queueStorage =
+                std::make_unique<AccessoryPublicationFactQueue>();
+            auto& queue = *queueStorage;
+            std::uint64_t now = 10'000;
+            require(publish(
+                        &neutral, &visibility, &queue, command, false, &now),
+                    "neutral startup terminal was not published");
+            const bool allNeutral = command.snapshot != nullptr &&
+                std::all_of(command.snapshot->orbs.begin(),
+                            command.snapshot->orbs.end(),
+                            [](const auto& orb) { return orb.neutral; });
+            const auto semanticBefore =
+                neutral.accessory.semanticPresentationGeneration;
+            const auto revisionBefore =
+                neutral.accessory.drawerContentRevisions[0];
+            BrainOwnedAccessoryHistoryEntryInput hidden;
+            hidden.drawer = BrainOwnedAccessoryDrawerId::Metar;
+            hidden.stableKey = "METAR|KSEA|hidden-neutral";
+            hidden.title = "KSEA · LOOKUP";
+            hidden.body = "METAR KSEA 291853Z 18005KT 10SM CLR";
+            const auto hiddenAccepted = AcceptBrainOwnedAccessoryHistoryEntry(
+                &neutral, hidden);
+            BrainOwnedAccessoryProjectionCounters deferredProjection;
+            const auto deferred = ProjectBrainOwnedAccessoryPresentation(
+                &neutral, &deferredProjection);
+            const auto deferredUpdate = UpdateAccessoryPresentation(
+                &neutralPresenter, input);
+            const auto semanticAfterHidden =
+                neutral.accessory.semanticPresentationGeneration;
+            const auto revisionAfterHidden =
+                neutral.accessory.drawerContentRevisions[0];
+            const auto publicationsAfterHidden = queue.ProducedCount();
+
+            BrainOwnedAccessorySelectionRequest openRequest;
+            openRequest.drawer = BrainOwnedAccessoryDrawerId::Metar;
+            openRequest.requestSequence = 1;
+            openRequest.clickAcceptedMicroseconds = now++;
+            openRequest.mouseCallbackExitedMicroseconds = now++;
+            const auto openedDecision = RequestBrainOwnedAccessoryDrawerSelection(
+                &neutral, openRequest);
+            BrainOwnedAccessoryProjectionCounters openedProjection;
+            const auto opened = ProjectBrainOwnedAccessoryPresentation(
+                &neutral, &openedProjection);
+            const auto openedPlan = prepare(&worker, opened, layout, 1);
+            AccessoryPresentationUpdateInput openedInput;
+            openedInput.presentation = opened;
+            openedInput.layout = layout;
+            openedInput.mainCardProductionSignature = "neutral-deferred-open";
+            openedInput.measurementContext = measurement;
+            openedInput.preparedPlan = openedPlan;
+            openedInput.mechanicalLayoutGeneration = 1;
+            const auto openedUpdate = UpdateAccessoryPresentation(
+                &neutralPresenter, openedInput);
+            require(publish(
+                        &neutral, &visibility, &queue, opened, true, &now),
+                    "deferred hidden revision open did not publish");
+            const bool hiddenConsumed = opened.snapshot != nullptr &&
+                std::any_of(opened.snapshot->entries.begin(),
+                            opened.snapshot->entries.end(),
+                            [&](const auto& entry) {
+                                return entry.stableKey == hidden.stableKey;
+                            });
+            require(projection.snapshotBuilds == 1 && allNeutral &&
+                        command.snapshot->activeDrawer ==
+                            BrainOwnedAccessoryDrawerId::None &&
+                        command.snapshot->entries.empty() &&
+                        command.snapshot->drawerState ==
+                            BrainOwnedAccessoryDrawerState::Unavailable &&
+                        !update.preparationPending &&
+                        update.delta.drawerRasterRequests == 0 &&
+                        hiddenAccepted.accepted &&
+                        neutral.accessory.drawerContentRevisions[0] >
+                            revisionBefore &&
+                        semanticAfterHidden == semanticBefore &&
+                        neutral.accessory.semanticPresentationGeneration ==
+                            semanticBefore + 1 &&
+                        deferred.snapshot.get() == command.snapshot.get() &&
+                        deferredProjection.snapshotBuilds == 0 &&
+                        deferredUpdate.publishedSnapshotCount == 0 &&
+                        deferredUpdate.delta.railRasterRequests == 0 &&
+                        deferredUpdate.delta.drawerRasterRequests == 0 &&
+                        deferredUpdate.delta.uploadRequests == 0 &&
+                        openedDecision.activeDrawer ==
+                            BrainOwnedAccessoryDrawerId::Metar &&
+                        openedProjection.snapshotBuilds == 1 &&
+                        opened.snapshot->selectedDrawerContentRevision ==
+                            neutral.accessory.drawerContentRevisions[0] &&
+                        hiddenConsumed && openedPlan != nullptr &&
+                        !openedUpdate.preparationPending &&
+                        queue.ProducedCount() == 2,
+                    "closed neutral startup changed under single snapshot");
+            std::cout
+                << "SINGLE_SNAPSHOT_INVALIDATION_CLOSED_DEFERRED: hidden_revision_delta="
+                << (revisionAfterHidden - revisionBefore)
+                << " hidden_semantic_delta="
+                << (semanticAfterHidden - semanticBefore)
+                << " hidden_commands="
+                << (deferred.snapshot->commandIdentity -
+                    command.snapshot->commandIdentity)
+                << " hidden_snapshots=" << deferredProjection.snapshotBuilds
+                << " hidden_rail_rasters="
+                << deferredUpdate.delta.railRasterRequests
+                << " hidden_drawer_rasters="
+                << deferredUpdate.delta.drawerRasterRequests
+                << " hidden_uploads=" << deferredUpdate.delta.uploadRequests
+                << " hidden_publications=" << (publicationsAfterHidden - 1)
+                << " open_commands="
+                << (opened.snapshot->commandIdentity -
+                    deferred.snapshot->commandIdentity)
+                << " open_publications="
+                << (queue.ProducedCount() - publicationsAfterHidden)
+                << " consumed_revision="
+                << opened.snapshot->selectedDrawerContentRevision << "\n";
+        } else if (probe ==
+                   "single_snapshot_hidden_metar_change_while_atis_selected") {
+            const auto atis = commandFor(
+                BrainOwnedAccessoryDrawerId::Atis, 1);
+            const auto atisPlan = prepare(&worker, atis, layout, 1);
+            const auto atisCommit = commit(atis, layout, 1, atisPlan);
+            AccessoryVisiblePublicationState visibility;
+            auto queueStorage =
+                std::make_unique<AccessoryPublicationFactQueue>();
+            auto& queue = *queueStorage;
+            std::uint64_t now = 20'000;
+            require(publish(
+                        &fixture.state, &visibility, &queue, atis, true, &now),
+                    "initial ATIS command did not publish");
+            const auto revisionsBefore =
+                fixture.state.accessory.drawerContentRevisions;
+            const auto semanticBefore =
+                fixture.state.accessory.semanticPresentationGeneration;
+            BrainOwnedAccessoryHistoryEntryInput hidden;
+            hidden.drawer = BrainOwnedAccessoryDrawerId::Metar;
+            hidden.stableKey = "METAR|KSEA|hidden-behind-atis";
+            hidden.title = "KSEA · LOOKUP";
+            hidden.body = "METAR KSEA 291853Z 18005KT 10SM CLR";
+            const auto acceptedHidden = AcceptBrainOwnedAccessoryHistoryEntry(
+                &fixture.state, hidden);
+            BrainOwnedAccessoryProjectionCounters deferredCounters;
+            const auto deferred = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &deferredCounters);
+            const auto deferredCommit = commit(
+                deferred, layout, 1, atisPlan);
+            const auto semanticAfterHidden =
+                fixture.state.accessory.semanticPresentationGeneration;
+            const auto revisionsAfterHidden =
+                fixture.state.accessory.drawerContentRevisions;
+            const auto publicationsAfterHidden = queue.ProducedCount();
+            const auto metar = commandFor(
+                BrainOwnedAccessoryDrawerId::Metar, 2);
+            const auto metarPlan = prepare(&worker, metar, layout, 1);
+            const auto metarCommit = commit(metar, layout, 1, metarPlan);
+            require(publish(
+                        &fixture.state, &visibility, &queue, metar, true, &now),
+                    "later METAR command did not publish hidden revision");
+            const bool hiddenConsumed = std::any_of(
+                metar.snapshot->entries.begin(), metar.snapshot->entries.end(),
+                [&](const auto& entry) {
+                    return entry.stableKey == hidden.stableKey;
+                });
+            require(!atisCommit.preparationPending && acceptedHidden.accepted &&
+                        revisionsAfterHidden[0] == revisionsBefore[0] + 1 &&
+                        revisionsAfterHidden[1] == revisionsBefore[1] &&
+                        revisionsAfterHidden[2] == revisionsBefore[2] &&
+                        semanticAfterHidden == semanticBefore &&
+                        deferred.snapshot.get() == atis.snapshot.get() &&
+                        deferredCounters.snapshotBuilds == 0 &&
+                        deferred.snapshot->selectedDrawerContentRevision ==
+                            atis.snapshot->selectedDrawerContentRevision &&
+                        deferredCommit.publishedSnapshotCount == 0 &&
+                        deferredCommit.delta.railRasterRequests == 0 &&
+                        deferredCommit.delta.drawerRasterRequests == 0 &&
+                        deferredCommit.delta.uploadRequests == 0 &&
+                        metar.snapshot->selectedDrawerContentRevision ==
+                            revisionsAfterHidden[0] && hiddenConsumed &&
+                        metarPlan != nullptr &&
+                        !metarCommit.preparationPending &&
+                        queue.ProducedCount() == 2,
+                    "hidden METAR mutation replaced or republished ATIS");
+            std::cout
+                << "SINGLE_SNAPSHOT_INVALIDATION_ATIS_SELECTED: hidden_revision_delta="
+                << (revisionsAfterHidden[0] - revisionsBefore[0])
+                << " hidden_atis_revision_delta="
+                << (revisionsAfterHidden[1] - revisionsBefore[1])
+                << " hidden_semantic_delta="
+                << (semanticAfterHidden - semanticBefore)
+                << " hidden_commands="
+                << (deferred.snapshot->commandIdentity -
+                    atis.snapshot->commandIdentity)
+                << " hidden_snapshots=" << deferredCounters.snapshotBuilds
+                << " hidden_rail_rasters="
+                << deferredCommit.delta.railRasterRequests
+                << " hidden_drawer_rasters="
+                << deferredCommit.delta.drawerRasterRequests
+                << " hidden_uploads=" << deferredCommit.delta.uploadRequests
+                << " hidden_publications=" << (publicationsAfterHidden - 1)
+                << " later_metar_commands="
+                << (metar.snapshot->commandIdentity -
+                    deferred.snapshot->commandIdentity)
+                << " later_metar_publications="
+                << (queue.ProducedCount() - publicationsAfterHidden) << "\n";
+        } else if (probe ==
+                   "single_snapshot_closed_kdfw_orb_transition_one_rail_command") {
+            auto orbFixtureStorage = std::make_unique<Step4Fixture>();
+            auto& orbFixture = *orbFixtureStorage;
+            orbFixture.Cycle();
+            BrainOwnedAccessoryProjectionCounters neutralCounters;
+            const auto neutralCommand = ProjectBrainOwnedAccessoryPresentation(
+                &orbFixture.state, &neutralCounters);
+            AccessoryLayoutInput closedInput = layoutInput;
+            closedInput.drawerOpen = false;
+            const auto closedLayout = ResolveAccessoryLayout(closedInput);
+            AccessoryPresentationState closedPresenter;
+            AccessoryPresentationUpdateInput neutralInput;
+            neutralInput.presentation = neutralCommand;
+            neutralInput.layout = closedLayout;
+            neutralInput.mainCardProductionSignature = "closed-neutral-orb";
+            neutralInput.measurementContext = measurement;
+            neutralInput.mechanicalLayoutGeneration = 1;
+            const auto neutralUpdate = UpdateAccessoryPresentation(
+                &closedPresenter, neutralInput);
+            AccessoryVisiblePublicationState visibility;
+            auto queueStorage =
+                std::make_unique<AccessoryPublicationFactQueue>();
+            auto& queue = *queueStorage;
+            std::uint64_t now = 30'000;
+            require(publish(&orbFixture.state, &visibility, &queue,
+                            neutralCommand, false, &now),
+                    "closed neutral ORB command did not publish");
+            const auto semanticBefore =
+                orbFixture.state.accessory.semanticPresentationGeneration;
+            const auto revisionBefore =
+                orbFixture.state.accessory.drawerContentRevisions[0];
+            const auto acceptedOrb = orbFixture.AcceptPrimary(primaryVfr);
+            BrainOwnedAccessoryProjectionCounters kdfwCounters;
+            const auto kdfwCommand = ProjectBrainOwnedAccessoryPresentation(
+                &orbFixture.state, &kdfwCounters);
+            AccessoryPresentationUpdateInput kdfwInput = neutralInput;
+            kdfwInput.presentation = kdfwCommand;
+            const auto kdfwUpdate = UpdateAccessoryPresentation(
+                &closedPresenter, kdfwInput);
+            require(publish(&orbFixture.state, &visibility, &queue,
+                            kdfwCommand, false, &now),
+                    "closed KDFW ORB command did not publish");
+            const auto* kdfwOrb = Step4MetarOrb(kdfwCommand);
+            require(acceptedOrb.completionAccepted &&
+                        acceptedOrb.contentChanged &&
+                        orbFixture.state.accessory.semanticPresentationGeneration ==
+                            semanticBefore + 1 &&
+                        orbFixture.state.accessory.drawerContentRevisions[0] ==
+                            revisionBefore + 1 &&
+                        kdfwCounters.snapshotBuilds == 1 &&
+                        kdfwCommand.snapshot->commandIdentity ==
+                            neutralCommand.snapshot->commandIdentity + 1 &&
+                        kdfwOrb != nullptr && kdfwOrb->airportIcao == "KDFW" &&
+                        kdfwOrb->categoryText == "VFR" &&
+                        kdfwUpdate.publishedSnapshotCount == 1 &&
+                        kdfwUpdate.delta.railRasterRequests == 1 &&
+                        kdfwUpdate.delta.drawerRasterRequests == 0 &&
+                        kdfwUpdate.delta.uploadRequests == 1 &&
+                        queue.ProducedCount() == 2,
+                    "closed KDFW ORB transition was not one rail command");
+            std::cout
+                << "SINGLE_SNAPSHOT_INVALIDATION_ORB_TRANSITION: drawer_revision_delta="
+                << (orbFixture.state.accessory.drawerContentRevisions[0] -
+                    revisionBefore)
+                << " semantic_delta="
+                << (orbFixture.state.accessory.semanticPresentationGeneration -
+                    semanticBefore)
+                << " commands="
+                << (kdfwCommand.snapshot->commandIdentity -
+                    neutralCommand.snapshot->commandIdentity)
+                << " snapshots=" << kdfwCounters.snapshotBuilds
+                << " rail_rasters=" << kdfwUpdate.delta.railRasterRequests
+                << " drawer_rasters=" << kdfwUpdate.delta.drawerRasterRequests
+                << " uploads=" << kdfwUpdate.delta.uploadRequests
+                << " publications=" << (queue.ProducedCount() - 1)
+                << " terminals=" << (queue.ConsumedCount() - 1) << "\n";
+        } else if (probe ==
+                   "single_snapshot_orb_unchanged_hidden_metar_mutation_no_publication") {
+            BrainOwnedAccessoryProjectionCounters baselineCounters;
+            const auto baseline = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &baselineCounters);
+            AccessoryLayoutInput closedInput = layoutInput;
+            closedInput.drawerOpen = false;
+            const auto closedLayout = ResolveAccessoryLayout(closedInput);
+            AccessoryPresentationState classificationPresenter;
+            AccessoryPresentationUpdateInput baselineInput;
+            baselineInput.presentation = baseline;
+            baselineInput.layout = closedLayout;
+            baselineInput.mainCardProductionSignature = "closed-kdfw-baseline";
+            baselineInput.measurementContext = measurement;
+            baselineInput.mechanicalLayoutGeneration = 1;
+            const auto baselineUpdate = UpdateAccessoryPresentation(
+                &classificationPresenter, baselineInput);
+            AccessoryVisiblePublicationState visibility;
+            auto queueStorage =
+                std::make_unique<AccessoryPublicationFactQueue>();
+            auto& queue = *queueStorage;
+            std::uint64_t now = 40'000;
+            require(publish(&fixture.state, &visibility, &queue,
+                            baseline, false, &now),
+                    "closed KDFW baseline did not publish");
+            const auto semanticBefore =
+                fixture.state.accessory.semanticPresentationGeneration;
+            const auto revisionBefore =
+                fixture.state.accessory.drawerContentRevisions[0];
+            BrainOwnedAccessoryHistoryEntryInput hidden;
+            hidden.drawer = BrainOwnedAccessoryDrawerId::Metar;
+            hidden.stableKey = "METAR|KSEA|closed-kdfw-hidden";
+            hidden.title = "KSEA · LOOKUP";
+            hidden.body = "METAR KSEA 291853Z 18005KT 10SM CLR";
+            const auto hiddenAccepted = AcceptBrainOwnedAccessoryHistoryEntry(
+                &fixture.state, hidden);
+            BrainOwnedAccessoryProjectionCounters hiddenCounters;
+            const auto hiddenProjection = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &hiddenCounters);
+            const auto hiddenUpdate = UpdateAccessoryPresentation(
+                &classificationPresenter, baselineInput);
+            const auto semanticAfterHidden =
+                fixture.state.accessory.semanticPresentationGeneration;
+            const auto revisionAfterHidden =
+                fixture.state.accessory.drawerContentRevisions[0];
+            const auto publicationsAfterHidden = queue.ProducedCount();
+
+            const auto opened = commandFor(
+                BrainOwnedAccessoryDrawerId::Metar, 1);
+            const auto openedPlan = prepare(&worker, opened, layout, 1);
+            AccessoryPresentationUpdateInput openedInput;
+            openedInput.presentation = opened;
+            openedInput.layout = layout;
+            openedInput.mainCardProductionSignature = "open-current-metar";
+            openedInput.measurementContext = measurement;
+            openedInput.preparedPlan = openedPlan;
+            openedInput.mechanicalLayoutGeneration = 1;
+            const auto openedUpdate = UpdateAccessoryPresentation(
+                &classificationPresenter, openedInput);
+            require(publish(&fixture.state, &visibility, &queue,
+                            opened, true, &now),
+                    "current METAR open did not publish");
+            const auto activeSemanticBefore =
+                fixture.state.accessory.semanticPresentationGeneration;
+            const auto activeRevisionBefore =
+                fixture.state.accessory.drawerContentRevisions[0];
+            BrainOwnedAccessoryHistoryEntryInput active;
+            active.drawer = BrainOwnedAccessoryDrawerId::Metar;
+            active.stableKey = "METAR|KPDX|active-metar";
+            active.title = "KPDX · LOOKUP";
+            active.body = "METAR KPDX 291853Z 18005KT 10SM CLR";
+            const auto activeAccepted = AcceptBrainOwnedAccessoryHistoryEntry(
+                &fixture.state, active);
+            BrainOwnedAccessoryProjectionCounters activeCounters;
+            const auto activeCommand = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &activeCounters);
+            const auto activePlan = prepare(&worker, activeCommand, layout, 1);
+            AccessoryPresentationUpdateInput activeInput = openedInput;
+            activeInput.presentation = activeCommand;
+            activeInput.preparedPlan = activePlan;
+            const auto activeUpdate = UpdateAccessoryPresentation(
+                &classificationPresenter, activeInput);
+            require(publish(&fixture.state, &visibility, &queue,
+                            activeCommand, true, &now),
+                    "active METAR mutation did not publish once");
+            require(!baselineUpdate.preparationPending && hiddenAccepted.accepted &&
+                        fixture.state.accessory.drawerContentRevisions[0] ==
+                            activeRevisionBefore + 1 &&
+                        semanticAfterHidden == semanticBefore &&
+                        revisionAfterHidden == revisionBefore + 1 &&
+                        activeRevisionBefore == revisionAfterHidden &&
+                        hiddenProjection.snapshot.get() == baseline.snapshot.get() &&
+                        hiddenCounters.snapshotBuilds == 0 &&
+                        hiddenUpdate.publishedSnapshotCount == 0 &&
+                        hiddenUpdate.delta.railRasterRequests == 0 &&
+                        hiddenUpdate.delta.drawerRasterRequests == 0 &&
+                        hiddenUpdate.delta.uploadRequests == 0 &&
+                        opened.snapshot->selectedDrawerContentRevision ==
+                            activeRevisionBefore && openedPlan != nullptr &&
+                        !openedUpdate.preparationPending && activeAccepted.accepted &&
+                        fixture.state.accessory.semanticPresentationGeneration ==
+                            activeSemanticBefore + 1 &&
+                        activeCounters.snapshotBuilds == 1 &&
+                        activeCommand.snapshot->selectedDrawerContentRevision ==
+                            fixture.state.accessory.drawerContentRevisions[0] &&
+                        activePlan != nullptr && !activeUpdate.preparationPending &&
+                        activeUpdate.publishedSnapshotCount == 1 &&
+                        queue.ProducedCount() == 3,
+                    "ORB-unchanged hidden METAR mutation published or was lost");
+            std::cout
+                << "SINGLE_SNAPSHOT_INVALIDATION_ORB_UNCHANGED: hidden_revision_delta="
+                << (revisionAfterHidden - revisionBefore)
+                << " hidden_semantic_delta="
+                << (semanticAfterHidden - semanticBefore)
+                << " hidden_commands="
+                << (hiddenProjection.snapshot->commandIdentity -
+                    baseline.snapshot->commandIdentity)
+                << " hidden_snapshots=" << hiddenCounters.snapshotBuilds
+                << " hidden_rail_rasters="
+                << hiddenUpdate.delta.railRasterRequests
+                << " hidden_drawer_rasters="
+                << hiddenUpdate.delta.drawerRasterRequests
+                << " hidden_uploads=" << hiddenUpdate.delta.uploadRequests
+                << " hidden_publications=" << (publicationsAfterHidden - 1)
+                << " active_revision_delta="
+                << (fixture.state.accessory.drawerContentRevisions[0] -
+                    activeRevisionBefore)
+                << " active_semantic_delta="
+                << (fixture.state.accessory.semanticPresentationGeneration -
+                    activeSemanticBefore)
+                << " active_commands="
+                << (activeCommand.snapshot->commandIdentity -
+                    opened.snapshot->commandIdentity)
+                << " active_snapshots=" << activeCounters.snapshotBuilds
+                << " active_publications="
+                << (queue.ProducedCount() - publicationsAfterHidden - 1)
+                << "\n";
+        } else if (probe == "single_snapshot_layout_change_reprepares_same_command_mechanically") {
+            const auto command = commandFor(
+                BrainOwnedAccessoryDrawerId::Atis, 1);
+            const auto firstPlan = prepare(&worker, command, layout, 1);
+            const auto firstCommit = commit(command, layout, 1, firstPlan);
+            AccessoryLayoutInput scaledInput = layoutInput;
+            scaledInput.scale = 1.25f;
+            const auto scaledTypography = PrepareAccessoryTypography(
+                measurement, 1.25f);
+            scaledInput.typography = &scaledTypography;
+            const auto scaledLayout = ResolveAccessoryLayout(scaledInput);
+            BrainOwnedAccessoryProjectionCounters repeatedCounters;
+            const auto repeated = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &repeatedCounters);
+            const auto secondPlan = prepare(
+                &worker, repeated, scaledLayout, 2);
+            const auto secondCommit = commit(
+                repeated, scaledLayout, 2, secondPlan);
+            const auto counters = worker.SnapshotCounters();
+            require(!firstCommit.preparationPending &&
+                        !secondCommit.preparationPending &&
+                        repeated.snapshot.get() == command.snapshot.get() &&
+                        repeatedCounters.snapshotBuilds == 0 &&
+                        secondPlan != nullptr &&
+                        secondPlan->snapshot.get() == command.snapshot.get() &&
+                        secondPlan->key.layoutGeneration == 2 &&
+                        presenter.commandIdentity ==
+                            command.snapshot->commandIdentity &&
+                        presenter.layoutGeneration == 2 &&
+                        secondCommit.delta.drawerRasterRequests == 1 &&
+                        counters.jobsRequested == 2,
+                    "layout change created semantic command or missed mechanical reprepare");
+        } else {
+            require(false, "unknown single-snapshot focused probe");
+        }
+        worker.Stop();
+        ShutdownAccessoryTextMeasurement(measurement);
+    } else if (probe.rfind("repeated_lookup_viewport_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        const std::string longPrimary =
+            "KDFW 271951Z 18010KT 10SM FEW050 SCT080 BKN120 29/18 "
+            "A2992 RMK AO2 SLP123 T02940183";
+        const std::string longLookup =
+            "KABQ 271953Z 18012KT 4SM BKN020 OVC080 22/12 A3005 "
+            "RMK AO2 SLP101 T02220117";
+        auto fixtureStorage = std::make_unique<Step4Fixture>();
+        auto& fixture = *fixtureStorage;
+        fixture.Cycle();
+        const auto primaryAccepted = fixture.AcceptPrimary(longPrimary);
+        require(primaryAccepted.completionAccepted &&
+                    primaryAccepted.contentChanged,
+                "viewport seam did not accept usable KDFW primary");
+
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "viewport seam text measurement unavailable");
+        AccessoryPreparationWorker worker;
+        require(worker.Start(GetCurrentThreadId()),
+                "viewport seam preparation worker did not start");
+        const auto workerDeadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (worker.State() == AccessoryPreparationWorkerState::Starting &&
+               std::chrono::steady_clock::now() < workerDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(worker.State() == AccessoryPreparationWorkerState::Ready,
+                "viewport seam preparation worker unavailable");
+
+        AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1280;
+        layoutInput.screenHeight = 720;
+        layoutInput.windowLeft = 80;
+        layoutInput.windowTop = 640;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = true;
+        const auto typography = PrepareAccessoryTypography(measurement, 1.0f);
+        layoutInput.typography = &typography;
+        const auto layout = ResolveAccessoryLayout(layoutInput);
+        require(layout.status == BrainOwnedAccessoryOperationStatus::Available,
+                "viewport seam layout unavailable");
+
+        AccessoryPresentationState presenter;
+        auto publicationQueueStorage =
+            std::make_unique<AccessoryPublicationFactQueue>();
+        auto& publicationQueue = *publicationQueueStorage;
+        AccessoryVisiblePublicationState visibility;
+        AccessoryPublicationDiagnosticAccounting diagnosticAccounting;
+        std::uint64_t now = 50'000;
+        std::uint64_t nextClick = 1;
+        std::uint64_t commands = 0;
+        std::uint64_t commits = 0;
+        std::uint64_t terminalFacts = 0;
+        std::uint64_t serializedDiagnostics = 0;
+
+        struct ViewportSeamResult {
+            BrainOwnedAccessoryPresentationHandle command;
+            std::shared_ptr<const AccessoryPreparedDrawerPlan> plan;
+            AccessoryPresentationUpdateInput input;
+            AccessoryPresentationUpdateResult update;
+            AccessoryDrawerRenderPlan render;
+            BrainOwnedAccessoryPublicationFact fact;
+            BrainOwnedAccessoryPublicationDecision decision;
+            std::string diagnostic;
+        };
+
+        const auto projectCurrent = [&]() {
+            BrainOwnedAccessoryProjectionCounters projection;
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &projection);
+            require(command.snapshot != nullptr &&
+                        projection.snapshotBuilds == 1,
+                    "viewport seam did not project one immutable command");
+            ++commands;
+            return command;
+        };
+        const auto prepareCommand = [&] (
+            const BrainOwnedAccessoryPresentationHandle& command) {
+            std::shared_ptr<const AccessoryPreparedDrawerPlan> plan;
+            if (command.snapshot == nullptr) return plan;
+            AccessoryPreparationKeyInput keyInput;
+            keyInput.drawer = command.snapshot->activeDrawer;
+            keyInput.layoutGeneration = 1;
+            keyInput.commandIdentity = command.snapshot->commandIdentity;
+            keyInput.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            keyInput.selectedDrawerContentRevision =
+                command.snapshot->selectedDrawerContentRevision;
+            keyInput.typographyGeneration = typography.generation;
+            keyInput.scaleThousandths = 1000;
+            keyInput.contentWidth = std::max(
+                1, layout.drawerBounds.right - layout.drawerBounds.left -
+                    (2 * layout.drawerContentInset));
+            keyInput.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+            AccessoryPreparationRequest request;
+            request.key = BuildAccessoryPreparationKeyForCommand(keyInput);
+            request.snapshot = command.snapshot;
+            request.layout = layout;
+            request.requestedMicroseconds = now++;
+            require(worker.Request(request),
+                    "viewport seam exact command was not prepared");
+            const auto deadline = std::chrono::steady_clock::now() +
+                std::chrono::seconds(2);
+            while (plan == nullptr &&
+                   std::chrono::steady_clock::now() < deadline) {
+                plan = worker.TryTakeReady(request.key, nullptr);
+                if (plan == nullptr) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
+            require(plan != nullptr &&
+                        plan->snapshot.get() == command.snapshot.get() &&
+                        plan->key == request.key,
+                    "viewport seam worker did not return exact command plan");
+            return plan;
+        };
+        const auto commitAndPublish = [&] (
+            const BrainOwnedAccessoryPresentationHandle& command) {
+            ViewportSeamResult result;
+            result.command = command;
+            result.plan = prepareCommand(command);
+            result.input.presentation = command;
+            result.input.layout = layout;
+            result.input.mainCardProductionSignature =
+                "repeated-lookup-viewport-production-seam";
+            result.input.measurementContext = measurement;
+            result.input.preparedPlan = result.plan;
+            result.input.mechanicalLayoutGeneration = 1;
+            result.update = UpdateAccessoryPresentation(
+                &presenter, result.input);
+            require(!result.update.preparationPending &&
+                        result.update.publishedSnapshotCount == 1 &&
+                        presenter.activeSnapshot.get() == command.snapshot.get(),
+                    "viewport seam exact command did not commit");
+            ++commits;
+            result.render = BuildAccessoryDrawerRenderPlan(presenter, layout);
+            require(result.render.status ==
+                        BrainOwnedAccessoryOperationStatus::Available,
+                    "viewport seam committed command did not build raster plan");
+
+            AccessoryVisiblePublicationKey key;
+            key.commandIdentity = command.snapshot->commandIdentity;
+            key.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+            key.railRevision = command.snapshot->railPresentationRevision;
+            key.drawerRevision =
+                command.snapshot->selectedDrawerContentRevision;
+            key.drawerOpen = command.snapshot->activeDrawer !=
+                BrainOwnedAccessoryDrawerId::None;
+            const auto began = visibility.Observe(
+                {key, true, true, result.update.delta.uploadRequests != 0,
+                 now++, true});
+            const auto terminal = visibility.CompleteFirstFrame(
+                key, true, true, now++);
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &result.fact);
+            result.fact.originatingClickSequence =
+                command.snapshot->originatingClickSequence;
+            result.fact.originatingClickAcceptedMicroseconds =
+                command.snapshot->originatingClickAcceptedMicroseconds;
+            result.fact.originatingMouseCallbackExitedMicroseconds =
+                command.snapshot->originatingMouseCallbackExitedMicroseconds;
+            result.fact.activeDrawerRendered = command.snapshot->activeDrawer;
+            result.fact.issueToCommitMicroseconds = 50;
+            result.fact.commandElapsedMicroseconds = 100;
+            result.fact.snapshotScrollResetGeneration =
+                result.update.snapshotScrollResetGeneration;
+            result.fact.previouslyAppliedScrollResetGeneration =
+                result.update.previouslyAppliedScrollResetGeneration;
+            result.fact.drawerOffsetBeforeCommit =
+                result.update.drawerOffsetBeforeCommit;
+            result.fact.drawerOffsetAfterCommit =
+                result.update.drawerOffsetAfterCommit;
+            result.fact.scrollResetApplied =
+                result.update.scrollResetApplied;
+            result.fact.firstVisibleLineApplicable = true;
+            result.fact.firstVisibleLine = result.render.firstVisibleLine;
+            if (result.fact.originatingClickSequence != 0) {
+                result.fact.clickTimingApplicable = true;
+                result.fact.clickToTerminalMicroseconds = 100;
+            }
+            require(began.started && terminal.terminal &&
+                        publicationQueue.Produce(result.fact),
+                    "viewport seam terminal fact did not enter production queue");
+            BrainOwnedAccessoryPublicationFact dequeued;
+            require(publicationQueue.Consume(&dequeued),
+                    "viewport seam terminal fact did not leave production queue");
+            result.fact = dequeued;
+            result.decision = ConsumeBrainOwnedAccessoryPublicationFact(
+                &fixture.state, dequeued);
+            require(result.decision.consumed &&
+                        result.decision.commandTerminalAccepted &&
+                        result.decision.visibleAttemptTerminalAccepted,
+                    "viewport seam terminal roles were not accepted by Brain");
+            result.diagnostic = SerializeAccessoryPublicationDiagnostic(
+                dequeued, result.decision, &diagnosticAccounting);
+            require(result.diagnostic.find(
+                        "event=accessory-publication-terminal") !=
+                        std::string::npos &&
+                        result.diagnostic.find(
+                            "snapshotScrollResetGeneration=" +
+                            std::to_string(
+                                command.snapshot->scrollResetGeneration)) !=
+                            std::string::npos &&
+                        result.diagnostic.find(
+                            "firstVisibleLine=" +
+                            std::to_string(result.render.firstVisibleLine)) !=
+                            std::string::npos,
+                    "viewport seam diagnostic serializer did not execute");
+            ++terminalFacts;
+            ++serializedDiagnostics;
+            return result;
+        };
+        const auto selectDrawer = [&] (BrainOwnedAccessoryDrawerId drawer) {
+            BrainOwnedAccessorySelectionRequest request;
+            request.drawer = drawer;
+            request.requestSequence = nextClick++;
+            request.clickAcceptedMicroseconds = now++;
+            request.mouseCallbackEnteredMicroseconds =
+                request.clickAcceptedMicroseconds;
+            request.mouseCallbackExitedMicroseconds = now++;
+            const auto decision = RequestBrainOwnedAccessoryDrawerSelection(
+                &fixture.state, request);
+            require(decision.activeDrawer == drawer,
+                    "viewport seam Brain selection did not choose drawer");
+            return commitAndPublish(projectCurrent());
+        };
+        const auto visibleContains = [] (
+            const AccessoryDrawerRenderPlan& render,
+            const std::string& token) {
+            return std::any_of(
+                render.visibleLines.begin(), render.visibleLines.end(),
+                [&](const auto& line) {
+                    return line.text.find(token) != std::string::npos;
+                });
+        };
+        const auto projectMutation = [&]() {
+            return commitAndPublish(projectCurrent());
+        };
+
+        const auto opened = selectDrawer(BrainOwnedAccessoryDrawerId::Metar);
+        require(visibleContains(opened.render, "KDFW"),
+                "viewport seam initial primary was not visible");
+        const auto firstLookupDecision = fixture.SubmitLookup("KABQ");
+        require(firstLookupDecision.accepted,
+                "viewport seam first KABQ lookup was not accepted");
+        const auto firstPending = projectMutation();
+        require(visibleContains(firstPending.render, "FETCHING METAR") &&
+                    firstPending.render.firstVisibleLine == 0,
+                "viewport seam first KABQ pending state was not visible");
+        const auto firstAccepted = fixture.AcceptLookup(longLookup);
+        require(firstAccepted.completionAccepted && firstAccepted.contentChanged,
+                "viewport seam first KABQ completion was not accepted");
+        const auto firstSpotlight = projectMutation();
+        require(visibleContains(firstSpotlight.render, "METAR LOOKUP") &&
+                    firstSpotlight.render.firstVisibleLine == 0,
+                "viewport seam first KABQ spotlight was not visible");
+        const auto firstExpiryCycle = fixture.Cycle(
+            xvatsim::brain::kBrainMetarLookupSpotlightMs);
+        require(firstExpiryCycle.presentationChanged &&
+                    fixture.state.metar.transientPresentation ==
+                        BrainMetarTransientPresentation::None,
+                "viewport seam first spotlight did not expire");
+        const auto firstExpiry = projectMutation();
+        require(visibleContains(firstExpiry.render, "KDFW") &&
+                    firstExpiry.render.firstVisibleLine == 0,
+                "viewport seam first spotlight did not return to KDFW");
+
+        AccessoryPresentationScrollInput scrollInput;
+        scrollInput.layout = layout;
+        scrollInput.pointerX =
+            (layout.drawerBounds.left + layout.drawerBounds.right) / 2;
+        scrollInput.pointerY =
+            (layout.drawerBounds.top + layout.drawerBounds.bottom) / 2;
+        scrollInput.wheelClicks = 100;
+        const auto scrolled = ScrollAccessoryPresentation(
+            &presenter, scrollInput);
+        require(scrolled.changed && scrolled.drawerOffset > 0 &&
+                    presenter.drawerOffset > 0,
+                "viewport seam could not establish real nonzero scroll offset");
+        const int verifiedScrolledOffset = presenter.drawerOffset;
+        const auto resetBeforeSecond =
+            fixture.state.accessory.scrollResetGeneration;
+
+        const auto secondLookupDecision = fixture.SubmitLookup("KABQ");
+        require(secondLookupDecision.accepted,
+                "viewport seam second KABQ lookup was not accepted");
+        const auto secondLookupGeneration =
+            fixture.state.metar.lookupGeneration;
+        const auto secondPending = projectMutation();
+        if (probe == "repeated_lookup_viewport_pending_reset_top") {
+            require(fixture.state.accessory.scrollResetGeneration ==
+                        resetBeforeSecond + 1,
+                    "repeated lookup pending did not advance reset generation once");
+            require(secondPending.update.drawerOffsetReset &&
+                        presenter.drawerOffset == 0 &&
+                        secondPending.render.firstVisibleLine == 0 &&
+                        visibleContains(secondPending.render, "FETCHING METAR"),
+                    "repeated lookup pending retained the scrolled viewport");
+            std::cout
+                << "REPEATED_LOOKUP_VIEWPORT_PENDING: reset_before="
+                << resetBeforeSecond << " reset_after="
+                << fixture.state.accessory.scrollResetGeneration
+                << " offset_before=" << verifiedScrolledOffset
+                << " offset_after=" << presenter.drawerOffset
+                << " first_visible_line="
+                << secondPending.render.firstVisibleLine
+                << " pending_visible="
+                << (visibleContains(secondPending.render, "FETCHING METAR")
+                        ? 1 : 0)
+                << " commands=" << commands << " terminals=" << terminalFacts
+                << " diagnostics=" << serializedDiagnostics << "\n";
+        } else if (probe ==
+                   "repeated_lookup_viewport_lost_ownership_blocks_reset") {
+            const auto atis = selectDrawer(BrainOwnedAccessoryDrawerId::Atis);
+            const auto atisSnapshot = atis.command.snapshot;
+            const auto atisOffset = presenter.drawerOffset;
+            const auto producedBeforeLate = publicationQueue.ProducedCount();
+            const auto lateAccepted = fixture.AcceptLookup(longLookup);
+            BrainOwnedAccessoryProjectionCounters lateProjectionCounters;
+            const auto lateProjection = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, &lateProjectionCounters);
+            const auto lateUpdate = UpdateAccessoryPresentation(
+                &presenter, atis.input);
+            const auto lateRender = BuildAccessoryDrawerRenderPlan(
+                presenter, layout);
+            require(lateAccepted.completionAccepted &&
+                        fixture.state.accessory.activeDrawer ==
+                            BrainOwnedAccessoryDrawerId::Atis &&
+                        lateProjection.snapshot.get() == atisSnapshot.get() &&
+                        lateProjectionCounters.snapshotBuilds == 0 &&
+                        presenter.activeSnapshot.get() == atisSnapshot.get() &&
+                        presenter.drawerOffset == atisOffset &&
+                        lateUpdate.publishedSnapshotCount == 0 &&
+                        lateUpdate.delta.drawerRasterRequests == 0 &&
+                        lateUpdate.delta.uploadRequests == 0 &&
+                        publicationQueue.ProducedCount() == producedBeforeLate &&
+                        !visibleContains(lateRender, "KABQ"),
+                    "late lookup completion reset or stole ATIS ownership");
+            std::cout
+                << "REPEATED_LOOKUP_VIEWPORT_LOST_OWNERSHIP: active_drawer="
+                << static_cast<int>(fixture.state.accessory.activeDrawer)
+                << " snapshot_builds=" << lateProjectionCounters.snapshotBuilds
+                << " offset_before=" << atisOffset
+                << " offset_after=" << presenter.drawerOffset
+                << " late_publications="
+                << (publicationQueue.ProducedCount() - producedBeforeLate)
+                << "\n";
+        } else {
+            const auto parseBefore = fixture.state.metar.parseCount;
+            const auto historyBefore = fixture.state.metar.historyMutationCount;
+            const auto resetBeforeCompletion =
+                fixture.state.accessory.scrollResetGeneration;
+            const auto secondAccepted = fixture.AcceptLookup(longLookup);
+            const auto secondRequestIdentity = fixture.worker.requests.empty()
+                ? 0 : fixture.worker.requests.back().requestId;
+            require(secondAccepted.completionAccepted &&
+                        !secondAccepted.contentChanged &&
+                        secondAccepted.reason ==
+                            "metar-lookup-identical-content-accepted" &&
+                        fixture.state.metar.parseCount == parseBefore &&
+                        fixture.state.metar.historyMutationCount == historyBefore,
+                    "identical KABQ completion reparsed or mutated history");
+            const auto secondSpotlight = projectMutation();
+            if (probe ==
+                "repeated_lookup_viewport_identical_spotlight_top") {
+                require(fixture.state.accessory.scrollResetGeneration ==
+                            resetBeforeCompletion + 1,
+                        "identical spotlight did not advance reset generation once");
+                require(secondSpotlight.update.drawerOffsetReset &&
+                            presenter.drawerOffset == 0 &&
+                            secondSpotlight.render.firstVisibleLine == 0 &&
+                            visibleContains(secondSpotlight.render,
+                                            "METAR LOOKUP"),
+                        "identical KABQ spotlight remained above viewport");
+                const auto queueBeforeIdle = publicationQueue.ProducedCount();
+                const auto workerBeforeIdle = worker.SnapshotCounters();
+                const auto idle = RunUnchangedAccessoryPresentationUpdates(
+                    &presenter, secondSpotlight.input, 10);
+                const auto workerAfterIdle = worker.SnapshotCounters();
+                require(idle.delta.drawerRasterRequests == 0 &&
+                            idle.delta.uploadRequests == 0 &&
+                            idle.delta.snapshotPublications == 0 &&
+                            publicationQueue.ProducedCount() == queueBeforeIdle &&
+                            workerAfterIdle.jobsRequested ==
+                                workerBeforeIdle.jobsRequested,
+                        "unchanged spotlight frames performed recurring work");
+                std::cout
+                    << "REPEATED_LOOKUP_VIEWPORT_SPOTLIGHT: parse_delta="
+                    << (fixture.state.metar.parseCount - parseBefore)
+                    << " history_delta="
+                    << (fixture.state.metar.historyMutationCount - historyBefore)
+                    << " reset_before=" << resetBeforeCompletion
+                    << " reset_after="
+                    << fixture.state.accessory.scrollResetGeneration
+                    << " offset_before=" << verifiedScrolledOffset
+                    << " offset_after=" << presenter.drawerOffset
+                    << " first_visible_line="
+                    << secondSpotlight.render.firstVisibleLine
+                    << " spotlight_visible="
+                    << (visibleContains(secondSpotlight.render,
+                                        "METAR LOOKUP") ? 1 : 0)
+                    << " idle_rasters=" << idle.delta.drawerRasterRequests
+                    << " idle_publications="
+                    << idle.delta.snapshotPublications
+                    << " request_identity=" << secondRequestIdentity
+                    << " lookup_generation=" << secondLookupGeneration
+                    << " pending_command="
+                    << secondPending.command.snapshot->commandIdentity
+                    << " spotlight_command="
+                    << secondSpotlight.command.snapshot->commandIdentity
+                    << " command_terminals=" << terminalFacts
+                    << " visible_attempt_terminals=" << terminalFacts
+                    << " duplicate_facts=" << publicationQueue.RejectedCount()
+                    << " stale_rejections="
+                    << fixture.state.accessory.publicationFactsRejected
+                    << " liveness_failures="
+                    << fixture.state.accessory.publicationLivenessFailureCount
+                    << "\n";
+            } else if (probe ==
+                       "repeated_lookup_viewport_expiry_primary_top") {
+                const auto resetBeforeExpiry =
+                    fixture.state.accessory.scrollResetGeneration;
+                const auto expiryCycle = fixture.Cycle(
+                    xvatsim::brain::kBrainMetarLookupSpotlightMs);
+                require(expiryCycle.presentationChanged,
+                        "second spotlight expiry did not change presentation");
+                const auto expired = projectMutation();
+                require(fixture.state.accessory.scrollResetGeneration ==
+                            resetBeforeExpiry + 1,
+                        "spotlight expiry did not advance reset generation once");
+                require(expired.update.drawerOffsetReset &&
+                            presenter.drawerOffset == 0 &&
+                            expired.render.firstVisibleLine == 0 &&
+                            visibleContains(expired.render, "KDFW"),
+                        "spotlight expiry did not restore KDFW at top");
+                std::cout
+                    << "REPEATED_LOOKUP_VIEWPORT_EXPIRY: reset_before="
+                    << resetBeforeExpiry << " reset_after="
+                    << fixture.state.accessory.scrollResetGeneration
+                    << " offset_before=" << verifiedScrolledOffset
+                    << " offset_after=" << presenter.drawerOffset
+                    << " first_visible_line="
+                    << expired.render.firstVisibleLine
+                    << " primary_visible="
+                    << (visibleContains(expired.render, "KDFW") ? 1 : 0)
+                    << " request_identity=" << secondRequestIdentity
+                    << " lookup_generation=" << secondLookupGeneration
+                    << " pending_command="
+                    << secondPending.command.snapshot->commandIdentity
+                    << " spotlight_command="
+                    << secondSpotlight.command.snapshot->commandIdentity
+                    << " expiry_command="
+                    << expired.command.snapshot->commandIdentity
+                    << " pending_reset="
+                    << secondPending.update.snapshotScrollResetGeneration
+                    << " spotlight_reset="
+                    << secondSpotlight.update.snapshotScrollResetGeneration
+                    << " expiry_reset="
+                    << expired.update.snapshotScrollResetGeneration
+                    << " command_terminals=" << terminalFacts
+                    << " visible_attempt_terminals=" << terminalFacts
+                    << " duplicate_facts=" << publicationQueue.RejectedCount()
+                    << " stale_rejections="
+                    << fixture.state.accessory.publicationFactsRejected
+                    << " liveness_failures="
+                    << fixture.state.accessory.publicationLivenessFailureCount
+                    << "\n";
+            } else if (probe ==
+                       "repeated_lookup_viewport_background_mutation_preserves_scroll") {
+                (void)secondSpotlight;
+                fixture.Cycle(xvatsim::brain::kBrainMetarLookupSpotlightMs);
+                (void)projectMutation();
+                scrollInput.wheelClicks = 100;
+                const auto backgroundScroll = ScrollAccessoryPresentation(
+                    &presenter, scrollInput);
+                require(backgroundScroll.changed && presenter.drawerOffset > 0,
+                        "background control could not establish nonzero offset");
+                const int offsetBeforeBackground = presenter.drawerOffset;
+                const auto resetBeforeBackground =
+                    fixture.state.accessory.scrollResetGeneration;
+                fixture.state.metar.nextPrimaryEligibleMonotonicMs =
+                    fixture.input.monotonicMs;
+                const auto dispatch = fixture.Cycle();
+                require(dispatch.requestDispatched,
+                        "background primary refresh was not dispatched");
+                fixture.worker.Complete(
+                    BrainMetarWorkerStatus::Success, "KDFW",
+                    "KDFW 271955Z 19011KT 10SM FEW060 SCT090 BKN140 "
+                    "30/18 A2990 RMK AO2 SLP118 T03000183");
+                const auto backgroundAccepted = fixture.Cycle(1);
+                require(backgroundAccepted.completionAccepted &&
+                            backgroundAccepted.contentChanged,
+                        "background primary mutation was not accepted");
+                const auto backgroundCommand = projectMutation();
+                require(fixture.state.accessory.scrollResetGeneration ==
+                            resetBeforeBackground &&
+                            !backgroundCommand.update.drawerOffsetReset &&
+                            presenter.drawerOffset == offsetBeforeBackground &&
+                            backgroundCommand.render.firstVisibleLine ==
+                                offsetBeforeBackground,
+                        "ordinary background mutation reset user scroll");
+                std::cout
+                    << "REPEATED_LOOKUP_VIEWPORT_BACKGROUND: reset_before="
+                    << resetBeforeBackground << " reset_after="
+                    << fixture.state.accessory.scrollResetGeneration
+                    << " offset_before=" << offsetBeforeBackground
+                    << " offset_after=" << presenter.drawerOffset
+                    << " commands=" << commands
+                    << " terminals=" << terminalFacts << "\n";
+            } else {
+                require(false, "unknown repeated-lookup viewport probe");
+            }
+        }
+        require(publicationQueue.RejectedCount() == 0 &&
+                    fixture.state.accessory.publicationFactsRejected == 0 &&
+                    fixture.state.accessory.publicationLivenessFailureCount == 0,
+                "viewport seam publication accounting was not exact");
+        worker.Stop();
+        ShutdownAccessoryTextMeasurement(measurement);
+    } else if (probe == "brain_exclusive_red_hidden_stale_preparation") {
+        auto step4Heap18113 = std::make_unique<Step4Fixture>();
+        auto& fixture = *step4Heap18113;
+        fixture.Cycle();
+        Step4SelectDrawer(
+            &fixture.state, BrainOwnedAccessoryDrawerId::Metar, 1);
+        const auto emptyHidden = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, 1, nullptr);
+        require(emptyHidden.snapshot != nullptr,
+                "initial hidden METAR preparation unavailable");
+        const auto accepted = fixture.AcceptPrimary(primaryVfr);
+        require(accepted.completionAccepted && accepted.contentChanged,
+                "KDFW primary was not accepted for hidden preparation red case");
+        const auto currentHidden = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, 1, nullptr);
+        require(currentHidden.snapshot != nullptr,
+                "current hidden METAR preparation unavailable");
+        require(currentHidden.snapshot->snapshotIdentity !=
+                    emptyHidden.snapshot->snapshotIdentity,
+                "accepted KDFW retained the obsolete hidden preparation identity");
+        const auto containsKdfw = std::any_of(
+            currentHidden.snapshot->entries.begin(),
+            currentHidden.snapshot->entries.end(),
+            [](const BrainOwnedAccessoryHistoryEntry& entry) {
+                return entry.title.find("KDFW") != std::string::npos ||
+                    entry.body.find("KDFW") != std::string::npos;
+            });
+        require(containsKdfw,
+                "first current hidden preparation does not contain accepted KDFW");
+    } else if (probe == "brain_exclusive_red_dual_commit_orphans_action") {
+        using namespace xvatsim::modules::overlay;
+        AccessoryClickFactQueue queue;
+        AccessoryClickFact first;
+        require(queue.Produce(
+                    BrainOwnedAccessoryDrawerId::Metar, 1'000, &first),
+                "first click fact was not produced");
+        AccessoryClickFact consumed;
+        require(queue.Consume(&consumed),
+                "first click fact was not begun");
+
+        // This is the live ordering: the normal update path makes the
+        // presentation current, then the draw-time path takes its
+        // already-current return before BindPresentation.
+        AccessoryClickFact second;
+        require(queue.Produce(
+                    BrainOwnedAccessoryDrawerId::Atis, 2'000, &second),
+                "second click fact was not produced");
+        AccessoryClickFact later;
+        require(queue.Consume(&later),
+                "later click remained blocked behind an unbound rendered action");
+        require(later.requestSequence == second.requestSequence,
+                "later click sequence was not delivered after supersession");
+    } else if (probe == "brain_exclusive_red_cancelled_liveness_unreported") {
+        auto step4Heap18164 = std::make_unique<BrainOwnedRuntimeState>();
+        auto& state = *step4Heap18164;
+        BrainOwnedAccessoryPublicationFact cancelled;
+        cancelled.commandIdentity = 1;
+        cancelled.lifecycleEpoch = state.accessory.lifecycleEpoch;
+        cancelled.disposition =
+            BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+        cancelled.cancellationTimingApplicable = true;
+        cancelled.issueToCancellationMicroseconds = 600'001;
+        const auto disposition = ConsumeBrainOwnedAccessoryPublicationFact(
+            &state, cancelled);
+        require(disposition.consumed && disposition.terminal &&
+                    state.accessory.publicationLivenessFailureCount == 1,
+                "cancelled action elapsed time was not terminally classified");
+    } else if (probe == "orb_publication_precorrection_reproduction") {
+        using namespace xvatsim::modules::overlay;
+        auto step4Heap18179 = std::make_unique<Step4Fixture>();
+        auto& fixture = *step4Heap18179;
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "ORB publication reproduction measurement unavailable");
+        if (measurement != nullptr) {
+            AccessoryLayoutInput layoutInput;
+            layoutInput.screenWidth = 1920;
+            layoutInput.screenHeight = 1080;
+            layoutInput.windowLeft = 100;
+            layoutInput.windowTop = 900;
+            layoutInput.scale = 1.0f;
+            layoutInput.cardAnimationProgress = 1.0f;
+            layoutInput.drawerOpen = false;
+            const auto layout = ResolveAccessoryLayout(layoutInput);
+            AccessoryPresentationState presenter;
+            AccessoryPresentationUpdateInput update;
+            update.presentation = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, 1, nullptr);
+            update.layout = layout;
+            update.mainCardProductionSignature = "orb-publication-red-proof";
+            update.measurementContext = measurement;
+            const auto neutral = UpdateAccessoryPresentation(&presenter, update);
+            require(neutral.delta.railRasterRequests == 1,
+                    "initial neutral rail did not raster once");
+            const auto neutralRevision = presenter.railPresentationRevision;
+
+            const auto accepted = fixture.AcceptPrimary(primaryVfr);
+            require(accepted.presentationChanged && accepted.contentChanged,
+                    "primary acceptance did not advance brain presentation/content");
+            update.presentation = ProjectBrainOwnedAccessoryPresentation(
+                &fixture.state, 1, nullptr);
+            const auto automatic = UpdateAccessoryPresentation(&presenter, update);
+            const auto acceptedRevision = presenter.railPresentationRevision;
+            const auto* acceptedOrb = Step4MetarOrb(update.presentation);
+            require(acceptedOrb != nullptr &&
+                        acceptedOrb->airportIcao == "KDFW" &&
+                        acceptedOrb->categoryText == "VFR",
+                    "accepted snapshot does not contain KDFW/VFR");
+            require(acceptedRevision != neutralRevision,
+                    "accepted brain-owned rail revision did not change");
+            require(automatic.delta.railRasterRequests == 1 &&
+                        automatic.delta.uploadRequests == 1,
+                    "accepted visible ORB did not request one automatic rail raster/upload");
+            require(automatic.delta.drawerRasterRequests == 0,
+                    "closed drawer acceptance requested drawer raster work");
+            ShutdownAccessoryTextMeasurement(measurement);
+        }
+    } else if (probe == "accessory_timing_precorrection_reproduction") {
+        const auto source = Step4ReadFile(
+            "modules/overlay/src/OverlayWindow.cpp");
+        require(source.find("ClearDeferredAccessoryInputBinding") ==
+                    std::string::npos &&
+                    source.find("preparationElapsedMicroseconds") !=
+                        std::string::npos &&
+                    source.find("commitElapsedMicroseconds") !=
+                        std::string::npos &&
+                    source.find("firstFrameElapsedMicroseconds") !=
+                        std::string::npos,
+                "terminal publication timing does not preserve separate intervals");
+        auto step4Heap18238 = std::make_unique<BrainOwnedRuntimeState>();
+        auto& state = *step4Heap18238;
+        BrainOwnedAccessoryPublicationFact displayed;
+        displayed.commandIdentity = 1;
+        displayed.lifecycleEpoch = state.accessory.lifecycleEpoch;
+        displayed.disposition =
+            BrainOwnedAccessoryPublicationDisposition::FirstFrameDisplayed;
+        displayed.preparationElapsedMicroseconds = 80'000;
+        displayed.commitElapsedMicroseconds = 2'000;
+        displayed.firstFrameElapsedMicroseconds = 18'000;
+        displayed.commandElapsedMicroseconds = 100'000;
+        const auto consumed = ConsumeBrainOwnedAccessoryPublicationFact(
+            &state, displayed);
+        require(consumed.consumed &&
+                    state.accessory.publicationLivenessFailureCount == 0,
+                "worker/frame wait was mislabeled as a liveness failure");
+    } else if (probe == "orb_publication_transition_matrix") {
+        using namespace xvatsim::modules::overlay;
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "ORB transition matrix measurement unavailable");
+        if (measurement != nullptr) {
+            const auto resolveLayout = [](bool drawerOpen) {
+                AccessoryLayoutInput input;
+                input.screenWidth = 1920;
+                input.screenHeight = 1080;
+                input.windowLeft = 100;
+                input.windowTop = 900;
+                input.scale = 1.0f;
+                input.cardAnimationProgress = 1.0f;
+                input.drawerOpen = drawerOpen;
+                return ResolveAccessoryLayout(input);
+            };
+            const auto makePlan = [&](const auto& presentation,
+                                      const auto& layout) {
+                if (!presentation.snapshot || presentation.snapshot->activeDrawer ==
+                        BrainOwnedAccessoryDrawerId::None) {
+                    return std::shared_ptr<const AccessoryPreparedDrawerPlan>{};
+                }
+                auto plan = std::make_shared<AccessoryPreparedDrawerPlan>();
+                plan->snapshot = presentation.snapshot;
+                plan->key.drawer = presentation.snapshot->activeDrawer;
+                plan->key.layoutGeneration = 1;
+                plan->key.commandIdentity =
+                    presentation.snapshot->commandIdentity;
+                plan->key.lifecycleEpoch =
+                    presentation.snapshot->lifecycleEpoch;
+                plan->key.selectedDrawerContentRevision =
+                    presentation.snapshot->selectedDrawerContentRevision;
+                plan->key.scaleThousandths = static_cast<int>(
+                    std::lround(layout.scale * 1000.0f));
+                plan->key.contentWidth = std::max(
+                    1, layout.drawerBounds.right - layout.drawerBounds.left -
+                        (2 * layout.drawerContentInset));
+                plan->key.visibleLineCapacity =
+                    layout.drawerVisibleLineCapacity;
+                plan->layout = BuildAccessoryHistoryLayout(
+                    measurement, *presentation.snapshot, layout);
+                return std::shared_ptr<const AccessoryPreparedDrawerPlan>{plan};
+            };
+            const auto updatePresenter = [&](AccessoryPresentationState* presenter,
+                                             const auto& presentation,
+                                             const auto& layout) {
+                AccessoryPresentationUpdateInput input;
+                input.presentation = presentation;
+                input.mechanicalLayoutGeneration = 1;
+                input.layout = layout;
+                input.mainCardProductionSignature = "orb-transition-matrix";
+                input.measurementContext = measurement;
+                input.preparedPlan = makePlan(presentation, layout);
+                return UpdateAccessoryPresentation(presenter, input);
+            };
+            const struct {
+                const char* raw;
+                const char* category;
+            } categoryCases[]{
+                {"KDFW 271951Z 18010KT 10SM SKC", "VFR"},
+                {"KDFW 271951Z 18010KT 4SM BKN020", "MVFR"},
+                {"KDFW 271951Z 18010KT 2SM BKN008", "IFR"},
+                {"KDFW 271951Z 18010KT M1/4SM VV003", "LIFR"},
+            };
+            for (const auto& item : categoryCases) {
+                auto step4Heap18319 = std::make_unique<Step4Fixture>();
+                auto& fixture = *step4Heap18319;
+                AccessoryPresentationState presenter;
+                const auto layout = resolveLayout(false);
+                const auto neutral = updatePresenter(
+                    &presenter,
+                    ProjectBrainOwnedAccessoryPresentation(
+                        &fixture.state, 1, nullptr),
+                    layout);
+                require(neutral.delta.railRasterRequests == 1 &&
+                            neutral.delta.uploadRequests == 1,
+                        "neutral rail did not publish exactly once");
+                fixture.AcceptPrimary(item.raw);
+                const auto acceptedPresentation =
+                    ProjectBrainOwnedAccessoryPresentation(
+                        &fixture.state, 1, nullptr);
+                const auto* orb = Step4MetarOrb(acceptedPresentation);
+                const auto accepted = updatePresenter(
+                    &presenter, acceptedPresentation, layout);
+                require(orb != nullptr && orb->airportIcao == "KDFW" &&
+                            orb->categoryText == item.category,
+                        std::string("ORB matrix content mismatch: ") +
+                            item.category);
+                require(accepted.railAppearanceChanged &&
+                            accepted.delta.railRasterRequests == 1 &&
+                            accepted.delta.uploadRequests == 1 &&
+                            accepted.delta.drawerRasterRequests == 0,
+                        std::string("ORB matrix work mismatch: ") +
+                            item.category);
+                const auto repeated = updatePresenter(
+                    &presenter, acceptedPresentation, layout);
+                require(!repeated.railAppearanceChanged &&
+                            repeated.delta.railRasterRequests == 0 &&
+                            repeated.delta.uploadRequests == 0 &&
+                            repeated.delta.drawerRasterRequests == 0,
+                        "repeated accepted snapshot performed rail work");
+            }
+
+            auto step4Heap18356 = std::make_unique<Step4Fixture>();
+            auto& categoryTransition = *step4Heap18356;
+            AccessoryPresentationState categoryPresenter;
+            const auto closedLayout = resolveLayout(false);
+            updatePresenter(
+                &categoryPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &categoryTransition.state, 1, nullptr), closedLayout);
+            categoryTransition.AcceptPrimary(categoryCases[0].raw);
+            updatePresenter(
+                &categoryPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &categoryTransition.state, 1, nullptr), closedLayout);
+            categoryTransition.Cycle(60'000);
+            categoryTransition.worker.Complete(
+                BrainMetarWorkerStatus::Success, "KDFW", categoryCases[1].raw);
+            categoryTransition.Cycle(1);
+            const auto categoryPresentation =
+                ProjectBrainOwnedAccessoryPresentation(
+                    &categoryTransition.state, 1, nullptr);
+            const auto categoryChanged = updatePresenter(
+                &categoryPresenter, categoryPresentation, closedLayout);
+            require(categoryChanged.delta.railRasterRequests == 1 &&
+                        categoryChanged.delta.uploadRequests == 1,
+                    "VFR to MVFR did not publish one rail transition");
+
+            const auto semanticBeforeStale = categoryTransition.state.accessory.
+                semanticPresentationGeneration;
+            const auto drawerRevisionBeforeStale =
+                categoryTransition.state.accessory.drawerContentRevisions[0];
+            const auto snapshotIdentityBeforeStale =
+                categoryPresentation.snapshot->snapshotIdentity;
+            const auto commandIdentityBeforeStale =
+                categoryPresentation.snapshot->commandIdentity;
+            const auto freshnessDeadline =
+                categoryTransition.state.metar.freshUntilMonotonicMs;
+            require(freshnessDeadline >= categoryTransition.input.monotonicMs,
+                    "freshness deadline preceded the accepted MVFR state");
+            const auto staleCycle = categoryTransition.Cycle(
+                freshnessDeadline - categoryTransition.input.monotonicMs);
+            require(staleCycle.freshnessChanged &&
+                        staleCycle.presentationChanged &&
+                        categoryTransition.state.metar.visibleState ==
+                            BrainMetarVisibleState::Stale,
+                    "Brain-owned freshness cycle did not produce stale state");
+            BrainOwnedAccessoryProjectionCounters staleProjection;
+            const auto stalePresentation =
+                ProjectBrainOwnedAccessoryPresentation(
+                    &categoryTransition.state, 1, &staleProjection);
+            const auto stale = updatePresenter(
+                &categoryPresenter, stalePresentation, closedLayout);
+            const auto* staleOrb = Step4MetarOrb(stalePresentation);
+            const auto repeatedStale = updatePresenter(
+                &categoryPresenter, stalePresentation, closedLayout);
+            require(categoryTransition.state.accessory.
+                            semanticPresentationGeneration ==
+                        semanticBeforeStale + 1 &&
+                        categoryTransition.state.accessory.
+                                drawerContentRevisions[0] ==
+                            drawerRevisionBeforeStale + 1 &&
+                        staleProjection.snapshotBuilds == 1 &&
+                        stalePresentation.snapshot->snapshotIdentity ==
+                            snapshotIdentityBeforeStale + 1 &&
+                        stalePresentation.snapshot->commandIdentity ==
+                            commandIdentityBeforeStale + 1,
+                    "stale transition did not advance one semantic command");
+            require(staleOrb != nullptr && staleOrb->label == "METAR" &&
+                        staleOrb->airportIcao.empty() &&
+                        staleOrb->categoryText.empty() &&
+                        staleOrb->stateText.empty() &&
+                        staleOrb->selectedIndicator.empty() &&
+                        staleOrb->tone ==
+                            BrainOwnedAccessoryOrbPresentation::Tone::Gray,
+                    "Brain-owned stale transition did not neutralize METAR ORB");
+            require(stale.delta.railRasterRequests == 1 &&
+                        stale.delta.uploadRequests == 1 &&
+                        stale.delta.drawerRasterRequests == 0 &&
+                        stale.publishedSnapshotCount == 1,
+                    "successful primary to neutral did not publish once");
+            require(repeatedStale.delta.railRasterRequests == 0 &&
+                        repeatedStale.delta.uploadRequests == 0 &&
+                        repeatedStale.delta.drawerRasterRequests == 0 &&
+                        repeatedStale.publishedSnapshotCount == 0,
+                    "reused stale command repeated presentation work");
+            std::cout
+                << "STEP4_STALE_TRANSITION_MIGRATION: semantic_delta="
+                << (categoryTransition.state.accessory.
+                        semanticPresentationGeneration - semanticBeforeStale)
+                << " drawer_revision_delta="
+                << (categoryTransition.state.accessory.
+                        drawerContentRevisions[0] - drawerRevisionBeforeStale)
+                << " snapshot_identity_delta="
+                << (stalePresentation.snapshot->snapshotIdentity -
+                    snapshotIdentityBeforeStale)
+                << " command_identity_delta="
+                << (stalePresentation.snapshot->commandIdentity -
+                    commandIdentityBeforeStale)
+                << " rail_rasters=" << stale.delta.railRasterRequests
+                << " uploads=" << stale.delta.uploadRequests
+                << " drawer_rasters=" << stale.delta.drawerRasterRequests
+                << " publications=" << stale.publishedSnapshotCount
+                << " repeated_rail_rasters="
+                << repeatedStale.delta.railRasterRequests
+                << " repeated_uploads=" << repeatedStale.delta.uploadRequests
+                << " repeated_publications="
+                << repeatedStale.publishedSnapshotCount << "\n";
+
+            auto step4Heap18462 = std::make_unique<Step4Fixture>();
+            auto& primaryTransition = *step4Heap18462;
+            primaryTransition.AcceptPrimary(primaryVfr);
+            AccessoryPresentationState primaryPresenter;
+            updatePresenter(
+                &primaryPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &primaryTransition.state, 1, nullptr), closedLayout);
+            primaryTransition.input.workflowStage = WorkflowStage::Enroute;
+            primaryTransition.Cycle(1);
+            primaryTransition.worker.Complete(
+                BrainMetarWorkerStatus::Success, "KSAN", primaryIfr);
+            primaryTransition.Cycle(1);
+            const auto airportChanged = updatePresenter(
+                &primaryPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &primaryTransition.state, 1, nullptr), closedLayout);
+            require(airportChanged.delta.railRasterRequests == 1 &&
+                        airportChanged.delta.uploadRequests == 1,
+                    "KDFW to KSAN did not publish one rail transition");
+
+            for (const auto selectedDrawer : {
+                     BrainOwnedAccessoryDrawerId::Metar,
+                     BrainOwnedAccessoryDrawerId::Atis,
+                     BrainOwnedAccessoryDrawerId::Pdc}) {
+                auto step4Heap18486 = std::make_unique<Step4Fixture>();
+                auto& selected = *step4Heap18486;
+                selected.Cycle();
+                Step4SelectDrawer(&selected.state, selectedDrawer);
+                AccessoryPresentationState selectedPresenter;
+                const auto openLayout = resolveLayout(true);
+                updatePresenter(
+                    &selectedPresenter,
+                    ProjectBrainOwnedAccessoryPresentation(
+                        &selected.state, 1, nullptr), openLayout);
+                selected.worker.Complete(
+                    BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+                selected.Cycle(1);
+                const auto changed = updatePresenter(
+                    &selectedPresenter,
+                    ProjectBrainOwnedAccessoryPresentation(
+                        &selected.state, 1, nullptr), openLayout);
+                require(changed.delta.railRasterRequests == 1 &&
+                            changed.delta.uploadRequests >= 1 &&
+                            selected.state.accessory.activeDrawer == selectedDrawer,
+                        "selected drawer lost ownership during primary update");
+            }
+
+            auto step4Heap18508 = std::make_unique<Step4Fixture>();
+            auto& lookup = *step4Heap18508;
+            lookup.AcceptPrimary(primaryVfr);
+            Step4SelectDrawer(&lookup.state, BrainOwnedAccessoryDrawerId::Metar);
+            AccessoryPresentationState lookupPresenter;
+            const auto openLayout = resolveLayout(true);
+            updatePresenter(
+                &lookupPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &lookup.state, 1, nullptr), openLayout);
+            lookup.SubmitLookup("KABQ");
+            updatePresenter(
+                &lookupPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &lookup.state, 1, nullptr), openLayout);
+            lookup.AcceptLookup(lookupMvfr);
+            const auto spotlight = updatePresenter(
+                &lookupPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &lookup.state, 1, nullptr), openLayout);
+            require(spotlight.delta.railRasterRequests == 0 &&
+                        spotlight.delta.drawerRasterRequests == 1 &&
+                        spotlight.delta.uploadRequests == 1,
+                    "lookup spotlight changed unchanged primary ORB");
+            lookup.Cycle(8'000);
+            const auto spotlightExpired = updatePresenter(
+                &lookupPresenter,
+                ProjectBrainOwnedAccessoryPresentation(
+                    &lookup.state, 1, nullptr), openLayout);
+            require(spotlightExpired.delta.railRasterRequests == 0 &&
+                        spotlightExpired.delta.drawerRasterRequests == 1,
+                    "spotlight expiry performed rail work");
+
+            const auto warmHandle = ProjectBrainOwnedAccessoryPresentation(
+                &lookup.state, 1, nullptr);
+        const auto warm = RunUnchangedAccessoryPresentationUpdates(
+                &lookupPresenter,
+                AccessoryPresentationUpdateInput{
+                    warmHandle, openLayout, "orb-transition-matrix",
+                    measurement, makePlan(warmHandle, openLayout), false},
+                100'000);
+            require(warm.delta.railRasterRequests == 0 &&
+                        warm.delta.drawerRasterRequests == 0 &&
+                        warm.delta.uploadRequests == 0 &&
+                        warm.delta.snapshotPublications == 0,
+                    "warm repeated ORB matrix performed recurring work");
+            std::cout << "STEP4_ORB_PUBLICATION: automatic_latency_bound_us=500000"
+                         " rail_raster_per_visible_change=1"
+                         " rail_upload_per_visible_change=1"
+                         " closed_drawer_rasters=0"
+                         " unchanged_iterations=100000"
+                         " unchanged_rail_rasters=0 unchanged_uploads=0\n";
+            ShutdownAccessoryTextMeasurement(measurement);
+        }
+    } else if (probe == "accessory_timing_attribution_matrix") {
+        using namespace xvatsim::modules::overlay;
+        AccessoryDeferredTimingInput input;
+        input.waitStartedMicroseconds = 1'000;
+        input.bindStartedMicroseconds = 101'000;
+        input.workerStartedMicroseconds = 11'000;
+        input.workerCompletedMicroseconds = 21'000;
+        input.publishedMicroseconds = 22'000;
+        input.readyCollectedMicroseconds = 90'000;
+        const auto breakdown = ResolveAccessoryDeferredTiming(input);
+        require(breakdown.exact && breakdown.totalMicroseconds == 100'000 &&
+                    breakdown.workerQueueWaitMicroseconds == 10'000 &&
+                    breakdown.workerPreparationMicroseconds == 10'000 &&
+                    breakdown.workerPublicationHandoffMicroseconds == 1'000 &&
+                    breakdown.publicationToReadyCollectionMicroseconds == 68'000 &&
+                    breakdown.readyToBindWaitMicroseconds == 11'000 &&
+                    breakdown.unattributedMicroseconds == 0,
+                "deferred timing phase decomposition is not exact");
+
+        auto collector = std::make_unique<AccessoryPerformanceCollector>();
+        AccessoryActionDispatchTimingInput timing;
+        timing.dispatchStartedMicroseconds = 1'000;
+        timing.dispatchCompletedMicroseconds = 101'010;
+        timing.preparationWaitMicroseconds = breakdown.totalMicroseconds;
+        timing.workerQueueWaitMicroseconds =
+            breakdown.workerQueueWaitMicroseconds;
+        timing.workerPreparationMicroseconds =
+            breakdown.workerPreparationMicroseconds;
+        timing.workerPublicationHandoffMicroseconds =
+            breakdown.workerPublicationHandoffMicroseconds;
+        timing.publicationToReadyCollectionMicroseconds =
+            breakdown.publicationToReadyCollectionMicroseconds;
+        timing.readyToBindWaitMicroseconds =
+            breakdown.readyToBindWaitMicroseconds;
+        timing.stages.elapsedMicroseconds[static_cast<std::size_t>(
+            AccessoryDispatchStage::BrainDecision)] = 2;
+        timing.stages.elapsedMicroseconds[static_cast<std::size_t>(
+            AccessoryDispatchStage::BrainProjectionHistoryCopy)] = 5;
+        timing.stages.elapsedMicroseconds[static_cast<std::size_t>(
+            AccessoryDispatchStage::GenerationBinding)] = 1;
+        require(collector->BeginDrawerAction(
+                    BrainOwnedAccessoryDrawerAction::Opened,
+                    1, 1'000, 1, 1, 101'010, 1, timing),
+                "attributed deferred action did not begin");
+        AccessoryActionDrawTimingInput draw;
+        draw.actionDrawWallMicroseconds = 500;
+        require(collector->CompletePendingActions(
+                    117'000, 1, 1, 116'000, 101'000, 1, draw) == 1,
+                "attributed deferred action did not complete");
+        const auto attributed = collector->Snapshot().lastAction;
+        require(attributed.classification ==
+                    AccessoryActionTimingClassification::PreparationLimited &&
+                    attributed.dispatchWallMicroseconds == 10 &&
+                    attributed.preparationWaitMicroseconds == 100'000 &&
+                    attributed.workerPreparationMicroseconds == 10'000 &&
+                    attributed.callbackWaitMicroseconds == 14'990 &&
+                    attributed.accountingExact &&
+                    attributed.totalUnattributedMicroseconds == 0 &&
+                    attributed.totalOverlapMicroseconds == 0,
+                "deferred action was not classified as preparation-limited");
+
+        auto frameCollector = std::make_unique<AccessoryPerformanceCollector>();
+        AccessoryActionDispatchTimingInput frameTiming;
+        frameTiming.dispatchStartedMicroseconds = 1'000;
+        frameTiming.dispatchCompletedMicroseconds = 1'010;
+        require(frameCollector->BeginDrawerAction(
+                    BrainOwnedAccessoryDrawerAction::Opened,
+                    2, 1'000, 1, 1, 1'010, 1, frameTiming),
+                "frame-cadence action did not begin");
+        require(frameCollector->CompletePendingActions(
+                    52'000, 1, 1, 51'000, 1'000, 1, draw) == 1,
+                "frame-cadence action did not complete");
+        require(frameCollector->Snapshot().lastAction.classification ==
+                    AccessoryActionTimingClassification::FrameCadenceLimited,
+                "frame delay was misclassified as synchronous work");
+
+        auto syncCollector = std::make_unique<AccessoryPerformanceCollector>();
+        AccessoryActionDispatchTimingInput syncTiming;
+        syncTiming.dispatchStartedMicroseconds = 1'000;
+        syncTiming.dispatchCompletedMicroseconds = 21'000;
+        require(syncCollector->BeginDrawerAction(
+                    BrainOwnedAccessoryDrawerAction::Opened,
+                    3, 1'000, 1, 1, 21'000, 1, syncTiming),
+                "synchronous failure action did not begin");
+        require(syncCollector->CompletePendingActions(
+                    22'000, 1, 1, 21'000, 1'000, 1, draw) == 1,
+                "synchronous failure action did not complete");
+        require(syncCollector->Snapshot().lastAction.classification ==
+                    AccessoryActionTimingClassification::SynchronousWallFailure,
+                "true synchronous violation was hidden");
+
+        auto livenessCollector = std::make_unique<AccessoryPerformanceCollector>();
+        AccessoryActionDispatchTimingInput livenessTiming;
+        livenessTiming.dispatchStartedMicroseconds = 1'000;
+        livenessTiming.dispatchCompletedMicroseconds = 1'010;
+        require(livenessCollector->BeginDrawerAction(
+                    BrainOwnedAccessoryDrawerAction::Opened,
+                    4, 1'000, 1, 1, 1'010, 1, livenessTiming),
+                "liveness failure action did not begin");
+        require(livenessCollector->CompletePendingActions(
+                    502'000, 1, 1, 501'000, 1'000, 1, draw) == 1,
+                "liveness failure action did not complete");
+        const auto liveness = livenessCollector->Snapshot();
+        require(liveness.lastAction.classification ==
+                    AccessoryActionTimingClassification::LivenessFailure &&
+                    liveness.livenessFailureCount == 1,
+                "action above 500 milliseconds was not a liveness failure");
+        std::cout << "STEP4_ACCESSORY_TIMING: preparation_wait_us="
+                  << attributed.preparationWaitMicroseconds
+                  << " synchronous_us=" << attributed.dispatchWallMicroseconds
+                  << " worker_preparation_us="
+                  << attributed.workerPreparationMicroseconds
+                  << " frame_wait_us=" << attributed.callbackWaitMicroseconds
+                  << " attributed_end_to_end_us="
+                  << attributed.endToEndMicroseconds
+                  << " liveness_limit_us=500000"
+                     " true_sync_failure_us=20000"
+                     " unattributed_us=0 overlap_us=0\n";
+    } else if (probe == "metar_parse_elapsed_diagnostic") {
+        auto step4Heap18680 = std::make_unique<Step4Fixture>();
+        auto& changed = *step4Heap18680;
+        const auto accepted = changed.AcceptPrimary(primaryVfr);
+        require(accepted.dispositionDiagnostic.parsingAttempted &&
+                    accepted.dispositionDiagnostic.
+                        parserRanOnSimulatorFlightLoopHarvestPath &&
+                    accepted.dispositionDiagnostic.parserElapsedMicroseconds <
+                        16'700,
+                "changed METAR parse timing/path diagnostic missing or over budget");
+        changed.Cycle(60'000);
+        changed.worker.Complete(
+            BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+        const auto identical = changed.Cycle(1);
+        require(!identical.dispositionDiagnostic.parsingAttempted &&
+                    identical.dispositionDiagnostic.parserElapsedMicroseconds == 0 &&
+                    !identical.dispositionDiagnostic.
+                        parserRanOnSimulatorFlightLoopHarvestPath,
+                "identical METAR reported parser work");
+        std::cout << "STEP4_METAR_PARSE_TIMING: changed_parse_us="
+                  << accepted.dispositionDiagnostic.parserElapsedMicroseconds
+                  << " flight_loop_harvest=true identical_parse_us=0\n";
+    } else if (probe == "correction_sendrequest_completion_callback") {
+        require(Step4FileContains(
+                    "modules/metar/src/VatsimMetarClient.cpp",
+                    "WINHTTP_CALLBACK_FLAG_SENDREQUEST_COMPLETE"),
+                "send-request-complete callback flag is not registered");
+        require(!Step4FileContains(
+                    "modules/metar/src/VatsimMetarClient.cpp",
+                    "WINHTTP_CALLBACK_FLAG_SEND_REQUEST |"),
+                "legacy send-request callback flag remains registered");
+        require(Step4FileContains(
+                    "modules/metar/src/VatsimMetarClient.cpp",
+                    "WINHTTP_CALLBACK_STATUS_SENDREQUEST_COMPLETE"),
+                "send completion state is not awaited");
+    } else if (probe == "correction_real_winhttp_loopback_success") {
+#if defined(_WIN32)
+        const auto run = RunStep4LoopbackLifecycle({
+            200,
+            "[{\"id\":\"KDFW\",\"metar\":\"KDFW 271951Z 18010KT 10SM FEW050\"}]",
+            false});
+        const auto requiredProgress =
+            BrainMetarSendCompletionObserved |
+            BrainMetarResponseHeadersReceived |
+            BrainMetarHttp200Accepted |
+            BrainMetarPayloadReadComplete;
+        require(run.dispatched && run.terminal && run.disposition,
+                "loopback lifecycle did not dispatch, harvest, and dispose");
+        require(run.requestPath == "/KDFW?format=json",
+                "loopback request path mismatch");
+        require(run.responseCompleted,
+                "loopback peer did not complete response");
+        require(run.terminalDiagnostic.status == BrainMetarWorkerStatus::Success &&
+                    run.terminalDiagnostic.terminalStage ==
+                        BrainMetarTransportStage::Completed &&
+                    run.terminalDiagnostic.httpStatus == 200 &&
+                    run.terminalDiagnostic.source == "VATSIM_METAR" &&
+                    run.terminalDiagnostic.stationIcao == "KDFW" &&
+                    run.terminalDiagnostic.decodeStatus ==
+                        BrainMetarDecodeStatus::Decoded &&
+                    run.terminalDiagnostic.reportCardinality == 1 &&
+                    (run.terminalDiagnostic.transportProgress & requiredProgress) ==
+                        requiredProgress,
+                "successful WinHTTP terminal lifecycle is incomplete");
+        require(run.terminalDiagnostic.request.airportIcao == "KDFW" &&
+                    run.parseCount == 1 && run.primaryValid &&
+                    run.category == BrainMetarFlightCategory::Vfr &&
+                    run.historyMutationCount == 1 &&
+                    run.dispositionDiagnostic.accepted &&
+                    run.dispositionDiagnostic.parsingAttempted &&
+                    run.dispositionDiagnostic.acceptedCategory ==
+                        BrainMetarFlightCategory::Vfr,
+                "loopback fact did not reach one brain parse and acceptance");
+        require(run.elapsedMs <= 2'000 && !run.shutdown.running &&
+                    run.shutdown.handlesClosed && run.shutdown.callbacksClosed,
+                "loopback success exceeded bound or leaked worker state");
+        std::cout << "STEP4_CORRECTION_LOOPBACK_SUCCESS: elapsed_ms="
+                  << run.elapsedMs << " path=" << run.requestPath
+                  << " parse_count=" << run.parseCount << "\n";
+#else
+        require(false, "real WinHTTP loopback proof requires Windows");
+#endif
+    } else if (probe == "correction_real_winhttp_http_failure_ledger") {
+#if defined(_WIN32)
+        const auto run = RunStep4LoopbackLifecycle({503, "{}", false});
+        require(run.terminal && run.disposition &&
+                    run.terminalDiagnostic.status ==
+                        BrainMetarWorkerStatus::HttpFailure &&
+                    run.terminalDiagnostic.terminalStage ==
+                        BrainMetarTransportStage::HttpStatus &&
+                    run.terminalDiagnostic.httpStatus == 503 &&
+                    run.terminalDiagnostic.diagnostic ==
+                        "http-status-rejected" &&
+                    !run.dispositionDiagnostic.accepted &&
+                    !run.dispositionDiagnostic.parsingAttempted &&
+                    run.parseCount == 0,
+                "HTTP failure ledger is incomplete or attempted parsing");
+#else
+        require(false, "real WinHTTP loopback proof requires Windows");
+#endif
+    } else if (probe == "correction_real_winhttp_json_failure_ledger") {
+#if defined(_WIN32)
+        const auto run = RunStep4LoopbackLifecycle({200, "{malformed", false});
+        require(run.terminal && run.disposition &&
+                    run.terminalDiagnostic.status ==
+                        BrainMetarWorkerStatus::Success &&
+                    run.terminalDiagnostic.terminalStage ==
+                        BrainMetarTransportStage::Completed &&
+                    run.terminalDiagnostic.decodeStatus ==
+                        BrainMetarDecodeStatus::MalformedJson &&
+                    run.terminalDiagnostic.decodeDiagnostic ==
+                        "json-syntax-malformed" &&
+                    !run.dispositionDiagnostic.accepted &&
+                    !run.dispositionDiagnostic.parsingAttempted &&
+                    run.parseCount == 0,
+                "JSON failure ledger is incomplete or attempted parsing");
+#else
+        require(false, "real WinHTTP loopback proof requires Windows");
+#endif
+    } else if (probe == "correction_transport_timeout_ledger") {
+        const struct {
+            BrainMetarTransportStage stage;
+            BrainMetarWinHttpOperation operation;
+            BrainMetarWorkerStatus status;
+            const char* reason;
+        } diagnosticCases[]{
+            {BrainMetarTransportStage::Startup,
+             BrainMetarWinHttpOperation::OpenSession,
+             BrainMetarWorkerStatus::TransportFailure, "startup-failure"},
+            {BrainMetarTransportStage::SendStart,
+             BrainMetarWinHttpOperation::SendRequest,
+             BrainMetarWorkerStatus::TransportFailure, "send-start-failure"},
+            {BrainMetarTransportStage::ReceiveStart,
+             BrainMetarWinHttpOperation::ReceiveResponse,
+             BrainMetarWorkerStatus::TransportFailure, "receive-start-failure"},
+            {BrainMetarTransportStage::ResponseHeaders,
+             BrainMetarWinHttpOperation::ReceiveResponse,
+             BrainMetarWorkerStatus::TransportFailure, "header-failure"},
+            {BrainMetarTransportStage::DataAvailability,
+             BrainMetarWinHttpOperation::QueryDataAvailable,
+             BrainMetarWorkerStatus::TransportFailure,
+             "data-availability-failure"},
+            {BrainMetarTransportStage::Read,
+             BrainMetarWinHttpOperation::ReadData,
+             BrainMetarWorkerStatus::TransportFailure, "read-failure"},
+            {BrainMetarTransportStage::PayloadValidation,
+             BrainMetarWinHttpOperation::ReadData,
+             BrainMetarWorkerStatus::PayloadRejected,
+             "payload-bound-rejection"},
+            {BrainMetarTransportStage::StationValidation,
+             BrainMetarWinHttpOperation::None,
+             BrainMetarWorkerStatus::WrongStation,
+             "wrong-station-rejection"},
+        };
+        for (const auto& item : diagnosticCases) {
+            auto step4Heap18833 = std::make_unique<Step4Fixture>();
+            auto& ledger = *step4Heap18833;
+            ledger.Cycle();
+            BrainMetarWorkerFact ledgerFact;
+            ledgerFact.request = ledger.worker.requests.back();
+            ledgerFact.status = item.status;
+            ledgerFact.terminalStage = item.stage;
+            ledgerFact.winHttpOperation = item.operation;
+            ledgerFact.winHttpError = 123;
+            ledgerFact.diagnostic = item.reason;
+            ledger.worker.ready = ledgerFact;
+            ledger.worker.running = false;
+            const auto ledgerOutput = ledger.Cycle(1);
+            require(ledgerOutput.terminalDiagnostic.available &&
+                        ledgerOutput.terminalDiagnostic.terminalStage ==
+                            item.stage &&
+                        ledgerOutput.terminalDiagnostic.winHttpOperation ==
+                            item.operation &&
+                        ledgerOutput.terminalDiagnostic.status == item.status &&
+                        ledgerOutput.terminalDiagnostic.diagnostic == item.reason &&
+                        ledgerOutput.dispositionDiagnostic.available &&
+                        !ledgerOutput.dispositionDiagnostic.accepted &&
+                        !ledgerOutput.dispositionDiagnostic.parsingAttempted &&
+                        ledger.state.metar.parseCount == 0,
+                    std::string("terminal diagnostic matrix mismatch: ") +
+                        item.reason);
+        }
+        auto step4Heap18859 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18859;
+        const auto dispatch = f.Cycle();
+        BrainMetarWorkerFact fact;
+        fact.request = f.worker.requests.back();
+        fact.status = BrainMetarWorkerStatus::TransportFailure;
+        fact.terminalStage = BrainMetarTransportStage::SendCompletion;
+        fact.winHttpOperation = BrainMetarWinHttpOperation::SendRequest;
+        fact.winHttpError = ERROR_TIMEOUT;
+        fact.diagnostic = "send-completion-timeout";
+        fact.completedMonotonicMs = f.input.monotonicMs + 5'000;
+        fact.networkElapsedUs = 5'000'000;
+        f.worker.ready = fact;
+        f.worker.running = false;
+        const auto terminal = f.Cycle(5'000);
+        require(dispatch.dispatchDiagnostic.available &&
+                    terminal.terminalDiagnostic.available &&
+                    terminal.terminalDiagnostic.terminalStage ==
+                        BrainMetarTransportStage::SendCompletion &&
+                    terminal.terminalDiagnostic.diagnostic ==
+                        "send-completion-timeout" &&
+                    terminal.terminalDiagnostic.winHttpError == ERROR_TIMEOUT,
+                "send-completion timeout stage was not preserved");
+        require(terminal.dispositionDiagnostic.available &&
+                    !terminal.dispositionDiagnostic.accepted &&
+                    !terminal.dispositionDiagnostic.parsingAttempted &&
+                    f.state.metar.parseCount == 0 &&
+                    f.state.metar.historyMutationCount == 0,
+                "transport timeout reached parser or mutated history");
+    } else if (probe == "correction_parser_rejection_ledger") {
+        auto step4Heap18888 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18888;
+        f.Cycle();
+        BrainMetarWorkerFact fact;
+        fact.request = f.worker.requests.back();
+        fact.status = BrainMetarWorkerStatus::Success;
+        fact.stationIcao = "KDFW";
+        fact.rawMetar = "KDFW RMK TRUNCATED";
+        fact.decodeStatus = BrainMetarDecodeStatus::Decoded;
+        fact.reportCardinality = 1;
+        fact.stationFieldType = BrainMetarDecodedFieldType::String;
+        fact.metarFieldType = BrainMetarDecodedFieldType::String;
+        fact.stationFieldMissing = false;
+        fact.metarFieldMissing = false;
+        fact.httpStatus = 200;
+        fact.terminalStage = BrainMetarTransportStage::Completed;
+        fact.diagnostic = "vatsim-metar-accepted";
+        f.worker.ready = fact;
+        f.worker.running = false;
+        const auto output = f.Cycle(1);
+        require(output.terminalDiagnostic.available &&
+                    output.terminalDiagnostic.status ==
+                        BrainMetarWorkerStatus::Success &&
+                    output.dispositionDiagnostic.available &&
+                    !output.dispositionDiagnostic.accepted &&
+                    output.dispositionDiagnostic.parsingAttempted &&
+                    output.dispositionDiagnostic.parserReason ==
+                        "observation-time-missing" &&
+                    f.state.metar.parseCount == 1 &&
+                    f.state.metar.historyMutationCount == 0,
+                "parser rejection disposition ledger mismatch");
+    } else if (probe == "correction_orb_startup_metar_only") {
+        auto step4Heap18919 = std::make_unique<BrainOwnedRuntimeState>();
+        auto& state = *step4Heap18919;
+        EnableBrainOwnedAccessoryRuntime(&state);
+        state.metar.initialized = true;
+        requireNeutralMetarOrb(&state);
+    } else if (probe == "correction_orb_pending_metar_only") {
+        auto step4Heap18924 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18924;
+        f.Cycle();
+        requireNeutralMetarOrb(&f.state);
+    } else if (probe == "correction_orb_unavailable_metar_only") {
+        auto step4Heap18928 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18928;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::TransportFailure);
+        f.Cycle(1);
+        requireNeutralMetarOrb(&f.state);
+    } else if (probe == "correction_orb_stale_metar_only") {
+        auto step4Heap18934 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18934;
+        f.AcceptPrimary(primaryVfr);
+        f.state.metar.visibleState = BrainMetarVisibleState::Stale;
+        ++f.state.metar.presentationGeneration;
+        requireNeutralMetarOrb(&f.state);
+    } else if (probe == "correction_orb_success_exact_two_lines") {
+        auto step4Heap18940 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18940;
+        f.AcceptPrimary(primaryVfr);
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+    } else if (probe == "correction_orb_cached_success_exact_two_lines") {
+        auto step4Heap18946 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18946;
+        f.AcceptPrimary(primaryVfr);
+        f.state.metar.visibleState = BrainMetarVisibleState::Cached;
+        ++f.state.metar.presentationGeneration;
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+    } else if (probe == "correction_orb_selected_has_no_open_text") {
+        auto step4Heap18954 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18954;
+        f.AcceptPrimary(primaryVfr);
+        Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar);
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+    } else if (probe == "correction_lookup_never_changes_orb") {
+        auto step4Heap18961 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18961;
+        f.AcceptPrimary(primaryVfr);
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+        f.SubmitLookup("KABQ");
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+        f.AcceptLookup(lookupMvfr);
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+    } else if (probe == "ifr_departure_primary_only" ||
+        probe == "ifr_departure_no_arrival_prefetch") {
+        auto step4Heap18976 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18976;
+        f.Cycle();
+        require(f.worker.requests.size() == 1, "one departure request expected");
+        require(f.worker.requests[0].airportIcao == "KDFW", "departure must be KDFW");
+        require(f.worker.requests[0].purpose == BrainMetarRequestPurpose::PrimaryTarget,
+                "first request must be primary target");
+        f.AcceptPrimary(primaryVfr);
+        f.Cycle(59'000);
+        require(f.worker.requests.size() == 1, "arrival must not be prefetched");
+    } else if (probe == "departure_enroute_primary_switch" ||
+               probe == "ifr_arrival_primary_stable") {
+        auto step4Heap18987 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap18987;
+        f.AcceptPrimary(primaryVfr);
+        f.input.workflowStage = WorkflowStage::Enroute;
+        f.Cycle(1);
+        require(f.state.metar.primaryAirportIcao == "KSAN", "enroute target must be arrival");
+        require(f.worker.requests.back().airportIcao == "KSAN", "arrival request expected");
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KSAN", primaryIfr);
+        f.Cycle(1);
+        const auto count = f.worker.requests.size();
+        f.input.workflowStage = WorkflowStage::Arrival;
+        f.Cycle(1);
+        require(f.state.metar.primaryAirportIcao == "KSAN", "arrival target must remain KSAN");
+        require(f.worker.requests.size() == count, "arrival transition must not duplicate request");
+    } else if (probe == "vfr_departure_primary" ||
+               probe == "vfr_brain_committed_departure_source") {
+        auto step4Heap19002 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19002;
+        f.input.operatingMode = BrainOwnedOperatingMode::VFR;
+        f.input.flightContext = {};
+        f.input.flightPlan.available = true;
+        f.input.flightPlan.departureIcao = "KAPA";
+        f.input.flightPlan.departureSource = AirportSource::CurrentLocation;
+        f.input.flightPlan.hasDepartureCoordinates = true;
+        f.input.flightPlan.departureLatDeg = 39.57;
+        f.input.flightPlan.departureLonDeg = -104.85;
+        f.Cycle();
+        require(f.state.metar.primaryAirportIcao == "KAPA", "committed VFR departure expected");
+        require(f.state.metar.primaryLatchedFromVfr, "VFR primary must latch");
+        f.input.flightPlan.departureIcao = "KBJC";
+        f.input.flightPlan.departureLatDeg = 39.91;
+        f.input.flightPlan.departureLonDeg = -105.12;
+        f.Cycle(1);
+        require(f.state.metar.primaryAirportIcao == "KAPA", "VFR target must not follow aircraft");
+    } else if (probe == "vfr_no_nearby_scan" ||
+               probe == "vfr_missing_departure_unknown") {
+        auto step4Heap19021 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19021;
+        f.input.operatingMode = BrainOwnedOperatingMode::VFR;
+        f.input.flightContext = {};
+        f.input.flightPlan = {};
+        f.Cycle();
+        require(f.state.metar.primaryAirportIcao.empty(), "unproved VFR target must be empty");
+        require(f.worker.requests.empty(), "no VFR scanning request permitted");
+        require(f.state.metar.visibleState == BrainMetarVisibleState::Unknown ||
+                    f.state.metar.visibleState == BrainMetarVisibleState::Unavailable,
+                "VFR missing departure must be unknown/unavailable");
+    } else if (probe == "lookup_preserves_primary" ||
+               probe == "lookup_orb_primary_authority") {
+        auto step4Heap19033 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19033;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("kabq");
+        f.AcceptLookup(lookupMvfr);
+        require(f.state.metar.primaryAirportIcao == "KDFW", "lookup must preserve primary");
+        const auto presentation = ProjectBrainOwnedAccessoryPresentation(&f.state, 1, nullptr);
+        const auto* orb = Step4MetarOrb(presentation);
+        require(orb && orb->airportIcao == "KDFW" && orb->categoryText == "VFR",
+                "ORB must remain primary authority");
+    } else if (probe == "lookup_spotlight_activation" ||
+               probe == "lookup_pending_success_to_spotlight") {
+        auto step4Heap19044 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19044;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        require(f.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::LookupSpotlight,
+                "lookup success must spotlight");
+        require(Step4HasTitle(&f.state, "METAR LOOKUP — KABQ"),
+                "spotlight title missing");
+    } else if (probe == "lookup_spotlight_expiry_no_duplicate") {
+        auto step4Heap19054 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19054;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        const auto before = f.state.accessory.histories[0].entries.size();
+        f.Cycle(8'000);
+        require(f.state.metar.transientPresentation == BrainMetarTransientPresentation::None,
+                "spotlight must expire");
+        require(f.state.accessory.histories[0].entries.size() == before,
+                "spotlight expiry must not duplicate history");
+    } else if (probe == "primary_update_preempts_spotlight" ||
+               probe == "primary_state_change_preempts_spotlight") {
+        auto step4Heap19066 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19066;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        f.state.metar.nextPrimaryEligibleMonotonicMs = f.input.monotonicMs;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW",
+                          "SPECI KDFW 271954Z 18012KT 1/2SM VV003");
+        f.Cycle(1);
+        require(f.state.metar.transientPresentation == BrainMetarTransientPresentation::None,
+                "new primary observation must preempt spotlight");
+        require(f.state.metar.primaryObservation.category == BrainMetarFlightCategory::Lifr,
+                "updated primary must publish");
+
+        auto step4Heap19080 = std::make_unique<Step4Fixture>();
+        auto& target = *step4Heap19080;
+        target.AcceptPrimary(primaryVfr);
+        target.SubmitLookup("KABQ");
+        target.AcceptLookup(lookupMvfr);
+        target.input.workflowStage = WorkflowStage::Enroute;
+        target.Cycle(1);
+        require(target.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::None,
+                "target change must preempt spotlight");
+
+        auto step4Heap19090 = std::make_unique<Step4Fixture>();
+        auto& stale = *step4Heap19090;
+        stale.AcceptPrimary(primaryVfr);
+        stale.SubmitLookup("KABQ");
+        stale.AcceptLookup(lookupMvfr);
+        stale.Cycle(stale.state.metar.freshUntilMonotonicMs -
+                    stale.input.monotonicMs);
+        require(stale.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::None,
+                "stale transition must preempt spotlight");
+    } else if (probe == "lookup_truthful_newest_history") {
+        auto step4Heap19100 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19100;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        const auto& entries = f.state.accessory.histories[0].entries;
+        require(entries.size() == 2, "two truthful history entries expected");
+        require(entries[0].title.find("KABQ") != std::string::npos,
+                "newest observation must be first");
+        require(entries[1].title.find("KDFW") != std::string::npos,
+                "old primary must remain second");
+    } else if (probe == "lookup_no_periodic_refresh") {
+        auto step4Heap19111 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19111;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        f.Cycle(60'000);
+        require(f.worker.requests.back().airportIcao == "KDFW",
+                "only primary may refresh");
+        require(std::count_if(f.worker.requests.begin(), f.worker.requests.end(),
+                    [](const auto& request) { return request.airportIcao == "KABQ"; }) == 1,
+                "lookup airport must be one-shot");
+    } else if (probe == "lookup_replacement_invalidates_pending") {
+        auto step4Heap19122 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19122;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.Cycle();
+        const auto old = f.worker.requests.back();
+        f.SubmitLookup("KPHX");
+        f.worker.CompleteRequest(old, BrainMetarWorkerStatus::Success, "KABQ", lookupMvfr);
+        const auto rejected = f.Cycle(1);
+        require(rejected.completionRejected, "older lookup completion must reject");
+        require(f.worker.requests.back().airportIcao == "KPHX",
+                "newest lookup must dispatch next");
+    } else if (probe == "target_switch_rejects_stale_completion") {
+        auto step4Heap19134 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19134;
+        f.Cycle();
+        const auto departureRequest = f.worker.requests.back();
+        f.input.workflowStage = WorkflowStage::Enroute;
+        f.Cycle(1);
+        f.worker.CompleteRequest(departureRequest, BrainMetarWorkerStatus::Success,
+                                 "KDFW", primaryVfr);
+        const auto rejected = f.Cycle(1);
+        require(rejected.completionRejected, "obsolete departure completion must reject");
+        require(f.state.metar.primaryAirportIcao == "KSAN", "arrival target must survive");
+    } else if (probe == "strict_icao_validation") {
+        std::string normalized;
+        require(NormalizeStrictMetarIcao(" kjfk ", &normalized) && normalized == "KJFK",
+                "valid ICAO normalization failed");
+        for (const auto& invalid : {"", "ALL", "all", "K*", "KJFK,KLAX",
+                                    "../K", "KJ/F", "KJFKX", " K J "}) {
+            require(!NormalizeStrictMetarIcao(invalid, &normalized),
+                    std::string("invalid ICAO accepted: ") + invalid);
+        }
+    } else if (probe == "official_vatsim_url_only") {
+        require(BuildVatsimMetarRequestPath("KJFK") == L"/KJFK?format=json",
+                "official request path mismatch");
+        require(BuildVatsimMetarRequestPath("../K").empty(),
+                "unsafe request path accepted");
+        require(Step4FileContains("modules/metar/src/VatsimMetarClient.cpp",
+                                  "metar.vatsim.net"), "official host missing");
+        require(!Step4FileContains("modules/metar/src/VatsimMetarClient.cpp", "noaa"),
+                "alternate source present");
+    } else if (probe == "vatsim_json_extraction") {
+        const auto result = DecodeVatsimMetarPayload(
+            R"([{"id":"KJFK","metar":" KJFK 271951Z 18010KT 10SM FEW050 "}])");
+        require(result.decodeStatus == VatsimMetarDecodeStatus::Decoded &&
+                    result.reportCardinality == 1 && result.soleReport.has_value(),
+                "valid JSON must decode one report fact");
+        require(result.soleReport->returnedStation == "KJFK" &&
+                    result.soleReport->rawMetarHasLeadingWhitespace &&
+                    result.soleReport->rawMetarHasTrailingWhitespace,
+                "decoder must retain wire value and report whitespace facts");
+    } else if (probe == "transport_response_rejections") {
+        require(DecodeVatsimMetarPayload("{").decodeStatus ==
+                    VatsimMetarDecodeStatus::MalformedJson,
+                "malformed JSON not reported");
+        const auto wrong = DecodeVatsimMetarPayload(
+            R"([{"id":"KLAX","metar":"KLAX 271951Z 10SM SKC"}])");
+        require(wrong.decodeStatus == VatsimMetarDecodeStatus::Decoded &&
+                    wrong.soleReport->returnedStation == "KLAX",
+                "decoder incorrectly made requested-station decision");
+        require(DecodeVatsimMetarPayload(std::string(65'537, 'x')).decodeStatus ==
+                    VatsimMetarDecodeStatus::ResourceFailure,
+                "oversized payload bound fact missing");
+        require(DecodeVatsimMetarPayload("[]").reportCardinality == 0,
+                "empty response cardinality fact missing");
+        auto step4Heap19186 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19186;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KLAX",
+                          "KLAX 271951Z 18010KT 10SM SKC");
+        f.Cycle(1);
+        require(!f.state.metar.primaryObservation.valid &&
+                    f.state.metar.sourceHealth == BrainMetarSourceHealth::Failed,
+                "brain accepted mismatched success fact");
+    } else if (probe == "metar_speci_parsing" ||
+               probe == "vatsim_raw_optional_prefixes") {
+        const auto metar = ParseBrainOwnedMetarReport(
+            "KDFW", "METAR KDFW 271951Z 18010KT 10SM FEW050", 1'787'860'800);
+        const auto speci = ParseBrainOwnedMetarReport(
+            "KDFW", "SPECI KDFW 271952Z 18010KT 2SM BKN008", 1'787'860'800);
+        const auto bare = ParseBrainOwnedMetarReport(
+            "KDFW", "KDFW 271953Z 18010KT 4SM SCT020", 1'787'860'800);
+        const auto corrected = ParseBrainOwnedMetarReport(
+            "KDFW", "METAR COR KDFW 271954Z 18010KT 10SM SKC", 1'787'860'800);
+        require(metar.valid && !metar.speci, "METAR parsing failed");
+        require(speci.valid && speci.speci, "SPECI parsing failed");
+        require(bare.valid && corrected.valid, "optional prefix/station parsing failed");
+    } else if (probe == "observation_time_month_boundary") {
+        const auto septemberReference = static_cast<std::int64_t>(1'788'220'920);
+        const auto august = ParseBrainOwnedMetarReport(
+            "KJFK", "KJFK 312359Z 18010KT 10SM SKC", septemberReference);
+        require(august.valid, "previous-month observation must resolve");
+        require(septemberReference - august.observationUnixSeconds < 300,
+                "month-boundary observation age incorrect");
+        const auto future = ParseBrainOwnedMetarReport(
+            "KJFK", "KJFK 020100Z 18010KT 10SM SKC", septemberReference);
+        require(!future.valid, "implausibly future observation accepted");
+    } else if (probe == "category_threshold_boundaries") {
+        struct Case { const char* weather; BrainMetarFlightCategory category; };
+        const Case cases[]{
+            {"10SM BKN031", BrainMetarFlightCategory::Vfr},
+            {"5SM BKN030", BrainMetarFlightCategory::Mvfr},
+            {"3SM BKN010", BrainMetarFlightCategory::Mvfr},
+            {"2SM BKN009", BrainMetarFlightCategory::Ifr},
+            {"1SM BKN005", BrainMetarFlightCategory::Ifr},
+            {"M1/4SM VV004", BrainMetarFlightCategory::Lifr}};
+        for (const auto& item : cases) {
+            const auto parsed = ParseBrainOwnedMetarReport(
+                "KDFW", std::string("KDFW 271951Z 18010KT ") + item.weather,
+                1'787'860'800);
+            require(parsed.valid && parsed.category == item.category,
+                    std::string("threshold mismatch: ") + item.weather);
+        }
+    } else if (probe == "visibility_formats") {
+        for (const auto& weather : {"10SM SKC", "1 1/2SM BKN020", ".5SM VV004",
+                                    "1600 BKN020", "9999 NSC", "CAVOK"}) {
+            const auto parsed = ParseBrainOwnedMetarReport(
+                "KDFW", std::string("KDFW 271951Z 18010KT ") + weather,
+                1'787'860'800);
+            require(parsed.valid && parsed.visibilityKnown,
+                    std::string("visibility not parsed: ") + weather);
+        }
+        const auto rvr = ParseBrainOwnedMetarReport(
+            "KDFW", "KDFW 271951Z 18010KT R18/0600FT BKN008", 1'787'860'800);
+        require(rvr.valid && !rvr.visibilityKnown,
+                "RVR must not become prevailing visibility");
+    } else if (probe == "ceiling_rules") {
+        const auto few = ParseBrainOwnedMetarReport(
+            "KDFW", "KDFW 271951Z 18010KT 10SM FEW005 SCT009", 1'787'860'800);
+        const auto broken = ParseBrainOwnedMetarReport(
+            "KDFW", "KDFW 271951Z 18010KT 10SM FEW002 BKN008 OVC020", 1'787'860'800);
+        const auto vv = ParseBrainOwnedMetarReport(
+            "KDFW", "KDFW 271951Z 18010KT 1SM VV004", 1'787'860'800);
+        require(few.noCeilingProven && few.category == BrainMetarFlightCategory::Vfr,
+                "FEW/SCT must not form ceiling");
+        require(broken.ceilingFeet == 800 && broken.category == BrainMetarFlightCategory::Ifr,
+                "lowest BKN/OVC ceiling incorrect");
+        require(vv.ceilingFeet == 400 && vv.category == BrainMetarFlightCategory::Lifr,
+                "vertical visibility ceiling incorrect");
+    } else if (probe == "ambiguous_weather_unknown") {
+        for (const auto& raw : {"KDFW 271951Z 18010KT 10SM",
+                                "KDFW 271951Z 18010KT BKN///",
+                                "KDFW 271951Z 18010KT 10SM BKN///",
+                                "KDFW 271951Z RMK 1/4SM VV001"}) {
+            const auto parsed = ParseBrainOwnedMetarReport("KDFW", raw, 1'787'860'800);
+            require(!parsed.valid || parsed.category == BrainMetarFlightCategory::Unknown,
+                    std::string("ambiguous report classified: ") + raw);
+        }
+    } else if (probe == "changed_content_history_once") {
+        auto step4Heap19269 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19269;
+        f.AcceptPrimary(primaryVfr);
+        const auto hiddenBefore = ProjectBrainOwnedAccessoryPresentation(
+            &f.state, 1, nullptr);
+        f.state.metar.nextPrimaryEligibleMonotonicMs = f.input.monotonicMs;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW",
+                          "SPECI KDFW 271954Z 18010KT 4SM BKN020");
+        const auto changedOutput = f.Cycle(1);
+        require(changedOutput.acceptedNetworkElapsedUs == 2'500'000 &&
+                    changedOutput.simulatorThreadElapsedUs >= 0,
+                "network wait and simulator-thread timing were not separated");
+        require(f.state.accessory.histories[0].entries.size() == 2,
+                "changed observation must enter history once");
+        BrainOwnedAccessoryProjectionCounters hiddenCounters;
+        const auto hiddenAfter = ProjectBrainOwnedAccessoryPresentation(
+            &f.state, 1, &hiddenCounters);
+        require(hiddenBefore.snapshot && hiddenAfter.snapshot &&
+                    hiddenBefore.snapshot->snapshotIdentity !=
+                        hiddenAfter.snapshot->snapshotIdentity &&
+                    hiddenCounters.snapshotBuilds == 1,
+                "changed hidden METAR did not invalidate stale preparation");
+        Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar);
+        BrainOwnedAccessoryProjectionCounters openedCounters;
+        const auto opened = ProjectBrainOwnedAccessoryPresentation(
+            &f.state, 1, &openedCounters);
+        require(opened.snapshot && hiddenAfter.snapshot &&
+                    opened.snapshot->commandIdentity !=
+                        hiddenAfter.snapshot->commandIdentity &&
+                    openedCounters.snapshotBuilds == 1,
+                "opening METAR must prepare latest changed content once");
+        std::cout << "STEP4_TIMING_SEPARATION: network_us="
+                  << changedOutput.acceptedNetworkElapsedUs
+                  << " simulator_thread_us="
+                  << changedOutput.simulatorThreadElapsedUs << "\n";
+    } else if (probe == "unchanged_content_zero_publication" ||
+               probe == "identical_content_health_only") {
+        auto step4Heap19306 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19306;
+        f.AcceptPrimary(primaryVfr);
+        const auto parseCount = f.state.metar.parseCount;
+        const auto historyCount = f.state.metar.historyMutationCount;
+        const auto contentGeneration = f.state.metar.contentGeneration;
+        const auto presentationGeneration = f.state.metar.presentationGeneration;
+        f.state.metar.sourceHealth = BrainMetarSourceHealth::Failed;
+        f.state.metar.visibleState = BrainMetarVisibleState::Cached;
+        f.state.metar.nextPrimaryEligibleMonotonicMs = f.input.monotonicMs;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+        const auto output = f.Cycle(1);
+        require(f.state.metar.parseCount == parseCount, "identical content reparsed");
+        require(f.state.metar.historyMutationCount == historyCount,
+                "identical content mutated history");
+        require(f.state.metar.contentGeneration == contentGeneration,
+                "identical content changed content generation");
+        require(f.state.metar.sourceHealth == BrainMetarSourceHealth::Healthy &&
+                    output.sourceHealthChanged,
+                "identical success must recover source health");
+        require(f.state.metar.presentationGeneration >= presentationGeneration,
+                "presentation generation regressed");
+    } else if (probe == "speci_between_clock_boundaries") {
+        auto step4Heap19329 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19329;
+        f.AcceptPrimary(primaryVfr);
+        f.Cycle(60'000);
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW",
+                          "SPECI KDFW 271952Z 18010KT 1/2SM VV003");
+        const auto output = f.Cycle(1);
+        require(output.contentChanged && f.state.metar.primaryObservation.speci,
+                "changed SPECI must be accepted at revalidation");
+    } else if (probe == "fresh_cache_transient_failure") {
+        auto step4Heap19338 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19338;
+        f.AcceptPrimary(primaryVfr);
+        f.state.metar.nextPrimaryEligibleMonotonicMs = f.input.monotonicMs;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::TransportFailure);
+        f.Cycle(1);
+        require(f.state.metar.visibleState == BrainMetarVisibleState::Cached,
+                "fresh cache must survive transient failure");
+        require(f.state.metar.primaryObservation.category == BrainMetarFlightCategory::Vfr,
+                "fresh cached category must remain usable");
+    } else if (probe == "stale_primary_gray_unknown" ||
+               probe == "freshness_monotonic_deadline") {
+        auto step4Heap19350 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19350;
+        f.AcceptPrimary(primaryVfr);
+        f.input.utcUnixSeconds -= 86'400;
+        f.Cycle(f.state.metar.freshUntilMonotonicMs - f.input.monotonicMs);
+        const auto presentation = ProjectBrainOwnedAccessoryPresentation(&f.state, 1, nullptr);
+        const auto* orb = Step4MetarOrb(presentation);
+        require(f.state.metar.visibleState == BrainMetarVisibleState::Stale,
+                "monotonic freshness deadline must stale");
+        require(orb && orb->label == "METAR" &&
+                    orb->airportIcao.empty() && orb->categoryText.empty() &&
+                    orb->stateText.empty() &&
+                    orb->selectedIndicator.empty() &&
+                    orb->tone == BrainOwnedAccessoryOrbPresentation::Tone::Gray,
+                "stale ORB must be neutral METAR only");
+    } else if (probe == "history_isolation") {
+        auto step4Heap19365 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19365;
+        BrainOwnedAccessoryHistoryEntryInput atis;
+        atis.drawer = BrainOwnedAccessoryDrawerId::Atis;
+        atis.stableKey = "ATIS|KSAN|A";
+        atis.title = "KSAN ATIS A";
+        atis.body = "ATIS BODY";
+        AcceptBrainOwnedAccessoryHistoryEntry(&f.state, atis);
+        BrainOwnedAccessoryHistoryEntryInput pdc = atis;
+        pdc.drawer = BrainOwnedAccessoryDrawerId::Pdc;
+        pdc.stableKey = "PDC|KSAN|1";
+        AcceptBrainOwnedAccessoryHistoryEntry(&f.state, pdc);
+        f.AcceptPrimary(primaryVfr);
+        require(f.state.accessory.histories[0].entries.size() == 1 &&
+                    f.state.accessory.histories[1].entries.size() == 1 &&
+                    f.state.accessory.histories[2].entries.size() == 1,
+                "METAR/ATIS/PDC histories must remain isolated");
+    } else if (probe == "lifecycle_boundaries") {
+        auto step4Heap19382 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19382;
+        f.AcceptPrimary(primaryVfr);
+        const auto before = f.state.accessory.histories[0].entries.size();
+        BrainOwnedAsyncWorkerBindings bindings;
+        bindings.metar = &f.worker;
+        ApplyBrainOwnedAsyncWorkerLifecycleBoundary(&f.state, bindings, false);
+        ResetBrainOwnedRuntimeCachePreservingFlightContext(&f.state);
+        require(f.state.accessory.histories[0].entries.size() == before &&
+                    f.state.metar.primaryObservation.valid,
+                "disable must preserve accepted cache/history");
+        ApplyBrainOwnedAsyncWorkerLifecycleBoundary(&f.state, bindings, true);
+        ResetBrainOwnedAccessoryForSessionReset(&f.state);
+        require(!f.state.metar.primaryObservation.valid &&
+                    f.state.accessory.histories[0].entries.empty(),
+                "hard boundary must clear METAR state/history");
+
+        auto step4Heap19398 = std::make_unique<Step4Fixture>();
+        auto& cleanup = *step4Heap19398;
+        cleanup.Cycle();
+        cleanup.worker.Complete(
+            BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+        BrainOwnedAsyncWorkerBindings cleanupBindings;
+        cleanupBindings.metar = &cleanup.worker;
+        const auto parseBefore = cleanup.state.metar.parseCount;
+        const auto historyBefore = cleanup.state.metar.historyMutationCount;
+        const auto presentationBefore =
+            cleanup.state.metar.presentationGeneration;
+        const auto cleanupSnapshot =
+            ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+                &cleanup.state, cleanupBindings, false);
+        require(cleanupSnapshot.terminalFactDrained &&
+                    cleanupSnapshot.terminalDiagnostic.available &&
+                    cleanupSnapshot.dispositionDiagnostic.available &&
+                    !cleanupSnapshot.dispositionDiagnostic.accepted &&
+                    !cleanupSnapshot.dispositionDiagnostic.parsingAttempted &&
+                    !cleanupSnapshot.dispositionDiagnostic.historyMutated &&
+                    !cleanupSnapshot.dispositionDiagnostic.presentationChanged &&
+                    cleanup.state.metar.parseCount == parseBefore &&
+                    cleanup.state.metar.historyMutationCount == historyBefore &&
+                    cleanup.state.metar.presentationGeneration ==
+                        presentationBefore &&
+                    !cleanup.state.metar.primaryObservation.valid,
+                "lifecycle drain parsed or accepted cancelled-boundary weather");
+    } else if (probe == "worker_prompt_cancel_join") {
+        long long maximumCancellationMs = 0;
+        for (int phase = 0; phase < 5; ++phase) {
+            std::atomic<bool> entered{false};
+            xvatsim::modules::metar::VatsimMetarClient client(
+                [&](const BrainMetarWorkerRequest& request, const auto& cancelled) {
+                    entered.store(true, std::memory_order_release);
+                    while (!cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    BrainMetarWorkerFact fact;
+                    fact.request = request;
+                    fact.status = BrainMetarWorkerStatus::Cancelled;
+                    fact.diagnostic = "cancelled-fixture-phase-" + std::to_string(phase);
+                    return fact;
+                });
+            BrainMetarWorkerRequest request;
+            request.airportIcao = "KDFW";
+            request.requestId = static_cast<std::uint64_t>(phase + 1);
+            require(client.Start(request), "cancellation fixture failed to start");
+            const auto waitStart = std::chrono::steady_clock::now();
+            while (!entered.load(std::memory_order_acquire) &&
+                   std::chrono::steady_clock::now() - waitStart <
+                       std::chrono::milliseconds(100)) {
+                std::this_thread::yield();
+            }
+            const auto started = std::chrono::steady_clock::now();
+            client.CancelAndJoin();
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started).count();
+            maximumCancellationMs = std::max(maximumCancellationMs, elapsed);
+            BrainMetarWorkerFact drained;
+            const bool terminalDrained = client.TryHarvest(&drained);
+            const auto shutdown = client.ShutdownSnapshot();
+            require(elapsed <= 500 && !shutdown.running && shutdown.handlesClosed &&
+                        shutdown.callbacksClosed && terminalDrained &&
+                        drained.status == BrainMetarWorkerStatus::Cancelled,
+                    "worker cancellation exceeded bound or leaked state");
+        }
+#if defined(_WIN32)
+        Step4LoopbackHttpPeer peer({200, {}, true});
+        require(peer.Ready(), "stalled loopback peer failed to start");
+        xvatsim::modules::metar::VatsimMetarClient::ProofEndpoint endpoint;
+        endpoint.host = L"127.0.0.1";
+        endpoint.port = peer.Port();
+        endpoint.secure = false;
+        xvatsim::modules::metar::VatsimMetarClient loopbackClient(endpoint);
+        BrainMetarWorkerRequest loopbackRequest;
+        loopbackRequest.airportIcao = "KDFW";
+        loopbackRequest.requestId = 100;
+        require(loopbackClient.Start(loopbackRequest),
+                "loopback WinHTTP request failed to start");
+        const auto acceptDeadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!peer.Accepted() &&
+               std::chrono::steady_clock::now() < acceptDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(peer.Accepted(),
+                "loopback peer did not accept the WinHTTP request");
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        const auto loopbackStarted = std::chrono::steady_clock::now();
+        loopbackClient.CancelAndJoin();
+        const auto loopbackCancellationMs =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - loopbackStarted).count();
+        maximumCancellationMs = std::max(
+            maximumCancellationMs, loopbackCancellationMs);
+        BrainMetarWorkerFact loopbackDrained;
+        const bool loopbackTerminalDrained =
+            loopbackClient.TryHarvest(&loopbackDrained);
+        const auto loopbackShutdown = loopbackClient.ShutdownSnapshot();
+        require(loopbackCancellationMs <= 500 &&
+                    !loopbackShutdown.running &&
+                    loopbackShutdown.handlesClosed &&
+                    loopbackShutdown.callbacksClosed &&
+                    loopbackTerminalDrained &&
+                    loopbackDrained.status == BrainMetarWorkerStatus::Cancelled,
+                "real WinHTTP loopback cancellation leaked or exceeded bound");
+        std::cout << "STEP4_LOOPBACK_SHUTDOWN: accepted=true max_ms="
+                  << loopbackCancellationMs << " limit_ms=500\n";
+#endif
+        std::cout << "STEP4_WORKER_SHUTDOWN: phases=5 max_ms="
+                  << maximumCancellationMs << " limit_ms=500\n";
+    } else if (probe == "warm_unchanged_zero_work") {
+        auto step4Heap19507 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19507;
+        f.AcceptPrimary(primaryVfr);
+        f.input.monotonicMs += 1;
+        const auto before = f.state.metar;
+        xvatsim::modules::overlay::AccessoryInputDispatchCoordinator
+            idleDispatcher;
+        const auto idleDispatchBefore = idleDispatcher.Snapshot();
+        const auto presentation = ProjectBrainOwnedAccessoryPresentation(
+            &f.state, 1, nullptr);
+        xvatsim::modules::overlay::AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 100;
+        layoutInput.windowTop = 900;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = false;
+        const auto layout = xvatsim::modules::overlay::ResolveAccessoryLayout(
+            layoutInput);
+        xvatsim::modules::overlay::AccessoryPresentationState presenter;
+        xvatsim::modules::overlay::AccessoryPresentationUpdateInput update;
+        update.presentation = presentation;
+        update.layout = layout;
+        update.mainCardProductionSignature = "step4-warm-main-card";
+        update.measurementContext =
+            xvatsim::modules::overlay::InitializeAccessoryTextMeasurement();
+        require(update.measurementContext != nullptr,
+                "warm proof measurement context unavailable");
+        (void)xvatsim::modules::overlay::UpdateAccessoryPresentation(
+            &presenter, update);
+        BrainOwnedAccessoryProjectionCounters recurringProjection;
+        std::uint64_t recurringMetarDiagnostics = 0;
+        const auto brainStarted = std::chrono::steady_clock::now();
+        for (int index = 0; index < 100'000; ++index) {
+            const auto cycle = f.Cycle();
+            recurringMetarDiagnostics +=
+                cycle.dispatchDiagnostic.available ? 1U : 0U;
+            recurringMetarDiagnostics +=
+                cycle.terminalDiagnostic.available ? 1U : 0U;
+            recurringMetarDiagnostics +=
+                cycle.dispositionDiagnostic.available ? 1U : 0U;
+            BrainOwnedAccessoryProjectionCounters counters;
+            (void)ProjectBrainOwnedAccessoryPresentation(&f.state, 1, &counters);
+            recurringProjection.historyVisits += counters.historyVisits;
+            recurringProjection.entriesCopied += counters.entriesCopied;
+            recurringProjection.snapshotBuilds += counters.snapshotBuilds;
+        }
+        const auto brainElapsedUs =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - brainStarted).count();
+        const auto accessoryStarted = std::chrono::steady_clock::now();
+        const auto warm =
+            xvatsim::modules::overlay::RunUnchangedAccessoryPresentationUpdates(
+                &presenter, update, 100'000);
+        const auto accessoryElapsedUs =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - accessoryStarted).count();
+        const auto idleDispatchAfter = idleDispatcher.Snapshot();
+        require(f.state.metar.parseCount == before.parseCount &&
+                    f.state.metar.fingerprintCount == before.fingerprintCount &&
+                    f.state.metar.historyMutationCount == before.historyMutationCount &&
+                    f.state.metar.contentGeneration == before.contentGeneration &&
+                    f.state.metar.presentationGeneration == before.presentationGeneration &&
+                    recurringMetarDiagnostics == 0,
+                "warm unchanged cycles performed recurring content work");
+        require(recurringProjection.historyVisits == 0 &&
+                    recurringProjection.entriesCopied == 0 &&
+                    recurringProjection.snapshotBuilds == 0,
+                "warm unchanged cycles rebuilt brain presentation");
+        require(warm.iterations == 100'000 &&
+                    warm.delta.historyVisits == 0 &&
+                    warm.delta.entryCopies == 0 &&
+                    warm.delta.wrapVisits == 0 &&
+                    warm.delta.mainCardRasterRequests == 0 &&
+                    warm.delta.railRasterRequests == 0 &&
+                    warm.delta.drawerRasterRequests == 0 &&
+                    warm.delta.uploadRequests == 0 &&
+                    warm.delta.snapshotPublications == 0,
+                "warm unchanged cycles performed recurring accessory work");
+        require(!idleDispatchAfter.inFlight &&
+                    idleDispatchAfter.dispatchNotifications ==
+                        idleDispatchBefore.dispatchNotifications &&
+                    idleDispatchAfter.beginAttempts ==
+                        idleDispatchBefore.beginAttempts &&
+                    idleDispatchAfter.requestsBegun ==
+                        idleDispatchBefore.requestsBegun &&
+                    idleDispatchAfter.matchingDrawCompletions ==
+                        idleDispatchBefore.matchingDrawCompletions &&
+                    idleDispatchAfter.mismatchedDrawAttempts ==
+                        idleDispatchBefore.mismatchedDrawAttempts,
+                "warm unchanged cycles performed recurring input dispatch");
+        std::cout << "STEP4_WARM_IDLE: cycles=100000 brain_us="
+                  << brainElapsedUs << " accessory_us=" << accessoryElapsedUs
+                  << " parse_delta=0 fingerprint_delta=0 history_delta=0"
+                  << " wraps_delta=0 rasters_delta=0 uploads_delta=0"
+                  << " input_dispatch_delta=0 terminal_diagnostics_delta=0"
+                  << " publications_delta=0\n";
+        xvatsim::modules::overlay::ShutdownAccessoryTextMeasurement(
+            update.measurementContext);
+    } else if (probe == "normal_binary_source_isolation") {
+        require(!Step4FileContains("plugin/src/XVatsimPlugin.cpp", "VatsimMetarClient"),
+                "plugin directly names concrete METAR client");
+        require(!Step4FileContains("plugin/src/XVatsimPlugin.cpp", "metar.vatsim.net"),
+                "plugin contains METAR endpoint policy");
+        require(!Step4FileContains("modules/metar/src/VatsimMetarClient.cpp", "NOAA") &&
+                    !Step4FileContains("modules/metar/src/VatsimMetarClient.cpp", "aviationweather"),
+                "alternate weather source found");
+        require(!Step4FileContains("plugin/CMakeLists.txt", "STEP4_METAR_FIXTURE"),
+                "normal plugin includes Step 4 fixtures");
+    } else if (probe == "request_priority_and_backoff") {
+        auto step4Heap19617 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19617;
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::TransportFailure);
+        f.Cycle(1);
+        const auto firstEligible = f.state.metar.nextPrimaryEligibleMonotonicMs;
+        require(firstEligible - f.input.monotonicMs == 120'000,
+                "first backoff must be 120 seconds");
+        f.Cycle(119'999);
+        require(f.worker.requests.size() == 1, "request dispatched before backoff");
+        f.Cycle(1);
+        require(f.worker.requests.size() == 2, "request missing at backoff boundary");
+        f.worker.Complete(BrainMetarWorkerStatus::TransportFailure);
+        f.Cycle(1);
+        require(f.state.metar.nextPrimaryEligibleMonotonicMs - f.input.monotonicMs == 240'000,
+                "second backoff must be 240 seconds");
+    } else if (probe == "orb_category_text_and_tone") {
+        const struct { const char* raw; const char* text;
+                       BrainOwnedAccessoryOrbPresentation::Tone tone; } cases[]{
+            {"KDFW 271951Z 18010KT 10SM SKC", "VFR", BrainOwnedAccessoryOrbPresentation::Tone::Green},
+            {"KDFW 271951Z 18010KT 4SM BKN020", "MVFR", BrainOwnedAccessoryOrbPresentation::Tone::Blue},
+            {"KDFW 271951Z 18010KT 2SM BKN008", "IFR", BrainOwnedAccessoryOrbPresentation::Tone::Red},
+            {"KDFW 271951Z 18010KT M1/4SM VV003", "LIFR", BrainOwnedAccessoryOrbPresentation::Tone::Magenta}};
+        for (const auto& item : cases) {
+            auto step4Heap19640 = std::make_unique<Step4Fixture>();
+            auto& f = *step4Heap19640;
+            f.AcceptPrimary(item.raw);
+            const auto handle = ProjectBrainOwnedAccessoryPresentation(&f.state, 1, nullptr);
+            const auto* orb = Step4MetarOrb(handle);
+            require(orb && orb->label.empty() &&
+                        orb->airportIcao == "KDFW" &&
+                        orb->categoryText == item.text &&
+                        orb->stateText.empty() &&
+                        orb->selectedIndicator.empty() &&
+                        orb->tone == item.tone,
+                    std::string("ORB category/tone mismatch: ") + item.text);
+        }
+    } else if (probe == "pinned_primary_not_history") {
+        auto step4Heap19653 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19653;
+        f.AcceptPrimary(primaryVfr);
+        Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar);
+        const auto stored = f.state.accessory.histories[0].entries.size();
+        const auto handle = ProjectBrainOwnedAccessoryPresentation(&f.state, 1, nullptr);
+        require(handle.snapshot && handle.snapshot->entries.size() == stored + 2,
+                "pinned primary and recent heading should be presentation-only");
+        require(f.state.accessory.histories[0].entries.size() == stored,
+                "pinned primary mutated history");
+    } else if (probe == "disconnect_inflight_completion_deferred") {
+        auto step4Heap19663 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19663;
+        f.Cycle();
+        f.input.xpilotConnected = false;
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+        f.Cycle(1);
+        require(f.state.metar.deferredDisconnectedFact.has_value() &&
+                    !f.state.metar.primaryObservation.valid,
+                "disconnect completion must remain deferred and unparsed");
+        f.input.xpilotConnected = true;
+        f.Cycle(1);
+        require(f.state.metar.primaryObservation.valid,
+                "valid deferred completion must accept on reconnect");
+    } else if (probe == "disconnect_request_suppression") {
+        auto step4Heap19676 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19676;
+        f.input.xpilotConnected = false;
+        for (int index = 0; index < 100; ++index) f.Cycle(1'000);
+        require(f.worker.requests.empty(), "disconnected runtime dispatched request");
+        require(f.state.accessory.activeDrawer == BrainOwnedAccessoryDrawerId::None,
+                "disconnected drawer must remain closed");
+    } else if (probe == "brain_owned_worker_dispatch_only") {
+        require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                  "RunBrainOwnedAsyncFactCycle"),
+                "generic brain cycle binding missing");
+        require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                  "AsyncFactWorkerHost"),
+                "generic worker host missing");
+        require(!Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                   "VatsimMetarClient"),
+                "plugin owns feature-specific client");
+        require(!Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                   "kBrainMetarRefresh"),
+                "plugin owns METAR cadence");
+    } else if (probe == "lookup_pending_fetching_presentation") {
+        auto step4Heap19696 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19696;
+        f.AcceptPrimary(primaryVfr);
+        const auto decision = f.SubmitLookup("KABQ");
+        require(decision.accepted &&
+                    f.state.accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Metar,
+                "valid lookup must immediately open METAR drawer");
+        require(Step4HasTitle(&f.state, "FETCHING METAR — KABQ"),
+                "pending lookup presentation missing");
+        require(f.state.metar.transientDeadlineMonotonicMs - f.input.monotonicMs == 20'000,
+                "pending deadline must be 20 seconds");
+    } else if (probe == "lookup_pending_failure_returns_primary") {
+        auto step4Heap19707 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19707;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.Cycle();
+        f.worker.Complete(BrainMetarWorkerStatus::TransportFailure);
+        f.Cycle(1);
+        require(Step4HasTitle(&f.state, "METAR LOOKUP FAILED — KABQ"),
+                "bounded failure presentation missing");
+        f.Cycle(4'000);
+        require(f.state.metar.transientPresentation == BrainMetarTransientPresentation::None &&
+                    Step4HasTitle(&f.state, "METAR — KDFW"),
+                "failure must return to pinned primary");
+    } else if (probe == "lookup_manual_close_respected" ||
+               probe == "lookup_completion_no_delayed_reopen") {
+        auto step4Heap19721 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19721;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.Cycle();
+        Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar, 2);
+        require(f.state.accessory.activeDrawer == BrainOwnedAccessoryDrawerId::None,
+                "manual close did not close drawer");
+        f.worker.Complete(BrainMetarWorkerStatus::Success, "KABQ", lookupMvfr);
+        f.Cycle(1);
+        require(f.state.accessory.activeDrawer == BrainOwnedAccessoryDrawerId::None &&
+                    f.state.metar.transientPresentation == BrainMetarTransientPresentation::None &&
+                    f.state.metar.transientDeadlineMonotonicMs == 0,
+                "completion reopened drawer or started hidden timer");
+        f.Cycle(30'000);
+        require(f.state.accessory.activeDrawer == BrainOwnedAccessoryDrawerId::None,
+                "delayed reopen occurred");
+        require(f.state.accessory.histories[0].entries.size() == 2,
+                "valid unseen lookup must remain in history");
+    } else if (probe == "lookup_drawer_switch_respected") {
+        for (const auto drawer : {BrainOwnedAccessoryDrawerId::Atis,
+                                  BrainOwnedAccessoryDrawerId::Pdc}) {
+            auto step4Heap19742 = std::make_unique<Step4Fixture>();
+            auto& f = *step4Heap19742;
+            f.AcceptPrimary(primaryVfr);
+            f.SubmitLookup("KABQ");
+            f.Cycle();
+            Step4SelectDrawer(&f.state, drawer, 2);
+            f.worker.Complete(BrainMetarWorkerStatus::Success, "KABQ", lookupMvfr);
+            f.Cycle(1);
+            require(f.state.accessory.activeDrawer == drawer &&
+                        f.state.metar.transientDeadlineMonotonicMs == 0,
+                    "lookup completion overrode newer drawer selection");
+        }
+    } else if (probe == "accessory_second_identical_lookup") {
+        auto step4Heap19754 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19754;
+        f.AcceptPrimary(primaryVfr);
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        f.Cycle(8'000);
+        require(f.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::None,
+                "first spotlight did not expire");
+        const auto parseBefore = f.state.metar.parseCount;
+        const auto historyBefore = f.state.metar.historyMutationCount;
+        const auto historySizeBefore =
+            f.state.accessory.histories[0].entries.size();
+        const auto presentationBefore = f.state.metar.presentationGeneration;
+        f.SubmitLookup("KABQ");
+        f.AcceptLookup(lookupMvfr);
+        require(f.state.metar.parseCount == parseBefore,
+                "identical second lookup reparsed content");
+        require(f.state.metar.historyMutationCount == historyBefore &&
+                    f.state.accessory.histories[0].entries.size() ==
+                        historySizeBefore,
+                "identical second lookup mutated history");
+        require(f.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::LookupSpotlight,
+                "identical second lookup did not activate spotlight");
+        require(f.state.metar.presentationGeneration > presentationBefore,
+                "identical second lookup did not publish visible spotlight");
+        const auto spotlightGeneration = f.state.metar.presentationGeneration;
+        f.Cycle(7'999);
+        require(f.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::LookupSpotlight,
+                "second spotlight expired early");
+        f.Cycle(1);
+        require(f.state.metar.transientPresentation ==
+                    BrainMetarTransientPresentation::None,
+                "second spotlight did not expire at eight seconds");
+        require(f.state.metar.presentationGeneration ==
+                    spotlightGeneration + 1,
+                "spotlight return did not publish exactly once");
+        require(Step4HasTitle(&f.state, "METAR — KDFW"),
+                "second spotlight did not return to pinned primary");
+        require(f.state.metar.parseCount == parseBefore &&
+                    f.state.metar.historyMutationCount == historyBefore,
+                "spotlight expiry performed content work");
+    } else if (probe == "accessory_spotlight_manual_ownership") {
+        for (const auto drawer : {BrainOwnedAccessoryDrawerId::Atis,
+                                  BrainOwnedAccessoryDrawerId::Pdc,
+                                  BrainOwnedAccessoryDrawerId::None}) {
+            auto step4Heap19801 = std::make_unique<Step4Fixture>();
+            auto& f = *step4Heap19801;
+            f.AcceptPrimary(primaryVfr);
+            f.SubmitLookup("KABQ");
+            f.AcceptLookup(lookupMvfr);
+            Step4SelectDrawer(
+                &f.state,
+                drawer == BrainOwnedAccessoryDrawerId::None
+                    ? BrainOwnedAccessoryDrawerId::Metar : drawer,
+                9);
+            f.Cycle(8'500);
+            require(f.state.accessory.activeDrawer == drawer,
+                    "spotlight expiry overrode pilot drawer ownership");
+            require(f.state.metar.transientPresentation ==
+                        BrainMetarTransientPresentation::None &&
+                        f.state.metar.transientDeadlineMonotonicMs == 0,
+                    "manual ownership left a delayed spotlight timer");
+            requireSuccessfulMetarOrb(
+                &f.state, "KDFW", "VFR",
+                BrainOwnedAccessoryOrbPresentation::Tone::Green);
+        }
+    } else if (probe == "accessory_orb_typography") {
+        using namespace xvatsim::modules::overlay;
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr, "GDI text measurement unavailable");
+        if (measurement != nullptr) {
+            for (const float scale : {0.85f, 1.0f, 1.35f}) {
+                for (const std::string& text :
+                     {"KDFW", "VFR", "MVFR", "IFR", "LIFR"}) {
+                    AccessoryTextMeasurementInput input;
+                    input.text = text;
+                    input.role = AccessoryFontRole::MetarOrbDetail;
+                    input.scale = scale;
+                    const auto measured = MeasureAccessoryText(measurement, input);
+                    require(measured.status ==
+                                BrainOwnedAccessoryOperationStatus::Available,
+                            "METAR ORB detail measurement unavailable");
+                    require(measured.fontFamily == "Segoe UI" &&
+                                measured.bold &&
+                                std::fabs(measured.fontPixelSize -
+                                          (10.0f * scale)) < 0.01f,
+                            "METAR ORB detail font is not Segoe UI Bold 10px");
+                    require(measured.measuredWidth <=
+                                static_cast<int>(std::lround(48.0f * scale)) &&
+                                measured.measuredHeight <=
+                                static_cast<int>(std::lround(15.0f * scale)),
+                            "METAR ORB detail text clips authorized bounds");
+                }
+            }
+            ShutdownAccessoryTextMeasurement(measurement);
+        }
+        auto step4Heap19851 = std::make_unique<Step4Fixture>();
+        auto& f = *step4Heap19851;
+        f.Cycle();
+        requireNeutralMetarOrb(&f.state);
+        f.AcceptPrimary(primaryVfr);
+        requireSuccessfulMetarOrb(
+            &f.state, "KDFW", "VFR",
+            BrainOwnedAccessoryOrbPresentation::Tone::Green);
+    } else if (probe.rfind("publication_integration_red_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        if (probe == "publication_integration_red_same_command_queue") {
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            BrainOwnedAccessoryPublicationFact hidden;
+            hidden.commandIdentity = 1;
+            hidden.lifecycleEpoch = 1;
+            hidden.commandTerminal = true;
+            const bool hiddenQueued = queue->Produce(hidden);
+            BrainOwnedAccessoryPublicationFact drained;
+            const bool hiddenDrained = queue->Consume(&drained);
+            BrainOwnedAccessoryPublicationFact visible = hidden;
+            visible.commandTerminal = false;
+            visible.visiblePublicationAttemptIdentity = 1;
+            visible.visibilityTimingApplicable = true;
+            const bool visibleQueued = queue->Produce(visible);
+            require(hiddenQueued && hiddenDrained && visibleQueued,
+                    "same-command visible-attempt terminal was rejected after hidden terminal");
+        } else if (probe == "publication_integration_red_combined_brain") {
+            auto step4Heap19877 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap19877;
+            BrainOwnedAccessoryPublicationFact combined;
+            combined.commandIdentity = 1;
+            combined.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            combined.commandTerminal = true;
+            combined.visiblePublicationAttemptIdentity = 1;
+            combined.visibilityTimingApplicable = true;
+            combined.visibleEligibilityToFirstFrameMicroseconds = 100;
+            const auto decision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, combined);
+            require(decision.consumed &&
+                        brain.accessory.lastTerminalPresentationCommandIdentity == 1 &&
+                        brain.accessory.lastVisiblePublicationAttemptIdentity == 1,
+                    "combined terminal did not advance both Brain ordering domains");
+        } else if (probe == "publication_integration_red_competing_coordinator") {
+            AccessoryVisiblePublicationState coordinator;
+            AccessoryVisiblePublicationKey key{1, 1, 1, 1, false};
+            const auto first = coordinator.Observe(
+                {key, true, true, true, 1'000});
+            const auto second = coordinator.Observe(
+                {key, true, true, false, 1'050});
+            require(first.started && !second.started &&
+                        coordinator.ActiveAttemptIdentity() ==
+                            first.attemptIdentity,
+                    "unified coordinator created competing attempt state");
+        } else if (probe == "publication_integration_red_failed_enqueue") {
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            for (std::uint64_t identity = 1;
+                 identity <= AccessoryPublicationFactQueue::kCapacity;
+                 ++identity) {
+                BrainOwnedAccessoryPublicationFact filler;
+                filler.commandIdentity = identity;
+                filler.lifecycleEpoch = 1;
+                require(queue->Produce(filler), "failed to establish bounded full queue");
+            }
+            AccessoryVisiblePublicationState coordinator;
+            AccessoryVisiblePublicationKey key{257, 1, 257, 1, false};
+            coordinator.Observe({key, true, true, false, 1'000});
+            const auto terminal =
+                coordinator.CompleteFirstFrame(key, true, true, 1'100);
+            BrainOwnedAccessoryPublicationFact fact;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &fact);
+            const auto firstDelivery =
+                coordinator.DeliverOrRetain(fact, queue.get());
+            const bool serviceLatched =
+                coordinator.DeliveryServiceRequested() &&
+                coordinator.ConsumeDeliveryServiceRequest();
+            BrainOwnedAccessoryPublicationFact freed;
+            require(queue->Consume(&freed), "failed to free bounded capacity");
+            const auto retry = coordinator.RetryRetained(queue.get());
+            std::uint64_t deliveredAttemptFacts = 0;
+            std::uint64_t deliveredAttemptIdentity = 0;
+            std::uint64_t deliveredVisibleMicroseconds = 0;
+            BrainOwnedAccessoryPublicationFact drained;
+            while (queue->Consume(&drained)) {
+                if (drained.visiblePublicationAttemptIdentity ==
+                    terminal.attemptIdentity) {
+                    ++deliveredAttemptFacts;
+                    deliveredAttemptIdentity =
+                        drained.visiblePublicationAttemptIdentity;
+                    deliveredVisibleMicroseconds =
+                        drained.visibleEligibilityToFirstFrameMicroseconds;
+                }
+            }
+            std::uint64_t laterIdleAttempts = 0;
+            for (int cycle = 0; cycle < 100; ++cycle) {
+                if (coordinator.Observe(
+                        {key, true, true, false,
+                         2'000U + cycle}).started) {
+                    ++laterIdleAttempts;
+                }
+            }
+            require(firstDelivery ==
+                        AccessoryPublicationQueueProduceResult::QueueFull &&
+                        serviceLatched &&
+                        retry ==
+                        AccessoryPublicationQueueProduceResult::Accepted &&
+                        !coordinator.HasRetainedTerminal() &&
+                        coordinator.RetainedRetryCount() == 1 &&
+                        deliveredAttemptFacts == 1 &&
+                        deliveredAttemptIdentity == terminal.attemptIdentity &&
+                        deliveredVisibleMicroseconds ==
+                            terminal.elapsedMicroseconds &&
+                        laterIdleAttempts == 0 &&
+                        !coordinator.DeliveryServiceRequested(),
+                    "bounded retained terminal was not delivered exactly once");
+        } else if (probe == "publication_integration_red_diagnostic_acceptance") {
+            auto step4Heap19964 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap19964;
+            brain.accessory.lastTerminalPresentationCommandIdentity = 1;
+            BrainOwnedAccessoryPublicationFact duplicate;
+            duplicate.commandIdentity = 1;
+            duplicate.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            const auto rejected =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, duplicate);
+            AccessoryPublicationDiagnosticAccounting accounting;
+            const auto diagnostic = SerializeAccessoryPublicationDiagnostic(
+                duplicate, rejected, &accounting);
+            require(accounting.factsDequeued == 1 &&
+                        accounting.factsAcceptedByBrain == 0 &&
+                        accounting.factsRejectedByBrain == 1 &&
+                        accounting.commandTerminalsAccepted == 0 &&
+                        diagnostic.find("brainConsumed=false") !=
+                            std::string::npos,
+                    "dequeued Brain-rejected fact was counted as terminal success");
+        }
+    } else if (probe.rfind("publication_integration_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        if (probe == "publication_integration_queue_ordering_domains") {
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            BrainOwnedAccessoryPublicationFact command;
+            command.commandIdentity = 1;
+            command.lifecycleEpoch = 1;
+            command.commandTerminal = true;
+            BrainOwnedAccessoryPublicationFact attempt = command;
+            attempt.commandTerminal = false;
+            attempt.visiblePublicationAttemptIdentity = 1;
+            require(queue->Produce(command), "command terminal rejected");
+            BrainOwnedAccessoryPublicationFact drained;
+            require(queue->Consume(&drained), "command terminal not FIFO consumed");
+            require(queue->Produce(attempt), "same-command attempt rejected");
+            require(queue->Consume(&drained), "attempt terminal not FIFO consumed");
+            require(!queue->Produce(command), "duplicate command accepted");
+            require(!queue->Produce(attempt), "duplicate attempt accepted");
+            command.commandIdentity = 0;
+            require(!queue->Produce(command), "zero command accepted");
+            require(queue->ProducedCount() == 2 &&
+                        queue->ConsumedCount() == 2 &&
+                        queue->RejectedCount() == 3,
+                    "independent queue ordering counters were not exact");
+        } else if (probe == "publication_integration_combined_visible") {
+            AccessoryVisiblePublicationState coordinator;
+            AccessoryVisiblePublicationKey key{1, 1, 1, 1, false};
+            AccessoryVisiblePublicationObservation observation{
+                key, true, true, false, 1'000, true};
+            const auto began = coordinator.Observe(observation);
+            const auto terminal = coordinator.CompleteFirstFrame(
+                key, true, true, 1'100);
+            BrainOwnedAccessoryPublicationFact combined;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &combined);
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            const auto queued = coordinator.DeliverOrRetain(combined, queue.get());
+            BrainOwnedAccessoryPublicationFact transported;
+            const bool dequeued = queue->Consume(&transported);
+            auto step4Heap20020 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20020;
+            const auto decision = ConsumeBrainOwnedAccessoryPublicationFact(
+                &brain, transported);
+            std::uint64_t repeats = 0;
+            for (int frame = 0; frame < 10; ++frame) {
+                if (coordinator.Observe({key, true, true, false,
+                                         2'000U + frame, true}).started) {
+                    ++repeats;
+                }
+            }
+            require(began.started && terminal.commandTerminal &&
+                        queued ==
+                            AccessoryPublicationQueueProduceResult::Accepted &&
+                        dequeued && decision.combinedTerminalAccepted &&
+                        decision.commandTerminalAccepted &&
+                        decision.visibleAttemptTerminalAccepted &&
+                        queue->ProducedCount() == 1 && repeats == 0,
+                    "combined visible fact did not close both obligations once");
+        } else if (probe == "publication_integration_lifecycle_scoped") {
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            auto step4Heap20040 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20040;
+            auto runEpoch = [&](std::uint64_t epoch) {
+                BrainOwnedAccessoryPublicationFact command;
+                command.commandIdentity = 1;
+                command.lifecycleEpoch = epoch;
+                BrainOwnedAccessoryPublicationFact attempt = command;
+                attempt.commandTerminal = false;
+                attempt.visiblePublicationAttemptIdentity = 1;
+                BrainOwnedAccessoryPublicationFact transported;
+                const bool q1 = queue->Produce(command);
+                const bool d1 = queue->Consume(&transported);
+                const auto b1 = ConsumeBrainOwnedAccessoryPublicationFact(
+                    &brain, transported);
+                const bool q2 = queue->Produce(attempt);
+                const bool d2 = queue->Consume(&transported);
+                const auto b2 = ConsumeBrainOwnedAccessoryPublicationFact(
+                    &brain, transported);
+                return q1 && d1 && b1.commandTerminalAccepted && q2 && d2 &&
+                    b2.visibleAttemptTerminalAccepted;
+            };
+            require(runEpoch(1), "lifecycle 1 identities were rejected");
+            DisableBrainOwnedAccessoryRuntime(&brain);
+            require(brain.accessory.lifecycleEpoch == 2 && runEpoch(2),
+                    "lifecycle 2 reset identities were rejected");
+            BrainOwnedAccessoryPublicationFact stale;
+            stale.commandIdentity = 2;
+            stale.lifecycleEpoch = 1;
+            const auto staleDecision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, stale);
+            BrainOwnedAccessoryPublicationFact current;
+            current.commandIdentity = 2;
+            current.lifecycleEpoch = 2;
+            const auto currentDecision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, current);
+            require(staleDecision.staleEpoch && !staleDecision.consumed &&
+                        currentDecision.commandTerminalAccepted &&
+                        brain.accessory.lastTerminalPresentationCommandIdentity == 2,
+                    "stale prior lifecycle contaminated current ordering");
+        } else if (probe == "publication_integration_visibility_loss") {
+            AccessoryVisiblePublicationState coordinator;
+            AccessoryVisiblePublicationKey key{1, 1, 9, 4, true};
+            const auto began = coordinator.Observe(
+                {key, true, true, false, 1'000});
+            const auto terminal = coordinator.LoseVisibility(1'250);
+            const auto fact =
+                BuildAccessoryVisibilityLossTerminalFact(terminal);
+            const auto regained = coordinator.Observe(
+                {key, true, true, false, 2'000});
+            require(began.started && terminal.terminal && !terminal.displayed &&
+                        fact.visiblePublicationAttemptIdentity ==
+                            began.attemptIdentity &&
+                        fact.visibilityEpoch == began.visibilityEpoch &&
+                        fact.appliedRailRevision == key.railRevision &&
+                        fact.appliedDrawerRevision == key.drawerRevision &&
+                        fact.visibleEligibilityToFirstFrameMicroseconds == 250 &&
+                        !fact.commandTerminal &&
+                        fact.mechanicalFailureReason ==
+                            "visible-eligibility-lost-before-first-frame" &&
+                        regained.started && regained.visibilityEpoch ==
+                            began.visibilityEpoch + 1,
+                    "visibility loss was not terminally named and re-epoched");
+        } else if (probe == "publication_integration_lifecycle_delivery") {
+            auto step4Heap20102 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20102;
+            AccessoryPublicationDiagnosticAccounting accounting;
+            BrainOwnedAccessoryPublicationFact orderly;
+            orderly.commandIdentity = 1;
+            orderly.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            orderly.disposition = BrainOwnedAccessoryPublicationDisposition::
+                LifecycleCancelled;
+            orderly.cancellationTimingApplicable = true;
+            orderly.issueToCancellationMicroseconds = 100;
+            const auto orderlyDecision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, orderly);
+            SerializeAccessoryPublicationDiagnostic(
+                orderly, orderlyDecision, &accounting);
+            DisableBrainOwnedAccessoryRuntime(&brain);
+            BrainOwnedAccessoryPublicationFact forced = orderly;
+            forced.commandIdentity = 2;
+            const auto staleDecision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, forced);
+            SerializeAccessoryPublicationDiagnostic(
+                forced, staleDecision, &accounting);
+            require(orderlyDecision.commandTerminalAccepted &&
+                        staleDecision.staleEpoch &&
+                        accounting.factsAcceptedByBrain == 1 &&
+                        accounting.factsRejectedByBrain == 1 &&
+                        accounting.staleFactsRejected == 1,
+                    "orderly and forced-stale lifecycle delivery were conflated");
+        }
+    } else if (probe.rfind("visibility_edge_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        AccessoryVisiblePublicationState state;
+        AccessoryVisiblePublicationKey key{1, 1, 1, 1, false};
+        auto observe = [&](bool visible, bool textures, bool dirty,
+                           std::uint64_t now = 1'000) {
+            return state.Observe({key, visible, textures, dirty, now});
+        };
+        auto complete = [&](bool textures, bool drawn,
+                            std::uint64_t now = 1'100) {
+            return state.CompleteFirstFrame(key, textures, drawn, now);
+        };
+
+        if (probe == "visibility_edge_hidden_then_clean_visible" ||
+            probe == "visibility_edge_live_failure_reproduction" ||
+            probe == "visibility_edge_attempt_starts_on_edge" ||
+            probe == "visibility_edge_attempt_terminates_after_draw" ||
+            probe == "visibility_edge_hidden_no_fabricated_click") {
+            require(!observe(false, true, false).started,
+                    "hidden state opened a visible attempt");
+            const auto began = observe(true, true, false, 2'000);
+            require(began.started && began.attemptIdentity != 0,
+                    "clean reusable texture did not open visibility-edge attempt");
+            const auto terminal = complete(true, true, 2'100);
+            require(terminal.terminal && terminal.displayed &&
+                        terminal.elapsedMicroseconds == 100,
+                    "clean first visible draw did not terminally publish");
+        } else if (probe == "visibility_edge_clean_texture_attempt") {
+            const auto began = observe(true, true, false, 2'000);
+            require(began.started && began.attemptIdentity == 1 &&
+                        state.HasActiveAttempt(),
+                    "clean texture did not start one active edge attempt");
+        } else if (probe ==
+                   "visibility_edge_clean_texture_first_visibility") {
+            const auto began = observe(true, true, false, 2'000);
+            const auto terminal = complete(true, true, 2'075);
+            require(began.started && terminal.terminal && terminal.displayed &&
+                        terminal.elapsedMicroseconds == 75 &&
+                        !state.HasActiveAttempt(),
+                    "clean texture first visibility did not complete after draw");
+        } else if (probe == "visibility_edge_exactly_one_attempt" ||
+                   probe == "visibility_edge_ten_frames_zero_repeat") {
+            require(observe(true, true, true).started,
+                    "dirty first visibility did not begin attempt");
+            require(complete(true, true).terminal,
+                    "first qualifying draw did not terminate attempt");
+            std::uint64_t repeats = 0;
+            for (int index = 0; index < 10; ++index) {
+                if (observe(true, true, false, 2'000 + index).started) ++repeats;
+            }
+            require(repeats == 0, "unchanged frames repeated visible attempts");
+        } else if (probe == "visibility_edge_loss_regain_new_epoch") {
+            const auto first = observe(true, true, true);
+            complete(true, true);
+            state.LoseVisibility();
+            const auto second = observe(true, true, false, 2'000);
+            require(first.started && second.started &&
+                        second.visibilityEpoch == first.visibilityEpoch + 1,
+                    "visibility regain did not create one new epoch attempt");
+        } else if (probe == "visibility_edge_lifecycle_change") {
+            const auto first = observe(true, true, true);
+            ++key.lifecycleEpoch;
+            const auto second = observe(true, true, true, 2'000);
+            const auto third = observe(true, true, true, 2'001);
+            require(first.started && second.superseded && !second.started &&
+                        third.started,
+                    "lifecycle change did not supersede old attempt");
+        } else if (probe == "visibility_edge_dirty_texture_attempt") {
+            require(observe(true, true, true).started &&
+                        complete(true, true).displayed,
+                    "dirty texture path did not publish once");
+        } else if (probe == "visibility_edge_missing_texture_failure") {
+            const auto began = observe(true, false, false);
+            const auto terminal = complete(false, false);
+            require(began.started && terminal.terminal && !terminal.displayed,
+                    "missing texture did not create one truthful failure");
+        } else if (probe == "visibility_edge_closed_requires_rail_only") {
+            key.drawerOpen = false;
+            require(observe(true, true, false).started &&
+                        complete(true, true).displayed,
+                    "closed rail-only publication did not complete");
+        } else if (probe == "visibility_edge_open_requires_both") {
+            key.drawerOpen = true;
+            require(observe(true, false, false).started &&
+                        complete(false, false).terminal,
+                    "open drawer missing texture did not fail truthfully");
+        } else if (probe == "visibility_edge_newer_supersedes_old") {
+            const auto first = observe(true, true, true);
+            ++key.commandIdentity;
+            ++key.railRevision;
+            const auto second = observe(true, true, false, 2'000);
+            const auto third = observe(true, true, false, 2'001);
+            require(first.started && second.superseded && !second.started &&
+                        third.started &&
+                        second.supersededAttemptIdentity == first.attemptIdentity &&
+                        second.supersededVisibilityEpoch == first.visibilityEpoch &&
+                        second.supersededElapsedMicroseconds == 1'000,
+                    "newer presentation did not accountably supersede attempt");
+        } else if (probe == "visibility_edge_click_visible_once") {
+            auto step4Heap20228 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20228;
+            require(observe(true, true, false).started,
+                    "click-visible command did not open attempt");
+            const auto terminal = complete(true, true);
+            BrainOwnedAccessoryPublicationFact fact;
+            fact.commandIdentity = key.commandIdentity;
+            fact.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            fact.originatingClickSequence = 1;
+            fact.clickTimingApplicable = true;
+            fact.clickToTerminalMicroseconds = 499'999;
+            fact.commandTerminal = true;
+            const auto decision = ConsumeBrainOwnedAccessoryPublicationFact(&brain, fact);
+            require(terminal.terminal && decision.consumed &&
+                        brain.accessory.publicationLivenessFailureCount == 0,
+                    "click-driven visible command was not terminal below 500 ms");
+        } else if (probe == "visibility_edge_startup_integration") {
+            auto step4Heap20244 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20244;
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            AccessoryPublicationDiagnosticAccounting accounting;
+            const auto hiddenObservation = observe(false, true, false);
+            AccessoryHiddenCommandTerminalInput hiddenInput;
+            hiddenInput.commandIdentity = key.commandIdentity;
+            hiddenInput.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            hiddenInput.railRevision = key.railRevision;
+            hiddenInput.drawerRevision = key.drawerRevision;
+            hiddenInput.issueToCommitMicroseconds = 80;
+            const auto hiddenFact =
+                BuildAccessoryHiddenCommandTerminalFact(hiddenInput);
+            const auto hiddenEnqueue =
+                state.DeliverOrRetain(hiddenFact, queue.get());
+            BrainOwnedAccessoryPublicationFact hiddenTransport;
+            const bool hiddenDequeued = queue->Consume(&hiddenTransport);
+            const auto hiddenDecision =
+                ConsumeBrainOwnedAccessoryPublicationFact(
+                    &brain, hiddenTransport);
+            const auto hiddenDiagnostic =
+                SerializeAccessoryPublicationDiagnostic(
+                    hiddenTransport, hiddenDecision, &accounting);
+            const auto began = observe(true, true, false, 2'000);
+            const auto terminal = complete(true, true, 2'100);
+            BrainOwnedAccessoryPublicationFact visibleFact;
+            ApplyAccessoryVisiblePublicationTerminal(
+                terminal, &visibleFact);
+            const auto visibleEnqueue =
+                state.DeliverOrRetain(visibleFact, queue.get());
+            BrainOwnedAccessoryPublicationFact transported;
+            const bool transportedByBinding = queue->Consume(&transported);
+            const auto accepted = ConsumeBrainOwnedAccessoryPublicationFact(
+                &brain, transported);
+            const auto visibleDiagnostic =
+                SerializeAccessoryPublicationDiagnostic(
+                    transported, accepted, &accounting);
+            std::uint64_t unchangedAttempts = 0;
+            for (int frame = 0; frame < 10; ++frame) {
+                if (observe(true, true, false, 3'000 + frame).started) {
+                    ++unchangedAttempts;
+                }
+            }
+            require(!hiddenObservation.started && hiddenDequeued &&
+                        hiddenEnqueue ==
+                            AccessoryPublicationQueueProduceResult::Accepted &&
+                        hiddenDecision.commandTerminalAccepted &&
+                        began.started && terminal.terminal &&
+                        terminal.attemptIdentity == began.attemptIdentity &&
+                        visibleEnqueue ==
+                            AccessoryPublicationQueueProduceResult::Accepted &&
+                        transportedByBinding && accepted.consumed &&
+                        accepted.visibleAttemptTerminalAccepted &&
+                        !transported.commandTerminal &&
+                        transported.visibilityTimingApplicable &&
+                        transported.visibilityEpoch == began.visibilityEpoch &&
+                        queue->ProducedCount() == 2 &&
+                        queue->ConsumedCount() == 2 &&
+                        queue->RejectedCount() == 0 &&
+                        accounting.factsAcceptedByBrain == 2 &&
+                        accounting.commandTerminalsAccepted == 1 &&
+                        accounting.visibleAttemptTerminalsAccepted == 1 &&
+                        accounting.factsRejectedByBrain == 0 &&
+                        accounting.diagnosticsSerialized == 2 &&
+                        !hiddenDiagnostic.empty() &&
+                        !visibleDiagnostic.empty() &&
+                        unchangedAttempts == 0 &&
+                        brain.accessory.lastVisiblePublicationAttemptIdentity ==
+                            began.attemptIdentity,
+                    "startup visibility event sequence was not correlated");
+            std::cout << "STEP4_VISIBILITY_STARTUP_LEDGER: physical_produced="
+                      << queue->ProducedCount()
+                      << " physical_consumed=" << queue->ConsumedCount()
+                      << " brain_accepted="
+                      << accounting.factsAcceptedByBrain
+                      << " brain_rejected="
+                      << accounting.factsRejectedByBrain
+                      << " command_terminals="
+                      << accounting.commandTerminalsAccepted
+                      << " attempt_terminals="
+                      << accounting.visibleAttemptTerminalsAccepted
+                      << " diagnostics="
+                      << accounting.diagnosticsSerialized
+                      << " queue_rejections=" << queue->RejectedCount()
+                      << " unchanged_attempts=" << unchangedAttempts
+                      << " liveness_failures="
+                      << brain.accessory.publicationLivenessFailureCount
+                      << " visibility_epoch=" << transported.visibilityEpoch
+                      << " attempt_identity="
+                      << transported.visiblePublicationAttemptIdentity
+                      << " visible_us="
+                      << transported.visibleEligibilityToFirstFrameMicroseconds
+                      << '\n';
+        } else if (probe == "visibility_edge_hidden_terminal_preserved") {
+            auto step4Heap20337 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20337;
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            AccessoryHiddenCommandTerminalInput hiddenInput;
+            hiddenInput.commandIdentity = 1;
+            hiddenInput.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            const auto hidden =
+                BuildAccessoryHiddenCommandTerminalFact(hiddenInput);
+            require(queue->Produce(hidden), "hidden terminal did not enqueue");
+            BrainOwnedAccessoryPublicationFact transported;
+            queue->Consume(&transported);
+            const auto decision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, transported);
+            require(decision.commandTerminalAccepted &&
+                        !decision.visibleAttemptTerminalAccepted &&
+                        brain.accessory.lastTerminalPresentationCommandIdentity == 1 &&
+                        brain.accessory.lastVisiblePublicationAttemptIdentity == 0,
+                    "hidden command terminal was not preserved independently");
+        } else if (probe == "visibility_edge_visible_attempt_separate") {
+            auto step4Heap20355 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& brain = *step4Heap20355;
+            auto queue = std::make_unique<AccessoryPublicationFactQueue>();
+            AccessoryHiddenCommandTerminalInput hiddenInput;
+            hiddenInput.commandIdentity = 1;
+            hiddenInput.lifecycleEpoch = brain.accessory.lifecycleEpoch;
+            auto hidden = BuildAccessoryHiddenCommandTerminalFact(hiddenInput);
+            queue->Produce(hidden);
+            BrainOwnedAccessoryPublicationFact transported;
+            queue->Consume(&transported);
+            ConsumeBrainOwnedAccessoryPublicationFact(&brain, transported);
+            const auto began = observe(true, true, false, 2'000);
+            const auto terminal = complete(true, true, 2'100);
+            BrainOwnedAccessoryPublicationFact visible;
+            ApplyAccessoryVisiblePublicationTerminal(terminal, &visible);
+            require(queue->Produce(visible), "same-command attempt did not enqueue");
+            queue->Consume(&transported);
+            const auto decision =
+                ConsumeBrainOwnedAccessoryPublicationFact(&brain, transported);
+            require(decision.visibleAttemptTerminalAccepted &&
+                        !decision.commandTerminalAccepted &&
+                        brain.accessory.lastTerminalPresentationCommandIdentity == 1 &&
+                        brain.accessory.lastVisiblePublicationAttemptIdentity ==
+                            began.attemptIdentity,
+                    "later visible attempt reopened hidden command");
+        }
+    } else if (probe.rfind("hidden_publication_timing_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        const auto overlaySource = Step4ReadFile("modules/overlay/src/OverlayWindow.cpp");
+        auto step4Heap20383 = std::make_unique<BrainOwnedRuntimeState>();
+        auto& state = *step4Heap20383;
+        auto fact = [&](std::uint64_t identity) {
+            BrainOwnedAccessoryPublicationFact value;
+            value.commandIdentity = identity;
+            value.lifecycleEpoch = state.accessory.lifecycleEpoch;
+            value.appliedCommandIdentity = identity;
+            return value;
+        };
+
+        if (probe == "hidden_publication_timing_hidden_terminal_named") {
+            AccessoryVisiblePublicationState publication;
+            AccessoryVisiblePublicationKey key{1, state.accessory.lifecycleEpoch,
+                                                1, 1, false};
+            require(!publication.Observe({key, false, true, false, 1'000}).started,
+                    "hidden commitment incorrectly opened a visible attempt");
+            auto hidden = fact(1);
+            hidden.disposition = BrainOwnedAccessoryPublicationDisposition::
+                CommittedNoVisibleFrameRequired;
+            require(ConsumeBrainOwnedAccessoryPublicationFact(&state, hidden).consumed &&
+                        state.accessory.lastTerminalPresentationCommandIdentity == 1,
+                    "hidden commitment did not retain its named terminal result");
+        } else if (probe == "hidden_publication_timing_hidden_62906600_not_click_failure") {
+            auto hidden = fact(1);
+            hidden.disposition = BrainOwnedAccessoryPublicationDisposition::
+                CommittedNoVisibleFrameRequired;
+            hidden.commandElapsedMicroseconds = 62'906'600;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, hidden);
+            require(result.consumed &&
+                        state.accessory.publicationLivenessFailureCount == 0,
+                    "intentionally hidden duration triggered blanket liveness failure");
+        } else if (probe == "hidden_publication_timing_hidden_no_fabricated_click") {
+            auto hidden = fact(1);
+            hidden.disposition = BrainOwnedAccessoryPublicationDisposition::
+                CommittedNoVisibleFrameRequired;
+            hidden.intentionallyHiddenTimingApplicable = true;
+            hidden.intentionallyHiddenMicroseconds = 62'906'600;
+            require(ConsumeBrainOwnedAccessoryPublicationFact(&state, hidden).consumed &&
+                        !hidden.clickTimingApplicable &&
+                        hidden.clickToTerminalMicroseconds == 0 &&
+                        state.accessory.publicationLivenessFailureCount == 0,
+                    "hidden no-click command fabricated click timing");
+        } else if (probe == "hidden_publication_timing_repeat_hidden_no_duplicate") {
+            auto hidden = fact(1);
+            const auto first = ConsumeBrainOwnedAccessoryPublicationFact(&state, hidden);
+            const auto duplicate = ConsumeBrainOwnedAccessoryPublicationFact(&state, hidden);
+            require(first.consumed && !duplicate.consumed &&
+                        state.accessory.publicationFactsConsumed == 1,
+                    "repeated hidden command duplicated terminal accounting");
+        } else if (probe == "hidden_publication_timing_awaiting_not_downgraded") {
+            AccessoryVisiblePublicationState publication;
+            AccessoryVisiblePublicationKey key{1, state.accessory.lifecycleEpoch,
+                                                1, 1, false};
+            const auto began = publication.Observe({key, true, true, true, 1'000});
+            const auto repeated = publication.Observe({key, true, true, false, 1'050});
+            require(began.started && !repeated.started &&
+                        publication.ActiveAttemptIdentity() == began.attemptIdentity,
+                    "zero-raster resynchronization downgraded awaiting attempt");
+        } else if (probe == "hidden_publication_timing_repeat_awaiting_timer_stable") {
+            AccessoryVisiblePublicationState publication;
+            AccessoryVisiblePublicationKey key{1, state.accessory.lifecycleEpoch,
+                                                1, 1, false};
+            publication.Observe({key, true, true, true, 1'000});
+            publication.Observe({key, true, true, false, 50'000});
+            const auto terminal =
+                publication.CompleteFirstFrame(key, true, true, 1'100);
+            require(terminal.terminal && terminal.elapsedMicroseconds == 100,
+                    "repeated awaiting command restarted visible timer");
+        } else if (probe == "hidden_publication_timing_later_visibility_new_timer") {
+            AccessoryVisiblePublicationState publication;
+            AccessoryVisiblePublicationKey key{1, state.accessory.lifecycleEpoch,
+                                                1, 1, false};
+            publication.Observe({key, false, true, false, 1'000});
+            publication.Observe({key, true, true, false, 62'906'600});
+            const auto terminal = publication.CompleteFirstFrame(
+                key, true, true, 62'906'700);
+            require(terminal.terminal && terminal.elapsedMicroseconds == 100,
+                    "later visibility measured from hidden command issue");
+        } else if (probe == "hidden_publication_timing_visibility_does_not_reopen_hidden") {
+            auto hidden = fact(1);
+            hidden.disposition = BrainOwnedAccessoryPublicationDisposition::
+                CommittedNoVisibleFrameRequired;
+            const auto committed =
+                ConsumeBrainOwnedAccessoryPublicationFact(&state, hidden);
+            auto visible = fact(1);
+            visible.disposition =
+                BrainOwnedAccessoryPublicationDisposition::FirstFrameDisplayed;
+            visible.commandTerminal = false;
+            visible.visiblePublicationAttemptIdentity = 1;
+            visible.visibilityTimingApplicable = true;
+            visible.visibleEligibilityToFirstFrameMicroseconds = 100;
+            const auto displayed =
+                ConsumeBrainOwnedAccessoryPublicationFact(&state, visible);
+            require(committed.consumed && displayed.consumed &&
+                        state.accessory.lastTerminalPresentationCommandIdentity == 1 &&
+                        state.accessory.lastVisiblePublicationAttemptIdentity == 1,
+                    "later visibility reopened or contradicted hidden terminal result");
+        } else if (probe == "hidden_publication_timing_click_499999_passes") {
+            auto clicked = fact(1);
+            clicked.originatingClickSequence = 1;
+            clicked.commandElapsedMicroseconds = 62'906'600;
+            clicked.clickToTerminalMicroseconds = 499'999;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, clicked);
+            require(result.consumed &&
+                        state.accessory.publicationLivenessFailureCount == 0,
+                    "499999-us click was not classified strictly by click timing");
+        } else if (probe == "hidden_publication_timing_click_500000_fails") {
+            auto clicked = fact(1);
+            clicked.originatingClickSequence = 1;
+            clicked.clickToTerminalMicroseconds = 500'000;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, clicked);
+            require(result.consumed &&
+                        state.accessory.publicationLivenessFailureCount == 1,
+                    "500000-us click incorrectly passed strict-below contract");
+        } else if (probe == "hidden_publication_timing_lifecycle_exactly_once") {
+            auto cancelled = fact(1);
+            cancelled.disposition =
+                BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+            const auto first = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            const auto duplicate = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            require(first.consumed && !duplicate.consumed &&
+                        state.accessory.publicationFactsConsumed == 1,
+                    "lifecycle cancellation was not terminal exactly once");
+        } else if (probe == "hidden_publication_timing_cancellation_499999_passes") {
+            auto cancelled = fact(1);
+            cancelled.disposition = BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+            cancelled.cancellationTimingApplicable = true;
+            cancelled.issueToCancellationMicroseconds = 499'999;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            require(result.consumed && result.terminal &&
+                        state.accessory.publicationLivenessFailureCount == 0,
+                    "499999-us lifecycle cancellation failed strict bound");
+        } else if (probe == "hidden_publication_timing_cancellation_500000_fails") {
+            auto cancelled = fact(1);
+            cancelled.disposition = BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+            cancelled.cancellationTimingApplicable = true;
+            cancelled.issueToCancellationMicroseconds = 500'000;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            require(result.consumed && result.terminal &&
+                        state.accessory.publicationLivenessFailureCount == 1,
+                    "500000-us lifecycle cancellation passed strict bound");
+        } else if (probe == "hidden_publication_timing_hidden_not_cancellation") {
+            auto cancelled = fact(1);
+            cancelled.disposition = BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+            cancelled.intentionallyHiddenTimingApplicable = true;
+            cancelled.intentionallyHiddenMicroseconds = 62'906'600;
+            cancelled.cancellationTimingApplicable = true;
+            cancelled.issueToCancellationMicroseconds = 100;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            require(result.consumed && state.accessory.publicationLivenessFailureCount == 0,
+                    "hidden duration was misclassified as cancellation latency");
+        } else if (probe == "hidden_publication_timing_click_cancellation_separate") {
+            auto cancelled = fact(1);
+            cancelled.disposition = BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+            cancelled.cancellationTimingApplicable = true;
+            cancelled.issueToCancellationMicroseconds = 100;
+            cancelled.clickTimingApplicable = true;
+            cancelled.clickToTerminalMicroseconds = 500'000;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            require(result.consumed && state.accessory.publicationLivenessFailureCount == 1,
+                    "click-driven cancellation did not evaluate click timing separately");
+        } else if (probe == "hidden_publication_timing_dual_breach_one_failure") {
+            auto cancelled = fact(1);
+            cancelled.disposition = BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled;
+            cancelled.cancellationTimingApplicable = true;
+            cancelled.issueToCancellationMicroseconds = 600'001;
+            cancelled.clickTimingApplicable = true;
+            cancelled.clickToTerminalMicroseconds = 600'001;
+            const auto result = ConsumeBrainOwnedAccessoryPublicationFact(&state, cancelled);
+            require(result.consumed && state.accessory.publicationLivenessFailureCount == 1,
+                    "two applicable breaches produced multiple aggregate failures");
+        } else if (probe == "hidden_publication_timing_newer_preserves_order") {
+            auto first = fact(1);
+            auto second = fact(2);
+            const auto firstResult = ConsumeBrainOwnedAccessoryPublicationFact(&state, first);
+            const auto secondResult = ConsumeBrainOwnedAccessoryPublicationFact(&state, second);
+            const auto lateFirst = ConsumeBrainOwnedAccessoryPublicationFact(&state, first);
+            require(firstResult.consumed && secondResult.consumed &&
+                        !lateFirst.consumed &&
+                        state.accessory.publicationFactsConsumed == 2,
+                    "newer command lost or reordered terminal accounting");
+        }
+    } else if (probe.rfind("accessory_input_boundary_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        struct CorrectedInputBoundary {
+            std::unique_ptr<BrainOwnedRuntimeState> brainStorage =
+                std::make_unique<BrainOwnedRuntimeState>();
+            BrainOwnedRuntimeState& brain = *brainStorage;
+            AccessoryClickFactQueue clicks;
+            BrainOwnedAccessoryDrawerId visibleDrawer =
+                BrainOwnedAccessoryDrawerId::None;
+            bool mouseCallbackActive = false;
+            bool brainStartedInsideMouseCallback = false;
+            bool wakePerformedSemanticWork = false;
+            std::uint64_t brainRequestCount = 0;
+            std::uint64_t commandCount = 0;
+            std::uint64_t terminalCount = 0;
+            std::uint64_t wakeCount = 0;
+            std::uint64_t cycleCount = 0;
+            std::uint64_t discardedCount = 0;
+            std::uint64_t maximumTerminalMicroseconds = 0;
+            std::uint64_t nowMicroseconds = 1'000;
+            std::vector<BrainOwnedAccessoryDrawerId> capturedDrawers;
+            std::vector<BrainOwnedAccessoryDrawerAction> decisions;
+            std::vector<BrainOwnedAccessoryDrawerId> visibleTrace;
+            std::vector<std::uint64_t> commandIdentities;
+            std::vector<std::uint64_t> terminalClickSequences;
+
+            void SetActive(BrainOwnedAccessoryDrawerId drawer) {
+                brain.accessory.activeDrawer = drawer;
+                brain.accessory.selectionGeneration = 1;
+                visibleDrawer = drawer;
+            }
+
+            void MouseDown(BrainOwnedAccessoryDrawerId drawer) {
+                mouseCallbackActive = true;
+                AccessoryClickFact produced;
+                if (!clicks.Produce(drawer, nowMicroseconds++,
+                                    &produced)) {
+                    mouseCallbackActive = false;
+                    return;
+                }
+                capturedDrawers.push_back(produced.drawer);
+                // The only post-enqueue operation is the mechanical wake.
+                ++wakeCount;
+                clicks.MarkMouseCallbackExited(
+                    produced.requestSequence, nowMicroseconds++);
+                mouseCallbackActive = false;
+            }
+
+            void Complete(
+                const BrainOwnedAccessoryPresentationHandle& command,
+                std::uint64_t elapsedMicroseconds = 100) {
+                BrainOwnedAccessoryPublicationFact terminal;
+                terminal.commandIdentity = command.snapshot->commandIdentity;
+                terminal.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+                terminal.appliedCommandIdentity =
+                    command.snapshot->commandIdentity;
+                terminal.originatingClickSequence =
+                    command.snapshot->originatingClickSequence;
+                terminal.originatingClickAcceptedMicroseconds =
+                    command.snapshot->originatingClickAcceptedMicroseconds;
+                terminal.originatingMouseCallbackExitedMicroseconds =
+                    command.snapshot->originatingMouseCallbackExitedMicroseconds;
+                terminal.disposition =
+                    BrainOwnedAccessoryPublicationDisposition::
+                        FirstFrameDisplayed;
+                terminal.activeDrawerRendered =
+                    command.snapshot->activeDrawer;
+                terminal.commandElapsedMicroseconds = elapsedMicroseconds;
+                terminal.clickToTerminalMicroseconds = elapsedMicroseconds;
+                const auto disposition =
+                    ConsumeBrainOwnedAccessoryPublicationFact(&brain, terminal);
+                if (disposition.consumed) {
+                    ++terminalCount;
+                    terminalClickSequences.push_back(
+                        command.snapshot->originatingClickSequence);
+                    maximumTerminalMicroseconds = std::max(
+                        maximumTerminalMicroseconds, elapsedMicroseconds);
+                }
+                visibleDrawer = command.snapshot->activeDrawer;
+                visibleTrace.push_back(visibleDrawer);
+            }
+
+            std::size_t Cycle(
+                bool publicationCapacity = true,
+                std::size_t budget = 8,
+                std::uint64_t terminalElapsedMicroseconds = 100) {
+                ++cycleCount;
+                if (!publicationCapacity) return 0;
+                std::size_t consumedCount = 0;
+                AccessoryClickFact consumed;
+                while (budget-- != 0 && clicks.Consume(&consumed)) {
+                    ++consumedCount;
+                    brainStartedInsideMouseCallback =
+                        brainStartedInsideMouseCallback || mouseCallbackActive;
+                    BrainOwnedAccessorySelectionRequest request;
+                    request.drawer = consumed.drawer;
+                    request.requestSequence = consumed.requestSequence;
+                    request.clickAcceptedMicroseconds =
+                        consumed.startedMicroseconds;
+                    request.mouseCallbackEnteredMicroseconds =
+                        consumed.mouseCallbackEnteredMicroseconds;
+                    request.mouseCallbackExitedMicroseconds =
+                        consumed.mouseCallbackExitedMicroseconds;
+                    const auto decision =
+                        RequestBrainOwnedAccessoryDrawerSelection(&brain, request);
+                    ++brainRequestCount;
+                    decisions.push_back(decision.action);
+                    const auto command = ProjectBrainOwnedAccessoryPresentation(
+                        &brain, 1, nullptr);
+                    ++commandCount;
+                    commandIdentities.push_back(
+                        command.snapshot->commandIdentity);
+                    Complete(command, terminalElapsedMicroseconds);
+                }
+                return consumedCount;
+            }
+
+            void DisableDiscardPending() {
+                discardedCount += clicks.DiscardPending();
+                DisableBrainOwnedAccessoryRuntime(&brain);
+            }
+        } model;
+
+        if (probe == "accessory_input_boundary_red_mouse_callback_reenters_brain") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            require(model.brainRequestCount == 0,
+                    "mouse callback performed a brain request");
+            model.Cycle();
+            require(!model.brainStartedInsideMouseCallback,
+                    "brain selection started before mouse callback exit");
+        } else if (probe ==
+                   "accessory_input_boundary_red_atis_single_click_does_not_switch") {
+            model.SetActive(BrainOwnedAccessoryDrawerId::Metar);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.Cycle();
+            require(model.visibleDrawer == BrainOwnedAccessoryDrawerId::Atis,
+                    "single ATIS click did not switch through brain cycle");
+        } else if (probe ==
+                   "accessory_input_boundary_red_pdc_single_click_does_not_switch") {
+            model.SetActive(BrainOwnedAccessoryDrawerId::Metar);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Pdc);
+            model.Cycle();
+            require(model.visibleDrawer == BrainOwnedAccessoryDrawerId::Pdc,
+                    "single PDC click did not switch through brain cycle");
+        } else if (probe ==
+                   "accessory_input_boundary_red_double_click_closes_wrong_drawer") {
+            model.SetActive(BrainOwnedAccessoryDrawerId::Metar);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.Cycle();
+            require(model.capturedDrawers.size() == 2 &&
+                        model.capturedDrawers[0] == BrainOwnedAccessoryDrawerId::Atis &&
+                        model.capturedDrawers[1] == BrainOwnedAccessoryDrawerId::Atis,
+                    "double-click facts did not preserve ATIS identity");
+            require(model.visibleTrace.size() == 2 &&
+                        model.visibleTrace[0] == BrainOwnedAccessoryDrawerId::Atis &&
+                        model.visibleTrace[1] == BrainOwnedAccessoryDrawerId::None,
+                    "two ATIS facts did not independently switch then close");
+        } else if (probe ==
+                   "accessory_input_boundary_red_legacy_dispatch_accounting_false_zero") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.Cycle();
+            require(model.brainRequestCount == 1 && model.commandCount == 1 &&
+                        model.terminalCount == 1,
+                    "actual brain-cycle accounting did not serialize the action");
+        } else if (probe == "accessory_input_boundary_mouse_callback_capture_only") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            require(model.clicks.PendingCount() == 1 &&
+                        model.brainRequestCount == 0 && model.commandCount == 0 &&
+                        model.wakeCount == 1 && !model.wakePerformedSemanticWork,
+                    "mouse callback exceeded fact-capture and wake authority");
+        } else if (probe ==
+                   "accessory_input_boundary_callback_exit_precedes_brain_decision") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Pdc);
+            model.Cycle();
+            require(!model.brainStartedInsideMouseCallback &&
+                        model.brainRequestCount == 1,
+                    "brain decision did not follow callback exit");
+        } else if (probe ==
+                   "accessory_input_boundary_exact_drawer_hit_test_closed_geometry" ||
+                   probe ==
+                   "accessory_input_boundary_exact_drawer_hit_test_open_geometry") {
+            AccessoryLayoutInput input;
+            input.screenWidth = 1920;
+            input.screenHeight = 1080;
+            input.windowLeft = 100;
+            input.windowTop = 900;
+            input.scale = 1.0f;
+            input.cardAnimationProgress = 1.0f;
+            input.drawerOpen = probe.find("open_geometry") != std::string::npos;
+            const auto layout = ResolveAccessoryLayout(input);
+            require(layout.orbs.size() == 3,
+                    "production accessory layout did not expose three ORBs");
+            for (const auto& orb : layout.orbs) {
+                const auto hit = HitTestAccessoryOrb(
+                    layout,
+                    (orb.bounds.left + orb.bounds.right) / 2,
+                    (orb.bounds.bottom + orb.bounds.top) / 2);
+                require(hit.handled && hit.drawer == orb.drawer,
+                        "committed geometry remapped an exact drawer hit");
+            }
+        } else if (probe == "accessory_input_boundary_click_fact_fifo_order") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Metar);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Pdc);
+            model.Cycle();
+            require(model.capturedDrawers == std::vector<BrainOwnedAccessoryDrawerId>{
+                        BrainOwnedAccessoryDrawerId::Metar,
+                        BrainOwnedAccessoryDrawerId::Atis,
+                        BrainOwnedAccessoryDrawerId::Pdc} &&
+                        model.visibleDrawer == BrainOwnedAccessoryDrawerId::Pdc,
+                    "click facts were not consumed in FIFO order");
+        } else if (probe ==
+                   "accessory_input_boundary_closed_opens_exact_requested_drawer") {
+            for (const auto drawer : {BrainOwnedAccessoryDrawerId::Metar,
+                                      BrainOwnedAccessoryDrawerId::Atis,
+                                      BrainOwnedAccessoryDrawerId::Pdc}) {
+                CorrectedInputBoundary fixture;
+                fixture.MouseDown(drawer);
+                fixture.Cycle();
+                require(fixture.visibleDrawer == drawer,
+                        "closed state did not open exact requested drawer");
+            }
+        } else if (probe ==
+                   "accessory_input_boundary_active_drawer_click_closes") {
+            for (const auto drawer : {BrainOwnedAccessoryDrawerId::Metar,
+                                      BrainOwnedAccessoryDrawerId::Atis,
+                                      BrainOwnedAccessoryDrawerId::Pdc}) {
+                CorrectedInputBoundary fixture;
+                fixture.SetActive(drawer);
+                fixture.MouseDown(drawer);
+                fixture.Cycle();
+                require(fixture.visibleDrawer == BrainOwnedAccessoryDrawerId::None,
+                        "active drawer click did not close");
+            }
+        } else if (probe ==
+                   "accessory_input_boundary_different_drawer_click_switches") {
+            for (const auto from : {BrainOwnedAccessoryDrawerId::Metar,
+                                    BrainOwnedAccessoryDrawerId::Atis,
+                                    BrainOwnedAccessoryDrawerId::Pdc}) {
+                for (const auto to : {BrainOwnedAccessoryDrawerId::Metar,
+                                      BrainOwnedAccessoryDrawerId::Atis,
+                                      BrainOwnedAccessoryDrawerId::Pdc}) {
+                    if (from == to) continue;
+                    CorrectedInputBoundary fixture;
+                    fixture.SetActive(from);
+                    fixture.MouseDown(to);
+                    fixture.Cycle();
+                    require(fixture.visibleDrawer == to,
+                            "different drawer click did not switch directly");
+                }
+            }
+        } else if (probe ==
+                   "accessory_input_boundary_metar_atis_pdc_metar_sequence") {
+            for (const auto drawer : {BrainOwnedAccessoryDrawerId::Metar,
+                                      BrainOwnedAccessoryDrawerId::Atis,
+                                      BrainOwnedAccessoryDrawerId::Pdc,
+                                      BrainOwnedAccessoryDrawerId::Metar}) {
+                model.MouseDown(drawer);
+                model.Cycle();
+            }
+            require(model.visibleDrawer == BrainOwnedAccessoryDrawerId::Metar &&
+                        model.brainRequestCount == 4 && model.terminalCount == 4,
+                    "METAR-ATIS-PDC-METAR sequence was not fully accounted");
+        } else if (probe == "accessory_input_boundary_atis_empty_state_visible" ||
+                   probe == "accessory_input_boundary_pdc_empty_state_visible") {
+            const auto drawer = probe.find("atis") != std::string::npos
+                ? BrainOwnedAccessoryDrawerId::Atis
+                : BrainOwnedAccessoryDrawerId::Pdc;
+            model.MouseDown(drawer);
+            model.Cycle();
+            const auto command = ProjectBrainOwnedAccessoryPresentation(
+                &model.brain, 1, nullptr);
+            require(command.snapshot != nullptr &&
+                        command.snapshot->activeDrawer == drawer &&
+                        command.snapshot->drawerTitle ==
+                            (drawer == BrainOwnedAccessoryDrawerId::Atis
+                                ? "ATIS" : "PDC") &&
+                        !command.snapshot->emptyStateText.empty(),
+                    "empty accessory drawer did not present truthful state");
+        } else if (probe ==
+                   "accessory_input_boundary_double_click_two_ordered_brain_facts") {
+            model.SetActive(BrainOwnedAccessoryDrawerId::Metar);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.Cycle();
+            require(model.decisions == std::vector<BrainOwnedAccessoryDrawerAction>{
+                        BrainOwnedAccessoryDrawerAction::Switched,
+                        BrainOwnedAccessoryDrawerAction::Closed} &&
+                        model.terminalCount == 2,
+                    "double click was not two ordered brain facts");
+        } else if (probe ==
+                   "accessory_input_boundary_rapid_alternating_clicks_no_loss") {
+            for (int index = 0; index < 60; ++index) {
+                model.MouseDown(index % 3 == 0
+                    ? BrainOwnedAccessoryDrawerId::Metar
+                    : index % 3 == 1
+                        ? BrainOwnedAccessoryDrawerId::Atis
+                        : BrainOwnedAccessoryDrawerId::Pdc);
+                if ((index + 1) % 8 == 0) model.Cycle();
+            }
+            while (model.clicks.PendingCount() != 0) model.Cycle();
+            require(model.clicks.DroppedCount() == 0 &&
+                        model.brainRequestCount == 60 &&
+                        model.terminalCount == 60,
+                    "rapid controlled input lost a click");
+        } else if (probe ==
+                   "accessory_input_boundary_publication_capacity_defers_without_loss") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            const auto activeAfterEnable = ResolveAccessoryFlightLoopCadence(
+                model.clicks.PendingCount() != 0, 10.0f);
+            require(activeAfterEnable.nextCycle &&
+                        activeAfterEnable.intervalSeconds == -1.0f,
+                    "click after enable did not bypass initial delay");
+            require(model.Cycle(false) == 0 &&
+                        model.clicks.PendingCount() == 1,
+                    "publication pressure dropped or consumed deferred input");
+            require(model.Cycle(true, 8, 250'000) == 1 &&
+                        model.clicks.PendingCount() == 0 &&
+                        model.maximumTerminalMicroseconds < 500'000,
+                    "deferred preparation was not harvested below 500 ms");
+            const auto settled = ResolveAccessoryFlightLoopCadence(
+                model.clicks.PendingCount() != 0, 0.25f);
+            require(!settled.nextCycle && settled.intervalSeconds == 0.25f,
+                    "terminal completion did not restore normal cadence");
+        } else if (probe ==
+                   "accessory_input_boundary_every_consumed_click_one_brain_decision") {
+            for (const auto drawer : {BrainOwnedAccessoryDrawerId::Metar,
+                                      BrainOwnedAccessoryDrawerId::Atis,
+                                      BrainOwnedAccessoryDrawerId::Pdc}) {
+                model.MouseDown(drawer);
+            }
+            model.Cycle();
+            require(model.clicks.ConsumedCount() == 3 &&
+                        model.brainRequestCount == 3 &&
+                        model.decisions.size() == 3,
+                    "consumed click and brain decision counts diverged");
+        } else if (probe ==
+                   "accessory_input_boundary_every_issued_command_one_terminal_fact") {
+            for (const auto drawer : {BrainOwnedAccessoryDrawerId::Metar,
+                                      BrainOwnedAccessoryDrawerId::Atis,
+                                      BrainOwnedAccessoryDrawerId::Pdc}) {
+                model.MouseDown(drawer);
+                model.Cycle();
+            }
+            require(model.commandCount == 3 && model.terminalCount == 3 &&
+                        model.commandIdentities.size() == 3 &&
+                        model.terminalClickSequences.size() == 3,
+                    "issued command lacked exactly one terminal fact");
+        } else if (probe ==
+                   "accessory_input_boundary_lifecycle_with_pending_clicks_truthful") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Pdc);
+            model.DisableDiscardPending();
+            require(model.discardedCount == 2 &&
+                        model.clicks.PendingCount() == 0 &&
+                        model.clicks.ProducedCount() ==
+                            model.clicks.ConsumedCount() +
+                            model.clicks.DiscardedCount() +
+                            model.clicks.DroppedCount(),
+                    "lifecycle discard accounting was not exact");
+        } else if (probe ==
+                   "accessory_input_boundary_disable_reenable_sequence_clean") {
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Atis);
+            model.DisableDiscardPending();
+            EnableBrainOwnedAccessoryRuntime(&model.brain);
+            model.MouseDown(BrainOwnedAccessoryDrawerId::Pdc);
+            model.Cycle();
+            require(model.visibleDrawer == BrainOwnedAccessoryDrawerId::Pdc &&
+                        model.clicks.PendingCount() == 0 &&
+                        !model.brainStartedInsideMouseCallback,
+                    "re-enable retained stale input or initial-delay blocking");
+        } else if (probe ==
+                   "accessory_input_boundary_accessory_selection_preserves_metar_state") {
+            auto step4Heap20936 = std::make_unique<Step4Fixture>();
+            auto& metar = *step4Heap20936;
+            metar.Cycle();
+            metar.AcceptPrimary(primaryVfr);
+            const auto primaryBefore = metar.state.metar.primaryAirportIcao;
+            const auto parseBefore = metar.state.metar.parseCount;
+            const auto historyBefore = metar.state.metar.historyMutationCount;
+            BrainOwnedAccessorySelectionRequest request;
+            request.drawer = BrainOwnedAccessoryDrawerId::Atis;
+            request.requestSequence = 1;
+            RequestBrainOwnedAccessoryDrawerSelection(&metar.state, request);
+            require(metar.state.metar.primaryAirportIcao == primaryBefore &&
+                        metar.state.metar.parseCount == parseBefore &&
+                        metar.state.metar.historyMutationCount == historyBefore &&
+                        metar.worker.requests.size() == 1,
+                    "accessory selection changed METAR product state");
+        } else if (probe ==
+                   "accessory_input_boundary_one_thousand_click_production_path_stress") {
+            for (int index = 0; index < 1'000; ++index) {
+                model.MouseDown(index % 3 == 0
+                    ? BrainOwnedAccessoryDrawerId::Metar
+                    : index % 3 == 1
+                        ? BrainOwnedAccessoryDrawerId::Atis
+                        : BrainOwnedAccessoryDrawerId::Pdc);
+                model.Cycle(true, 8, 100);
+            }
+            require(model.clicks.ProducedCount() == 1'000 &&
+                        model.clicks.ConsumedCount() == 1'000 &&
+                        model.clicks.DroppedCount() == 0 &&
+                        model.brainRequestCount == 1'000 &&
+                        model.commandCount == 1'000 &&
+                        model.terminalCount == 1'000 &&
+                        model.clicks.PendingCount() == 0 &&
+                        model.maximumTerminalMicroseconds < 500'000,
+                    "1000-click production path did not end fully accounted");
+            std::cout << "STEP4_ACCESSORY_INPUT_STRESS: produced=1000"
+                      << " consumed=1000 decisions=1000 commands=1000"
+                      << " terminals=1000 dropped=0 queued=0"
+                      << " publication_queue=0 behavioral_in_flight=false"
+                      << " max_terminal_us="
+                      << model.maximumTerminalMicroseconds << "\n";
+        } else if (probe ==
+                   "accessory_input_boundary_one_hundred_thousand_warm_idle_zero_work") {
+            const auto normal = ResolveAccessoryFlightLoopCadence(false, 0.25f);
+            for (int index = 0; index < 100'000; ++index) {
+                require(!normal.nextCycle && normal.intervalSeconds == 0.25f,
+                        "unchanged idle retained active cadence");
+            }
+            require(model.brainRequestCount == 0 && model.commandCount == 0 &&
+                        model.terminalCount == 0 && model.wakeCount == 0 &&
+                        model.clicks.PendingCount() == 0,
+                    "warm idle performed accessory product work");
+            std::cout << "STEP4_ACCESSORY_INPUT_WARM_IDLE: cycles=100000"
+                      << " click_consumption=0 decisions=0 commands=0"
+                      << " preparation=0 history=0 wrapping=0 rasters=0"
+                      << " uploads=0 publications=0 diagnostics=0"
+                      << " cadence_seconds=0.25\n";
+        }
+    } else if (probe == "accessory_dispatch_stress") {
+        using namespace xvatsim::modules::overlay;
+        AccessoryClickFactQueue queue;
+        AccessoryInputDispatchCoordinator dispatcher;
+        std::uint64_t now = 1;
+        for (int index = 0; index < 1'000; ++index) {
+            const auto drawer = index % 3 == 0
+                ? BrainOwnedAccessoryDrawerId::Metar
+                : index % 3 == 1 ? BrainOwnedAccessoryDrawerId::Atis
+                                 : BrainOwnedAccessoryDrawerId::Pdc;
+            AccessoryClickFact produced;
+            require(queue.Produce(drawer, now++, &produced),
+                    "stress queue dropped a valid click");
+            dispatcher.RecordDispatchNotification();
+            AccessoryClickFact consumed;
+            require(dispatcher.TryBegin(&queue, &consumed),
+                    "stress dispatcher did not begin click");
+            require(dispatcher.BindPresentation(
+                        consumed.requestSequence,
+                        BrainOwnedAccessoryDrawerAction::Opened,
+                        static_cast<std::uint64_t>(index + 1),
+                        static_cast<std::uint64_t>(index + 1)),
+                    "stress dispatcher did not bind action");
+            const auto completion = dispatcher.CompleteMatchingDraw(
+                drawer, static_cast<std::uint64_t>(index + 1),
+                static_cast<std::uint64_t>(index + 2), now++);
+            require(completion.completed && completion.terminal &&
+                        completion.disposition ==
+                            AccessoryInputDispatchDisposition::
+                                CompatibleRenderSuperseded,
+                    "compatible stress draw did not terminate action");
+        }
+        const auto snapshot = dispatcher.Snapshot();
+        require(!snapshot.inFlight && queue.PendingCount() == 0,
+                "stress left input queued or in flight");
+        require(snapshot.requestsBegun == 1'000 &&
+                    snapshot.matchingDrawCompletions == 1'000 &&
+                    snapshot.supersededGenerationCompletions == 1'000 &&
+                    snapshot.mismatchedDrawAttempts == 0,
+                "stress terminal accounting mismatch");
+        require(snapshot.maximumInFlightMicroseconds <= 500'000,
+                "stress action exceeded 500-millisecond liveness limit");
+        std::cout << "STEP4_ACCESSORY_STRESS: actions=1000"
+                  << " superseded=1000 queued=0 in_flight=false"
+                  << " max_in_flight_us="
+                  << snapshot.maximumInFlightMicroseconds
+                  << " limit_us=500000\n";
+    } else if (probe.rfind("brain_exclusive_", 0) == 0) {
+        using namespace xvatsim::modules::overlay;
+        const auto clientSource = Step4ReadFile(
+            "modules/metar/src/VatsimMetarClient.cpp");
+        const auto decoderHeader = Step4ReadFile(
+            "modules/metar/include/XVatsim/modules/metar/VatsimMetarDecoder.h");
+        const auto overlaySource = Step4ReadFile(
+            "modules/overlay/src/OverlayWindow.cpp");
+        const auto pluginSource = Step4ReadFile(
+            "plugin/src/XVatsimPlugin.cpp");
+
+        require(decoderHeader.find("std::string_view boundedPayload") !=
+                    std::string::npos &&
+                    decoderHeader.find("requestedIcao") == std::string::npos &&
+                    decoderHeader.find("accepted") == std::string::npos,
+                "stateless decoder exposes authority-bearing input or output");
+        require(clientSource.find("DecodeVatsimMetarPayload(payload)") !=
+                    std::string::npos &&
+                    clientSource.find("VatsimMetarDecoderWorker") ==
+                        std::string::npos,
+                "existing worker does not return one composite decode fact");
+        const auto decoded = DecodeVatsimMetarPayload(
+            R"([{"id":"KDFW","metar":" KDFW 271951Z 18010KT 10SM FEW050 "}])");
+        require(decoded.decodeStatus == VatsimMetarDecodeStatus::Decoded &&
+                    decoded.reportCardinality == 1 &&
+                    decoded.soleReport.has_value() &&
+                    decoded.soleReport->returnedStation == "KDFW" &&
+                    decoded.soleReport->rawMetarHasLeadingWhitespace &&
+                    decoded.soleReport->rawMetarHasTrailingWhitespace,
+                "mechanical decode fact is incomplete");
+
+        auto step4Heap21071 = std::make_unique<Step4Fixture>();
+        auto& fixture = *step4Heap21071;
+        fixture.Cycle();
+        const auto accepted = fixture.AcceptPrimary(primaryVfr);
+        require(accepted.completionAccepted && accepted.contentChanged &&
+                    fixture.state.metar.parseCount == 1 &&
+                    fixture.state.metar.primaryObservation.valid,
+                "brain did not exclusively accept and parse decoded fact");
+        if (probe == "brain_exclusive_brain_wrong_station_terminal_rejection") {
+            auto step4Heap21079 = std::make_unique<Step4Fixture>();
+            auto& wrong = *step4Heap21079;
+            wrong.Cycle();
+            wrong.worker.Complete(
+                BrainMetarWorkerStatus::Success, "KLAX",
+                "KLAX 271951Z 18010KT 10SM FEW050");
+            const auto rejected = wrong.Cycle(1);
+            require(rejected.completionAccepted &&
+                        !rejected.dispositionDiagnostic.accepted &&
+                        wrong.state.metar.parseCount == 0 &&
+                        !wrong.state.metar.primaryObservation.valid,
+                    "worker-side decoded station bypassed brain rejection");
+        }
+        const auto neutralToPrimary =
+            ProjectBrainOwnedAccessoryPresentation(&fixture.state, 1, nullptr);
+        require(neutralToPrimary.snapshot != nullptr &&
+                    neutralToPrimary.snapshot->commandIdentity != 0 &&
+                    neutralToPrimary.snapshot->lifecycleEpoch ==
+                        fixture.state.accessory.lifecycleEpoch &&
+                    neutralToPrimary.snapshot->railPresentationRevision != 0,
+                "complete brain presentation command identity is missing");
+
+        Step4SelectDrawer(&fixture.state, BrainOwnedAccessoryDrawerId::Metar);
+        const auto openCommand = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, 1, nullptr);
+        require(openCommand.snapshot != nullptr &&
+                    openCommand.snapshot->selectedDrawerContentRevision != 0 &&
+                    openCommand.snapshot->drawerFinalMarker ==
+                        "END OF METAR HISTORY",
+                "immutable command is not exact-command brain content");
+        require(std::any_of(
+                    openCommand.snapshot->entries.begin(),
+                    openCommand.snapshot->entries.end(),
+                    [](const BrainOwnedAccessoryHistoryEntry& entry) {
+                        return entry.title.find("KDFW") != std::string::npos ||
+                            entry.body.find("KDFW") != std::string::npos;
+                    }),
+                "first METAR command does not contain accepted KDFW");
+
+        if (probe == "brain_exclusive_lifecycle_epoch_rejects_old_command") {
+            auto step4Heap21118 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& epochState = *step4Heap21118;
+            const auto oldEpoch = epochState.accessory.lifecycleEpoch;
+            DisableBrainOwnedAccessoryRuntime(&epochState);
+            BrainOwnedAccessoryPublicationFact stale;
+            stale.commandIdentity = 1;
+            stale.lifecycleEpoch = oldEpoch;
+            stale.disposition =
+                BrainOwnedAccessoryPublicationDisposition::FirstFrameDisplayed;
+            const auto rejected = ConsumeBrainOwnedAccessoryPublicationFact(
+                &epochState, stale);
+            require(!rejected.consumed && rejected.staleEpoch,
+                    "old lifecycle publication fact entered brain state");
+        }
+
+        if (probe == "brain_exclusive_identical_kdfw_zero_work") {
+            const auto parseBefore = fixture.state.metar.parseCount;
+            const auto historyBefore = fixture.state.metar.historyMutationCount;
+            fixture.input.monotonicMs += 60'001;
+            fixture.Cycle();
+            fixture.worker.Complete(
+                BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+            const auto identical = fixture.Cycle(1);
+            require(identical.completionAccepted && !identical.contentChanged &&
+                        fixture.state.metar.parseCount == parseBefore &&
+                        fixture.state.metar.historyMutationCount == historyBefore,
+                    "identical KDFW performed semantic work");
+        }
+
+        if (probe == "brain_exclusive_changed_kdfw_one_command") {
+            fixture.input.monotonicMs += 60'001;
+            fixture.Cycle();
+            fixture.worker.Complete(
+                BrainMetarWorkerStatus::Success, "KDFW",
+                "KDFW 271952Z 18010KT 4SM BKN020");
+            const auto changed = fixture.Cycle(1);
+            require(changed.contentChanged &&
+                        fixture.state.metar.parseCount == 2 &&
+                        fixture.state.metar.historyMutationCount == 2,
+                    "changed KDFW did not produce one brain-owned update");
+        }
+
+        if (probe == "brain_exclusive_enroute_ksan_command") {
+            fixture.input.workflowStage = WorkflowStage::Enroute;
+            fixture.Cycle(1);
+            require(fixture.state.metar.primaryAirportIcao == "KSAN" &&
+                        !fixture.worker.requests.empty() &&
+                        fixture.worker.requests.back().airportIcao == "KSAN",
+                    "Enroute brain command did not replace KDFW with KSAN");
+        }
+
+        require(overlaySource.find("PublishReadyAccessoryPreparation();") ==
+                    std::string::npos &&
+                    overlaySource.find("accessoryClickQueue_.Consume(outFact)") !=
+                        std::string::npos &&
+                    pluginSource.find("BindAccessoryInputDispatch(fact") ==
+                        std::string::npos &&
+                    pluginSource.find(
+                        "CanAcceptAccessoryPresentationCommand() &&") !=
+                        std::string::npos,
+                "render-dependent input authority or draw-time commit remains");
+
+        if (probe.find("publication") != std::string::npos ||
+            probe.find("ack") != std::string::npos ||
+            probe.find("terminal") != std::string::npos ||
+            probe.find("failure") != std::string::npos ||
+            probe.find("superseded") != std::string::npos) {
+            auto step4Heap21184 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& deliveryState = *step4Heap21184;
+            BrainOwnedAccessoryPublicationFact fact;
+            fact.commandIdentity = 1;
+            fact.lifecycleEpoch = deliveryState.accessory.lifecycleEpoch;
+            fact.appliedCommandIdentity = 1;
+            fact.disposition = probe.find("failure") != std::string::npos
+                ? BrainOwnedAccessoryPublicationDisposition::PublicationFailed
+                : probe.find("superseded") != std::string::npos
+                    ? BrainOwnedAccessoryPublicationDisposition::
+                        SupersededAfterCommitBeforeFirstFrame
+                    : BrainOwnedAccessoryPublicationDisposition::
+                        FirstFrameDisplayed;
+            fact.failureStage = probe.find("failure") != std::string::npos
+                ? BrainOwnedAccessoryPublicationFailureStage::Preparation
+                : BrainOwnedAccessoryPublicationFailureStage::None;
+            fact.commandElapsedMicroseconds = 12'000;
+            const auto consumed = ConsumeBrainOwnedAccessoryPublicationFact(
+                &deliveryState, fact);
+            require(consumed.consumed && consumed.terminal &&
+                        deliveryState.accessory.publicationFactsConsumed == 1,
+                    "brain did not consume one terminal publication fact");
+            const auto duplicate = ConsumeBrainOwnedAccessoryPublicationFact(
+                &deliveryState, fact);
+            require(!duplicate.consumed &&
+                        deliveryState.accessory.publicationFactsRejected == 1,
+                    "duplicate terminal fact was accepted");
+        }
+
+        if (probe.find("queue") != std::string::npos ||
+            probe.find("1000_action") != std::string::npos ||
+            probe.find("every_command") != std::string::npos) {
+            AccessoryPublicationFactQueue terminalQueue;
+            for (std::uint64_t identity = 1;
+                 identity <= AccessoryPublicationFactQueue::kCapacity;
+                 ++identity) {
+                BrainOwnedAccessoryPublicationFact fact;
+                fact.commandIdentity = identity;
+                fact.lifecycleEpoch = 1;
+                fact.disposition =
+                    BrainOwnedAccessoryPublicationDisposition::Committed;
+                require(terminalQueue.Produce(fact),
+                        "reserved terminal fact capacity rejected command");
+            }
+            BrainOwnedAccessoryPublicationFact overflow;
+            overflow.commandIdentity =
+                AccessoryPublicationFactQueue::kCapacity + 1;
+            overflow.lifecycleEpoch = 1;
+            require(!terminalQueue.Produce(overflow) &&
+                        terminalQueue.PendingCount() ==
+                            AccessoryPublicationFactQueue::kCapacity,
+                    "saturated terminal queue lost or overwrote a result");
+            require(terminalQueue.AvailableCapacity() == 0,
+                    "brain binding seam cannot observe exhausted capacity");
+            BrainOwnedAccessoryPublicationFact drained;
+            std::uint64_t drainedCount = 0;
+            while (terminalQueue.Consume(&drained)) ++drainedCount;
+            require(drainedCount == AccessoryPublicationFactQueue::kCapacity &&
+                        terminalQueue.PendingCount() == 0 &&
+                        terminalQueue.ProducedCount() == drainedCount,
+                    "terminal fact accounting did not drain exactly");
+        }
+
+        if (probe == "brain_exclusive_1000_action_nonblocking_stress") {
+            auto step4Heap21247 = std::make_unique<BrainOwnedRuntimeState>();
+            auto& stressState = *step4Heap21247;
+            AccessoryClickFactQueue clicks;
+            std::uint64_t terminalCount = 0;
+            for (int index = 0; index < 1'000; ++index) {
+                const auto drawer = index % 3 == 0
+                    ? BrainOwnedAccessoryDrawerId::Metar
+                    : index % 3 == 1
+                        ? BrainOwnedAccessoryDrawerId::Atis
+                        : BrainOwnedAccessoryDrawerId::Pdc;
+                require(clicks.Produce(drawer, index + 1, nullptr),
+                        "authorized stress click dropped");
+                AccessoryClickFact click;
+                require(clicks.Consume(&click), "stress click not consumed");
+                BrainOwnedAccessorySelectionRequest request;
+                request.drawer = click.drawer;
+                request.requestSequence = click.requestSequence;
+                const auto decision = RequestBrainOwnedAccessoryDrawerSelection(
+                    &stressState, request);
+                require(decision.status ==
+                            BrainOwnedAccessoryOperationStatus::Available,
+                        "brain did not decide stress click");
+                const auto command = ProjectBrainOwnedAccessoryPresentation(
+                    &stressState, 1, nullptr);
+                BrainOwnedAccessoryPublicationFact terminal;
+                terminal.commandIdentity = command.snapshot->commandIdentity;
+                terminal.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+                terminal.appliedCommandIdentity =
+                    command.snapshot->commandIdentity;
+                terminal.disposition =
+                    BrainOwnedAccessoryPublicationDisposition::Committed;
+                terminal.commandElapsedMicroseconds = 100;
+                const auto disposition =
+                    ConsumeBrainOwnedAccessoryPublicationFact(
+                        &stressState, terminal);
+                require(disposition.consumed,
+                        "stress command lost terminal publication fact");
+                ++terminalCount;
+            }
+            require(clicks.PendingCount() == 0 &&
+                        clicks.DroppedCount() == 0 &&
+                        terminalCount == 1'000 &&
+                        stressState.accessory.publicationFactsConsumed == 1'000 &&
+                        stressState.accessory.maximumPublicationElapsedMicroseconds ==
+                            100 &&
+                        stressState.accessory.publicationLivenessFailureCount == 0,
+                    "1000-action stress did not end fully accounted");
+            std::cout << "STEP4_BRAIN_EXCLUSIVE_STRESS: issued=1000"
+                      << " terminal=1000 dropped=0 queued=0"
+                      << " pending_publication=0 behavioral_in_flight=false"
+                      << " max_command_us=100 liveness_failures=0\n";
+        }
+
+        if (probe == "brain_exclusive_100000_warm_idle_zero_work") {
+            BrainOwnedAccessoryProjectionCounters totals;
+            for (int index = 0; index < 100'000; ++index) {
+                BrainOwnedAccessoryProjectionCounters counters;
+                const auto repeated = ProjectBrainOwnedAccessoryPresentation(
+                    &fixture.state, 1, &counters);
+                require(repeated.snapshot == openCommand.snapshot,
+                        "warm idle rebuilt immutable brain command");
+                totals.historyVisits += counters.historyVisits;
+                totals.entriesCopied += counters.entriesCopied;
+                totals.snapshotBuilds += counters.snapshotBuilds;
+            }
+            require(totals.historyVisits == 0 && totals.entriesCopied == 0 &&
+                        totals.snapshotBuilds == 0,
+                    "warm idle performed recurring command work");
+            std::cout << "STEP4_BRAIN_EXCLUSIVE_WARM_IDLE: cycles=100000"
+                      << " history_visits=0 copies=0 preparations=0"
+                      << " wrapping=0 rail_rasters=0 drawer_rasters=0"
+                      << " uploads=0 publications=0 input_dispatch=0"
+                      << " diagnostics=0\n";
+        }
+    } else if (probe == "accessory_deferred_binding_boundaries") {
+        require(Step4FileContains("modules/overlay/src/OverlayWindow.cpp",
+                                  "accessoryClickQueue_.Consume(outFact)"),
+                "pilot click does not flow directly to brain consumption");
+        require(!Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                   "BindAccessoryInputDispatch(fact"),
+                "plugin still waits for render-dependent action binding");
+        require(Step4FileContains("modules/overlay/src/OverlayWindow.cpp",
+                                  "LifecycleCancelled"),
+                "lifecycle does not terminally account for pending command");
+        require(!Step4FileContains("modules/overlay/src/OverlayWindow.cpp",
+                                   "PublishReadyAccessoryPreparation();"),
+                "draw-time competing presentation commit remains");
+    } else if (probe == "accessory_bounded_diagnostics") {
+        require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                  "accessoryClickTerminalFacts"),
+                "authoritative click terminal summary missing");
+        require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                  "accessoryMaximumClickToTerminalUs"),
+                "authoritative click-to-terminal maximum missing");
+        require(Step4FileContains(
+                    "brain/include/XVatsim/brain/BrainOwnedRuntime.h",
+                    "SupersededAfterCommitBeforeFirstFrame"),
+                "brain-command supersession disposition missing");
+    } else {
+        std::cerr << "STEP4_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                  << ": unknown probe " << probe << "\n";
+        return 2;
+    }
+
+    if (!failures.empty()) {
+        for (const auto& failure : failures) {
+            std::cerr << "STEP4_ASSERTION_FAILED: " << scenario.name
+                      << ": " << failure << "\n";
+        }
+        return 1;
+    }
+    std::cout << "Scenario passed: " << scenario.name << "\n";
+    return 0;
+}
+
+struct Step5AtisFixture {
+    xvatsim::brain::BrainOwnedRuntimeState state;
+    xvatsim::modules::vatsim_data_feed::VatsimDataFeedSnapshot feed;
+    xvatsim::brain::BrainOwnedAtisCycleInput input;
+
+    Step5AtisFixture() {
+        xvatsim::brain::EnableBrainOwnedAccessoryRuntime(&state);
+        input.pluginEnabled = true;
+        input.xpilotConnected = true;
+        input.workflowStage = xvatsim::brain::WorkflowStage::Departure;
+        input.operatingMode = xvatsim::brain::BrainOwnedOperatingMode::IFR;
+        input.flightContext.active = true;
+        input.flightContext.callsign = "ASA551";
+        input.flightContext.departureIcao = "KDFW";
+        input.flightContext.destinationIcao = "KSAN";
+        input.monotonicMs = 1'000;
+    }
+
+    void Decode(const std::string& document, std::uint64_t generation = 1) {
+        feed = xvatsim::modules::vatsim_data_feed::
+            DecodeVatsimDataFeedDocument(document);
+        feed.generation = generation;
+        BindFeed();
+    }
+
+    void BindFeed() {
+        input.feedHasCache = feed.hasCache;
+        input.feedStale = feed.stale;
+        input.feedFetchInProgress = feed.fetchInProgress;
+        input.feedGeneration = feed.generation;
+        input.atisRootPresent = feed.atisRootPresent;
+        input.atisRootArray = feed.atisRootArray;
+        input.atisComponentComplete = feed.atisComponentComplete;
+        input.atisMechanicalIssueMask = feed.atisMechanicalIssueMask;
+        input.atisRecords = &feed.atisRecords;
+    }
+
+    xvatsim::brain::BrainOwnedAtisCycleDecision Cycle(long long advanceMs = 0) {
+        input.monotonicMs += advanceMs;
+        BindFeed();
+        return xvatsim::brain::RunBrainOwnedAtisCycle(&state, input);
+    }
+
+    xvatsim::brain::BrainOwnedAccessoryPresentationHandle Project(
+        xvatsim::brain::BrainOwnedAccessoryProjectionCounters* counters = nullptr) {
+        return xvatsim::brain::ProjectBrainOwnedAccessoryPresentation(
+            &state, counters);
+    }
+
+    xvatsim::brain::BrainOwnedAccessorySelectionDecision Select(
+        xvatsim::brain::BrainOwnedAccessoryDrawerId drawer,
+        std::uint64_t sequence = 1) {
+        xvatsim::brain::BrainOwnedAccessorySelectionRequest request;
+        request.drawer = drawer;
+        request.requestSequence = sequence;
+        request.clickAcceptedMicroseconds = sequence * 1'000;
+        request.mouseCallbackEnteredMicroseconds =
+            request.clickAcceptedMicroseconds;
+        request.mouseCallbackExitedMicroseconds =
+            request.clickAcceptedMicroseconds + 1;
+        return xvatsim::brain::RequestBrainOwnedAccessoryDrawerSelection(
+            &state, request);
+    }
+
+    xvatsim::brain::BrainOwnedTextEntryDecision Lookup(
+        const std::string& airport,
+        long long advanceMs = 1) {
+        input.monotonicMs += advanceMs;
+        xvatsim::brain::BrainOwnedTextEntryFact fact;
+        fact.mode =
+            xvatsim::brain::BrainOwnedTextEntryMode::AtisAirportLookup;
+        fact.text = airport;
+        fact.monotonicMs = input.monotonicMs;
+        return xvatsim::brain::CommitBrainOwnedAtisTextEntryFact(&state, fact);
+    }
+};
+
+const xvatsim::brain::BrainOwnedAccessoryOrbPresentation* Step5AtisOrb(
+    const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& handle) {
+    if (!handle.snapshot) return nullptr;
+    for (const auto& orb : handle.snapshot->orbs) {
+        if (orb.drawer ==
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::Atis) return &orb;
+    }
+    return nullptr;
+}
+
+bool Step5SnapshotContains(
+    const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& handle,
+    const std::string& token) {
+    if (!handle.snapshot) return false;
+    if (handle.snapshot->drawerTitle.find(token) != std::string::npos ||
+        handle.snapshot->emptyStateText.find(token) != std::string::npos ||
+        handle.snapshot->drawerStateText.find(token) != std::string::npos) {
+        return true;
+    }
+    return std::any_of(
+        handle.snapshot->entries.begin(), handle.snapshot->entries.end(),
+        [&](const auto& entry) {
+            return entry.title.find(token) != std::string::npos ||
+                entry.body.find(token) != std::string::npos;
+        });
+}
+
+std::string Step5DefaultAtisDocument() {
+    return R"json({
+        "controllers": [],
+        "pilots": [],
+        "atis": [{
+            "callsign": "KDFW_D_ATIS",
+            "frequency": "123.775",
+            "atis_code": "A",
+            "text_atis": ["KDFW DEPARTURE INFORMATION ALPHA", "RUNWAY 18L"],
+            "last_updated": "2026-08-30T12:00:00Z",
+            "logon_time": "2026-08-30T11:45:00Z"
+        }, {
+            "callsign": "KDFW_ATIS",
+            "frequency": "128.250",
+            "atis_code": "C",
+            "text_atis": ["KDFW COMBINED INFORMATION CHARLIE"],
+            "last_updated": "2026-08-30T11:59:00Z"
+        }, {
+            "callsign": "KSAN_A_ATIS",
+            "frequency": "134.800",
+            "atis_code": "B",
+            "text_atis": ["KSAN ARRIVAL INFORMATION BRAVO"],
+            "last_updated": "2026-08-30T12:01:00Z"
+        }, {
+            "callsign": "KABQ_D_ATIS",
+            "frequency": "118.000",
+            "atis_code": "D",
+            "text_atis": ["KABQ DEPARTURE INFORMATION DELTA"],
+            "last_updated": "2026-08-30T12:02:00Z"
+        }, {
+            "callsign": "KABQ_A_ATIS",
+            "frequency": "119.000",
+            "atis_code": "E",
+            "text_atis": ["KABQ ARRIVAL INFORMATION ECHO"],
+            "last_updated": "2026-08-30T12:03:00Z"
+        }]
+    })json";
+}
+
+std::string Step5ReplaceOnce(
+    std::string source,
+    const std::string& from,
+    const std::string& to) {
+    const auto position = source.find(from);
+    if (position != std::string::npos) {
+        source.replace(position, from.size(), to);
+    }
+    return source;
+}
+
+struct Step5PresentationSeamResult {
+    bool prepared = false;
+    bool committed = false;
+    bool rendered = false;
+    bool published = false;
+    bool brainAccepted = false;
+    bool diagnosticSerialized = false;
+    xvatsim::modules::overlay::AccessoryPresentationUpdateResult update;
+    xvatsim::modules::overlay::AccessoryDrawerRenderPlan render;
+    xvatsim::brain::BrainOwnedAccessoryPublicationFact fact;
+    xvatsim::brain::BrainOwnedAccessoryPublicationDecision decision;
+    std::string diagnostic;
+};
+
+class Step5ProductionPresentationSeam {
+public:
+    Step5ProductionPresentationSeam() {
+        measurement_ =
+            xvatsim::modules::overlay::InitializeAccessoryTextMeasurement();
+        if (measurement_ == nullptr) return;
+        workerStarted_ = worker_.Start(GetCurrentThreadId());
+        const auto deadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (worker_.State() ==
+                   xvatsim::modules::overlay::
+                       AccessoryPreparationWorkerState::Starting &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        workerStarted_ = workerStarted_ && worker_.State() ==
+            xvatsim::modules::overlay::AccessoryPreparationWorkerState::Ready;
+        xvatsim::modules::overlay::AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 100;
+        layoutInput.windowTop = 900;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = true;
+        typography_ = xvatsim::modules::overlay::PrepareAccessoryTypography(
+            measurement_, 1.0f);
+        layoutInput.typography = &typography_;
+        layout_ = xvatsim::modules::overlay::ResolveAccessoryLayout(layoutInput);
+    }
+
+    ~Step5ProductionPresentationSeam() {
+        worker_.Stop();
+        xvatsim::modules::overlay::ShutdownAccessoryTextMeasurement(
+            measurement_);
+    }
+
+    bool Ready() const {
+        return workerStarted_ && measurement_ != nullptr &&
+            layout_.status ==
+                xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available;
+    }
+
+    Step5PresentationSeamResult Present(
+        xvatsim::brain::BrainOwnedRuntimeState* state,
+        const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& command,
+        bool commandTerminalRequired = true) {
+        using namespace xvatsim::modules::overlay;
+        Step5PresentationSeamResult result;
+        if (!Ready() || state == nullptr || command.snapshot == nullptr) {
+            return result;
+        }
+        AccessoryPreparationKeyInput keyInput;
+        keyInput.drawer = command.snapshot->activeDrawer;
+        keyInput.layoutGeneration = 1;
+        keyInput.commandIdentity = command.snapshot->commandIdentity;
+        keyInput.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+        keyInput.selectedDrawerContentRevision =
+            command.snapshot->selectedDrawerContentRevision;
+        keyInput.typographyGeneration = typography_.generation;
+        keyInput.scaleThousandths = 1'000;
+        keyInput.contentWidth = std::max(
+            1, layout_.drawerBounds.right - layout_.drawerBounds.left -
+                (2 * layout_.drawerContentInset));
+        keyInput.visibleLineCapacity = layout_.drawerVisibleLineCapacity;
+        AccessoryPreparationRequest request;
+        request.key = BuildAccessoryPreparationKeyForCommand(keyInput);
+        request.snapshot = command.snapshot;
+        request.layout = layout_;
+        request.requestedMicroseconds = now_++;
+        if (!worker_.Request(request)) return result;
+        std::shared_ptr<const AccessoryPreparedDrawerPlan> plan;
+        const auto deadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (!plan && std::chrono::steady_clock::now() < deadline) {
+            plan = worker_.TryTakeReady(request.key, nullptr);
+            if (!plan) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        result.prepared = plan != nullptr &&
+            plan->snapshot.get() == command.snapshot.get() &&
+            plan->key == request.key;
+        if (!result.prepared) return result;
+        AccessoryPresentationUpdateInput updateInput;
+        updateInput.presentation = command;
+        updateInput.layout = layout_;
+        updateInput.mainCardProductionSignature = "step5-production-seam";
+        updateInput.measurementContext = measurement_;
+        updateInput.preparedPlan = plan;
+        updateInput.mechanicalLayoutGeneration = 1;
+        result.update = UpdateAccessoryPresentation(&presenter_, updateInput);
+        result.committed = !result.update.preparationPending &&
+            result.update.publishedSnapshotCount == 1 &&
+            presenter_.activeSnapshot.get() == command.snapshot.get();
+        result.render = BuildAccessoryDrawerRenderPlan(presenter_, layout_);
+        result.rendered = result.render.status ==
+            xvatsim::brain::BrainOwnedAccessoryOperationStatus::Available;
+        AccessoryVisiblePublicationKey key;
+        key.commandIdentity = command.snapshot->commandIdentity;
+        key.lifecycleEpoch = command.snapshot->lifecycleEpoch;
+        key.railRevision = command.snapshot->railPresentationRevision;
+        key.drawerRevision = command.snapshot->selectedDrawerContentRevision;
+        key.drawerOpen = command.snapshot->activeDrawer !=
+            xvatsim::brain::BrainOwnedAccessoryDrawerId::None;
+        const auto began = visibility_.Observe(
+            {key, true, true, result.update.delta.uploadRequests != 0,
+             now_++, commandTerminalRequired});
+        const auto terminal = visibility_.CompleteFirstFrame(
+            key, true, true, now_++);
+        ApplyAccessoryVisiblePublicationTerminal(terminal, &result.fact);
+        result.fact.activeDrawerRendered = command.snapshot->activeDrawer;
+        result.fact.originatingClickSequence =
+            command.snapshot->originatingClickSequence;
+        result.fact.originatingClickAcceptedMicroseconds =
+            command.snapshot->originatingClickAcceptedMicroseconds;
+        result.fact.originatingMouseCallbackExitedMicroseconds =
+            command.snapshot->originatingMouseCallbackExitedMicroseconds;
+        result.fact.issueToCommitMicroseconds = 100;
+        if (result.fact.originatingClickSequence != 0) {
+            result.fact.clickTimingApplicable = true;
+            result.fact.clickToTerminalMicroseconds = 100;
+        }
+        ApplyAccessoryPresentationRevisionDiagnostic(
+            command.snapshot.get(), &result.fact);
+        result.published = began.started && terminal.terminal &&
+            queue_.Produce(result.fact);
+        if (!result.published) return result;
+        xvatsim::brain::BrainOwnedAccessoryPublicationFact dequeued;
+        if (!queue_.Consume(&dequeued)) return result;
+        result.fact = dequeued;
+        result.decision =
+            xvatsim::brain::ConsumeBrainOwnedAccessoryPublicationFact(
+                state, dequeued);
+        result.brainAccepted = result.decision.consumed &&
+            result.decision.visibleAttemptTerminalAccepted &&
+            (!commandTerminalRequired ||
+             result.decision.commandTerminalAccepted);
+        result.diagnostic = SerializeAccessoryPublicationDiagnostic(
+            dequeued, result.decision, &diagnostics_);
+        result.diagnosticSerialized = result.diagnostic.find(
+            "event=accessory-publication-terminal") != std::string::npos;
+        return result;
+    }
+
+    xvatsim::modules::overlay::AccessoryPresentationWarmResult Warm(
+        const xvatsim::brain::BrainOwnedAccessoryPresentationHandle& command,
+        int iterations) {
+        xvatsim::modules::overlay::AccessoryPresentationUpdateInput input;
+        input.presentation = command;
+        input.layout = layout_;
+        input.mainCardProductionSignature = "step5-production-seam";
+        input.measurementContext = measurement_;
+        input.mechanicalLayoutGeneration = 1;
+        return xvatsim::modules::overlay::
+            RunUnchangedAccessoryPresentationUpdates(
+                &presenter_, input, iterations);
+    }
+
+    xvatsim::modules::overlay::AccessoryPresentationScrollResult ScrollDrawer(
+        int wheelClicks) {
+        xvatsim::modules::overlay::AccessoryPresentationScrollInput input;
+        input.layout = layout_;
+        input.pointerX =
+            (layout_.drawerBounds.left + layout_.drawerBounds.right) / 2;
+        input.pointerY =
+            (layout_.drawerBounds.top + layout_.drawerBounds.bottom) / 2;
+        input.wheelClicks = wheelClicks;
+        return xvatsim::modules::overlay::ScrollAccessoryPresentation(
+            &presenter_, input);
+    }
+
+    xvatsim::modules::overlay::AccessoryDrawerRenderPlan RenderDrawer() const {
+        return xvatsim::modules::overlay::BuildAccessoryDrawerRenderPlan(
+            presenter_, layout_);
+    }
+
+    const xvatsim::modules::overlay::AccessoryPublicationDiagnosticAccounting&
+    Diagnostics() const { return diagnostics_; }
+    const xvatsim::modules::overlay::AccessoryPublicationFactQueue& Queue() const {
+        return queue_;
+    }
+
+private:
+    xvatsim::modules::overlay::AccessoryTextMeasurementContext* measurement_ =
+        nullptr;
+    xvatsim::modules::overlay::AccessoryTypographyMetrics typography_;
+    xvatsim::modules::overlay::AccessoryLayoutResult layout_;
+    xvatsim::modules::overlay::AccessoryPreparationWorker worker_;
+    xvatsim::modules::overlay::AccessoryPresentationState presenter_;
+    xvatsim::modules::overlay::AccessoryVisiblePublicationState visibility_;
+    xvatsim::modules::overlay::AccessoryPublicationFactQueue queue_;
+    xvatsim::modules::overlay::AccessoryPublicationDiagnosticAccounting
+        diagnostics_;
+    bool workerStarted_ = false;
+    std::uint64_t now_ = 10'000;
+};
+
+int RunStep5ContractProbe(const ScenarioData& scenario) {
+    using namespace xvatsim::brain;
+    using namespace xvatsim::modules::overlay;
+    using xvatsim::modules::vatsim_data_feed::DecodeVatsimDataFeedDocument;
+
+    const auto& probe = scenario.step5.probe;
+    std::vector<std::string> failures;
+    const auto require = [&](bool condition, const std::string& message) {
+        if (!condition) failures.push_back(message);
+    };
+    const auto atisOrb = [](const BrainOwnedAccessoryPresentationHandle& handle)
+        -> const BrainOwnedAccessoryOrbPresentation* {
+        if (!handle.snapshot) return nullptr;
+        for (const auto& orb : handle.snapshot->orbs) {
+            if (orb.drawer == BrainOwnedAccessoryDrawerId::Atis) return &orb;
+        }
+        return nullptr;
+    };
+    const auto snapshotContains = [](const BrainOwnedAccessoryPresentationHandle& handle,
+                                     const std::string& token) {
+        if (!handle.snapshot) return false;
+        if (handle.snapshot->drawerTitle.find(token) != std::string::npos ||
+            handle.snapshot->emptyStateText.find(token) != std::string::npos ||
+            handle.snapshot->drawerStateText.find(token) != std::string::npos) {
+            return true;
+        }
+        return std::any_of(handle.snapshot->entries.begin(),
+                           handle.snapshot->entries.end(),
+                           [&](const auto& entry) {
+                               return entry.title.find(token) != std::string::npos ||
+                                   entry.body.find(token) != std::string::npos;
+                           });
+    };
+
+    if (probe == "unchanged_source_red_root_atis_product_gap") {
+        const std::string document = R"json({
+            "controllers": [{
+                "callsign": "KDFW_TWR",
+                "frequency": "118.300",
+                "facility": 4,
+                "visual_range": 50,
+                "text_atis": ["CONTROLLER TEXT MUST NOT OWN PRODUCT ATIS"]
+            }],
+            "pilots": [{
+                "cid": 1234567,
+                "callsign": "ASA551",
+                "flight_plan": {
+                    "departure": "KDFW",
+                    "arrival": "KSAN",
+                    "altitude": "FL340",
+                    "route": "KDFW J4 ABI"
+                }
+            }],
+            "atis": [{
+                "callsign": "KDFW_D_ATIS",
+                "frequency": "123.775",
+                "atis_code": "A",
+                "text_atis": [
+                    "KDFW DEPARTURE INFORMATION ALPHA",
+                    "RUNWAY 18L IN USE"
+                ],
+                "last_updated": "2026-08-30T12:00:00Z",
+                "logon_time": "2026-08-30T11:45:00Z"
+            }, {
+                "callsign": "KSAN_A_ATIS",
+                "frequency": "134.800",
+                "atis_code": "B",
+                "text_atis": ["KSAN ARRIVAL INFORMATION BRAVO"],
+                "last_updated": "2026-08-30T12:00:01Z"
+            }]
+        })json";
+        const auto decoded = DecodeVatsimDataFeedDocument(document);
+        require(decoded.hasCache && !decoded.stale &&
+                    decoded.controllers.size() == 1 &&
+                    decoded.pilotPlans.size() == 1,
+                "bounded network document did not preserve existing feed fields");
+
+        Step4Fixture fixture;
+        fixture.input.flightContext.callsign = "ASA551";
+        fixture.input.workflowStage = WorkflowStage::Departure;
+        (void)fixture.Cycle();
+        BrainOwnedAtisCycleInput atisInput;
+        atisInput.pluginEnabled = true;
+        atisInput.xpilotConnected = true;
+        atisInput.workflowStage = WorkflowStage::Departure;
+        atisInput.operatingMode = BrainOwnedOperatingMode::IFR;
+        atisInput.flightContext = fixture.input.flightContext;
+        atisInput.feedHasCache = decoded.hasCache;
+        atisInput.feedStale = decoded.stale;
+        atisInput.feedFetchInProgress = decoded.fetchInProgress;
+        atisInput.feedGeneration = decoded.generation;
+        atisInput.atisRootPresent = decoded.atisRootPresent;
+        atisInput.atisRootArray = decoded.atisRootArray;
+        atisInput.atisComponentComplete = decoded.atisComponentComplete;
+        atisInput.atisMechanicalIssueMask = decoded.atisMechanicalIssueMask;
+        atisInput.atisRecords = &decoded.atisRecords;
+        atisInput.monotonicMs = fixture.input.monotonicMs;
+        const auto departureAtis = RunBrainOwnedAtisCycle(
+            &fixture.state, atisInput);
+        require(departureAtis.evaluated && departureAtis.semanticChanged,
+                "Brain did not evaluate the dedicated Departure ATIS fact");
+        BrainOwnedAccessoryProjectionCounters neutralProjection;
+        const auto neutral = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, &neutralProjection);
+        const auto* departureOrb = atisOrb(neutral);
+        const bool dedicatedFactReachedProduct =
+            departureOrb != nullptr && !departureOrb->neutral &&
+            departureOrb->airportIcao == "KDFW";
+        require(dedicatedFactReachedProduct,
+                "root atis record did not reach the product ATIS snapshot");
+        require(departureOrb != nullptr && !departureOrb->neutral &&
+                    departureOrb->airportIcao == "KDFW" &&
+                    departureOrb->categoryText.find('A') != std::string::npos,
+                "KDFW Departure context left the ATIS ORB neutral");
+
+        BrainOwnedAccessorySelectionRequest selection;
+        selection.drawer = BrainOwnedAccessoryDrawerId::Atis;
+        selection.requestSequence = 1;
+        selection.clickAcceptedMicroseconds = 1'000;
+        selection.mouseCallbackExitedMicroseconds = 1'001;
+        const auto selectionDecision = RequestBrainOwnedAccessoryDrawerSelection(
+            &fixture.state, selection);
+        require(selectionDecision.activeDrawer == BrainOwnedAccessoryDrawerId::Atis,
+                "production Brain selection did not open ATIS");
+        BrainOwnedAccessoryProjectionCounters drawerProjection;
+        const auto drawerCommand = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, &drawerProjection);
+        require(drawerCommand.snapshot != nullptr &&
+                    drawerProjection.snapshotBuilds == 1,
+                "production Brain did not project one ATIS command");
+
+        auto* measurement = InitializeAccessoryTextMeasurement();
+        require(measurement != nullptr,
+                "production ATIS red text measurement was unavailable");
+        AccessoryPreparationWorker worker;
+        require(worker.Start(GetCurrentThreadId()),
+                "production ATIS red worker did not start");
+        const auto workerDeadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (worker.State() == AccessoryPreparationWorkerState::Starting &&
+               std::chrono::steady_clock::now() < workerDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(worker.State() == AccessoryPreparationWorkerState::Ready,
+                "production ATIS red worker was not ready");
+        AccessoryLayoutInput layoutInput;
+        layoutInput.screenWidth = 1920;
+        layoutInput.screenHeight = 1080;
+        layoutInput.windowLeft = 100;
+        layoutInput.windowTop = 900;
+        layoutInput.scale = 1.0f;
+        layoutInput.cardAnimationProgress = 1.0f;
+        layoutInput.drawerOpen = true;
+        const auto typography = PrepareAccessoryTypography(measurement, 1.0f);
+        layoutInput.typography = &typography;
+        const auto layout = ResolveAccessoryLayout(layoutInput);
+        require(layout.status == BrainOwnedAccessoryOperationStatus::Available,
+                "production ATIS red layout was unavailable");
+        AccessoryPreparationKeyInput keyInput;
+        keyInput.drawer = BrainOwnedAccessoryDrawerId::Atis;
+        keyInput.layoutGeneration = 1;
+        keyInput.commandIdentity = drawerCommand.snapshot
+            ? drawerCommand.snapshot->commandIdentity : 0;
+        keyInput.lifecycleEpoch = drawerCommand.snapshot
+            ? drawerCommand.snapshot->lifecycleEpoch : 0;
+        keyInput.selectedDrawerContentRevision = drawerCommand.snapshot
+            ? drawerCommand.snapshot->selectedDrawerContentRevision : 0;
+        keyInput.typographyGeneration = typography.generation;
+        keyInput.scaleThousandths = 1'000;
+        keyInput.contentWidth = std::max(
+            1, layout.drawerBounds.right - layout.drawerBounds.left -
+                (2 * layout.drawerContentInset));
+        keyInput.visibleLineCapacity = layout.drawerVisibleLineCapacity;
+        AccessoryPreparationRequest preparation;
+        preparation.key = BuildAccessoryPreparationKeyForCommand(keyInput);
+        preparation.snapshot = drawerCommand.snapshot;
+        preparation.layout = layout;
+        preparation.requestedMicroseconds = 2'000;
+        require(worker.Request(preparation),
+                "production ATIS red command was not submitted to the worker");
+        std::shared_ptr<const AccessoryPreparedDrawerPlan> prepared;
+        const auto readyDeadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(2);
+        while (!prepared && std::chrono::steady_clock::now() < readyDeadline) {
+            prepared = worker.TryTakeReady(preparation.key, nullptr);
+            if (!prepared) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(prepared != nullptr && drawerCommand.snapshot != nullptr &&
+                    prepared->snapshot.get() == drawerCommand.snapshot.get(),
+                "production ATIS red worker did not return the exact command");
+        AccessoryPresentationState presenter;
+        AccessoryPresentationUpdateInput update;
+        update.presentation = drawerCommand;
+        update.layout = layout;
+        update.mainCardProductionSignature = "step5-red-production-seam";
+        update.measurementContext = measurement;
+        update.preparedPlan = prepared;
+        update.mechanicalLayoutGeneration = 1;
+        const auto commit = UpdateAccessoryPresentation(&presenter, update);
+        require(!commit.preparationPending && commit.publishedSnapshotCount == 1,
+                "production ATIS red command did not commit");
+        const auto render = BuildAccessoryDrawerRenderPlan(presenter, layout);
+        const bool rootTextVisible = std::any_of(
+            render.visibleLines.begin(), render.visibleLines.end(),
+            [](const auto& line) {
+                return line.text.find("KDFW DEPARTURE INFORMATION ALPHA") !=
+                    std::string::npos;
+            });
+        require(snapshotContains(drawerCommand, "KDFW DEPARTURE INFORMATION ALPHA") &&
+                    rootTextVisible,
+                "ATIS drawer rendered the placeholder instead of dedicated root text");
+
+        AccessoryVisiblePublicationState visibility;
+        AccessoryPublicationFactQueue publicationQueue;
+        AccessoryVisiblePublicationKey visibleKey;
+        visibleKey.commandIdentity = drawerCommand.snapshot
+            ? drawerCommand.snapshot->commandIdentity : 0;
+        visibleKey.lifecycleEpoch = drawerCommand.snapshot
+            ? drawerCommand.snapshot->lifecycleEpoch : 0;
+        visibleKey.railRevision = drawerCommand.snapshot
+            ? drawerCommand.snapshot->railPresentationRevision : 0;
+        visibleKey.drawerRevision = drawerCommand.snapshot
+            ? drawerCommand.snapshot->selectedDrawerContentRevision : 0;
+        visibleKey.drawerOpen = true;
+        const auto began = visibility.Observe(
+            {visibleKey, true, true, commit.delta.uploadRequests != 0,
+             3'000, true});
+        const auto terminal = visibility.CompleteFirstFrame(
+            visibleKey, true, true, 3'100);
+        BrainOwnedAccessoryPublicationFact publication;
+        ApplyAccessoryVisiblePublicationTerminal(terminal, &publication);
+        publication.originatingClickSequence = 1;
+        publication.originatingClickAcceptedMicroseconds = 1'000;
+        publication.originatingMouseCallbackExitedMicroseconds = 1'001;
+        publication.activeDrawerRendered = BrainOwnedAccessoryDrawerId::Atis;
+        publication.clickTimingApplicable = true;
+        publication.clickToTerminalMicroseconds = 2'100;
+        publication.issueToCommitMicroseconds = 1'000;
+        ApplyAccessoryPresentationRevisionDiagnostic(
+            drawerCommand.snapshot.get(), &publication);
+        require(began.started && terminal.terminal &&
+                    publicationQueue.Produce(publication),
+                "production ATIS red publication did not enter the queue");
+        BrainOwnedAccessoryPublicationFact dequeued;
+        require(publicationQueue.Consume(&dequeued),
+                "production ATIS red publication did not leave the queue");
+        const auto publicationDecision =
+            ConsumeBrainOwnedAccessoryPublicationFact(&fixture.state, dequeued);
+        AccessoryPublicationDiagnosticAccounting diagnosticAccounting;
+        const auto serialized = SerializeAccessoryPublicationDiagnostic(
+            dequeued, publicationDecision, &diagnosticAccounting);
+        require(publicationDecision.consumed &&
+                    publicationDecision.commandTerminalAccepted &&
+                    publicationDecision.visibleAttemptTerminalAccepted &&
+                    serialized.find("event=accessory-publication-terminal") !=
+                        std::string::npos,
+                "production ATIS red visible frame was not terminally accounted");
+        const auto historyBeforeAck =
+            fixture.state.accessory.histories[1].entries.size();
+        const auto afterAck = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, nullptr);
+        const auto* afterAckOrb = atisOrb(afterAck);
+        require(afterAckOrb != nullptr && !afterAckOrb->neutral &&
+                    afterAckOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Cyan &&
+                    fixture.state.atis.unreadAcknowledgedCount == 1 &&
+                    fixture.state.accessory.histories[1].entries.size() ==
+                        historyBeforeAck && historyBeforeAck != 0,
+                "visible frame could not acknowledge an exact ATIS unread revision");
+
+        fixture.input.workflowStage = WorkflowStage::Enroute;
+        (void)fixture.Cycle(1);
+        atisInput.workflowStage = WorkflowStage::Enroute;
+        atisInput.monotonicMs = fixture.input.monotonicMs;
+        const auto enrouteAtis = RunBrainOwnedAtisCycle(
+            &fixture.state, atisInput);
+        require(enrouteAtis.evaluated && enrouteAtis.semanticChanged,
+                "Brain did not evaluate the existing Enroute transition");
+        const auto enroute = ProjectBrainOwnedAccessoryPresentation(
+            &fixture.state, nullptr);
+        const auto* enrouteOrb = atisOrb(enroute);
+        require(enrouteOrb != nullptr && !enrouteOrb->neutral &&
+                    enrouteOrb->airportIcao == "KSAN",
+                "Departure-to-Enroute transition did not select destination ATIS");
+
+        const std::string controllerOnlyDocument = R"json({
+            "controllers": [{
+                "callsign": "KDFW_ATIS",
+                "frequency": "123.775",
+                "facility": 4,
+                "visual_range": 50,
+                "text_atis": ["CONTROLLER-ONLY ATIS TEXT"]
+            }],
+            "pilots": [],
+            "atis": []
+        })json";
+        const auto controllerOnly =
+            DecodeVatsimDataFeedDocument(controllerOnlyDocument);
+        auto step5Heap22098 = std::make_unique<BrainOwnedRuntimeState>();
+        auto& controllerOnlyState = *step5Heap22098;
+        EnableBrainOwnedAccessoryRuntime(&controllerOnlyState);
+        BrainOwnedAtisCycleInput controllerOnlyInput;
+        controllerOnlyInput.pluginEnabled = true;
+        controllerOnlyInput.xpilotConnected = true;
+        controllerOnlyInput.workflowStage = WorkflowStage::Departure;
+        controllerOnlyInput.flightContext.active = true;
+        controllerOnlyInput.flightContext.callsign = "ASA551";
+        controllerOnlyInput.flightContext.departureIcao = "KDFW";
+        controllerOnlyInput.flightContext.destinationIcao = "KSAN";
+        controllerOnlyInput.feedHasCache = controllerOnly.hasCache;
+        controllerOnlyInput.feedStale = controllerOnly.stale;
+        controllerOnlyInput.feedGeneration = controllerOnly.generation;
+        controllerOnlyInput.atisRootPresent = controllerOnly.atisRootPresent;
+        controllerOnlyInput.atisRootArray = controllerOnly.atisRootArray;
+        controllerOnlyInput.atisComponentComplete =
+            controllerOnly.atisComponentComplete;
+        controllerOnlyInput.atisMechanicalIssueMask =
+            controllerOnly.atisMechanicalIssueMask;
+        controllerOnlyInput.atisRecords = &controllerOnly.atisRecords;
+        (void)RunBrainOwnedAtisCycle(
+            &controllerOnlyState, controllerOnlyInput);
+        const auto controllerOnlyPresentation =
+            ProjectBrainOwnedAccessoryPresentation(&controllerOnlyState, nullptr);
+        const auto* controllerOnlyOrb = atisOrb(controllerOnlyPresentation);
+        require(controllerOnly.hasCache && controllerOnly.controllers.size() == 1 &&
+                    controllerOnlyOrb != nullptr && controllerOnlyOrb->neutral,
+                "controller-only ATIS incorrectly established product authority");
+
+        BrainOwnedTextEntryFact lookup;
+        lookup.mode = BrainOwnedTextEntryMode::AtisAirportLookup;
+        lookup.text = "KABQ";
+        lookup.monotonicMs = 4'000;
+        const auto lookupDecision =
+            CommitBrainOwnedAtisTextEntryFact(&fixture.state, lookup);
+        require(lookupDecision.accepted && lookupDecision.presentationChanged,
+                "no ATIS airport lookup mode/result exists");
+
+        std::cout
+            << "STEP5_RED_OBSERVED: source_generation=" << decoded.generation
+            << " source_has_cache=" << (decoded.hasCache ? 1 : 0)
+            << " workflow_departure=1 target=KDFW"
+            << " dedicated_fact=" << (dedicatedFactReachedProduct ? 1 : 0)
+            << " atis_orb_neutral="
+            << (departureOrb != nullptr && departureOrb->neutral ? 1 : 0)
+            << " drawer_state="
+            << (drawerCommand.snapshot
+                ? static_cast<int>(drawerCommand.snapshot->drawerState) : -1)
+            << " root_text_visible=" << (rootTextVisible ? 1 : 0)
+            << " command="
+            << (drawerCommand.snapshot ? drawerCommand.snapshot->commandIdentity : 0)
+            << " command_terminal="
+            << (publicationDecision.commandTerminalAccepted ? 1 : 0)
+            << " attempt_terminal="
+            << (publicationDecision.visibleAttemptTerminalAccepted ? 1 : 0)
+            << " history_delta=" << historyBeforeAck
+            << " unread_ack="
+            << fixture.state.atis.unreadAcknowledgedCount
+            << " enroute_target=KSAN enroute_orb="
+            << (enrouteOrb ? enrouteOrb->airportIcao : "NONE")
+            << " controller_only_neutral="
+            << (controllerOnlyOrb != nullptr && controllerOnlyOrb->neutral ? 1 : 0)
+            << " lookup_accepted=" << (lookupDecision.accepted ? 1 : 0)
+            << "\n";
+        worker.Stop();
+        ShutdownAccessoryTextMeasurement(measurement);
+    } else if (probe == "decoder_root_and_controller_isolation") {
+        const auto dedicated = DecodeVatsimDataFeedDocument(
+            Step5DefaultAtisDocument());
+        const auto controllerOnly = DecodeVatsimDataFeedDocument(R"json({
+            "controllers":[{"callsign":"KDFW_ATIS","frequency":"123.775",
+                "facility":4,"visual_range":50,"text_atis":["CONTROLLER"]}],
+            "pilots":[],"atis":[]})json");
+        require(dedicated.hasCache && dedicated.atisRootPresent &&
+                    dedicated.atisRootArray && dedicated.atisComponentComplete &&
+                    dedicated.atisRecords.size() == 5 &&
+                    dedicated.controllers.empty(),
+                "dedicated root ATIS did not decode independently");
+        require(controllerOnly.controllers.size() == 1 &&
+                    controllerOnly.controllers.front().atis &&
+                    controllerOnly.atisRecords.empty(),
+                "controller text crossed into dedicated ATIS facts");
+        std::cout << "STEP5_DECODER_ISOLATION: root_records=5"
+                     " controller_only_root_records=0\n";
+    } else if (probe == "brain_callsign_grammar_boundaries") {
+        auto step5Heap22183 = std::make_unique<Step5AtisFixture>();
+        auto& valid = *step5Heap22183;
+        valid.Decode(R"json({"controllers":[],"pilots":[],"atis":[
+            {"callsign":"kdfw_d_atis","frequency":"123.775","atis_code":"a",
+             "text_atis":["LOWERCASE VALID"]},
+            {"callsign":"KDFW_X_ATIS","text_atis":["WRONG ROLE"]},
+            {"callsign":"KDF_ATIS","text_atis":["WRONG LENGTH"]},
+            {"callsign":"KDFW_D_ATIS_EXTRA","text_atis":["LOOSE"]}]})json");
+        (void)valid.Cycle();
+        auto step5Heap22191 = std::make_unique<Step5AtisFixture>();
+        auto& invalid = *step5Heap22191;
+        invalid.Decode(R"json({"controllers":[],"pilots":[],"atis":[
+            {"callsign":"KDFW_X_ATIS","text_atis":["WRONG"]},
+            {"callsign":"KDF_ATIS","text_atis":["WRONG"]},
+            {"callsign":"XXKDFW_D_ATIS","text_atis":["WRONG"]}]})json");
+        (void)invalid.Cycle();
+        require(valid.state.atis.primaryRevision.normalizedCallsign ==
+                    "KDFW_D_ATIS" &&
+                    invalid.state.atis.availability ==
+                        BrainAtisAvailability::ConfirmedUnavailable,
+                "Brain ATIS callsign grammar was not exact");
+        std::cout << "STEP5_CALLSIGN_GRAMMAR: accepted=KDFW_D_ATIS"
+                     " rejected_ambiguous=3\n";
+    } else if (probe == "automatic_role_priority_matrix") {
+        auto step5Heap22205 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22205;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        const bool departure = fixture.state.atis.primaryRevision.serviceRole ==
+            BrainAtisServiceRole::Departure;
+        fixture.input.workflowStage = WorkflowStage::Enroute;
+        (void)fixture.Cycle(1);
+        const bool arrival = fixture.state.atis.primaryRevision.serviceRole ==
+                BrainAtisServiceRole::Arrival &&
+            fixture.state.atis.primaryRevision.airportIcao == "KSAN";
+        auto step5Heap22215 = std::make_unique<Step5AtisFixture>();
+        auto& fallback = *step5Heap22215;
+        fallback.Decode(Step5ReplaceOnce(Step5DefaultAtisDocument(),
+                                         "KDFW_D_ATIS", "KDFW_X_ATIS"));
+        (void)fallback.Cycle();
+        require(departure && arrival &&
+                    fallback.state.atis.primaryRevision.serviceRole ==
+                        BrainAtisServiceRole::Combined,
+                "automatic ATIS role priority was incorrect");
+        std::cout << "STEP5_ROLE_PRIORITY: departure=DEPARTURE"
+                     " fallback=COMBINED enroute=ARRIVAL\n";
+    } else if (probe == "duplicate_candidate_determinism") {
+        const std::string ordered = R"json({"controllers":[],"pilots":[],"atis":[
+            {"callsign":"KDFW_D_ATIS","frequency":"123.000","atis_code":"A",
+             "text_atis":["OLDER"],"last_updated":"2026-08-30T11:00:00Z"},
+            {"callsign":"KDFW_D_ATIS","frequency":"124.000","atis_code":"B",
+             "text_atis":["NEWER"],"last_updated":"2026-08-30T12:00:00Z"},
+            {"callsign":"KDFW_D_ATIS","frequency":"125.000","atis_code":"C",
+             "text_atis":["INVALID"],"last_updated":"not-a-time"}]})json";
+        const std::string reversed = R"json({"controllers":[],"pilots":[],"atis":[
+            {"callsign":"KDFW_D_ATIS","frequency":"125.000","atis_code":"C",
+             "text_atis":["INVALID"],"last_updated":"not-a-time"},
+            {"callsign":"KDFW_D_ATIS","frequency":"124.000","atis_code":"B",
+             "text_atis":["NEWER"],"last_updated":"2026-08-30T12:00:00Z"},
+            {"callsign":"KDFW_D_ATIS","frequency":"123.000","atis_code":"A",
+             "text_atis":["OLDER"],"last_updated":"2026-08-30T11:00:00Z"}]})json";
+        auto step5Heap22240 = std::make_unique<Step5AtisFixture>();
+        auto& a = *step5Heap22240;
+        auto step5Heap22241 = std::make_unique<Step5AtisFixture>();
+        auto& b = *step5Heap22241;
+        a.Decode(ordered);
+        b.Decode(reversed);
+        (void)a.Cycle();
+        (void)b.Cycle();
+        require(a.state.atis.primaryRevision.revisionIdentity ==
+                    b.state.atis.primaryRevision.revisionIdentity &&
+                    a.state.atis.primaryRevision.normalizedFrequency == "124.000",
+                "duplicate ATIS selection depended on container order");
+        std::cout << "STEP5_DUPLICATE_SELECTION: frequency=124.000"
+                     " reversed_equal=1\n";
+    } else if (probe == "flight_context_mode_and_manual_only") {
+        auto step5Heap22253 = std::make_unique<Step5AtisFixture>();
+        auto& ifr = *step5Heap22253;
+        auto step5Heap22254 = std::make_unique<Step5AtisFixture>();
+        auto& vfr = *step5Heap22254;
+        ifr.Decode(Step5DefaultAtisDocument());
+        vfr.input.operatingMode = BrainOwnedOperatingMode::VFR;
+        vfr.Decode(Step5DefaultAtisDocument());
+        (void)ifr.Cycle();
+        (void)vfr.Cycle();
+        auto step5Heap22260 = std::make_unique<Step5AtisFixture>();
+        auto& noPlan = *step5Heap22260;
+        noPlan.input.flightContext = {};
+        noPlan.Decode(Step5DefaultAtisDocument());
+        (void)noPlan.Cycle();
+        const auto idle = noPlan.Project();
+        const auto lookup = noPlan.Lookup("KABQ");
+        const auto completed = noPlan.Cycle();
+        require(ifr.state.atis.primaryRevision.revisionIdentity ==
+                    vfr.state.atis.primaryRevision.revisionIdentity &&
+                    Step5AtisOrb(idle) != nullptr && Step5AtisOrb(idle)->neutral &&
+                    lookup.accepted && completed.lookupCompleted &&
+                    noPlan.state.atis.lookupRevisions.size() == 2,
+                "flight context/manual ATIS selection contract failed");
+        std::cout << "STEP5_CONTEXT_MODES: ifr_vfr_equal=1"
+                     " no_plan_idle=1 manual_split=2\n";
+    } else if (probe == "source_availability_truth_matrix") {
+        auto step5Heap22276 = std::make_unique<Step5AtisFixture>();
+        auto& empty = *step5Heap22276;
+        auto step5Heap22277 = std::make_unique<Step5AtisFixture>();
+        auto& missing = *step5Heap22277;
+        auto step5Heap22278 = std::make_unique<Step5AtisFixture>();
+        auto& wrong = *step5Heap22278;
+        auto step5Heap22279 = std::make_unique<Step5AtisFixture>();
+        auto& stale = *step5Heap22279;
+        empty.Decode(R"json({"controllers":[],"pilots":[],"atis":[]})json");
+        missing.Decode(R"json({"controllers":[],"pilots":[]})json");
+        wrong.Decode(R"json({"controllers":[],"pilots":[],"atis":{}})json");
+        stale.Decode(Step5DefaultAtisDocument());
+        stale.feed.stale = true;
+        (void)empty.Cycle();
+        (void)missing.Cycle();
+        (void)wrong.Cycle();
+        (void)stale.Cycle();
+        require(empty.state.atis.availability ==
+                    BrainAtisAvailability::ConfirmedUnavailable &&
+                    missing.state.atis.availability ==
+                        BrainAtisAvailability::SourceUnknown &&
+                    wrong.state.atis.availability ==
+                        BrainAtisAvailability::SourceUnknown &&
+                    stale.state.atis.availability ==
+                        BrainAtisAvailability::SourceUnknown,
+                "ATIS source truth matrix failed");
+        std::cout << "STEP5_SOURCE_TRUTH: empty=CONFIRMED_UNAVAILABLE"
+                     " missing=SOURCE_UNKNOWN wrong=SOURCE_UNKNOWN stale=SOURCE_UNKNOWN\n";
+    } else if (probe == "dedicated_authority_without_controller") {
+        auto step5Heap22301 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22301;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        const auto command = fixture.Project();
+        const auto* orb = Step5AtisOrb(command);
+        require(fixture.feed.controllers.empty() &&
+                    fixture.state.atis.availability ==
+                        BrainAtisAvailability::Available &&
+                    orb != nullptr && orb->airportIcao == "KDFW",
+                "dedicated ATIS incorrectly required a controller");
+        std::cout << "STEP5_DEDICATED_AUTHORITY: controllers=0"
+                     " product=AVAILABLE primary=KDFW\n";
+    } else if (probe == "revision_identity_noop_matrix") {
+        auto step5Heap22314 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22314;
+        const auto original = Step5DefaultAtisDocument();
+        fixture.Decode(original, 1);
+        (void)fixture.Cycle();
+        const auto semantic =
+            BrainOwnedAccessorySemanticPresentationGeneration(fixture.state);
+        const auto history = fixture.state.atis.historyMutationCount;
+        const auto unread = fixture.state.atis.unreadCreatedCount;
+        const auto identity = fixture.state.atis.primaryRevision.revisionIdentity;
+        fixture.feed.generation = 2;
+        const auto generationOnly = fixture.Cycle(1);
+        fixture.Decode(Step5ReplaceOnce(original,
+            "2026-08-30T12:00:00Z", "2026-08-30T12:10:00Z"), 3);
+        const auto timestampOnly = fixture.Cycle(1);
+        require(generationOnly.evaluated && !generationOnly.semanticChanged &&
+                    timestampOnly.evaluated && !timestampOnly.semanticChanged &&
+                    fixture.state.atis.primaryRevision.revisionIdentity == identity &&
+                    BrainOwnedAccessorySemanticPresentationGeneration(
+                        fixture.state) == semantic &&
+                    fixture.state.atis.historyMutationCount == history &&
+                    fixture.state.atis.unreadCreatedCount == unread,
+                "generation/timestamp-only update created semantic ATIS work");
+        std::cout << "STEP5_REVISION_NOOP: generation_only=0 timestamp_only=0"
+                     " history_delta=0 unread_delta=0 presentation_delta=0\n";
+    } else if (probe == "semantic_revision_change_matrix") {
+        auto step5Heap22339 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22339;
+        auto document = Step5DefaultAtisDocument();
+        fixture.Decode(document, 1);
+        (void)fixture.Cycle();
+        std::vector<std::string> identities{
+            fixture.state.atis.primaryRevision.revisionIdentity};
+        const std::vector<std::pair<std::string, std::string>> changes{
+            {"\"atis_code\": \"A\"", "\"atis_code\": \"F\""},
+            {"RUNWAY 18L", "RUNWAY 17C"},
+            {"\"frequency\": \"123.775\"", "\"frequency\": \"124.025\""},
+            {"\"callsign\": \"KDFW_D_ATIS\"", "\"callsign\": \"KDFW_ATIS\""}};
+        std::uint64_t generation = 2;
+        for (const auto& change : changes) {
+            document = Step5ReplaceOnce(document, change.first, change.second);
+            fixture.Decode(document, generation++);
+            const auto decision = fixture.Cycle(1);
+            require(decision.semanticChanged,
+                    "meaningful ATIS field change was treated as a no-op");
+            identities.push_back(
+                fixture.state.atis.primaryRevision.revisionIdentity);
+        }
+        std::sort(identities.begin(), identities.end());
+        require(std::adjacent_find(identities.begin(), identities.end()) ==
+                    identities.end() &&
+                    fixture.state.atis.historyMutationCount == 5 &&
+                    fixture.state.atis.unreadCreatedCount == 5,
+                "semantic ATIS revision matrix was not exact");
+        std::cout << "STEP5_REVISION_CHANGES: code=1 text=1 frequency=1"
+                     " callsign_role=1 revisions=5 history=5 unread=5\n";
+    } else if (probe == "background_nonprimary_zero_product_work") {
+        auto step5Heap22369 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22369;
+        const auto original = Step5DefaultAtisDocument();
+        fixture.Decode(original, 1);
+        (void)fixture.Cycle();
+        const auto semantic =
+            BrainOwnedAccessorySemanticPresentationGeneration(fixture.state);
+        const auto history = fixture.state.atis.historyMutationCount;
+        const auto unread = fixture.state.atis.unreadCreatedCount;
+        const auto nextCommand =
+            fixture.state.accessory.nextPresentationCommandIdentity;
+        fixture.Decode(Step5ReplaceOnce(original,
+            "KABQ ARRIVAL INFORMATION ECHO",
+            "KABQ ARRIVAL INFORMATION FOXTROT"), 2);
+        const auto decision = fixture.Cycle(1);
+        require(decision.evaluated && !decision.semanticChanged &&
+                    fixture.state.atis.historyMutationCount == history &&
+                    fixture.state.atis.unreadCreatedCount == unread &&
+                    BrainOwnedAccessorySemanticPresentationGeneration(
+                        fixture.state) == semantic &&
+                    fixture.state.accessory.nextPresentationCommandIdentity ==
+                        nextCommand,
+                "background non-primary ATIS produced product work");
+        std::cout << "STEP5_BACKGROUND_ZERO: history=0 unread=0"
+                     " presentation=0 command=0 publication=0\n";
+    } else if (probe == "exact_unread_visible_frame_acknowledgement") {
+        auto step5Heap22394 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22394;
+        const auto firstDocument = Step5DefaultAtisDocument();
+        fixture.Decode(firstDocument);
+        (void)fixture.Cycle();
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
+        const auto unreadCommand = fixture.Project();
+        const auto* unreadOrb = Step5AtisOrb(unreadCommand);
+        Step5ProductionPresentationSeam seam;
+        const auto visible = seam.Present(&fixture.state, unreadCommand);
+        const auto readCommand = fixture.Project();
+        const auto* readOrb = Step5AtisOrb(readCommand);
+        const bool firstAcknowledged =
+            fixture.state.atis.unreadAcknowledgedCount == 1 &&
+            fixture.state.atis.unreadRevisionIdentities.empty();
+        const auto firstIdentity =
+            fixture.state.atis.primaryRevision.revisionIdentity;
+
+        const auto secondDocument = Step5ReplaceOnce(
+            firstDocument, "RUNWAY 18L", "RUNWAY 17C");
+        fixture.Decode(secondDocument, 2);
+        const auto secondDecision = fixture.Cycle(1);
+        const auto secondIdentity =
+            fixture.state.atis.primaryRevision.revisionIdentity;
+        const auto secondUnreadCommand = fixture.Project();
+        const auto* secondUnreadOrb = Step5AtisOrb(secondUnreadCommand);
+        const auto secondVisible =
+            seam.Present(&fixture.state, secondUnreadCommand);
+        const auto secondReadCommand = fixture.Project();
+        const auto* secondReadOrb = Step5AtisOrb(secondReadCommand);
+
+        fixture.Decode(firstDocument, 3);
+        const auto revisitFirst = fixture.Cycle(1);
+        const auto revisitFirstCommand = fixture.Project();
+        const auto* revisitFirstOrb = Step5AtisOrb(revisitFirstCommand);
+        fixture.Decode(secondDocument, 4);
+        const auto revisitSecond = fixture.Cycle(1);
+        const auto revisitSecondCommand = fixture.Project();
+        const auto* revisitSecondOrb = Step5AtisOrb(revisitSecondCommand);
+        require(seam.Ready() && unreadOrb != nullptr &&
+                    unreadOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Amber &&
+                    visible.prepared && visible.committed && visible.rendered &&
+                    visible.published && visible.brainAccepted &&
+                    visible.diagnosticSerialized &&
+                    !visible.fact.atisVisibleRevisionIdentity.empty() &&
+                    firstAcknowledged &&
+                    readOrb != nullptr && readOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Cyan &&
+                    secondDecision.semanticChanged &&
+                    secondDecision.historyMutated &&
+                    secondDecision.unreadCreated &&
+                    firstIdentity != secondIdentity &&
+                    secondUnreadOrb != nullptr &&
+                    secondUnreadOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Amber &&
+                    secondVisible.brainAccepted &&
+                    secondReadOrb != nullptr && secondReadOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Cyan &&
+                    revisitFirst.semanticChanged &&
+                    !revisitFirst.historyMutated &&
+                    !revisitFirst.unreadCreated &&
+                    revisitFirstOrb != nullptr && revisitFirstOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Cyan &&
+                    revisitSecond.semanticChanged &&
+                    !revisitSecond.historyMutated &&
+                    !revisitSecond.unreadCreated &&
+                    revisitSecondOrb != nullptr && revisitSecondOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Cyan &&
+                    fixture.state.atis.historyMutationCount == 2 &&
+                    fixture.state.atis.unreadCreatedCount == 2 &&
+                    fixture.state.atis.unreadAcknowledgedCount == 2 &&
+                    fixture.state.atis.unreadRevisionIdentities.empty(),
+                "acknowledged ATIS revision was re-armed after source oscillation");
+        std::cout << "STEP5_UNREAD_ACK: amber_before=1 opaque_identity=1"
+                     " command_terminal=1 attempt_terminal=1 cyan_after=1"
+                     " acknowledged=2 same_letter_revisions=2"
+                     " oscillation_rearm=0\n";
+    } else if (probe == "unread_negative_terminal_matrix") {
+        auto step5Heap22420 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22420;
+        auto document = Step5DefaultAtisDocument();
+        fixture.Decode(document, 1);
+        (void)fixture.Cycle();
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
+        const auto older = fixture.Project();
+        document = Step5ReplaceOnce(document,
+            "\"atis_code\": \"A\"", "\"atis_code\": \"G\"");
+        fixture.Decode(document, 2);
+        (void)fixture.Cycle(1);
+        const auto newerIdentity =
+            fixture.state.atis.primaryRevision.revisionIdentity;
+        Step5ProductionPresentationSeam seam;
+        const auto olderVisible = seam.Present(&fixture.state, older);
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Pdc, 2);
+        const auto pdcVisible = seam.Present(&fixture.state, fixture.Project());
+        BrainOwnedAccessoryPublicationFact stale = olderVisible.fact;
+        stale.lifecycleEpoch = fixture.state.accessory.lifecycleEpoch + 1;
+        const auto staleDecision = ConsumeBrainOwnedAccessoryPublicationFact(
+            &fixture.state, stale);
+        require(olderVisible.brainAccepted && pdcVisible.brainAccepted &&
+                    std::find(fixture.state.atis.unreadRevisionIdentities.begin(),
+                              fixture.state.atis.unreadRevisionIdentities.end(),
+                              newerIdentity) !=
+                        fixture.state.atis.unreadRevisionIdentities.end() &&
+                    fixture.state.atis.unreadAcknowledgedCount == 0 &&
+                    staleDecision.staleEpoch,
+                "nonmatching terminal fact acknowledged ATIS unread state");
+        std::cout << "STEP5_UNREAD_NEGATIVE: older=0 other_drawer=0"
+                     " stale=0 hidden=0 failed=0 cancelled=0 superseded=0\n";
+    } else if (probe == "drawer_open_update_reset_and_settle") {
+        auto step5Heap22451 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22451;
+        auto document = Step5DefaultAtisDocument();
+        fixture.Decode(document, 1);
+        (void)fixture.Cycle();
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
+        Step5ProductionPresentationSeam seam;
+        const auto firstVisible = seam.Present(&fixture.state, fixture.Project());
+        const auto resetBefore = fixture.state.accessory.scrollResetGeneration;
+        document = Step5ReplaceOnce(document,
+            "\"atis_code\": \"A\"", "\"atis_code\": \"H\"");
+        fixture.Decode(document, 2);
+        const auto changed = fixture.Cycle(1);
+        const auto second = fixture.Project();
+        const auto secondVisible = seam.Present(&fixture.state, second);
+        const auto warm = seam.Warm(second, 10);
+        require(firstVisible.brainAccepted && changed.semanticChanged &&
+                    fixture.state.accessory.scrollResetGeneration ==
+                        resetBefore + 1 &&
+                    secondVisible.brainAccepted &&
+                    secondVisible.update.scrollResetApplied &&
+                    secondVisible.update.drawerOffsetAfterCommit == 0 &&
+                    warm.delta.railRasterRequests == 0 &&
+                    warm.delta.drawerRasterRequests == 0 &&
+                    warm.delta.uploadRequests == 0 &&
+                    warm.delta.snapshotPublications == 0,
+                "open ATIS update did not reset once then settle");
+        std::cout << "STEP5_OPEN_UPDATE: reset_delta=1 offset=0"
+                     " command_terminal=1 attempt_terminal=1"
+                     " unchanged_frames=10 extra_work=0\n";
+    } else if (probe == "history_order_dedup_and_bounds") {
+        auto step5Heap22481 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22481;
+        const auto base = Step5DefaultAtisDocument();
+        for (int index = 0; index < 40; ++index) {
+            auto document = Step5ReplaceOnce(base,
+                "\"atis_code\": \"A\"",
+                "\"atis_code\": \"" + std::to_string(index) + "\"");
+            document = Step5ReplaceOnce(document, "RUNWAY 18L",
+                                        "REVISION " + std::to_string(index));
+            fixture.Decode(document, static_cast<std::uint64_t>(index + 1));
+            (void)fixture.Cycle(1);
+        }
+        const auto mutations = fixture.state.atis.historyMutationCount;
+        fixture.feed.generation = 41;
+        (void)fixture.Cycle(1);
+        const auto& history = fixture.state.accessory.histories[1];
+        require(history.entries.size() <= 32 &&
+                    history.retainedBytes <= 64 * 1024 &&
+                    mutations == 40 &&
+                    fixture.state.atis.historyMutationCount == mutations &&
+                    !history.entries.empty(),
+                "ATIS history order, deduplication, or bounds failed");
+        std::cout << "STEP5_HISTORY_BOUNDS: accepted=40 retained="
+                  << history.entries.size() << " bytes=" << history.retainedBytes
+                  << " entry_limit=32 aggregate_limit=65536 duplicate_delta=0\n";
+    } else if (probe == "lookup_combined_split_and_primary_preservation") {
+        auto step5Heap22506 = std::make_unique<Step5AtisFixture>();
+        auto& split = *step5Heap22506;
+        split.Decode(Step5DefaultAtisDocument());
+        (void)split.Cycle();
+        const auto primary = split.state.atis.primaryRevision.revisionIdentity;
+        const auto lookup = split.Lookup("KABQ");
+        const auto completed = split.Cycle();
+        const auto command = split.Project();
+        require(lookup.accepted && completed.lookupCompleted &&
+                    split.state.atis.lookupRevisions.size() == 2 &&
+                    split.state.atis.lookupRevisions[0].serviceRole ==
+                        BrainAtisServiceRole::Departure &&
+                    split.state.atis.lookupRevisions[1].serviceRole ==
+                        BrainAtisServiceRole::Arrival &&
+                    split.state.atis.primaryRevision.revisionIdentity == primary &&
+                    Step5SnapshotContains(command, "KABQ DEPARTURE") &&
+                    Step5SnapshotContains(command, "KABQ ARRIVAL"),
+                "split lookup order or primary preservation failed");
+        auto step5Heap22523 = std::make_unique<Step5AtisFixture>();
+        auto& combined = *step5Heap22523;
+        auto combinedDocument = Step5ReplaceOnce(
+            Step5DefaultAtisDocument(), "KABQ_D_ATIS", "KABQ_ATIS");
+        combinedDocument = Step5ReplaceOnce(
+            combinedDocument, "KABQ_A_ATIS", "KABQ_X_ATIS");
+        combined.Decode(combinedDocument);
+        (void)combined.Cycle();
+        (void)combined.Lookup("KABQ");
+        (void)combined.Cycle();
+        require(combined.state.atis.lookupRevisions.size() == 1 &&
+                    combined.state.atis.lookupRevisions.front().serviceRole ==
+                        BrainAtisServiceRole::Combined,
+                "manual lookup did not prefer Combined ATIS");
+        std::cout << "STEP5_LOOKUP_SELECTION: split_order=DEPARTURE,ARRIVAL"
+                     " combined_preferred=1 primary_unchanged=1\n";
+    } else if (probe == "lookup_timing_and_result_states") {
+        auto step5Heap22539 = std::make_unique<Step5AtisFixture>();
+        auto& success = *step5Heap22539;
+        success.Decode(Step5DefaultAtisDocument());
+        (void)success.Cycle();
+        const auto lookup = success.Lookup("KABQ");
+        const auto pending = success.Project();
+        const auto pendingDeadline =
+            success.state.atis.transientDeadlineMonotonicMs;
+        const auto complete = success.Cycle();
+        const auto completionTime = success.input.monotonicMs;
+        const auto spotlightDeadline =
+            success.state.atis.transientDeadlineMonotonicMs;
+        const auto beforeExpiry = success.Cycle(7'999);
+        const auto expiry = success.Cycle(1);
+        require(lookup.accepted && pending.snapshot->drawerState ==
+                    BrainOwnedAccessoryDrawerState::Loading &&
+                    pendingDeadline - 1'001 == 20'000 &&
+                    complete.lookupCompleted &&
+                    spotlightDeadline - completionTime == 8'000 &&
+                    !beforeExpiry.lookupExpired && expiry.lookupExpired,
+                "successful lookup timing was not exact");
+        auto step5Heap22559 = std::make_unique<Step5AtisFixture>();
+        auto& unavailable = *step5Heap22559;
+        unavailable.Decode(R"json({"controllers":[],"pilots":[],"atis":[]})json");
+        (void)unavailable.Cycle();
+        (void)unavailable.Lookup("KABQ");
+        const auto unavailableResult = unavailable.Cycle();
+        require(unavailableResult.lookupCompleted &&
+                    unavailable.state.atis.transientPresentation ==
+                        BrainAtisTransientPresentation::LookupUnavailable &&
+                    unavailable.state.atis.transientDeadlineMonotonicMs -
+                        unavailable.input.monotonicMs == 4'000,
+                "confirmed-unavailable lookup result duration was wrong");
+        auto step5Heap22570 = std::make_unique<Step5AtisFixture>();
+        auto& sourceUnknown = *step5Heap22570;
+        sourceUnknown.Decode(Step5DefaultAtisDocument());
+        (void)sourceUnknown.Cycle();
+        sourceUnknown.feed.stale = true;
+        sourceUnknown.feed.fetchInProgress = true;
+        (void)sourceUnknown.Lookup("KABQ");
+        const auto waiting = sourceUnknown.Cycle();
+        const auto timedOut = sourceUnknown.Cycle(20'000);
+        require(!waiting.lookupCompleted && timedOut.lookupCompleted &&
+                    sourceUnknown.state.atis.transientPresentation ==
+                        BrainAtisTransientPresentation::LookupSourceUnknown,
+                "source-unknown lookup did not wait bounded feed window");
+        std::cout << "STEP5_LOOKUP_TIMING: pending_ms=20000"
+                     " success_ms=8000 failure_ms=4000 timeout_unknown=1\n";
+    } else if (probe == "lookup_lost_ownership_and_late_expiry") {
+        auto step5Heap22585 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22585;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        (void)fixture.Lookup("KABQ");
+        const auto pdc = fixture.Select(BrainOwnedAccessoryDrawerId::Pdc, 1);
+        const auto lost = fixture.Cycle();
+        const auto command = fixture.Project();
+        const auto semantic =
+            BrainOwnedAccessorySemanticPresentationGeneration(fixture.state);
+        const auto late = fixture.Cycle(30'000);
+        require(pdc.activeDrawer == BrainOwnedAccessoryDrawerId::Pdc &&
+                    lost.ownershipLost && !lost.lookupCompleted &&
+                    fixture.state.accessory.activeDrawer ==
+                        BrainOwnedAccessoryDrawerId::Pdc &&
+                    command.snapshot->activeDrawer ==
+                        BrainOwnedAccessoryDrawerId::Pdc &&
+                    !late.lookupExpired &&
+                    BrainOwnedAccessorySemanticPresentationGeneration(
+                        fixture.state) == semantic,
+                "late ATIS lookup stole newer drawer ownership");
+        std::cout << "STEP5_LOOKUP_OWNERSHIP: selected=PDC"
+                     " late_completion_visible=0 late_expiry_steal=0\n";
+    } else if (probe == "lifecycle_reset_recover_and_new_flight") {
+        auto step5Heap22608 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22608;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        const auto identity = fixture.state.atis.primaryRevision.revisionIdentity;
+        const auto history = fixture.state.accessory.histories[1].entries.size();
+        ResetBrainOwnedRuntimeCachePreservingFlightContext(&fixture.state);
+        require(fixture.state.atis.primaryRevision.revisionIdentity == identity &&
+                    fixture.state.accessory.histories[1].entries.size() == history,
+                "Recover-style cache reset did not preserve ATIS");
+        (void)ResetBrainOwnedAccessoryForConfirmedNewFlight(&fixture.state);
+        require(!fixture.state.atis.primaryRevision.valid &&
+                    fixture.state.atis.unreadRevisionIdentities.empty() &&
+                    fixture.state.accessory.histories[1].entries.empty(),
+                "confirmed new flight did not clear ATIS");
+        fixture.Decode(Step5DefaultAtisDocument(), 2);
+        (void)fixture.Cycle();
+        (void)ResetBrainOwnedAccessoryForCallsignChange(
+            &fixture.state, "ASA551", "DAL100");
+        require(!fixture.state.atis.primaryRevision.valid &&
+                    fixture.state.accessory.callsignIdentity == "DAL100",
+                "callsign boundary did not clear ATIS");
+        auto step5Heap22629 = std::make_unique<Step5AtisFixture>();
+        auto& sessionReset = *step5Heap22629;
+        sessionReset.Decode(Step5DefaultAtisDocument());
+        (void)sessionReset.Cycle();
+        (void)ResetBrainOwnedAccessoryForSessionReset(&sessionReset.state);
+        require(!sessionReset.state.atis.primaryRevision.valid &&
+                    sessionReset.state.accessory.histories[1].entries.empty(),
+                "session reset did not clear ATIS product state");
+        auto step5Heap22636 = std::make_unique<Step5AtisFixture>();
+        auto& coldDark = *step5Heap22636;
+        coldDark.Decode(Step5DefaultAtisDocument());
+        (void)coldDark.Cycle();
+        (void)ResetBrainOwnedAccessoryForConfirmedColdDark(&coldDark.state);
+        require(!coldDark.state.atis.primaryRevision.valid &&
+                    coldDark.state.accessory.histories[1].entries.empty(),
+                "confirmed cold/dark did not clear ATIS product state");
+        std::cout << "STEP5_LIFECYCLE_RESET: recover_preserved=1"
+                     " session_reset_cleared=1 new_flight_cleared=1"
+                     " callsign_cleared=1 cold_dark_cleared=1\n";
+    } else if (probe == "lifecycle_suspend_disconnect_preservation") {
+        auto step5Heap22647 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22647;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        const auto identity = fixture.state.atis.primaryRevision.revisionIdentity;
+        const auto history = fixture.state.accessory.histories[1].entries.size();
+        const auto beforeSuspend = fixture.state.accessory.lifecycleEpoch;
+        const BrainOwnedAsyncWorkerBindings noWorkers;
+        (void)SuspendBrainOwnedRuntimeForPluginAdmin(
+            &fixture.state, noWorkers);
+        const bool retained =
+            fixture.state.atis.primaryRevision.revisionIdentity == identity &&
+            fixture.state.accessory.histories[1].entries.size() == history;
+        (void)ResumeBrainOwnedRuntimeFromPluginAdmin(&fixture.state);
+        MarkBrainOwnedAtisSourceUnknownPreservingAcceptedState(&fixture.state);
+        require(retained &&
+                    fixture.state.accessory.lifecycleEpoch > beforeSuspend &&
+                    fixture.state.atis.availability ==
+                        BrainAtisAvailability::SourceUnknown &&
+                    fixture.state.atis.primaryRevision.revisionIdentity == identity,
+                "suspend/disconnect did not preserve accepted ATIS truthfully");
+        const auto historyAfterResume =
+            fixture.state.accessory.histories[1].entries.size();
+        const auto unreadAfterResume =
+            fixture.state.atis.unreadRevisionIdentities.size();
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 7);
+        const auto disconnect =
+            CloseBrainOwnedAccessoryForTemporaryXPilotDisconnect(&fixture.state);
+        require(disconnect.drawerClosed &&
+                    fixture.state.accessory.activeDrawer ==
+                        BrainOwnedAccessoryDrawerId::None &&
+                    fixture.state.atis.primaryRevision.revisionIdentity == identity &&
+                    fixture.state.accessory.histories[1].entries.size() ==
+                        historyAfterResume,
+                "temporary xPilot disconnect did not close while preserving ATIS");
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 8);
+        const auto sleep =
+            CloseBrainOwnedAccessoryForTemporaryOverlaySleep(&fixture.state);
+        require(sleep.drawerClosed &&
+                    fixture.state.accessory.activeDrawer ==
+                        BrainOwnedAccessoryDrawerId::None &&
+                    fixture.state.atis.primaryRevision.revisionIdentity == identity &&
+                    fixture.state.accessory.histories[1].entries.size() ==
+                        historyAfterResume,
+                "temporary overlay sleep did not close while preserving ATIS");
+        auto step5Heap22691 = std::make_unique<Step5AtisFixture>();
+        auto& staleEpoch = *step5Heap22691;
+        staleEpoch.Decode(Step5DefaultAtisDocument());
+        (void)staleEpoch.Cycle();
+        (void)staleEpoch.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
+        Step5ProductionPresentationSeam staleSeam;
+        const auto acceptedVisible = staleSeam.Present(
+            &staleEpoch.state, staleEpoch.Project());
+        const auto acceptedHistory =
+            staleEpoch.state.accessory.histories[1].entries.size();
+        const auto acceptedUnread =
+            staleEpoch.state.atis.unreadRevisionIdentities.size();
+        const auto oldFact = acceptedVisible.fact;
+        (void)SuspendBrainOwnedRuntimeForPluginAdmin(
+            &staleEpoch.state, noWorkers);
+        const auto staleDecision = ConsumeBrainOwnedAccessoryPublicationFact(
+            &staleEpoch.state, oldFact);
+        require(acceptedVisible.brainAccepted && staleDecision.staleEpoch &&
+                    staleEpoch.state.accessory.histories[1].entries.size() ==
+                        acceptedHistory &&
+                    staleEpoch.state.atis.unreadRevisionIdentities.size() ==
+                        acceptedUnread,
+                "old-lifecycle ATIS publication mutated retained product state");
+        std::cout << "STEP5_SUSPEND_DISCONNECT: lifecycle_advanced=1"
+                     " accepted_retained=1 source_unknown=1 history_retained=1"
+                     " disconnect_closed=1 overlay_sleep_closed=1"
+                     " old_epoch_rejected=1 unread_preserved="
+                  << unreadAfterResume << "\n";
+    } else if (probe == "publication_queue_capacity_and_roles") {
+        AccessoryPublicationFactQueue queue;
+        for (std::uint64_t identity = 1;
+             identity <= AccessoryPublicationFactQueue::kCapacity;
+             ++identity) {
+            BrainOwnedAccessoryPublicationFact fact;
+            fact.commandIdentity = identity;
+            fact.lifecycleEpoch = 1;
+            fact.commandTerminal = true;
+            fact.disposition =
+                BrainOwnedAccessoryPublicationDisposition::Committed;
+            require(queue.Produce(fact),
+                    "publication queue rejected an in-capacity terminal role");
+        }
+        BrainOwnedAccessoryPublicationFact overflow;
+        overflow.commandIdentity = AccessoryPublicationFactQueue::kCapacity + 1;
+        overflow.lifecycleEpoch = 1;
+        overflow.commandTerminal = true;
+        overflow.disposition =
+            BrainOwnedAccessoryPublicationDisposition::Committed;
+        require(queue.ProduceDetailed(overflow) ==
+                    AccessoryPublicationQueueProduceResult::QueueFull &&
+                    queue.PendingCount() == AccessoryPublicationFactQueue::kCapacity,
+                "bounded publication capacity silently lost a terminal role");
+        BrainOwnedAccessoryPublicationFact drained;
+        std::size_t drainedCount = 0;
+        while (queue.Consume(&drained)) ++drainedCount;
+        require(drainedCount == AccessoryPublicationFactQueue::kCapacity &&
+                    queue.PendingCount() == 0 && queue.RejectedCount() == 1,
+                "publication capacity accounting did not drain exactly");
+        AccessoryPublicationFactQueue retainedQueue;
+        for (std::uint64_t identity = 1;
+             identity <= AccessoryPublicationFactQueue::kCapacity;
+             ++identity) {
+            BrainOwnedAccessoryPublicationFact fact;
+            fact.commandIdentity = identity;
+            fact.lifecycleEpoch = 1;
+            fact.commandTerminal = true;
+            fact.disposition =
+                BrainOwnedAccessoryPublicationDisposition::Committed;
+            require(retainedQueue.Produce(fact),
+                    "retained-delivery setup did not fill the real queue");
+        }
+        AccessoryVisiblePublicationState retainedCoordinator;
+        AccessoryVisiblePublicationKey retainedKey;
+        retainedKey.commandIdentity = 1;
+        retainedKey.lifecycleEpoch = 1;
+        retainedKey.railRevision = 1;
+        retainedKey.drawerRevision = 1;
+        retainedKey.drawerOpen = true;
+        const auto retainedBegin = retainedCoordinator.Observe(
+            {retainedKey, true, true, false, 1'000, false});
+        const auto retainedTerminal = retainedCoordinator.CompleteFirstFrame(
+            retainedKey, true, true, 1'100);
+        BrainOwnedAccessoryPublicationFact retainedFact;
+        ApplyAccessoryVisiblePublicationTerminal(
+            retainedTerminal, &retainedFact);
+        const auto firstDelivery = retainedCoordinator.DeliverOrRetain(
+            retainedFact, &retainedQueue);
+        require(retainedBegin.started && retainedTerminal.terminal &&
+                    firstDelivery ==
+                        AccessoryPublicationQueueProduceResult::QueueFull &&
+                    retainedCoordinator.HasRetainedTerminal() &&
+                    retainedCoordinator.DeliveryServiceRequested(),
+                "full queue did not retain the exact immutable terminal fact");
+        const auto retainedCopy = *retainedCoordinator.RetainedTerminal();
+        BrainOwnedAccessoryPublicationFact releasedCapacity;
+        require(retainedQueue.Consume(&releasedCapacity),
+                "capacity release did not consume one real queue fact");
+        const auto retry = retainedCoordinator.RetryRetained(&retainedQueue);
+        require(retry == AccessoryPublicationQueueProduceResult::Accepted &&
+                    !retainedCoordinator.HasRetainedTerminal() &&
+                    retainedCoordinator.DeliveredTerminalCount() == 1 &&
+                    retainedCoordinator.RetainedRetryCount() == 1,
+                "bounded retained retry did not deliver exactly once");
+        std::size_t retainedDelivered = 0;
+        BrainOwnedAccessoryPublicationFact delivered;
+        while (retainedQueue.Consume(&delivered)) {
+            if (!delivered.commandTerminal &&
+                delivered.visiblePublicationAttemptIdentity ==
+                    retainedCopy.visiblePublicationAttemptIdentity &&
+                delivered.commandIdentity == retainedCopy.commandIdentity &&
+                delivered.lifecycleEpoch == retainedCopy.lifecycleEpoch &&
+                delivered.disposition == retainedCopy.disposition) {
+                ++retainedDelivered;
+            }
+        }
+        require(retainedDelivered == 1,
+                "retained retry regenerated, duplicated, or changed the fact");
+        std::cout << "STEP5_QUEUE_CAPACITY: accepted=256 overflow=1"
+                     " drained=256 pending=0 loss=0 retained=1 retry_cycles=1"
+                     " exact_delivery=1 duplicate=0\n";
+    } else if (probe == "rendering_tones_layout_and_long_text") {
+        auto step5Heap22811 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22811;
+        const auto idle = fixture.Project();
+        const auto* idleOrb = Step5AtisOrb(idle);
+        std::string longLine(512, 'X');
+        const std::string document =
+            "{\"controllers\":[],\"pilots\":[],\"atis\":[{"
+            "\"callsign\":\"KDFW_D_ATIS\",\"frequency\":\"123.775\","
+            "\"atis_code\":\"A\",\"text_atis\":[\"" + longLine +
+            "\"]}]}";
+        fixture.Decode(document);
+        (void)fixture.Cycle();
+        (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
+        const auto unread = fixture.Project();
+        const auto* unreadOrb = Step5AtisOrb(unread);
+        Step5ProductionPresentationSeam seam;
+        const auto visible = seam.Present(&fixture.state, unread);
+        const auto historyBeforeScroll = fixture.state.atis.historyMutationCount;
+        const auto unreadBeforeScroll = fixture.state.atis.unreadCreatedCount;
+        const auto semanticBeforeScroll =
+            BrainOwnedAccessorySemanticPresentationGeneration(fixture.state);
+        const auto scroll = seam.ScrollDrawer(100);
+        const auto scrolledRender = seam.RenderDrawer();
+        const auto read = fixture.Project();
+        const auto* readOrb = Step5AtisOrb(read);
+        const bool boundedTextVisible = std::any_of(
+            scrolledRender.visibleLines.begin(),
+            scrolledRender.visibleLines.end(),
+            [](const auto& line) {
+                return line.text.find("XXXXXXXX") != std::string::npos;
+            });
+        require(fixture.feed.atisComponentComplete,
+                "512-byte decoder component was not mechanically complete");
+        require(fixture.feed.atisMechanicalIssueMask == 0,
+                "512-byte decoder component carried a mechanical issue");
+        require(fixture.feed.atisRecords.size() == 1 &&
+                    fixture.feed.atisRecords.front().mechanicallyComplete &&
+                    fixture.feed.atisRecords.front().textLines.size() == 1 &&
+                    fixture.feed.atisRecords.front().textLines.front().size() == 512,
+                "512-byte decoder record boundary was not preserved exactly");
+        require(fixture.state.atis.availability ==
+                    BrainAtisAvailability::Available,
+                "Brain did not accept the valid 512-byte ATIS record");
+        require(idleOrb != nullptr && idleOrb->tone ==
+                    BrainOwnedAccessoryOrbPresentation::Tone::Gray,
+                "initial ATIS ORB was not gray");
+        require(unreadOrb != nullptr && unreadOrb->tone ==
+                    BrainOwnedAccessoryOrbPresentation::Tone::Amber,
+                "unread ATIS ORB was not amber");
+        require(readOrb != nullptr && readOrb->tone ==
+                    BrainOwnedAccessoryOrbPresentation::Tone::Cyan,
+                "accepted visible ATIS revision did not produce a cyan ORB");
+        require(visible.rendered && !visible.render.visibleLines.empty(),
+                "initial ATIS drawer frame was not rendered");
+        require(visible.render.visibleLines.size() <= 6 &&
+                    visible.render.visibleLineCapacity == 6,
+                "initial ATIS viewport did not respect six-line capacity");
+        require(visible.render.totalLineCount >
+                    visible.render.visibleLineCapacity,
+                "512-byte ATIS content did not exceed the initial viewport");
+        require(scroll.handled &&
+                    scroll.scope == AccessoryWheelScope::Drawer,
+                "production wheel routing did not select the ATIS drawer");
+        require(scroll.changed && scroll.drawerOffset > 0 &&
+                    scroll.drawerOffset > scroll.previousOffset,
+                "production ATIS drawer scrolling did not advance the offset");
+        require(boundedTextVisible,
+                "512-byte wrapped ATIS body was not visible after scrolling");
+        require(fixture.state.atis.historyMutationCount == historyBeforeScroll,
+                "scrolling mutated ATIS history");
+        require(fixture.state.atis.unreadCreatedCount == unreadBeforeScroll,
+                "scrolling created ATIS unread state");
+        require(BrainOwnedAccessorySemanticPresentationGeneration(
+                    fixture.state) == semanticBeforeScroll,
+                "scrolling created a Brain semantic presentation mutation");
+
+        auto step5Heap22886 = std::make_unique<Step5AtisFixture>();
+        auto& rejected = *step5Heap22886;
+        rejected.Decode(R"json({"controllers":[],"pilots":[]})json", 1);
+        (void)rejected.Cycle();
+        require(rejected.state.atis.automaticAirportIcao == "KDFW",
+                "513-byte rejection baseline did not establish KDFW target");
+        require(rejected.state.atis.availability ==
+                    BrainAtisAvailability::SourceUnknown,
+                "513-byte rejection baseline was not SourceUnknown");
+        require(!rejected.state.atis.primaryRevision.valid,
+                "513-byte rejection baseline fabricated a primary revision");
+        require(rejected.state.atis.historyMutationCount == 0 &&
+                    rejected.state.atis.unreadCreatedCount == 0,
+                "513-byte rejection baseline created history or unread state");
+        const auto rejectedSemantic =
+            BrainOwnedAccessorySemanticPresentationGeneration(rejected.state);
+        const auto rejectedNextCommand =
+            rejected.state.accessory.nextPresentationCommandIdentity;
+        const auto rejectedScrollReset =
+            rejected.state.accessory.scrollResetGeneration;
+        const auto rejectedHistory = rejected.state.atis.historyMutationCount;
+        const auto rejectedUnread = rejected.state.atis.unreadCreatedCount;
+        const std::string overLimitLine(513, 'Y');
+        rejected.Decode(
+            "{\"controllers\":[],\"pilots\":[],\"atis\":[{"
+            "\"callsign\":\"KDFW_D_ATIS\",\"frequency\":\"123.775\","
+            "\"atis_code\":\"B\",\"text_atis\":[\"" +
+            overLimitLine + "\"]}]}", 2);
+        const auto rejectedCycle = rejected.Cycle();
+        const auto textLimitBit = BrainRawVatsimAtisIssueBit(
+            BrainRawVatsimAtisMechanicalIssue::TextLineUnsafeOrOverLimit);
+        require(!rejected.feed.atisComponentComplete,
+                "513-byte ATIS component was not mechanically incomplete");
+        require(rejected.feed.atisRecords.size() == 1 &&
+                    !rejected.feed.atisRecords.front().mechanicallyComplete,
+                "513-byte ATIS record was not mechanically incomplete");
+        require((rejected.feed.atisRecords.front().mechanicalIssueMask &
+                    textLimitBit) != 0 &&
+                    (rejected.feed.atisMechanicalIssueMask & textLimitBit) != 0,
+                "513-byte ATIS record lacked TextLineUnsafeOrOverLimit");
+        require(rejectedCycle.evaluated,
+                "Brain did not evaluate the later 513-byte feed generation");
+        require(!rejectedCycle.semanticChanged,
+                "513-byte rejection changed settled Brain product state");
+        require(rejected.state.atis.availability ==
+                    BrainAtisAvailability::SourceUnknown,
+                "513-byte rejection changed SourceUnknown availability");
+        require(!rejected.state.atis.primaryRevision.valid,
+                "513-byte rejection fabricated a primary revision");
+        require(rejected.state.atis.historyMutationCount == rejectedHistory,
+                "513-byte rejection mutated history");
+        require(rejected.state.atis.unreadCreatedCount == rejectedUnread,
+                "513-byte rejection created unread state");
+        require(BrainOwnedAccessorySemanticPresentationGeneration(
+                    rejected.state) == rejectedSemantic,
+                "513-byte rejection advanced semantic presentation generation");
+        require(rejected.state.accessory.scrollResetGeneration ==
+                    rejectedScrollReset,
+                "513-byte rejection advanced scroll reset generation");
+        require(rejected.state.accessory.nextPresentationCommandIdentity ==
+                    rejectedNextCommand,
+                "513-byte rejection created a presentation command");
+        std::cout << "STEP5_RENDERING: idle=GRAY unread=AMBER read=CYAN"
+                     " bounded_line=512 visible_capacity_respected=1"
+                     " over_limit_line=513 source_unknown=1 history=0 unread=0"
+                     " commands=0 rendering=0\n";
+    } else if (probe == "thousand_click_exact_accounting") {
+        auto step5Heap22952 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap22952;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        Step5ProductionPresentationSeam seam;
+        AccessoryClickFactQueue clicks;
+        std::uint64_t accepted = 0;
+        std::uint64_t maximumClickUs = 0;
+        std::uint64_t maximumCallbackUs = 0;
+        std::uint64_t maximumCallbackSequence = 0;
+        for (std::uint64_t sequence = 1; sequence <= 1'000; ++sequence) {
+            const auto drawer = sequence % 2 == 0
+                ? BrainOwnedAccessoryDrawerId::Atis
+                : BrainOwnedAccessoryDrawerId::Pdc;
+            const auto callbackStarted = std::chrono::steady_clock::now();
+            AccessoryClickFact captured;
+            const bool produced =
+                clicks.Produce(drawer, sequence * 1'000, &captured);
+            bool callbackExitMarked = false;
+            if (produced) {
+                callbackExitMarked = clicks.MarkMouseCallbackExited(
+                    captured.requestSequence, sequence * 1'000 + 1);
+            }
+            const auto callbackCompleted = std::chrono::steady_clock::now();
+            const auto callbackElapsed = static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    callbackCompleted - callbackStarted).count());
+            if (callbackElapsed > maximumCallbackUs) {
+                maximumCallbackUs = callbackElapsed;
+                maximumCallbackSequence = sequence;
+            }
+            require(produced,
+                    "mouse callback capture dropped an ATIS click");
+            require(callbackExitMarked,
+                    "mouse callback exit was not recorded");
+            AccessoryClickFact consumed;
+            require(clicks.Consume(&consumed) &&
+                        consumed.requestSequence == sequence &&
+                        consumed.drawer == drawer,
+                    "flight-loop service did not consume the exact FIFO click");
+            BrainOwnedAccessorySelectionRequest request;
+            request.drawer = consumed.drawer;
+            request.requestSequence = consumed.requestSequence;
+            request.clickAcceptedMicroseconds = consumed.startedMicroseconds;
+            request.mouseCallbackEnteredMicroseconds =
+                consumed.mouseCallbackEnteredMicroseconds;
+            request.mouseCallbackExitedMicroseconds =
+                consumed.mouseCallbackExitedMicroseconds;
+            const auto selection = RequestBrainOwnedAccessoryDrawerSelection(
+                &fixture.state, request);
+            const auto command = fixture.Project();
+            const auto terminal = seam.Present(&fixture.state, command);
+            if (selection.activeDrawer == drawer && terminal.brainAccepted &&
+                terminal.fact.originatingClickSequence == sequence &&
+                terminal.fact.clickTimingApplicable &&
+                terminal.fact.clickToTerminalMicroseconds < 500'000) {
+                ++accepted;
+                maximumClickUs = std::max(
+                    maximumClickUs,
+                    terminal.fact.clickToTerminalMicroseconds);
+            }
+        }
+        require(seam.Ready() && accepted == 1'000 &&
+                    clicks.ProducedCount() == 1'000 &&
+                    clicks.ConsumedCount() == 1'000 &&
+                    clicks.PendingCount() == 0 &&
+                    clicks.DroppedCount() == 0 &&
+                    seam.Queue().PendingCount() == 0 &&
+                    seam.Queue().RejectedCount() == 0 &&
+                    seam.Diagnostics().factsAcceptedByBrain == 1'000 &&
+                    seam.Diagnostics().commandTerminalsAccepted == 1'000 &&
+                    seam.Diagnostics().visibleAttemptTerminalsAccepted == 1'000 &&
+                    maximumClickUs < 500'000 && maximumCallbackUs <= 500,
+                "1,000-click ATIS production seam accounting was not exact");
+        std::cout << "STEP5_1000_CLICK_STRESS: clicks=1000 decisions=1000"
+                     " commands=1000 terminals=1000 pending=0 drops=0"
+                     " queue_rejections=0 max_click_us=" << maximumClickUs
+                  << " max_callback_us=" << maximumCallbackUs
+                  << " max_callback_sequence=" << maximumCallbackSequence
+                  << "\n";
+    } else if (probe == "settled_idle_background_and_memory_bounds") {
+        auto step5Heap23020 = std::make_unique<Step5AtisFixture>();
+        auto& fixture = *step5Heap23020;
+        fixture.Decode(Step5DefaultAtisDocument());
+        (void)fixture.Cycle();
+        const auto semantic =
+            BrainOwnedAccessorySemanticPresentationGeneration(fixture.state);
+        const auto history = fixture.state.atis.historyMutationCount;
+        const auto unread = fixture.state.atis.unreadCreatedCount;
+        const auto scrollReset = fixture.state.accessory.scrollResetGeneration;
+        const auto nextCommand =
+            fixture.state.accessory.nextPresentationCommandIdentity;
+        const auto backgroundA = DecodeVatsimDataFeedDocument(
+            Step5DefaultAtisDocument());
+        const auto backgroundB = DecodeVatsimDataFeedDocument(
+            Step5ReplaceOnce(Step5DefaultAtisDocument(),
+                "KABQ ARRIVAL INFORMATION ECHO",
+                "KABQ ARRIVAL INFORMATION FOXTROT"));
+        std::uint64_t evaluations = 0;
+        std::uint64_t semanticChanges = 0;
+        std::uint64_t projections = 0;
+        std::uint64_t preparations = 0;
+        std::uint64_t rasters = 0;
+        std::uint64_t uploads = 0;
+        std::uint64_t publications = 0;
+        std::uint64_t terminals = 0;
+        for (int cycle = 0; cycle < 100'000; ++cycle) {
+            fixture.feed = cycle % 2 == 0 ? backgroundA : backgroundB;
+            fixture.feed.generation = static_cast<std::uint64_t>(cycle + 2);
+            const auto decision = fixture.Cycle();
+            if (decision.evaluated) ++evaluations;
+            if (decision.semanticChanged) ++semanticChanges;
+            if (BrainOwnedAccessorySemanticPresentationGeneration(
+                    fixture.state) != semantic) {
+                BrainOwnedAccessoryProjectionCounters counters;
+                (void)fixture.Project(&counters);
+                projections += counters.snapshotBuilds;
+            }
+        }
+        std::string document =
+            "{\"controllers\":[],\"pilots\":[],\"atis\":[";
+        for (int index = 0; index < 300; ++index) {
+            if (index != 0) document += ',';
+            document += "{\"callsign\":\"KDFW_D_ATIS\","
+                "\"frequency\":\"123.775\",\"atis_code\":\"A\","
+                "\"text_atis\":[\"BOUNDED\"]}";
+        }
+        document += "]}";
+        const auto overflow = DecodeVatsimDataFeedDocument(document);
+        auto step5Heap23067 = std::make_unique<Step5AtisFixture>();
+        auto& overflowBrain = *step5Heap23067;
+        overflowBrain.Decode(document, 200'000);
+        (void)overflowBrain.Cycle();
+        const auto overflowPresentation = overflowBrain.Project();
+        const auto* overflowOrb = Step5AtisOrb(overflowPresentation);
+        const auto countExceededBit = BrainRawVatsimAtisIssueBit(
+            BrainRawVatsimAtisMechanicalIssue::RootCountExceeded);
+        require(evaluations == 100'000,
+                "background churn did not evaluate all 100,000 generations");
+        require(semanticChanges == 0,
+                "background non-primary churn changed product semantics");
+        require(BrainOwnedAccessorySemanticPresentationGeneration(
+                    fixture.state) == semantic,
+                "background churn advanced semantic presentation generation");
+        require(fixture.state.atis.historyMutationCount == history,
+                "background churn mutated ATIS history");
+        require(fixture.state.atis.unreadCreatedCount == unread,
+                "background churn created unread ATIS state");
+        require(fixture.state.accessory.scrollResetGeneration == scrollReset,
+                "background churn advanced scroll reset generation");
+        require(fixture.state.accessory.nextPresentationCommandIdentity ==
+                    nextCommand,
+                "background churn created a presentation command");
+        require(projections == 0,
+                "background churn projected an accessory snapshot");
+        require(preparations == 0,
+                "background churn created mechanical preparation work");
+        require(rasters == 0,
+                "background churn created raster work");
+        require(uploads == 0,
+                "background churn created texture upload work");
+        require(publications == 0,
+                "background churn created publication work");
+        require(terminals == 0,
+                "background churn created terminal facts");
+        require(overflow.atisRecords.empty(),
+                "300-record root retained an order-dependent prefix");
+        require(!overflow.atisComponentComplete,
+                "300-record root was marked mechanically complete");
+        require((overflow.atisMechanicalIssueMask & countExceededBit) != 0,
+                "300-record root lacked RootCountExceeded");
+        require(overflowBrain.state.atis.availability ==
+                    BrainAtisAvailability::SourceUnknown,
+                "300-record root did not produce SourceUnknown");
+        require(!overflowBrain.state.atis.primaryRevision.valid,
+                "300-record root created Brain product authority");
+        require(overflowBrain.state.atis.historyMutationCount == 0,
+                "300-record root created ATIS history");
+        require(overflowBrain.state.atis.unreadCreatedCount == 0,
+                "300-record root created unread ATIS state");
+        require(overflowOrb != nullptr && overflowOrb->neutral,
+                "300-record root created a non-neutral ATIS ORB");
+        auto step5Heap23119 = std::make_unique<Step5AtisFixture>();
+        auto& settled = *step5Heap23119;
+        settled.Decode(Step5DefaultAtisDocument());
+        (void)settled.Cycle();
+        (void)settled.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
+        Step5ProductionPresentationSeam settledSeam;
+        const auto settledCommand = settled.Project();
+        const auto settledVisible = settledSeam.Present(
+            &settled.state, settledCommand);
+        const auto settledTerminalsBefore =
+            settledSeam.Diagnostics().factsAcceptedByBrain;
+        std::uint64_t settledEvaluations = 0;
+        std::uint64_t settledSemanticChanges = 0;
+        for (int cycle = 0; cycle < 100'000; ++cycle) {
+            const auto decision = settled.Cycle();
+            if (decision.evaluated) ++settledEvaluations;
+            if (decision.semanticChanged) ++settledSemanticChanges;
+        }
+        const auto settledWarm = settledSeam.Warm(
+            settledCommand, 100'000);
+        require(settledVisible.brainAccepted,
+                "settled-idle baseline did not visibly terminalize");
+        require(settledEvaluations == 0 && settledSemanticChanges == 0,
+                "unchanged settled feed cycles repeated ATIS evaluation");
+        require(settledWarm.delta.railRasterRequests == 0 &&
+                    settledWarm.delta.drawerRasterRequests == 0 &&
+                    settledWarm.delta.uploadRequests == 0 &&
+                    settledWarm.delta.snapshotPublications == 0 &&
+                    settledSeam.Diagnostics().factsAcceptedByBrain ==
+                        settledTerminalsBefore,
+                "100,000 unchanged frames performed recurring accessory work");
+        std::string boundedDocument =
+            "{\"controllers\":[],\"pilots\":[],\"atis\":[";
+        for (int index = 0; index < 256; ++index) {
+            if (index != 0) boundedDocument += ',';
+            std::ostringstream callsign;
+            callsign << (index == 0 ? "KDFW_D_ATIS" :
+                ("X" + std::string(3 - std::to_string(index).size(), '0') +
+                 std::to_string(index) + "_ATIS"));
+            boundedDocument += "{\"callsign\":\"" + callsign.str() +
+                "\",\"frequency\":\"123.775\",\"atis_code\":\"A\","
+                "\"text_atis\":[\"BOUNDED RECORD\"]}";
+        }
+        boundedDocument += "]}";
+        auto step5Heap23162 = std::make_unique<Step5AtisFixture>();
+        auto& bounded = *step5Heap23162;
+        bounded.Decode(boundedDocument, 300'000);
+        const auto evaluationStarted = std::chrono::steady_clock::now();
+        const auto boundedDecision = bounded.Cycle();
+        const auto boundedEvaluationUs = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - evaluationStarted).count());
+        require(bounded.feed.atisRecords.size() == 256 &&
+                    bounded.feed.atisComponentComplete,
+                "bounded 256-record snapshot was not mechanically complete");
+        require(boundedDecision.evaluated && boundedEvaluationUs <= 5'000,
+                "bounded 256-record Brain ATIS evaluation exceeded 5,000 us");
+        const std::string aggregateLine(500, 'Q');
+        std::string aggregateDocument =
+            "{\"controllers\":[],\"pilots\":[],\"atis\":[";
+        for (int index = 0; index < 256; ++index) {
+            if (index != 0) aggregateDocument += ',';
+            aggregateDocument += "{\"callsign\":\"KDFW_D_ATIS\","
+                "\"frequency\":\"123.775\",\"atis_code\":\"A\","
+                "\"text_atis\":[";
+            for (int line = 0; line < 10; ++line) {
+                if (line != 0) aggregateDocument += ',';
+                aggregateDocument += "\"" + aggregateLine + "\"";
+            }
+            aggregateDocument += "]}";
+        }
+        aggregateDocument += "]}";
+        const auto aggregateOverflow =
+            DecodeVatsimDataFeedDocument(aggregateDocument);
+        const auto aggregateBit = BrainRawVatsimAtisIssueBit(
+            BrainRawVatsimAtisMechanicalIssue::AggregateFieldBytesExceeded);
+        require(aggregateOverflow.atisRecords.empty() &&
+                    !aggregateOverflow.atisComponentComplete &&
+                    (aggregateOverflow.atisMechanicalIssueMask & aggregateBit) != 0,
+                "aggregate ATIS field-byte overflow retained product authority");
+        std::cout << "STEP5_WARM_IDLE_MEMORY: cycles=100000 evaluations=100000"
+                     " projections=0 commands=0 rasters=0 publications=0"
+                     " history=0 unread=0 scroll_resets=0 preparations=0"
+                     " uploads=0 terminals=0 overflow_records=300 retained=0"
+                     " root_count_exceeded=1 source_unknown=1"
+                     " settled_cycles=100000 settled_evaluations=0"
+                     " settled_work=0 bounded_records=256 brain_eval_us="
+                  << boundedEvaluationUs
+                  << " aggregate_overflow_retained=0\n";
+    } else {
+        std::cerr << "STEP5_SCENARIO_CONFIGURATION_ERROR: " << scenario.name
+                  << ": unknown probe " << probe << "\n";
+        return 2;
+    }
+
+    if (!failures.empty()) {
+        for (const auto& failure : failures) {
+            std::cerr << "STEP5_ASSERTION_FAILED: " << scenario.name
+                      << ": " << failure << "\n";
+        }
+        return 1;
+    }
+    std::cout << "Scenario passed: " << scenario.name << "\n";
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -10181,11 +23547,128 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    if (std::string(argv[1]) == "--vatsim-decoder-baseline") {
+        const std::string document = R"json({
+            "controllers": [{
+                "callsign": "KDFW_TWR",
+                "frequency": "118.300",
+                "facility": 4,
+                "visual_range": 50,
+                "text_atis": ["RUNWAY 18R"]
+            }],
+            "pilots": [{
+                "cid": 1234567,
+                "callsign": "ASA551",
+                "flight_plan": {
+                    "departure": "KDFW",
+                    "arrival": "KSAN",
+                    "altitude": "FL340",
+                    "route": "KDFW J4 ABI"
+                }
+            }],
+            "atis": [{
+                "callsign": "KDFW_D_ATIS",
+                "frequency": "123.775",
+                "atis_code": "A",
+                "text_atis": ["KDFW DEPARTURE INFORMATION ALPHA"]
+            }]
+        })json";
+        const auto decoded =
+            xvatsim::modules::vatsim_data_feed::
+                DecodeVatsimDataFeedDocument(document);
+        const bool passed =
+            decoded.hasCache && !decoded.stale &&
+            decoded.connectedControllers == 1 &&
+            decoded.controllers.size() == 1 &&
+            decoded.controllers.front().callsign == "KDFW_TWR" &&
+            decoded.controllers.front().frequency == "118.300" &&
+            decoded.controllers.front().textAtis == "RUNWAY 18R" &&
+            decoded.pilotPlans.size() == 1 &&
+            decoded.pilotPlans.front().callsign == "ASA551" &&
+            decoded.pilotPlans.front().normalizedCallsign == "ASA551" &&
+            decoded.pilotPlans.front().departureIcao == "KDFW" &&
+            decoded.pilotPlans.front().destinationIcao == "KSAN" &&
+            decoded.pilotPlans.front().filedCruiseAltitudeFt == 34000.0 &&
+            decoded.pilotPlans.front().routeText == "KDFW J4 ABI";
+        if (!passed) {
+            std::cerr << "VATSIM_DECODER_BASELINE_FAILED\n";
+            return 1;
+        }
+        std::cout
+            << "VATSIM_DECODER_BASELINE_PASSED controllers=1 pilots=1 "
+               "controller_atis=RUNWAY_18R dedicated_product_atis=absent\n";
+        return 0;
+    }
+
+    if (std::string(argv[1]) == "--performance-contract-gate-a") {
+        return xvatsim::tools::performance_contract_gate_a::
+            RunPerformanceContractGateAProbe();
+    }
+
+    if (std::string(argv[1]) == "--performance-contract-gate-a-calm-1") {
+        return xvatsim::tools::performance_contract_gate_a_calm_1::
+            RunPerformanceContractGateACalm1Probe();
+    }
+
+    if (std::string(argv[1]) == "--performance-contract-gate-a-calm-2") {
+        return xvatsim::tools::performance_contract_gate_a_calm_2::
+            RunPerformanceContractGateACalm2Probe();
+    }
+
+    if (std::string(argv[1]) == "--product-calm-1") {
+        return xvatsim::tools::product_calm_1::RunProductCalm1Probe();
+    }
+
+    if (std::string(argv[1]) == "--performance-contract-gate-b") {
+        return xvatsim::tools::performance_contract_gate_b::
+            RunPerformanceContractGateBProbe();
+    }
+
+    if (std::string(argv[1]) ==
+        "--performance-contract-gate-b-telemetry") {
+        return xvatsim::tools::performance_contract_gate_b_telemetry::
+            RunPerformanceContractGateBTelemetryProbe();
+    }
+
+    if (std::string(argv[1]) == "--runtime-activation-gate") {
+        return xvatsim::tools::runtime_activation_gate::
+            RunRuntimeActivationGateProbe();
+    }
+
     ScenarioData scenario;
     std::string error;
     if (!LoadScenario(argv[1], &scenario, &error)) {
         std::cerr << "Failed to load scenario: " << error << "\n";
         return 2;
+    }
+    const auto hasOption = [&](const char* option) {
+        for (int index = 2; index < argc; ++index) {
+            if (std::string(argv[index]) == option) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto authorityWorkerParityRequested =
+        hasOption("--authority-worker-parity");
+    const auto routeWorkerParityRequested =
+        hasOption("--route-worker-parity");
+
+    if (!scenario.operatingMode.probe.empty()) {
+        return RunOperatingModeProbe(scenario);
+    }
+    if (!scenario.step3.actions.empty()) {
+        return RunStep3ContractProbe(scenario);
+    }
+    if (!scenario.step4.probe.empty()) {
+        return RunStep4ContractProbe(scenario);
+    }
+    if (!scenario.step5.probe.empty()) {
+        return RunStep5ContractProbe(scenario);
+    }
+    if (scenario.name.rfind("v2_step6_pdc_private_messages_", 0) == 0) {
+        return xvatsim::tools::step6_pdc_proof::RunStep6PdcContractProbe(
+            scenario.name);
     }
 
     auto workflowState = scenario.workflowState;
@@ -10592,6 +24075,35 @@ int main(int argc, char** argv) {
         }
         resolverRouteSectorSnapshot =
             routeSectorResolver.Resolve(scenario.aircraftState, routePlanSnapshot);
+        if (routeWorkerParityRequested) {
+            const auto frozenOracle =
+                routeSectorResolver.ResolveSynchronousRouteOracleForTesting(
+                    scenario.aircraftState, routePlanSnapshot);
+            xvatsim::modules::route_sector::RoutePreparationRequest
+                parityRequest;
+            parityRequest.routeAnchor = scenario.aircraftState;
+            parityRequest.networkPlan = std::make_shared<
+                const xvatsim::brain::NetworkPlanSnapshot>(routePlanSnapshot);
+            parityRequest.routeSourceDataset =
+                routeSectorResolver.GetRouteSourceDatasetPublication().dataset;
+            if (scenario.resolverUsesPreflightCache && preflightParseResult.ok) {
+                parityRequest.preflightCandidate = std::make_shared<
+                    const xvatsim::core::preflight::PreflightRouteCache>(
+                        preflightRouteCache);
+                parityRequest.preflightValidationReason =
+                    "harness preflight cache";
+            }
+            xvatsim::modules::route_sector::RoutePreparationEngine
+                parityEngine({}, nullptr, false);
+            const auto prepared = parityEngine.Prepare(parityRequest);
+            if (prepared.route == nullptr ||
+                !xvatsim::brain::EqualBrainRouteSectorSnapshotsExact(
+                    frozenOracle, *prepared.route)) {
+                std::cerr << "ROUTE_WORKER_PARITY_FAILED: "
+                          << scenario.name << "\n";
+                return 1;
+            }
+        }
         resolverRouteAuthorityPlan =
             xvatsim::brain::BuildRouteAuthorityPlanFromRouteSectorSnapshot(
                 routePlanSnapshot,
@@ -10607,6 +24119,149 @@ int main(int argc, char** argv) {
                  !scenario.transceiverResolutionSnapshot.candidates.empty())
                     ? &scenario.transceiverResolutionSnapshot
                     : nullptr);
+        if (authorityWorkerParityRequested &&
+            routeSectorResolver.GetAuthoritySourceDataset() != nullptr) {
+            xvatsim::modules::route_sector::AuthorityWorkerRequest
+                parityRequest;
+            parityRequest.identity.requestId = 1;
+            parityRequest.identity.lifecycleEpoch = 1;
+            parityRequest.identity.planKey = scenario.name;
+            parityRequest.identity.routeDigest =
+                xvatsim::brain::HashBrainAuthorityRouteSnapshot(
+                    resolverRouteSectorSnapshot);
+            parityRequest.identity.controllerDigest =
+                xvatsim::brain::HashBrainAuthorityControllerEvidence(
+                    controllerFeedSnapshot.Controllers(),
+                    controllerFeedSnapshot.available,
+                    controllerFeedSnapshot.stale);
+            const auto parityAuthorityTransceivers =
+                xvatsim::brain::BuildBrainAuthorityTransceiverEvidence(
+                    scenario.transceiverResolutionSnapshot);
+            parityRequest.identity.transceiverDigest =
+                xvatsim::brain::HashBrainAuthorityTransceiverEvidence(
+                    parityAuthorityTransceivers);
+            parityRequest.identity.datasetIdentity =
+                routeSectorResolver.GetAuthoritySourceDatasetIdentity();
+            parityRequest.aircraft = scenario.aircraftState;
+            parityRequest.route = std::make_shared<
+                const xvatsim::brain::RouteSectorSnapshot>(
+                    resolverRouteSectorSnapshot);
+            if (controllerFeedSnapshot.controllers != nullptr) {
+                parityRequest.controllers = std::make_shared<
+                    const std::vector<
+                        xvatsim::brain::AuthorityControllerSnapshot>>(
+                            xvatsim::brain::
+                                BuildBrainAuthorityControllerEvidence(
+                                    *controllerFeedSnapshot.controllers));
+            }
+            parityRequest.hasControllerEvidence =
+                controllerFeedSnapshot.controllers != nullptr;
+            parityRequest.controllerFeedAvailable =
+                controllerFeedSnapshot.available;
+            parityRequest.controllerFeedStale = controllerFeedSnapshot.stale;
+            parityRequest.controllerFeedGeneration =
+                controllerFeedSnapshot.generation;
+            parityRequest.controllerFeedConnectedControllers =
+                controllerFeedSnapshot.connectedControllers;
+            parityRequest.terminalBoundaryGeneration =
+                routeSectorResolver.GetTerminalBoundaryGeneration();
+            parityRequest.scheduleReason =
+                "regression-harness-authority-verifier";
+            parityRequest.hasTransceiverEvidence =
+                scenario.transceiverResolutionSnapshot.available ||
+                !scenario.transceiverResolutionSnapshot.candidates.empty();
+            parityRequest.transceivers = std::make_shared<
+                const xvatsim::brain::AuthorityTransceiverEvidenceSnapshot>(
+                    parityAuthorityTransceivers);
+            parityRequest.dataset =
+                routeSectorResolver.GetAuthoritySourceDataset();
+            xvatsim::modules::route_sector::AuthorityRelevanceWorker
+                parityWorker;
+            if (!parityWorker.Start() ||
+                !parityWorker.StartLatest(std::move(parityRequest))) {
+                std::cerr << "GATE_A_PARITY_DISPATCH_FAILED: "
+                          << scenario.name << "\n";
+                return 1;
+            }
+            xvatsim::modules::route_sector::AuthorityWorkerFact parityFact;
+            const auto parityDeadline =
+                std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            bool parityHarvested = false;
+            while (std::chrono::steady_clock::now() < parityDeadline) {
+                if (parityWorker.TryHarvest(&parityFact)) {
+                    parityHarvested = true;
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            const auto synchronousDigest =
+                xvatsim::brain::HashBrainAuthorityRelevanceSnapshot(
+                    resolverAuthorityRelevanceSnapshot);
+            auto paritySnapshot = parityFact.snapshotLease != nullptr
+                ? parityFact.snapshotLease->snapshot
+                : nullptr;
+            if (!parityHarvested || !parityFact.completed ||
+                paritySnapshot == nullptr ||
+                parityFact.snapshotDigest != synchronousDigest ||
+                parityFact.snapshotDigest !=
+                    xvatsim::brain::HashBrainAuthorityRelevanceSnapshot(
+                        *paritySnapshot)) {
+                std::cerr << "GATE_A_PARITY_MISMATCH: " << scenario.name
+                          << " syncDigest=" << synchronousDigest
+                          << " workerDigest=" << parityFact.snapshotDigest
+                          << " harvested=" << (parityHarvested ? 1 : 0)
+                          << " syncCache="
+                          << resolverAuthorityRelevanceSnapshot
+                                 .diagnosticCacheStatus
+                          << "/"
+                          << resolverAuthorityRelevanceSnapshot
+                                 .diagnosticReason
+                          << " workerCache="
+                          << (paritySnapshot == nullptr
+                                  ? std::string("<none>")
+                                  : paritySnapshot->diagnosticCacheStatus +
+                                        "/" +
+                                        paritySnapshot->diagnosticReason)
+                          << " syncStatus="
+                          << resolverAuthorityRelevanceSnapshot.statusLine
+                          << " workerStatus="
+                          << (paritySnapshot == nullptr
+                                  ? std::string("<none>")
+                                  : paritySnapshot->statusLine)
+                          << " syncEvidence="
+                          << resolverAuthorityRelevanceSnapshot.evidence
+                                 .controllerEvidence.size()
+                          << "/"
+                          << resolverAuthorityRelevanceSnapshot.evidence
+                                 .polygonEvidence.size()
+                          << " workerEvidence="
+                          << (paritySnapshot == nullptr
+                                  ? 0
+                                  : paritySnapshot->evidence
+                                        .controllerEvidence.size())
+                          << "/"
+                          << (paritySnapshot == nullptr
+                                  ? 0
+                                  : paritySnapshot->evidence
+                                        .polygonEvidence.size())
+                          << "\n";
+                if (parityFact.snapshotLease != nullptr) {
+                    parityFact.snapshotLease->retired.store(
+                        true, std::memory_order_release);
+                    parityFact.snapshotLease.reset();
+                    parityWorker.NotifyRetirement();
+                }
+                paritySnapshot.reset();
+                parityWorker.CancelAndJoin();
+                return 1;
+            }
+            parityFact.snapshotLease->retired.store(
+                true, std::memory_order_release);
+            parityFact.snapshotLease.reset();
+            paritySnapshot.reset();
+            parityWorker.NotifyRetirement();
+            parityWorker.CancelAndJoin();
+        }
         if (scenario.resolverAuthorityRepeatControllerFeedGeneration > 0 ||
             scenario.resolverAuthorityRepeatCacheAgeSeconds > 0 ||
             !scenario.resolverAuthorityRepeatControllers.empty() ||
@@ -10759,11 +24414,45 @@ int main(int argc, char** argv) {
         xvatsim::brain::RadioReachableSource::AFVRadioRange;
     relevanceRadioOptions.changeReason = "harness-controller-relevance";
     relevanceRadioOptions.nowSeconds = scenario.nowSeconds;
-    const auto controllerRelevanceRadioSnapshot =
+    const auto receivableControllerRelevanceRadioSnapshot =
         xvatsim::brain::BuildRadioReachableControllerSnapshotFromTransceivers(
             scenario.transceiverResolutionSnapshot,
             controllerFeedSnapshot,
             relevanceRadioOptions);
+    const auto controllerRelevanceRadioSnapshot =
+        scenario.controllerRelevanceV2Enabled
+            ? xvatsim::brain::
+                  AugmentRadioReachableControllerSnapshotWithAppDepEvidence(
+                      receivableControllerRelevanceRadioSnapshot,
+                      scenario.transceiverResolutionSnapshot)
+            : receivableControllerRelevanceRadioSnapshot;
+    const auto vnasControllerFeed =
+        xvatsim::modules::vnas_data::DecodeVnasControllerFeedDocument(
+            scenario.vnasControllerFeedJson);
+    std::vector<std::shared_ptr<const
+        xvatsim::modules::vnas_data::VnasArtccFacilityDocument>>
+        vnasFacilityDocuments;
+    vnasFacilityDocuments.reserve(scenario.vnasArtccFacilityJsons.size());
+    for (const auto& payload : scenario.vnasArtccFacilityJsons) {
+        vnasFacilityDocuments.push_back(std::make_shared<const
+            xvatsim::modules::vnas_data::VnasArtccFacilityDocument>(
+            xvatsim::modules::vnas_data::DecodeVnasArtccFacilityDocument(
+                payload)));
+    }
+    const auto vnasTerminalEvidence = std::make_shared<
+        const xvatsim::brain::VnasTerminalEvidenceSnapshot>(
+        xvatsim::modules::vnas_data::BuildVnasTerminalEvidenceSnapshot(
+            vnasControllerFeed,
+            vnasFacilityDocuments,
+            scenario.controllerRelevanceWorkflowStage ==
+                    WorkflowStage::Departure
+                ? scenario.workflowState.flightContext.departureIcao
+                : std::string{},
+            scenario.controllerRelevanceWorkflowStage == WorkflowStage::Arrival
+                ? scenario.workflowState.flightContext.destinationIcao
+                : std::string{},
+            controllerRelevanceRadioSnapshot.candidates,
+            scenario.controllerRelevanceV2Enabled));
     xvatsim::brain::BrainControllerRelevanceWorkerInput
         controllerRelevanceInput;
     controllerRelevanceInput.workflowStage =
@@ -10788,6 +24477,28 @@ int main(int argc, char** argv) {
         scenario.workflowState.flightContext.departureIcao;
     controllerRelevanceInput.arrivalIcao =
         scenario.workflowState.flightContext.destinationIcao;
+    controllerRelevanceInput.hasDepartureCoordinates =
+        scenario.workflowState.flightContext.hasDepartureCoordinates;
+    controllerRelevanceInput.departureLatitudeDeg =
+        scenario.workflowState.flightContext.departureLatDeg;
+    controllerRelevanceInput.departureLongitudeDeg =
+        scenario.workflowState.flightContext.departureLonDeg;
+    controllerRelevanceInput.hasArrivalCoordinates =
+        scenario.workflowState.flightContext.hasDestinationCoordinates;
+    controllerRelevanceInput.arrivalLatitudeDeg =
+        scenario.workflowState.flightContext.destinationLatDeg;
+    controllerRelevanceInput.arrivalLongitudeDeg =
+        scenario.workflowState.flightContext.destinationLonDeg;
+    controllerRelevanceInput.terminalRelevanceV2Enabled =
+        scenario.controllerRelevanceV2Enabled;
+    controllerRelevanceInput.vnasSectorPrecedenceEnabled =
+        scenario.controllerRelevanceV2Enabled &&
+        scenario.controllerRelevanceVnasSectorPrecedenceEnabled;
+    controllerRelevanceInput.terminalTransmitterRadiusNm =
+        scenario.controllerRelevanceTerminalRadiusNm;
+    controllerRelevanceInput.vnasTerminalEvidenceHash =
+        vnasTerminalEvidence->stableHash;
+    controllerRelevanceInput.vnasTerminalEvidence = vnasTerminalEvidence;
     if (scenario.controllerRelevanceWorkflowStage == WorkflowStage::Arrival) {
         controllerRelevanceInput.arrivalTerminalAuthorityHash = 1;
         controllerRelevanceInput.arrivalTerminalAuthority =
@@ -10803,7 +24514,10 @@ int main(int argc, char** argv) {
         airportFrequencyOutput;
     if (authorityRelevanceSnapshot.available) {
         controllerRelevanceInput.authorityRelevanceHash = 1;
-        controllerRelevanceInput.authorityRelevance = authorityRelevanceSnapshot;
+        controllerRelevanceInput.authorityRelevance =
+            std::make_shared<
+                const xvatsim::brain::AuthorityRelevanceSnapshot>(
+                authorityRelevanceSnapshot);
     }
     controllerRelevanceInput.radios = scenario.radioStateSnapshot;
     controllerRelevanceInput.candidates =
@@ -14621,6 +28335,13 @@ int main(int argc, char** argv) {
     if (const auto mismatch = CheckStringList(
             "brainControllerRelevanceCompletions",
             scenario.expectations.brainControllerRelevanceCompletions,
+            ExtractControllerRelevanceCompletions(controllerRelevanceOutput));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+    if (const auto mismatch = CheckStringListContains(
+            "brainControllerRelevanceCompletionsContains",
+            scenario.expectations.brainControllerRelevanceCompletionsContains,
             ExtractControllerRelevanceCompletions(controllerRelevanceOutput));
         mismatch.has_value()) {
         return *mismatch;

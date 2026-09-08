@@ -17,11 +17,13 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Data.Json.h>
 
+#include "XVatsim/brain/BrainOwnedWorkerTypes.h"
+
 namespace xvatsim::modules::vatsim_data_feed {
 
 namespace {
 
-constexpr wchar_t kUserAgent[] = L"XVatsim/1.2.3";
+constexpr wchar_t kUserAgent[] = L"XVatsim/2.0.0";
 constexpr wchar_t kHost[] = L"data.vatsim.net";
 constexpr wchar_t kPath[] = L"/v3/vatsim-data.json";
 constexpr long long kRefreshCadenceSeconds = 15;
@@ -40,6 +42,16 @@ constexpr std::size_t kMaxAirportChars = 8;
 constexpr std::size_t kMaxAltitudeChars = 16;
 constexpr std::size_t kMaxRouteTextChars = 4096;
 constexpr std::size_t kMaxControllerTextAtisChars = 2048;
+constexpr std::size_t kMaxRootAtisRecords = 256;
+constexpr std::size_t kMaxRootAtisCallsignBytes = 32;
+constexpr std::size_t kMaxRootAtisFrequencyBytes = 16;
+constexpr std::size_t kMaxRootAtisInformationCodeBytes = 8;
+constexpr std::size_t kMaxRootAtisTimestampBytes = 48;
+constexpr std::size_t kMaxRootAtisTextLines = 64;
+constexpr std::size_t kMaxRootAtisTextLineBytes = 512;
+constexpr std::size_t kMaxRootAtisJoinedBodyBytes = 8 * 1024;
+constexpr std::size_t kMaxRootAtisRetainedFieldBytes = 1024 * 1024;
+constexpr std::size_t kMaxRootAtisConservativeBytes = 2 * 1024 * 1024;
 
 struct WinHttpHandle {
     WinHttpHandle() = default;
@@ -361,6 +373,274 @@ std::string GetOptionalJsonStringArrayText(
     return text;
 }
 
+void AddAtisIssue(
+    std::uint32_t* mask,
+    brain::BrainRawVatsimAtisMechanicalIssue issue) {
+    if (mask != nullptr) {
+        *mask |= brain::BrainRawVatsimAtisIssueBit(issue);
+    }
+}
+
+bool SanitizeAtisField(
+    std::string value,
+    std::size_t maximumBytes,
+    bool collapseWhitespace,
+    std::string* output) {
+    if (output == nullptr || value.find('\0') != std::string::npos) return false;
+    std::string sanitized;
+    sanitized.reserve(std::min(value.size(), maximumBytes));
+    bool pendingSpace = false;
+    for (const auto raw : value) {
+        const auto character = static_cast<unsigned char>(raw);
+        if (character < 0x20U || character == 0x7fU) {
+            if (raw == '\t' || raw == '\r' || raw == '\n') {
+                pendingSpace = collapseWhitespace && !sanitized.empty();
+                continue;
+            }
+            return false;
+        }
+        if (collapseWhitespace && std::isspace(character) != 0) {
+            pendingSpace = !sanitized.empty();
+            continue;
+        }
+        if (pendingSpace) {
+            if (sanitized.size() >= maximumBytes) return false;
+            sanitized.push_back(' ');
+            pendingSpace = false;
+        }
+        if (sanitized.size() >= maximumBytes) return false;
+        sanitized.push_back(raw);
+    }
+    const auto begin = sanitized.find_first_not_of(' ');
+    if (begin == std::string::npos) {
+        output->clear();
+        return true;
+    }
+    const auto end = sanitized.find_last_not_of(' ');
+    *output = sanitized.substr(begin, end - begin + 1);
+    return true;
+}
+
+bool DecodeAtisStringField(
+    const winrt::Windows::Data::Json::JsonObject& object,
+    const wchar_t* key,
+    std::size_t maximumBytes,
+    bool required,
+    brain::BrainRawVatsimAtisMechanicalIssue wrongTypeIssue,
+    brain::BrainRawVatsimAtisMechanicalIssue unsafeIssue,
+    std::string* output,
+    std::uint32_t* issueMask) {
+    using namespace winrt::Windows::Data::Json;
+    if (!object.HasKey(key)) {
+        if (required) AddAtisIssue(issueMask, wrongTypeIssue);
+        if (output != nullptr) output->clear();
+        return !required;
+    }
+    const auto value = object.GetNamedValue(key);
+    if (value.ValueType() != JsonValueType::String) {
+        AddAtisIssue(issueMask, wrongTypeIssue);
+        if (output != nullptr) output->clear();
+        return false;
+    }
+    try {
+        if (!SanitizeAtisField(
+                winrt::to_string(value.GetString()), maximumBytes, true,
+                output)) {
+            AddAtisIssue(issueMask, unsafeIssue);
+            if (output != nullptr) output->clear();
+            return false;
+        }
+        return true;
+    } catch (...) {
+        AddAtisIssue(issueMask, unsafeIssue);
+        if (output != nullptr) output->clear();
+        return false;
+    }
+}
+
+void DecodeRootAtisComponent(
+    const winrt::Windows::Data::Json::JsonObject& root,
+    VatsimDataFeedSnapshot* snapshot) {
+    using namespace winrt::Windows::Data::Json;
+    if (snapshot == nullptr) return;
+    snapshot->atisComponentComplete = false;
+    if (!root.HasKey(L"atis")) {
+        AddAtisIssue(
+            &snapshot->atisMechanicalIssueMask,
+            brain::BrainRawVatsimAtisMechanicalIssue::RootMissing);
+        return;
+    }
+    snapshot->atisRootPresent = true;
+    const auto rootValue = root.GetNamedValue(L"atis");
+    if (rootValue.ValueType() != JsonValueType::Array) {
+        AddAtisIssue(
+            &snapshot->atisMechanicalIssueMask,
+            brain::BrainRawVatsimAtisMechanicalIssue::RootWrongType);
+        return;
+    }
+    snapshot->atisRootArray = true;
+    const auto records = rootValue.GetArray();
+    if (records.Size() > kMaxRootAtisRecords) {
+        AddAtisIssue(
+            &snapshot->atisMechanicalIssueMask,
+            brain::BrainRawVatsimAtisMechanicalIssue::RootCountExceeded);
+        return;
+    }
+    snapshot->atisRecords.reserve(
+        std::min<std::size_t>(records.Size(), kMaxRootAtisRecords));
+    bool everyRecordComplete = true;
+    for (uint32_t index = 0; index < records.Size(); ++index) {
+        const auto value = records.GetAt(index);
+        if (value.ValueType() != JsonValueType::Object) {
+            ++snapshot->atisRejectedRecordCount;
+            everyRecordComplete = false;
+            AddAtisIssue(
+                &snapshot->atisMechanicalIssueMask,
+                brain::BrainRawVatsimAtisMechanicalIssue::RecordWrongType);
+            continue;
+        }
+        brain::BrainRawVatsimAtisRecord record;
+        const auto object = value.GetObject();
+        (void)DecodeAtisStringField(
+            object, L"callsign", kMaxRootAtisCallsignBytes, true,
+            brain::BrainRawVatsimAtisMechanicalIssue::CallsignWrongType,
+            brain::BrainRawVatsimAtisMechanicalIssue::
+                CallsignUnsafeOrOverLimit,
+            &record.callsign, &record.mechanicalIssueMask);
+        (void)DecodeAtisStringField(
+            object, L"frequency", kMaxRootAtisFrequencyBytes, false,
+            brain::BrainRawVatsimAtisMechanicalIssue::FrequencyWrongType,
+            brain::BrainRawVatsimAtisMechanicalIssue::
+                FrequencyUnsafeOrOverLimit,
+            &record.frequency, &record.mechanicalIssueMask);
+        (void)DecodeAtisStringField(
+            object, L"atis_code", kMaxRootAtisInformationCodeBytes, false,
+            brain::BrainRawVatsimAtisMechanicalIssue::InformationCodeWrongType,
+            brain::BrainRawVatsimAtisMechanicalIssue::
+                InformationCodeUnsafeOrOverLimit,
+            &record.informationCode, &record.mechanicalIssueMask);
+        (void)DecodeAtisStringField(
+            object, L"last_updated", kMaxRootAtisTimestampBytes, false,
+            brain::BrainRawVatsimAtisMechanicalIssue::TimestampWrongType,
+            brain::BrainRawVatsimAtisMechanicalIssue::
+                TimestampUnsafeOrOverLimit,
+            &record.lastUpdated, &record.mechanicalIssueMask);
+        (void)DecodeAtisStringField(
+            object, L"logon_time", kMaxRootAtisTimestampBytes, false,
+            brain::BrainRawVatsimAtisMechanicalIssue::TimestampWrongType,
+            brain::BrainRawVatsimAtisMechanicalIssue::
+                TimestampUnsafeOrOverLimit,
+            &record.logonTime, &record.mechanicalIssueMask);
+
+        if (!object.HasKey(L"text_atis")) {
+            AddAtisIssue(
+                &record.mechanicalIssueMask,
+                brain::BrainRawVatsimAtisMechanicalIssue::TextWrongType);
+        } else {
+            const auto textValue = object.GetNamedValue(L"text_atis");
+            if (textValue.ValueType() != JsonValueType::Array) {
+                AddAtisIssue(
+                    &record.mechanicalIssueMask,
+                    brain::BrainRawVatsimAtisMechanicalIssue::TextWrongType);
+            } else {
+                const auto lines = textValue.GetArray();
+                if (lines.Size() > kMaxRootAtisTextLines) {
+                    AddAtisIssue(
+                        &record.mechanicalIssueMask,
+                        brain::BrainRawVatsimAtisMechanicalIssue::
+                            TextLineCountExceeded);
+                } else {
+                    record.textLines.reserve(
+                        std::min<std::size_t>(
+                            lines.Size(), kMaxRootAtisTextLines));
+                    std::size_t bodyBytes = 0;
+                    for (uint32_t lineIndex = 0;
+                         lineIndex < lines.Size(); ++lineIndex) {
+                        const auto lineValue = lines.GetAt(lineIndex);
+                        if (lineValue.ValueType() != JsonValueType::String) {
+                            AddAtisIssue(
+                                &record.mechanicalIssueMask,
+                                brain::BrainRawVatsimAtisMechanicalIssue::
+                                    TextWrongType);
+                            continue;
+                        }
+                        std::string line;
+                        bool lineSafe = false;
+                        try {
+                            lineSafe = SanitizeAtisField(
+                                winrt::to_string(lineValue.GetString()),
+                                kMaxRootAtisTextLineBytes, true, &line);
+                        } catch (...) {
+                            lineSafe = false;
+                        }
+                        if (!lineSafe) {
+                            AddAtisIssue(
+                                &record.mechanicalIssueMask,
+                                brain::BrainRawVatsimAtisMechanicalIssue::
+                                    TextLineUnsafeOrOverLimit);
+                            continue;
+                        }
+                        if (line.empty()) continue;
+                        const auto delimiterBytes =
+                            record.textLines.empty() ? 0U : 1U;
+                        if (bodyBytes + delimiterBytes + line.size() >
+                            kMaxRootAtisJoinedBodyBytes) {
+                            AddAtisIssue(
+                                &record.mechanicalIssueMask,
+                                brain::BrainRawVatsimAtisMechanicalIssue::
+                                    TextBodyExceeded);
+                            break;
+                        }
+                        bodyBytes += delimiterBytes + line.size();
+                        record.textLines.push_back(std::move(line));
+                    }
+                }
+            }
+        }
+        record.retainedFieldBytes = record.callsign.size() +
+            record.frequency.size() + record.informationCode.size() +
+            record.lastUpdated.size() + record.logonTime.size();
+        for (const auto& line : record.textLines) {
+            record.retainedFieldBytes += line.size();
+        }
+        record.mechanicallyComplete = record.mechanicalIssueMask == 0;
+        if (!record.mechanicallyComplete) {
+            ++snapshot->atisRejectedRecordCount;
+            everyRecordComplete = false;
+            snapshot->atisMechanicalIssueMask |= record.mechanicalIssueMask;
+        }
+        const auto conservativeBytes = sizeof(record) +
+            record.retainedFieldBytes +
+            record.textLines.size() * sizeof(std::string);
+        if (snapshot->atisRetainedFieldBytes + record.retainedFieldBytes >
+            kMaxRootAtisRetainedFieldBytes) {
+            AddAtisIssue(
+                &snapshot->atisMechanicalIssueMask,
+                brain::BrainRawVatsimAtisMechanicalIssue::
+                    AggregateFieldBytesExceeded);
+            snapshot->atisRecords.clear();
+            snapshot->atisRetainedFieldBytes = 0;
+            snapshot->atisConservativeBytes = 0;
+            return;
+        }
+        if (snapshot->atisConservativeBytes + conservativeBytes >
+            kMaxRootAtisConservativeBytes) {
+            AddAtisIssue(
+                &snapshot->atisMechanicalIssueMask,
+                brain::BrainRawVatsimAtisMechanicalIssue::
+                    ConservativeMemoryExceeded);
+            snapshot->atisRecords.clear();
+            snapshot->atisRetainedFieldBytes = 0;
+            snapshot->atisConservativeBytes = 0;
+            return;
+        }
+        snapshot->atisRetainedFieldBytes += record.retainedFieldBytes;
+        snapshot->atisConservativeBytes += conservativeBytes;
+        snapshot->atisRecords.push_back(std::move(record));
+    }
+    snapshot->atisComponentComplete = everyRecordComplete;
+}
+
 double ParseFiledAltitudeText(std::string altitudeText) {
     if (altitudeText.size() > kMaxAltitudeChars) {
         return 0.0;
@@ -537,6 +817,20 @@ VatsimDataFeedSnapshot ParseFeed(const std::string& payload) {
 
             snapshot.controllers.push_back(std::move(controller));
         }
+        snapshot.controllerContentDigest =
+            brain::HashBrainControllerEvidenceContent(snapshot.controllers);
+        auto authorityControllers =
+            brain::BuildBrainAuthorityControllerEvidence(
+                snapshot.controllers);
+        snapshot.authorityControllerContentDigest =
+            brain::HashBrainAuthorityControllerEvidenceContent(
+                authorityControllers);
+        snapshot.immutableAuthorityControllers = std::make_shared<
+            const std::vector<brain::AuthorityControllerSnapshot>>(
+                std::move(authorityControllers));
+        snapshot.immutableControllers = std::make_shared<
+            const std::vector<brain::ControllerSnapshot>>(
+                snapshot.controllers);
 
         const auto pilots = root.GetNamedArray(L"pilots", JsonArray{});
         for (uint32_t index = 0; index < pilots.Size(); ++index) {
@@ -603,6 +897,8 @@ VatsimDataFeedSnapshot ParseFeed(const std::string& payload) {
             snapshot.pilotPlans.push_back(std::move(plan));
         }
 
+        DecodeRootAtisComponent(root, &snapshot);
+
         snapshot.hasCache = true;
         snapshot.stale = false;
         return snapshot;
@@ -612,6 +908,11 @@ VatsimDataFeedSnapshot ParseFeed(const std::string& payload) {
 }
 
 }  // namespace
+
+VatsimDataFeedSnapshot DecodeVatsimDataFeedDocument(
+    const std::string& payload) {
+    return ParseFeed(payload);
+}
 
 VatsimDataFeedClient::~VatsimDataFeedClient() {
     if (fetchThread_.joinable()) {
@@ -653,7 +954,7 @@ const VatsimDataFeedSnapshot& VatsimDataFeedClient::Poll() {
 
 VatsimDataFeedSnapshot VatsimDataFeedClient::FetchSnapshot() const {
     const auto payload = DownloadJsonDocument();
-    return ParseFeed(payload);
+    return DecodeVatsimDataFeedDocument(payload);
 }
 
 bool VatsimDataFeedClient::StartAsyncFetch(long long nowSeconds) {
@@ -683,7 +984,7 @@ bool VatsimDataFeedClient::StartAsyncFetch(long long nowSeconds) {
 
             try {
                 std::lock_guard<std::mutex> lock(fetchMutex_);
-                pendingSnapshot_ = fetchedSnapshot;
+                pendingSnapshot_ = std::move(fetchedSnapshot);
                 hasPendingSnapshot_ = true;
             } catch (...) {
             }
@@ -720,7 +1021,7 @@ void VatsimDataFeedClient::HarvestPendingFetch() {
     }
 
     lastFetchSucceeded_ = true;
-    cachedSnapshot_ = pendingSnapshot_;
+    cachedSnapshot_ = std::move(pendingSnapshot_);
     cachedSnapshot_.stale = false;
     cachedSnapshot_.fetchInProgress = false;
     cachedSnapshot_.generation = ++lastGeneration_;

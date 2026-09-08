@@ -1,12 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace xvatsim::brain {
 
 constexpr double kBrainOwnedMaxRadioBoardCandidateDistanceNm = 300.0;
+constexpr double kBrainOwnedCenterDisplayRangeNm = 250.0;
 
 enum class OverlayMode {
     Dormant,
@@ -110,14 +112,6 @@ struct XPilotSessionSnapshot {
     std::string statusLine;
 };
 
-struct XPilotPrivateMessageSnapshot {
-    bool loaded = false;
-    bool available = false;
-    int sequence = 0;
-    std::string from;
-    std::string body;
-};
-
 struct PilotIdentitySnapshot {
     bool connected = false;
     bool ready = false;
@@ -156,6 +150,63 @@ struct ControllerSnapshot {
     std::string textAtis;
 };
 
+// vNAS is an optional, United-States-only operational evidence source.  The
+// network/parser module reduces its live controller and facility documents to
+// these endpoint-specific facts before they enter the Brain.  It does not make
+// a display decision. A missing or incomplete record is deliberately UNKNOWN;
+// it is never evidence against a controller.
+enum class VnasTerminalOwnershipKind {
+    Unknown,
+    FacilityOnly,
+    ConsolidatedFallback,
+    DirectOwner,
+};
+
+struct VnasTerminalEvidenceRecord {
+    std::string controllerCallsign;
+    std::string controllerFrequency;
+    std::string airportIcao;
+    std::string artccId;
+    std::string facilityId;
+    std::string facilityName;
+    std::string positionId;
+    std::string positionName;
+    std::string areaName;
+    std::string positionTcpId;
+    std::vector<std::string> positionTcpAncestorIds;
+    std::string proof;
+    bool supportsEndpoint = false;
+    bool ownershipFactsComplete = false;
+    bool serviceCompatible = false;
+    bool areaSupportsEndpoint = false;
+    bool positionTcpHasEndpointDescendant = false;
+    bool tdlsDepartureFrequencyMatch = false;
+    std::vector<std::string> matchedTcpTokens;
+};
+
+struct VnasTerminalEvidenceSnapshot {
+    bool enabled = false;
+    bool available = false;
+    bool stale = true;
+    bool facilityDataComplete = false;
+    bool ownershipDataAvailable = false;
+    std::uint64_t generation = 0;
+    std::uint64_t stableHash = 0;
+    std::string statusLine;
+    std::vector<VnasTerminalEvidenceRecord> records;
+};
+
+// Canonical authority-only controller input. Radio-range presentation fields
+// such as visual range are intentionally absent.
+struct AuthorityControllerSnapshot {
+    std::string callsign;
+    std::string frequency;
+    int facility = 0;
+    bool actionable = true;
+    bool atis = false;
+    std::string textAtis;
+};
+
 struct ControllerFeedSnapshot {
     bool available = false;
     bool stale = true;
@@ -163,6 +214,16 @@ struct ControllerFeedSnapshot {
     int connectedControllers = 0;
     std::string statusLine;
     const std::vector<ControllerSnapshot>* controllers = nullptr;
+    // When present, this is the immutable owner behind controllers and may be
+    // safely retained by background requests.
+    std::shared_ptr<const std::vector<ControllerSnapshot>> ownedControllers;
+    std::uint64_t controllerContentDigest = 0;
+    // Authority identity deliberately excludes fetch generations, aggregate
+    // controller counts, visual range, and feed presentation text. It is
+    // compiled with the immutable controller vector on the fetch thread.
+    std::uint64_t authorityControllerContentDigest = 0;
+    std::shared_ptr<const std::vector<AuthorityControllerSnapshot>>
+        ownedAuthorityControllers;
 
     const std::vector<ControllerSnapshot>& Controllers() const {
         static const std::vector<ControllerSnapshot> kEmptyControllers;
@@ -171,6 +232,78 @@ struct ControllerFeedSnapshot {
         }
         return *controllers;
     }
+};
+
+enum class BrainPdcSourceConnectionStatus {
+    Unknown,
+    Disconnected,
+    Connecting,
+    Connected,
+};
+
+struct BrainPdcMechanicalObservation {
+    bool sourceQualified = false;
+    bool capabilitiesQualified = false;
+    bool tupleMechanicallyComplete = false;
+    bool senderBodyRead = false;
+    bool sequenceOnlyFastPath = false;
+    std::uint64_t pluginInstanceIdentity = 0;
+    std::uint64_t capabilityGeneration = 0;
+    std::uint64_t mechanicalIssueMask = 0;
+    std::uint64_t observedMonotonicMicroseconds = 0;
+    std::uint64_t samplerElapsedMicroseconds = 0;
+    std::size_t senderByteCount = 0;
+    std::size_t bodyByteCount = 0;
+    std::uint64_t sessionLocalDigest = 0;
+    std::int64_t sequenceBefore = 0;
+    std::int64_t sequenceAfter = 0;
+    BrainPdcSourceConnectionStatus statusBefore =
+        BrainPdcSourceConnectionStatus::Unknown;
+    BrainPdcSourceConnectionStatus statusAfter =
+        BrainPdcSourceConnectionStatus::Unknown;
+    std::string callsignBefore;
+    std::string callsignAfter;
+    std::string sender;
+    std::string body;
+};
+
+enum class BrainRawVatsimAtisMechanicalIssue : std::uint32_t {
+    None = 0,
+    RootMissing = 1U << 0U,
+    RootWrongType = 1U << 1U,
+    RootCountExceeded = 1U << 2U,
+    AggregateFieldBytesExceeded = 1U << 3U,
+    ConservativeMemoryExceeded = 1U << 4U,
+    RecordWrongType = 1U << 5U,
+    CallsignWrongType = 1U << 6U,
+    CallsignUnsafeOrOverLimit = 1U << 7U,
+    FrequencyWrongType = 1U << 8U,
+    FrequencyUnsafeOrOverLimit = 1U << 9U,
+    InformationCodeWrongType = 1U << 10U,
+    InformationCodeUnsafeOrOverLimit = 1U << 11U,
+    TimestampWrongType = 1U << 12U,
+    TimestampUnsafeOrOverLimit = 1U << 13U,
+    TextWrongType = 1U << 14U,
+    TextLineCountExceeded = 1U << 15U,
+    TextLineUnsafeOrOverLimit = 1U << 16U,
+    TextBodyExceeded = 1U << 17U,
+};
+
+constexpr std::uint32_t BrainRawVatsimAtisIssueBit(
+    BrainRawVatsimAtisMechanicalIssue issue) {
+    return static_cast<std::uint32_t>(issue);
+}
+
+struct BrainRawVatsimAtisRecord {
+    std::string callsign;
+    std::string frequency;
+    std::string informationCode;
+    std::vector<std::string> textLines;
+    std::string lastUpdated;
+    std::string logonTime;
+    std::uint32_t mechanicalIssueMask = 0;
+    std::size_t retainedFieldBytes = 0;
+    bool mechanicallyComplete = false;
 };
 
 struct ReceivableControllerSnapshot {
@@ -261,6 +394,23 @@ struct TransceiverResolutionSnapshot {
     std::vector<ReceivableControllerSnapshot> candidates;
     TransceiverSourceEvidenceSnapshot sourceEvidence;
     std::vector<TransceiverControllerEvidenceSnapshot> controllerEvidence;
+};
+
+// Immutable authority-only projection of the radio resolver output. Distance,
+// feed-health diagnostics, parser counters, cache age, and presentation text
+// are intentionally absent because they cannot change authority membership.
+struct AuthorityTransceiverCandidateSnapshot {
+    std::string callsign;
+    std::string frequency;
+    double latitudeDeg = 0.0;
+    double longitudeDeg = 0.0;
+};
+
+struct AuthorityTransceiverEvidenceSnapshot {
+    bool available = false;
+    bool stale = true;
+    int receivableControllers = 0;
+    std::vector<AuthorityTransceiverCandidateSnapshot> candidates;
 };
 
 struct RouteWaypointSnapshot {

@@ -1,0 +1,2116 @@
+Log.txt for X-Plane 12.4.3-r2-15ff1e4d (build 124311 Intel 64-bit, Vulkan d50c1d1e582274be2ba7099464743271b8900da8)
+Compiled on Jun 24 2026 15:48:17
+X-Plane Started on Tue Sep  1 17:18:16 2026
+
+This log file is generated automatically by Laminar Research applications and contains diagnostics about your graphics hardware, installation, and any error conditions.
+If you need to contact tech support or file a bug, please send us this file. NOTE: this file is rewritten every time you start ANY of your X-System applications.
+
+Windows 10.0 (build 26200/2)
+This is a 64-bit version of Windows.
+CPU type: Intel Core i7-14700F - Speed: 2.0-2.4 GHz - Cores: 28
+          Microcode 0x133
+Physical Memory (total for computer): 102832009216
+Maximum Virtual Memory (for X-Plane only): 140737488224256
+
+X-System folder:'C:\X-Plane 12/', case sensitive=0
+
+0:00:00.000 I/GFX/VK: Vulkan Layers: VK_LAYER_NV_optimus (1), VK_LAYER_NV_present (1), VK_LAYER_OBS_HOOK (1)
+0:00:00.000 I/GFX/VK: Initialized Aftermath with result 1
+0:00:00.000 I/GFX/VK: Capability list:
+Vulkan Device       : NVIDIA GeForce RTX 4090 (af9f54310000)
+Vulkan Version      : 1.4.341
+Vulkan Driver       : 610.88.0
+Vulkan Extensions   : VK_KHR_16bit_storage VK_KHR_8bit_storage VK_KHR_acceleration_structure VK_KHR_bind_memory2 VK_KHR_buffer_device_address VK_KHR_calibrated_timestamps VK_KHR_compute_shader_derivatives VK_KHR_cooperative_matrix VK_KHR_copy_commands2 VK_KHR_copy_memory_indirect VK_KHR_create_renderpass2 VK_KHR_dedicated_allocation VK_KHR_deferred_host_operations VK_KHR_depth_clamp_zero_one VK_KHR_depth_stencil_resolve VK_KHR_descriptor_update_template VK_KHR_device_group VK_KHR_draw_indirect_count VK_KHR_driver_properties VK_KHR_dynamic_rendering VK_KHR_dynamic_rendering_local_read VK_KHR_external_fence VK_KHR_external_fence_win32 VK_KHR_external_memory VK_KHR_external_memory_win32 VK_KHR_external_semaphore VK_KHR_external_semaphore_win32 VK_KHR_format_feature_flags2 VK_KHR_fragment_shader_barycentric VK_KHR_fragment_shading_rate VK_KHR_get_memory_requirements2 VK_KHR_global_priority VK_KHR_image_format_list VK_KHR_imageless_framebuffer VK_KHR_index_type_uint8 VK_KHR_internally_synchronized_queues VK_KHR_line_rasterization VK_KHR_load_store_op_none VK_KHR_maintenance1 VK_KHR_maintenance10 VK_KHR_maintenance2 VK_KHR_maintenance3 VK_KHR_maintenance4 VK_KHR_maintenance5 VK_KHR_maintenance6 VK_KHR_maintenance7 VK_KHR_maintenance8 VK_KHR_maintenance9 VK_KHR_map_memory2 VK_KHR_multiview VK_KHR_pipeline_binary VK_KHR_pipeline_executable_properties VK_KHR_pipeline_library VK_KHR_present_id VK_KHR_present_id2 VK_KHR_present_mode_fifo_latest_ready VK_KHR_present_wait VK_KHR_present_wait2 VK_KHR_push_descriptor VK_KHR_ray_query VK_KHR_ray_tracing_maintenance1 VK_KHR_ray_tracing_pipeline VK_KHR_ray_tracing_position_fetch VK_KHR_relaxed_block_layout VK_KHR_robustness2 VK_KHR_sampler_mirror_clamp_to_edge VK_KHR_sampler_ycbcr_conversion VK_KHR_separate_depth_stencil_layouts VK_KHR_shader_atomic_int64 VK_KHR_shader_bfloat16 VK_KHR_shader_clock VK_KHR_shader_draw_parameters VK_KHR_shader_expect_assume VK_KHR_shader_float16_int8 VK_KHR_shader_float_controls VK_KHR_shader_float_controls2 VK_KHR_shader_fma VK_KHR_shader_integer_dot_product VK_KHR_shader_maximal_reconvergence VK_KHR_shader_non_semantic_info VK_KHR_shader_quad_control VK_KHR_shader_relaxed_extended_instruction VK_KHR_shader_subgroup_extended_types VK_KHR_shader_subgroup_rotate VK_KHR_shader_subgroup_uniform_control_flow VK_KHR_shader_terminate_invocation VK_KHR_shader_untyped_pointers VK_KHR_spirv_1_4 VK_KHR_storage_buffer_storage_class VK_KHR_swapchain VK_KHR_swapchain_maintenance1 VK_KHR_swapchain_mutable_format VK_KHR_synchronization2 VK_KHR_timeline_semaphore VK_KHR_unified_image_layouts VK_KHR_uniform_buffer_standard_layout VK_KHR_variable_pointers VK_KHR_vertex_attribute_divisor VK_KHR_video_decode_av1 VK_KHR_video_decode_h264 VK_KHR_video_decode_h265 VK_KHR_video_decode_queue VK_KHR_video_decode_vp9 VK_KHR_video_encode_av1 VK_KHR_video_encode_h264 VK_KHR_video_encode_h265 VK_KHR_video_encode_intra_refresh VK_KHR_video_encode_quantization_map VK_KHR_video_encode_queue VK_KHR_video_maintenance1 VK_KHR_video_maintenance2 VK_KHR_video_queue VK_KHR_vulkan_memory_model VK_KHR_win32_keyed_mutex VK_KHR_workgroup_memory_explicit_layout VK_KHR_zero_initialize_workgroup_memory VK_EXT_4444_formats VK_EXT_attachment_feedback_loop_dynamic_state VK_EXT_attachment_feedback_loop_layout VK_EXT_blend_operation_advanced VK_EXT_border_color_swizzle VK_EXT_buffer_device_address VK_EXT_calibrated_timestamps VK_EXT_color_write_enable VK_EXT_conditional_rendering VK_EXT_conservative_rasterization VK_EXT_custom_border_color VK_EXT_custom_resolve VK_EXT_depth_bias_control VK_EXT_depth_clamp_control VK_EXT_depth_clamp_zero_one VK_EXT_depth_clip_control VK_EXT_depth_clip_enable VK_EXT_depth_range_unrestricted VK_EXT_descriptor_buffer VK_EXT_descriptor_heap VK_EXT_descriptor_indexing VK_EXT_device_address_binding_report VK_EXT_device_fault VK_EXT_device_generated_commands VK_EXT_discard_rectangles VK_EXT_dynamic_rendering_unused_attachments VK_EXT_extended_dynamic_state VK_EXT_extended_dynamic_state2 VK_EXT_extended_dynamic_state3 VK_EXT_external_memory_host VK_EXT_fragment_shader_interlock VK_EXT_full_screen_exclusive VK_EXT_graphics_pipeline_library VK_EXT_hdr_metadata VK_EXT_host_image_copy VK_EXT_host_query_reset VK_EXT_image_2d_view_of_3d VK_EXT_image_robustness VK_EXT_image_sliced_view_of_3d VK_EXT_image_view_min_lod VK_EXT_index_type_uint8 VK_EXT_inline_uniform_block VK_EXT_legacy_vertex_attributes VK_EXT_line_rasterization VK_EXT_load_store_op_none VK_EXT_memory_budget VK_EXT_memory_decompression VK_EXT_memory_priority VK_EXT_mesh_shader VK_EXT_multi_draw VK_EXT_mutable_descriptor_type VK_EXT_nested_command_buffer VK_EXT_non_seamless_cube_map VK_EXT_opacity_micromap VK_EXT_pageable_device_local_memory VK_EXT_pci_bus_info VK_EXT_pipeline_creation_cache_control VK_EXT_pipeline_creation_feedback VK_EXT_pipeline_library_group_handles VK_EXT_pipeline_robustness VK_EXT_post_depth_coverage VK_EXT_present_mode_fifo_latest_ready VK_EXT_present_timing VK_EXT_primitive_topology_list_restart VK_EXT_primitives_generated_query VK_EXT_private_data VK_EXT_provoking_vertex VK_EXT_queue_family_foreign VK_EXT_ray_tracing_invocation_reorder VK_EXT_robustness2 VK_EXT_sample_locations VK_EXT_sampler_filter_minmax VK_EXT_scalar_block_layout VK_EXT_separate_stencil_usage VK_EXT_shader_64bit_indexing VK_EXT_shader_atomic_float VK_EXT_shader_demote_to_helper_invocation VK_EXT_shader_float8 VK_EXT_shader_image_atomic_int64 VK_EXT_shader_long_vector VK_EXT_shader_module_identifier VK_EXT_shader_object VK_EXT_shader_replicated_composites VK_EXT_shader_subgroup_ballot VK_EXT_shader_subgroup_partitioned VK_EXT_shader_subgroup_vote VK_EXT_shader_uniform_buffer_unsized_array VK_EXT_shader_viewport_index_layer VK_EXT_subgroup_size_control VK_EXT_swapchain_maintenance1 VK_EXT_texel_buffer_alignment VK_EXT_tooling_info VK_EXT_transform_feedback VK_EXT_vertex_attribute_divisor VK_EXT_vertex_attribute_robustness VK_EXT_vertex_input_dynamic_state VK_EXT_ycbcr_2plane_444_formats VK_EXT_ycbcr_image_arrays VK_EXT_zero_initialize_device_memory VK_NV_acquire_winrt_display VK_NV_clip_space_w_scaling VK_NV_cluster_acceleration_structure VK_NV_compute_occupancy_priority VK_NV_compute_shader_derivatives VK_NV_cooperative_matrix VK_NV_cooperative_matrix2 VK_NV_cooperative_vector VK_NV_copy_memory_indirect VK_NV_corner_sampled_image VK_NV_coverage_reduction_mode VK_NV_cuda_kernel_launch VK_NV_dedicated_allocation VK_NV_dedicated_allocation_image_aliasing VK_NV_descriptor_pool_overallocation VK_NV_device_diagnostic_checkpoints VK_NV_device_diagnostics_config VK_NV_device_generated_commands VK_NV_device_generated_commands_compute VK_NV_disk_cache_utils VK_NV_external_compute_queue VK_NV_external_memory VK_NV_external_memory_win32 VK_NV_fill_rectangle VK_NV_fragment_coverage_to_color VK_NV_fragment_shader_barycentric VK_NV_fragment_shading_rate_enums VK_NV_framebuffer_mixed_samples VK_NV_geometry_shader_passthrough VK_NV_inherited_viewport_scissor VK_NV_internal_nvpresent VK_NV_linear_color_attachment VK_NV_low_latency VK_NV_low_latency2 VK_NV_memory_decompression VK_NV_mesh_shader VK_NV_optical_flow VK_NV_partitioned_acceleration_structure VK_NV_present_metering VK_NV_push_constant_bank VK_NV_raw_access_chains VK_NV_ray_tracing VK_NV_ray_tracing_invocation_reorder VK_NV_ray_tracing_motion_blur VK_NV_representative_fragment_test VK_NV_sample_mask_override_coverage VK_NV_scissor_exclusive VK_NV_shader_atomic_float16_vector VK_NV_shader_image_footprint VK_NV_shader_sm_builtins VK_NV_shader_subgroup_partitioned VK_NV_shading_rate_image VK_NV_viewport_array2 VK_NV_viewport_swizzle VK_NV_win32_keyed_mutex VK_NVX_binary_import VK_NVX_image_view_handle VK_NVX_multiview_per_view_attributes VK_AMD_buffer_marker VK_GOOGLE_hlsl_functionality1 VK_GOOGLE_user_type 
+Vulkan Instance Extensions: VK_KHR_device_group_creation VK_KHR_display VK_KHR_external_fence_capabilities VK_KHR_external_memory_capabilities VK_KHR_external_semaphore_capabilities VK_KHR_get_display_properties2 VK_KHR_get_physical_device_propertie
+0:00:00.000 I/GFX/VK: 
+alpha_to_one               : 1	amd_buffer_markers         : 1	anisotropy                 : 1	baseline_desktop           : 1	baseline_desktop_linux     : 0	
+baseline_desktop_win32     : 1	baseline_mobile            : 0	buffer_device_address      : 1	descriptor_buffers         : 0	ext_device_fault           : 1	
+fullscreen_exclusive       : 1	host_query_reset           : 1	imageless_framebuffer      : 0	maintenance3               : 0	maintenance4               : 1	
+memory_budget              : 0	nv_device_diagnostics      : 1	pageable_device_memory     : 1	push_descriptors           : 1	qcom_render_pass_transform : 0	
+shader_float16             : 0	shader_int16               : 0	sparse                     : 0	storage_image_multisample  : 1	timeline_semaphores        : 1	
+validation_cache           : 0	variable_rate_shading      : 1	vulkan_11                  : 1	vulkan_12                  : 1	vulkan_13                  : 1	
+
+0:00:00.000 I/GFX: 
+anisotropic_avail   : 1	coarse_timer_avail  : 1	precise_timer_avail : 1	tess_avail          : 0	geom_avail          : 0	
+viewport_arr        : 1	layer_arr           : 1	native_reverse_z    : 1	has_reverse_z       : 1	
+persistent map      : 1	msaa shader write   : 1	shader float16      : 0	shader int16        : 0	
+rebar_avail         : 1	alpha_to_one_avail  : 1	msaa_storage_image_avail: 1	
+sparse bindings     : 0	sparse page size    : 0	
+max iso filtering   : 16
+max samples         : 3
+max texture size    : 32768 (hardware limit)
+max tex units       : 1048576
+
+This video card is bucketed as: Vulkan with async compute
+0:00:00.000 I/GFX/VK: Device Queues:
+Queue 0: Generic, Presentation, (VK_QUEUE_GRAPHICS_BIT|VK_QUEUE_COMPUTE_BIT|VK_QUEUE_TRANSFER_BIT|VK_QUEUE_SPARSE_BINDING_BIT)
+Queue 1: Transfer, (VK_QUEUE_TRANSFER_BIT|VK_QUEUE_SPARSE_BINDING_BIT)
+Queue 2: Async Compute, (VK_QUEUE_COMPUTE_BIT|VK_QUEUE_TRANSFER_BIT|VK_QUEUE_SPARSE_BINDING_BIT)
+Queue 3: (VK_QUEUE_TRANSFER_BIT|VK_QUEUE_SPARSE_BINDING_BIT|VK_QUEUE_VIDEO_DECODE_BIT_KHR)
+Queue 4: (VK_QUEUE_TRANSFER_BIT|VK_QUEUE_SPARSE_BINDING_BIT|VK_QUEUE_VIDEO_ENCODE_BIT_KHR)
+Queue 5: (VK_QUEUE_TRANSFER_BIT|VK_QUEUE_SPARSE_BINDING_BIT|VK_QUEUE_OPTICAL_FLOW_BIT_NV)
+0:00:00.000 I/GFX/VK: Heap info (2 heaps)
+	Heap 0 - Flags: VK_MEMORY_HEAP_DEVICE_LOCAL_BIT, size: 23.57 gb
+	Heap 1 - Flags: VkMemoryHeapFlags(0), size: 47.88 gb
+Memory type info (5 types)
+	Heap: 1, flags: VkMemoryPropertyFlags(0)
+	Heap: 0, flags: VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	Heap: 1, flags: VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	Heap: 1, flags: VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_CACHED_BIT
+	Heap: 0, flags: VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+0:00:00.000 I/GFX/VK: 
+Discovered Vulkan devices, in order of preference:
+	 (0) NVIDIA GeForce RTX 4090
+		Vulkan: 1.4.341, driver: 0.0.0
+		LUID: af9f54310000
+		Bridge distance: 0
+		Zink profile: VP_ZINK_gl46_baseline
+		This device is usable
+
+0:00:00.000 I/GFX/Bridge: OpenGL bridge device:
+	 NVIDIA GeForce RTX 4090/PCIe/SSE2
+		OpenGL: 4.6.0 NVIDIA 610.88
+		LUID: af9f54310000
+
+0:00:00.000 I/GFX: Diagnostics         : memory	
+Device memory       : 24505221120
+Host memory         : 81460301004
+
+
+0:00:00.000 I/GFX/bridge: 
+OpenGL bridge device:
+OpenGL Vendor       : NVIDIA Corporation
+OpenGL Render       : NVIDIA GeForce RTX 4090/PCIe/SSE2 (af9f54310000)
+OpenGL Version      : 4.6.0 NVIDIA 610.88 (460/0)
+OpenGL Extensions   : GL_AMD_multi_draw_indirect GL_AMD_seamless_cubemap_per_texture GL_AMD_vertex_shader_viewport_index GL_AMD_vertex_shader_layer GL_ARB_arrays_of_arrays GL_ARB_base_instance GL_ARB_bindless_texture GL_ARB_blend_func_extended GL_ARB_buffer_storage GL_ARB_clear_buffer_object GL_ARB_clear_texture GL_ARB_clip_control GL_ARB_color_buffer_float GL_ARB_compatibility GL_ARB_compressed_texture_pixel_storage GL_ARB_conservative_depth GL_ARB_compute_shader GL_ARB_compute_variable_group_size GL_ARB_conditional_render_inverted GL_ARB_copy_buffer GL_ARB_copy_image GL_ARB_cull_distance GL_ARB_debug_output GL_ARB_depth_buffer_float GL_ARB_depth_clamp GL_ARB_depth_texture GL_ARB_derivative_control GL_ARB_direct_state_access GL_ARB_draw_buffers GL_ARB_draw_buffers_blend GL_ARB_draw_indirect GL_ARB_draw_elements_base_vertex GL_ARB_draw_instanced GL_ARB_enhanced_layouts GL_ARB_ES2_compatibility GL_ARB_ES3_compatibility GL_ARB_ES3_1_compatibility GL_ARB_ES3_2_compatibility GL_ARB_explicit_attrib_location GL_ARB_explicit_uniform_location GL_ARB_fragment_coord_conventions GL_ARB_fragment_layer_viewport GL_ARB_fragment_program GL_ARB_fragment_program_shadow GL_ARB_fragment_shader GL_ARB_fragment_shader_interlock GL_ARB_framebuffer_no_attachments GL_ARB_framebuffer_object GL_ARB_framebuffer_sRGB GL_ARB_geometry_shader4 GL_ARB_get_program_binary GL_ARB_get_texture_sub_image GL_ARB_gl_spirv GL_ARB_gpu_shader5 GL_ARB_gpu_shader_fp64 GL_ARB_gpu_shader_int64 GL_ARB_half_float_pixel GL_ARB_half_float_vertex GL_ARB_imaging GL_ARB_indirect_parameters GL_ARB_instanced_arrays GL_ARB_internalformat_query GL_ARB_internalformat_query2 GL_ARB_invalidate_subdata GL_ARB_map_buffer_alignment GL_ARB_map_buffer_range GL_ARB_multi_bind GL_ARB_multi_draw_indirect GL_ARB_multisample GL_ARB_multitexture GL_ARB_occlusion_query GL_ARB_occlusion_query2 GL_ARB_parallel_shader_compile GL_ARB_pipeline_statistics_query GL_ARB_pixel_buffer_object GL_ARB_point_parameters GL_ARB_point_sprite GL_ARB_polygon_offset_clamp GL_ARB_post_depth_coverage GL_ARB_program_interface_query GL_ARB_provoking_vertex GL_ARB_query_buffer_object GL_ARB_robust_buffer_access_behavior GL_ARB_robustness GL_ARB_sample_locations GL_ARB_sample_shading GL_ARB_sampler_objects GL_ARB_seamless_cube_map GL_ARB_seamless_cubemap_per_texture GL_ARB_separate_shader_objects GL_ARB_shader_atomic_counter_ops GL_ARB_shader_atomic_counters GL_ARB_shader_ballot GL_ARB_shader_bit_encoding GL_ARB_shader_clock GL_EXT_shader_realtime_clock GL_ARB_shader_draw_parameters GL_ARB_shader_group_vote GL_ARB_shader_image_load_store GL_ARB_shader_image_size GL_ARB_shader_objects GL_ARB_shader_precision GL_ARB_shader_storage_buffer_object GL_ARB_shader_subroutine GL_ARB_shader_texture_image_samples GL_ARB_shader_texture_lod GL_ARB_shading_language_100 GL_ARB_shader_viewport_layer_array GL_ARB_shading_language_420pack GL_ARB_shading_language_include GL_ARB_shading_language_packing GL_ARB_shadow GL_ARB_sparse_buffer GL_ARB_sparse_texture GL_ARB_sparse_texture2 GL_ARB_sparse_texture_clamp GL_ARB_spirv_extensions GL_ARB_stencil_texturing GL_ARB_sync GL_ARB_tessellation_shader GL_ARB_texture_barrier GL_ARB_texture_border_clamp GL_ARB_texture_buffer_object GL_ARB_texture_buffer_object_rgb32 GL_ARB_texture_buffer_range GL_ARB_texture_compression GL_ARB_texture_compression_bptc GL_ARB_texture_compression_rgtc GL_ARB_texture_cube_map GL_ARB_texture_cube_map_array GL_ARB_texture_env_add GL_ARB_texture_env_combine GL_ARB_texture_env_crossbar GL_ARB_texture_env_dot3 GL_ARB_texture_filter_anisotropic GL_ARB_texture_filter_minmax GL_ARB_texture_float GL_ARB_texture_gather GL_ARB_texture_mirror_clamp_to_edge GL_ARB_texture_mirrored_repeat GL_ARB_texture_multisample GL_ARB_texture_non_power_of_two GL_ARB_texture_query_levels GL_ARB_texture_query_lod GL_ARB_texture_rectangle GL_ARB_texture_rg GL_ARB_texture_rgb10_a2ui GL_ARB_texture_stencil8 GL_ARB_texture_storage GL_ARB_texture_storage_multisample GL_ARB_texture_swizzle GL_ARB_texture_view GL_ARB_timer_query GL_ARB_transform_feedback2 GL_ARB_transform_feedback3 GL_ARB_transform_feedback_instanced GL_ARB_transform_feedback_overflow_query GL_ARB_transpose_matrix GL_ARB_uniform_buffer_object GL_ARB_vertex_array_bgra GL_ARB_vertex_array_object GL_ARB_vertex_attrib_64bit GL_ARB_vertex_attrib_binding GL_ARB_vertex_buffer_object GL_ARB_vertex_program GL_ARB_vertex_shader GL_ARB_vertex_type_10f_11f_11f_rev GL_ARB_vertex_type_2_10_10_10_rev GL_ARB_viewport_array GL_ARB_window_pos GL_ATI_draw_buffers GL_ATI_texture_float GL_ATI_texture_mirror_once GL_S3_s3tc GL_EXT_texture_env_add GL_EXT_abgr GL_EXT_bgra GL_EXT_bindable_uniform GL_EXT_blend_color GL_EXT_blend_equation_separate GL_EXT_blend_func_separate GL_EXT_blend_minmax GL_EXT_blend_subtract GL_EXT_compiled_vertex_array GL_EXT_Cg_shader GL_EXT_depth_bounds_test GL_EXT_direct_state_access GL_EXT_draw_buffers2 GL_EXT_draw_instanced GL_EXT_draw_range_elements GL_EXT_fog_coord GL_EXT_framebuffer_blit GL_EXT_framebuffer_multisample GL_EXTX_framebuffer_mixed_formats GL_EXT_framebuffer_multisample_blit_scaled GL_EXT_framebuffer_object GL_EXT_framebuffer_sRGB GL_EXT_geometry_shader4 GL_EXT_gpu_program_parameters GL_EXT_gpu_shader4 GL_EXT_multi_draw_arrays GL_EXT_multiview_texture_multisample GL_EXT_multiview_timer_query GL_EXT_packed_depth_stencil GL_EXT_packed_float GL_EXT_packed_pixels GL_EXT_pixel_buffer_object GL_EXT_point_parameters GL_EXT_polygon_offset_clamp GL_EXT_post_depth_coverage GL_EXT_provoking_vertex GL_EXT_raster_multisample GL_EXT_rescale_normal GL_EXT_secondary_color GL_EXT_separate_shader_objects GL_EXT_separate_specular_color GL_EXT_shader_image_load_formatted GL_EXT_shader_image_load_store GL_EXT_shader_integer_mix GL_EXT_shadow_funcs GL_EXT_sparse_texture2 GL_EXT_stencil_two_side GL_EXT_stencil_wrap GL_EXT_texture3D GL_EXT_texture_array GL_EXT_texture_buffer_object GL_EXT_texture_compression_dxt1 GL_EXT_texture_compression_latc GL_EXT_texture_compression_rgtc GL_EXT_texture_compression_s3tc GL_EXT_texture_cube_map GL_EXT_texture_edge_clamp GL_EXT_texture_env_combine GL_EXT_texture_env_dot3 GL_EXT_texture_filter_anisotropic GL_EXT_texture_filter_minmax GL_EXT_texture_integer GL_EXT_texture_lod GL_EXT_texture_lod_bias GL_EXT_texture_mirror_clamp GL_EXT_texture_object GL_EXT_texture_shadow_lod GL_EXT_texture_shared_exponent GL_EXT_texture_sRGB GL_EXT_texture_sRGB_R8 GL_EXT_texture_sRGB_decode GL_EXT_texture_storage GL_EXT_texture_swizzle GL_EXT_timer_query GL_EXT_transform_feedback2 GL_EXT_vertex_array GL_EXT_vertex_array_bgra GL_EXT_vertex_attrib_64bit GL_EXT_window_rectangles GL_EXT_import_sync_object GL_IBM_rasterpos_clip GL_IBM_texture_mirrored_repeat GL_KHR_context_flush_control GL_KHR_debug GL_EXT_memory_object GL_EXT_memory_object_win32 GL_NV_memory_object_sparse GL_EXT_win32_keyed_mutex GL_KHR_parallel_shader_compile GL_KHR_no_error GL_KHR_robust_buffer_access_behavior GL_KHR_robustness GL_EXT_semaphore GL_EXT_semaphore_win32 GL_NV_timeline_semaphore GL_KHR_shader_subgroup GL_KTX_buffer_region GL_NV_alpha_to_coverage_dither_control GL_NV_bindless_multi_draw_indirect GL_NV_bindless_multi_draw_indirect_count GL_NV_bindless_texture GL_NV_blend_equation_advanced GL_NV_blend_equation_advanced_coherent GL_NVX_blend_equation_advanced_multi_draw_buffers GL_NV_blend_minmax_factor GL_NV_blend_square GL_NV_clip_space_w_scaling GL_NV_command_list GL_NV_compute_program5 GL_NV_compute_shader_derivatives GL_NV_conditional_render GL_NV_conservative_raster GL_NV_conservative_raster_dilate GL_NV_conservative_raster_pre_snap GL_NV_conservative_raster_pre_snap_triangles GL_NV_conservative_raster_underestimation GL_NV_copy_depth_to_color GL_NV_copy_image GL_NV_depth_buffer_float GL_NV_depth_clamp GL_NV_draw_texture GL_NV_draw_vulkan_image GL_NV_ES1_1_compatibility GL_NV_ES3_1_compatibility GL_NV_explicit_multisample GL_NV_feature_query GL_NV_fence GL_NV_fill_rectangle GL_NV_float_buffer GL_NV_fog_distance GL_NV_fragment_coverage_to_color GL_NV_fr
+CPU count        : 28
+0:00:00.000 I/GFX/VK: Surface formats for surface:
+0:00:00.000 I/GFX/VK: 	VK_FORMAT_B8G8R8A8_UNORM
+0:00:00.000 I/GFX/VK: 	VK_FORMAT_B8G8R8A8_SRGB
+0:00:00.000 I/GFX/VK: 	VK_FORMAT_R8G8B8A8_UNORM
+0:00:00.000 I/GFX/VK: 	VK_FORMAT_R8G8B8A8_SRGB
+0:00:00.000 I/GFX/VK: 	VK_FORMAT_R16G16B16A16_SFLOAT
+0:00:00.000 I/GFX/VK: 	VK_FORMAT_A2B10G10R10_UNORM_PACK32
+0:00:00.000 I/GFX/VK: 	VK_FORMAT_A2B10G10R10_UNORM_PACK32
+0:00:00.000 I/GFX/VK: Picked VK_FORMAT_B8G8R8A8_SRGB as the common window surface format
+0:00:00.000 I/GFX/VK: Surface 000001A015469770:
+0:00:00.000 I/GFX/VK: 	minImageCount 2:
+0:00:00.000 I/GFX/VK: 	maxImageCount 8:
+0:00:00.000 I/GFX/VK: 	supportedUsageFlags 9f:
+0:00:00.000 I/GFX/VK: 	supportedTransforms: VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+0:00:00.000 I/GFX/VK: 	currentTransform: VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+0:00:00.000 I/GFX/VK: 	supported modes:
+0:00:00.000 I/GFX/VK: 		VK_PRESENT_MODE_MAILBOX_KHR:
+0:00:00.000 I/GFX/VK: 		VK_PRESENT_MODE_IMMEDIATE_KHR:
+0:00:00.000 I/GFX/VK: 		VK_PRESENT_MODE_FIFO_KHR:
+0:00:00.000 I/GFX/VK: 		VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+0:00:00.000 I/GFX/VK: 		VK_PRESENT_MODE_FIFO_LATEST_READY_KHR:
+0:00:00.000 I/GFX/VK: Disabling fullscreen exclusive mode for swapchain 0000019FCBF1B8D0
+0:00:00.000 I/GFX/VK: Created swapchain for 0000019FCBF1B8D0 with size { 1920x1080x2 }. Mode: VK_PRESENT_MODE_MAILBOX_KHR
+0:00:00.000 I/WMG: Monitor 0: { 0, 0, 1920, 1080 }
+0:00:00.000 I/WMG: Monitor 1: { 1920, 0, 1920, 1080 }
+0:00:00.000 I/WMG: Re-building fbos for window 000001A01526AC90 using pool 6
+0:00:00.000 I/FMOD: Initial Sample rate: 48000 speaker mode: 7 (8 speakers)
+0:00:00.000 E/SOUN: Couldn't find an output device named: ebab8e2f-2b19-4de8-9675-dc78c4961455
+0:00:00.000 I/GFX/VK: Disabling fullscreen exclusive mode for swapchain 0000019FCBF1B8D0
+0:00:00.000 I/GFX/VK: Destroying old swapchain for 0000019FCBF1B8D0
+0:00:00.000 I/GFX/VK: Created swapchain for 0000019FCBF1B8D0 with size { 1920x1080x3 }. Mode: VK_PRESENT_MODE_FIFO_KHR
+0:00:00.000 I/WMG: Re-building fbos for window 000001A01526AC90 using pool 6
+Fetching plugins for C:\X-Plane 12/Resources/plugins
+
+Loaded: C:\X-Plane 12/Resources/plugins/PluginAdmin/64/win.xpl (xpsdk.examples.pluginadmin).
+
+[NavigraphSimlink_64.xpl]: Dataref 'sim/weather/barometer_sealevel_inhg' has been replaced. Please use the new name.
+Loaded: C:\X-Plane 12/Resources/plugins/NavigraphSimlink_64.xpl (Navigraph Simlink for X-Plane).
+
+2026-09-01 17:18:19 BpB[xplane.c:1061]: [I] This is Better Pushback (MOD) -v1.13 libacfutils-8dce064 - for X-Plane 11/12
+2026-09-01 17:18:19 BpB[cfg.cpp:1435]: [I] current version v1.13 / new available version v1.13 / update available false
+Loaded: C:\X-Plane 12/Resources/plugins/BetterPushback/win_x64/BetterPushback.xpl (skiselkov.BetterPushback).
+
+[DESCENT PRO] AircraftStateReader initialized.
+0:00:00.000 E/PLG: Plugin Descent Pro/win_x64/Descent Pro.xpl: Sim is not yet started - Position is unset
+0:00:00.000 E/PLG: Plugin Descent Pro/win_x64/Descent Pro.xpl: Sim is not yet started - Position is unset
+0:00:00.000 E/PLG: Plugin Descent Pro/win_x64/Descent Pro.xpl: Sim is not yet started - Position is unset
+0:00:00.000 E/PLG: Plugin Descent Pro/win_x64/Descent Pro.xpl: Sim is not yet started - Time is unset
+0:00:00.000 E/PLG: Plugin Descent Pro/win_x64/Descent Pro.xpl: Sim is not yet started - Can't calculate time because location is unset.
+Loaded: C:\X-Plane 12/Resources/plugins/Descent Pro/win_x64/Descent Pro.xpl (com.darronveazey.descentpro).
+
+FlyWithLua: Your system path is C:\X-Plane 12/
+FlyWithLua: System Dir: C:\X-Plane 12/
+FlyWithLua: Plugin Dir: C:\X-Plane 12/Resources/plugins/FlyWithLua
+FlyWithLua: Plugin Scripts Dir: C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts
+FlyWithLua: Plugin Internals Dir: C:\X-Plane 12/Resources/plugins/FlyWithLua/Internals/
+FlyWithLua: Plugin Modules Dir: C:\X-Plane 12/Resources/plugins/FlyWithLua/Modules/
+FlyWithLua: Plugin Scripts Quarantine Dir: C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts (Quarantine)/
+FlyWithLua: Plugin Version: 2.8.13 build Aug 15 2025 10:22:52
+Loaded: C:\X-Plane 12/Resources/plugins/FlyWithLua/win_x64/FlyWithLua.xpl (CarstenLynker.FlyWithLua.NG+).
+
+Loaded: C:\X-Plane 12/Resources/plugins/SimBriefing/64/win.xpl (com.simbrief.plugin).
+
+WebFMC [info]: Plugin version 2.7.0 for X-Plane 12
+WebFMC [info]: WebFMC Pro starting up
+WebFMC [info]: Expecting backend binary in "C:\\X-Plane 12/Resources\\plugins\\WebFMC\\bin\\webfmc-win.exe"
+WebFMC [info]: Starting WebFMC backend
+WebFMC [info]: WebFMC started
+Loaded: C:\X-Plane 12/Resources/plugins/WebFMC/win_x64/WebFMC.xpl (com.greenarcstudios.webfmc).
+
+X-Aviation Activation (drm_system.cpp.36): Start X-Aviation Activation [v1.1.6:2026-03-26]
+X-Aviation Activation (drm_system.cpp.38): Started
+Loaded: C:\X-Plane 12/Resources/plugins/X-Aviation/win_x64/X-Aviation.xpl (lss.xa.activation).
+
+[XVatsim] Preflight route cache not active: Preflight route cache not found.
+[XVatsim] Display ready: XVatsim ready
+[XVatsim] Plugin loaded.
+Loaded: C:\X-Plane 12/Resources/plugins/XVatsim/win_x64/XVatsim.xpl (org.xvatsim.plugin).
+
+Loaded: C:\X-Plane 12/Resources/plugins/miniCOCKPIT_XP_V2.4.41/64/win.xpl (ATS.minicockpit.status).
+
+0:00:00.000 xPilot: xPilot version 3.0.2 initialized
+Loaded: C:\X-Plane 12/Resources/plugins/xPilot/win_x64/xPilot.xpl (org.vatsim.xpilot).
+
+[XJet] Init properties.
+[XJet] Plugin path: C:\X-Plane 12\Resources\plugins\xjet
+[XJet] Props path:C:\X-Plane 12\Resources\plugins\xjet\jvmplugin.properties
+[XJet] Init JVM.
+[XJet] Plugin path: C:\X-Plane 12\Resources\plugins\xjet
+[XJet] Lib path:C:\X-Plane 12\Resources\plugins\xjet\lib\common
+[XJet] Classpath:C:\X-Plane 12\Resources\plugins\xjet\lib\common/aws-java-sdk-cloudfront-1.11.492.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/aws-java-sdk-core-1.11.492.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/aws-java-sdk-s3-1.11.492.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/bcprov-jdk15on-1.54.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/commons-codec-1.10.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/commons-compress-1.12.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/commons-logging-1.1.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/drm-client-1.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/encryptor-1.2.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/encryptor-util-1.2.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/httpclient-4.5.5.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/httpcore-4.4.9.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/jackson-annotations-2.8.0.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/jackson-core-2.8.8.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/jackson-databind-2.8.8.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/javax.inject-1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/jna-5.12.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/jna-platform-5.12.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/joda-time-2.8.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/jxplm-api-1.7.0.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/log4j-api-2.20.0.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/log4j-core-2.20.0.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/lwjgl-3.3.3-natives-linux.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/lwjgl-3.3.3-natives-macos-arm64.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/lwjgl-3.3.3-natives-macos.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/lwjgl-3.3.3-natives-windows.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/lwjgl-3.3.3.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/lwjgl-jemalloc-3.3.3.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/lwjgl-opengl-3.3.3-natives-linux.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/lwjgl-opengl-3.3.3-natives-macos-arm64.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/lwjgl-opengl-3.3.3-natives-macos.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/lwjgl-opengl-3.3.3-natives-windows.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/lwjgl-opengl-3.3.3.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/oshi-core-6.2.2.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/scala-library-2.11.6.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/slf4j-api-1.7.36.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truecommons-cio-2.5.0.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truecommons-io-2.5.0.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truecommons-key-spec-2.5.0.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truecommons-logging-2.5.0.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truecommons-services-2.5.0.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truecommons-shed-2.5.0.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truevfs-access-0.11.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truevfs-comp-zip-0.11.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truevfs-comp-zipdriver-0.11.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truevfs-driver-file-0.11.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truevfs-driver-jar-0.11.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truevfs-driver-zip-raes-0.11.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truevfs-kernel-impl-0.11.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/truevfs-kernel-spec-0.11.1.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/xjet-plugin-2.1.0.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\common/xjet-storage-cloudfront-2.1.0.jar;C:\X-Plane 12\Resources\plugins\xjet\lib\embedded/jxplm-xplane-1.7.0.jar
+[XJet] Natives path:-Djava.library.path=C:\X-Plane 12\Resources\plugins\xjet\lib/native
+[XJet] JAVA opts: -Djdk.lang.Process.launchMechanism=FORK
+[XJet] JVM path:Resources/plugins/xjet/jre\bin\server\jvm.dll
+[XJet] Set dll dir: Resources/plugins/xjet/jre\bin
+[XJet] Set dll dir success.
+[XJet] Init JVM succeeded.
+[XJet] In postInitJVM().
+[XJet] Plugin class: 'com.airfoillabs.xjet.GlobalPlugin'
+[XJet] In initPlugin().
+[XJet] Classloader created.
+[XJet] Loading plugin class.
+[XJet] Looking up constructor.
+[XJet] Constructor lookup success.
+[XJet] Plugin object created!
+[XJet] Globalrefs created.
+[XJet] In startPlugin().
+[XJet] 2026-09-01 17:18:21,130 [INFO] GlobalPlugin – XJet plugin starting.
+[XJet] 2026-09-01 17:18:21,139 [INFO] GlobalPlugin – XPlane home: C:\X-Plane 12
+[XJet] 2026-09-01 17:18:21,152 [INFO] GlobalPlugin – Product Manager automatic checking enabled.
+[XJet] 2026-09-01 17:18:21,153 [INFO] GlobalPlugin – Checking for updates.
+[XJet] 2026-09-01 17:18:21,154 [INFO] ProductManager – Updates checking started.
+[XJet] 2026-09-01 17:18:21,155 [INFO] GlobalPlugin – Product Manager integration enabled.
+[XJet] 2026-09-01 17:18:25,126 [INFO] GlobalPlugin – Listing installed products:
+[XJet] 2026-09-01 17:18:25,126 [INFO] GlobalPlugin – com.airfoillabs.xjet.plugin:2.1.0 C:\X-Plane 12\Resources\plugins\xjet
+[XJet] 2026-09-01 17:18:25,126 [INFO] GlobalPlugin – com.airfoillabs.ka350xp12:2.0.3 C:\X-Plane 12\Aircraft\Airfoillabs\King Air 350 XP12
+[XJet] 2026-09-01 17:18:25,126 [INFO] GlobalPlugin – com.airfoillabs.c172ng-analog:1.1.0 C:\X-Plane 12\Aircraft\Airfoillabs\C172 NG ANALOG
+[XJet] Plugin started.
+Loaded: C:\X-Plane 12/Resources/plugins/xjet/64/win.xpl (com.airfoillabs.xjet).
+
+2026-09-01 17:18:25 BpB[cfg.cpp:1435]: [I] current version v1.13 / new available version v1.13 / update available false
+2026-09-01 17:18:25 BpB[ground_ops_ui.cpp:363]: [I] Ground Ops state transition 1: stage Tug, controller off, prep airport_data, action required, caption none
+2026-09-01 17:18:25 BpB[ground_ops_ui.cpp:1362]: [I] Ground Ops UI initialized hidden (zero recurring callbacks scheduled)
+SimBriefing: Initializing ImGui UI
+ProcedureParser: X-Plane path: C:\X-Plane 12\
+SimBriefing: ImGui UI initialized successfully
+WebFMC [debug]: Plugin enabled
+X-Aviation Activation (drm_system.cpp.50): Enable
+X-Aviation Activation (imgui4xp.cpp.114): Enable UI
+X-Aviation Activation (imgui4xp.cpp.116): Window configured
+X-Aviation Activation (imgui4xp.cpp.119): Create window
+X-Aviation Activation (imgui4xp.cpp.91): Do window coord calculation
+X-Aviation Activation (imgui4xp.cpp.56): Monitor 0: L0 T1080 R1920 B0
+X-Aviation Activation (imgui4xp.cpp.57): W: 1920, H: 1080
+X-Aviation Activation (imgui4xp.cpp.76): Window show on monitor ID 0
+X-Aviation Activation (imgui4xp.cpp.78): PX L 0, T 1080
+X-Aviation Activation (imgui4xp.cpp.93): Window coords created
+X-Aviation Activation (imgui4xp.cpp.122): Window created
+X-Aviation Activation (drm_system.cpp.54): UI Complete
+X-Aviation Activation (drm_system.cpp.66): Plugin info gathered
+X-Aviation Activation (drm_system.cpp.71): Plugin XPL Path: C:\X-Plane 12/Resources/plugins/X-Aviation/win_x64/X-Aviation.xpl
+X-Aviation Activation (drm_system.cpp.72): Plugin Base Path: C:\X-Plane 12/Resources/plugins/X-Aviation
+X-Aviation Activation (drm_system.cpp.79): Commands Registered
+X-Aviation Activation (url_builder.cpp.54): Transaction ID: hxwo0c16n1
+X-Aviation Activation (drm_menubar.cpp.16): Create Menubar
+X-Aviation Activation (xp_menubar.cpp.24): Creating X-Plane Menubar [X-Aviation]
+X-Aviation Activation (xp_menubar.cpp.38): Menubar created
+X-Aviation Activation (xp_menubar.cpp.57): Append item to menubar [Refresh License]
+X-Aviation Activation (xp_menubar.cpp.60): Appended
+X-Aviation Activation (xp_menubar.cpp.57): Append item to menubar [Show User Interface]
+X-Aviation Activation (xp_menubar.cpp.60): Appended
+X-Aviation Activation (drm_system.cpp.86): Enabled
+[XVatsim] Preflight route cache not active: Preflight route cache not found.
+[XVatsim] Plugin enabled.
+miniCOCKPIT: XPENABLE
+miniCOCKPIT: Version 2.4.41
+0:00:00.000 xPilot: xPilot plugin enabled
+0:00:00.000 E/PLG: Plugin Airfoillabs XJet: Sim is not yet started - Position is unset
+0:00:00.000 E/PLG: Plugin Airfoillabs XJet: Sim is not yet started - Position is unset
+0:00:00.000 E/PLG: Plugin Airfoillabs XJet: Sim is not yet started - Position is unset
+[XJet] 2026-09-01 17:18:27,412 [INFO] ProductManager – Updates checking finished. Updates available: false
+[XJet] 2026-09-01 17:18:27,435 [INFO] GlobalPlugin – XJet plugin enabled.
+I found the following scenery packages (prioritized in this order):
+  0 Custom Scenery/LFPG/
+  1 Custom Scenery/X-Plane Airports - LSEZ Zermatt Heliport/
+  2 Custom Scenery/X-Plane Airports - EGPR Barra/
+  3 Custom Scenery/TNCA/
+  4 Custom Scenery/X-Plane Airports - TNCS Juancho E Yrausquin/
+  5 Custom Scenery/CYHM/
+  6 Custom Scenery/CYHU/
+  7 Custom Scenery/CYYB/
+  8 Custom Scenery/CYYZ/
+  9 Custom Scenery/CYZF/
+ 10 Custom Scenery/MMGL/
+ 11 Custom Scenery/MMUN/
+ 12 Custom Scenery/X-Plane Airports - TFFJ St Barthelemy/
+ 13 Custom Scenery/Nimbus Simulation - KPHX - Phoenix/
+ 14 Custom Scenery/KMHR/
+ 15 Custom Scenery/KSAN/
+ 16 Custom Scenery/KCOS/
+ 17 Custom Scenery/KDEN - Denver International Airport/
+ 18 Custom Scenery/Y KDEN Overlay/
+ 19 Custom Scenery/Z KDEN Mesh/
+ 20 Custom Scenery/KDJT/
+ 21 Custom Scenery/KPDK/
+ 22 Custom Scenery/KSUN/
+ 23 Custom Scenery/KJFK/
+ 24 Custom Scenery/X-Plane Airports - KJRB Downtown Manhattan Heliport/
+ 25 Custom Scenery/KFQD/
+ 26 Custom Scenery/KBNA/
+ 27 Custom Scenery/KGRK/
+ 28 Custom Scenery/SADF/
+ 29 Custom Scenery/ZBYC/
+ 30 Custom Scenery/Aerosoft - LFMN Nice Cote d Azur X/
+ 31 Custom Scenery/Aerosoft - LPFR Faro/
+ 32 Custom Scenery/X-Plane Airports - KBTV Burlington/
+ 33 Global Scenery/Global Airports/
+ 34 Custom Scenery/X-Plane Landmarks - Berlin and Frankfurt/
+ 35 Custom Scenery/X-Plane Landmarks - Budapest/
+ 36 Custom Scenery/X-Plane Landmarks - Chicago/
+ 37 Custom Scenery/X-Plane Landmarks - Dubai/
+ 38 Custom Scenery/X-Plane Landmarks - Las Vegas/
+ 39 Custom Scenery/X-Plane Landmarks - London/
+ 40 Custom Scenery/X-Plane Landmarks - Los Angeles/
+ 41 Custom Scenery/X-Plane Landmarks - New York/
+ 42 Custom Scenery/X-Plane Landmarks - Paris/
+ 43 Custom Scenery/X-Plane Landmarks - Portland/
+ 44 Custom Scenery/X-Plane Landmarks - Rio De Janeiro/
+ 45 Custom Scenery/X-Plane Landmarks - Saint Louis/
+ 46 Custom Scenery/X-Plane Landmarks - Salzburg/
+ 47 Custom Scenery/X-Plane Landmarks - San Francisco/
+ 48 Custom Scenery/X-Plane Landmarks - Sydney/
+ 49 Custom Scenery/X-Plane Landmarks - Washington DC/
+ 50 Custom Scenery/EXT_World_Lights/
+ 51 Custom Scenery/simHeaven_X-World_Africa-1-vfr/
+ 52 Custom Scenery/simHeaven_X-World_Africa-2-regions/
+ 53 Custom Scenery/simHeaven_X-World_Africa-3-details/ (disabled)
+ 54 Custom Scenery/simHeaven_X-World_Africa-5-footprints/
+ 55 Custom Scenery/simHeaven_X-World_Africa-6-scenery/
+ 56 Custom Scenery/simHeaven_X-World_Africa-7-forests/
+ 57 Custom Scenery/simHeaven_X-World_America-1-vfr/
+ 58 Custom Scenery/simHeaven_X-World_America-2-regions/
+ 59 Custom Scenery/simHeaven_X-World_America-3-details/ (disabled)
+ 60 Custom Scenery/simHeaven_X-World_America-5-footprints/
+ 61 Custom Scenery/simHeaven_X-World_America-6-scenery/
+ 62 Custom Scenery/simHeaven_X-World_America-7-forests/
+ 63 Custom Scenery/simHeaven_X-World_Asia-1-vfr/
+ 64 Custom Scenery/simHeaven_X-World_Asia-2-regions/
+ 65 Custom Scenery/simHeaven_X-World_Asia-3-details/ (disabled)
+ 66 Custom Scenery/simHeaven_X-World_Asia-5-footprints/
+ 67 Custom Scenery/simHeaven_X-World_Asia-6-scenery/
+ 68 Custom Scenery/simHeaven_X-World_Asia-7-forests/
+ 69 Custom Scenery/simHeaven_X-World_Europe-1-vfr/
+ 70 Custom Scenery/simHeaven_X-World_Europe-2-regions/
+ 71 Custom Scenery/simHeaven_X-World_Europe-3-details/ (disabled)
+ 72 Custom Scenery/simHeaven_X-World_Europe-5-footprints/
+ 73 Custom Scenery/simHeaven_X-World_Europe-6-scenery/
+ 74 Custom Scenery/simHeaven_X-World_Europe-7-forests/
+ 75 Custom Scenery/simHeaven_X-World_Vegetation_Library/
+ 76 Custom Scenery/X-Codr Designs Library/
+ 77 Custom Scenery/yOrtho4XP_Overlays/
+ 78 Custom Scenery/zOrtho4XP_+51-001/
+ 79 Custom Scenery/zOrtho4XP_+51-002/
+ 80 Custom Scenery/zOrtho4XP_+51-003/
+ 81 Custom Scenery/zOrtho4XP_+51-004/
+ 82 Custom Scenery/zOrtho4XP_+52-001/
+ 83 Custom Scenery/zOrtho4XP_+52-002/
+ 84 Custom Scenery/zOrtho4XP_+52-003/
+ 85 Custom Scenery/zOrtho4XP_+52-004/
+ 86 Custom Scenery/zOrtho4XP_+16-089/
+ 87 Custom Scenery/zOrtho4XP_+17-089/
+ 88 Custom Scenery/zOrtho4XP_+42-081/
+ 89 Custom Scenery/zOrtho4XP_+42-082/
+ 90 Custom Scenery/zOrtho4XP_+42-083/
+ 91 Custom Scenery/zOrtho4XP_+43-080/
+ 92 Custom Scenery/zOrtho4XP_+43-081/
+ 93 Custom Scenery/zOrtho4XP_+43-082/
+ 94 Custom Scenery/zOrtho4XP_+45-083/
+ 95 Custom Scenery/zOrtho4XP_+48-124/
+ 96 Custom Scenery/zOrtho4XP_+48-125/
+ 97 Custom Scenery/zOrtho4XP_+18-069/
+ 98 Custom Scenery/zOrtho4XP_+19-070/
+ 99 Custom Scenery/zOrtho4XP_+19-071/
+100 Custom Scenery/zOrtho4XP_+19-072/
+101 Custom Scenery/zOrtho4XP_+13-089/
+102 Custom Scenery/zOrtho4XP_+13-090/
+103 Custom Scenery/zOrtho4XP_+13-091/
+104 Custom Scenery/zOrtho4XP_+14-090/
+105 Custom Scenery/zOrtho4XP_+14-091/
+106 Custom Scenery/zOrtho4XP_+14-092/
+107 Custom Scenery/zOrtho4XP_+15-089/
+108 Custom Scenery/zOrtho4XP_+15-090/
+109 Custom Scenery/zOrtho4XP_+15-091/
+110 Custom Scenery/zOrtho4XP_+15-092/
+111 Custom Scenery/zOrtho4XP_+16-090/
+112 Custom Scenery/zOrtho4XP_+16-091/
+113 Custom Scenery/zOrtho4XP_+17-090/
+114 Custom Scenery/zOrtho4XP_+17-091/
+115 Custom Scenery/zOrtho4XP_+14-089/
+116 Custom Scenery/zOrtho4XP_+14-093/
+117 Custom Scenery/zOrtho4XP_+15-093/
+118 Custom Scenery/zOrtho4XP_+15-094/
+119 Custom Scenery/zOrtho4XP_+16-092/
+120 Custom Scenery/zOrtho4XP_+16-093/
+121 Custom Scenery/zOrtho4XP_+16-094/
+122 Custom Scenery/zOrtho4XP_+16-095/
+123 Custom Scenery/zOrtho4XP_+16-096/
+124 Custom Scenery/zOrtho4XP_+16-097/
+125 Custom Scenery/zOrtho4XP_+16-098/
+126 Custom Scenery/zOrtho4XP_+16-099/
+127 Custom Scenery/zOrtho4XP_+16-100/
+128 Custom Scenery/zOrtho4XP_+17-092/
+129 Custom Scenery/zOrtho4XP_+17-093/
+130 Custom Scenery/zOrtho4XP_+17-094/
+131 Custom Scenery/zOrtho4XP_+17-095/
+132 Custom Scenery/zOrtho4XP_+17-096/
+133 Custom Scenery/zOrtho4XP_+17-097/
+134 Custom Scenery/zOrtho4XP_+17-098/
+135 Custom Scenery/zOrtho4XP_+17-099/
+136 Custom Scenery/zOrtho4XP_+17-100/
+137 Custom Scenery/zOrtho4XP_+17-101/
+138 Custom Scenery/zOrtho4XP_+17-102/
+139 Custom Scenery/zOrtho4XP_+18-088/
+140 Custom Scenery/zOrtho4XP_+18-089/
+141 Custom Scenery/zOrtho4XP_+18-090/
+142 Custom Scenery/zOrtho4XP_+18-091/
+143 Custom Scenery/zOrtho4XP_+18-092/
+144 Custom Scenery/zOrtho4XP_+18-093/
+145 Custom Scenery/zOrtho4XP_+18-094/
+146 Custom Scenery/zOrtho4XP_+18-095/
+147 Custom Scenery/zOrtho4XP_+18-096/
+148 Custom Scenery/zOrtho4XP_+18-097/
+149 Custom Scenery/zOrtho4XP_+18-098/
+150 Custom Scenery/zOrtho4XP_+18-099/
+151 Custom Scenery/zOrtho4XP_+18-100/
+152 Custom Scenery/zOrtho4XP_+18-101/
+153 Custom Scenery/zOrtho4XP_+18-102/
+154 Custom Scenery/zOrtho4XP_+18-103/
+155 Custom Scenery/zOrtho4XP_+18-104/
+156 Custom Scenery/zOrtho4XP_+19-088/
+157 Custom Scenery/zOrtho4XP_+19-089/
+158 Custom Scenery/zOrtho4XP_+19-090/
+159 Custom Scenery/zOrtho4XP_+19-091/
+160 Custom Scenery/zOrtho4XP_+19-097/
+161 Custom Scenery/zOrtho4XP_+19-098/
+162 Custom Scenery/zOrtho4XP_+19-099/
+163 Custom Scenery/zOrtho4XP_+19-100/
+164 Custom Scenery/zOrtho4XP_+19-101/
+165 Custom Scenery/zOrtho4XP_+19-102/
+166 Custom Scenery/zOrtho4XP_+19-103/
+167 Custom Scenery/zOrtho4XP_+19-104/
+168 Custom Scenery/zOrtho4XP_+19-105/
+169 Custom Scenery/zOrtho4XP_+19-106/
+170 Custom Scenery/zOrtho4XP_+20-087/
+171 Custom Scenery/zOrtho4XP_+20-088/
+172 Custom Scenery/zOrtho4XP_+20-089/
+173 Custom Scenery/zOrtho4XP_+20-090/
+174 Custom Scenery/zOrtho4XP_+20-091/
+175 Custom Scenery/zOrtho4XP_+20-097/
+176 Custom Scenery/zOrtho4XP_+20-098/
+177 Custom Scenery/zOrtho4XP_+20-099/
+178 Custom Scenery/zOrtho4XP_+20-100/
+179 Custom Scenery/zOrtho4XP_+20-101/
+180 Custom Scenery/zOrtho4XP_+20-102/
+181 Custom Scenery/zOrtho4XP_+20-103/
+182 Custom Scenery/zOrtho4XP_+20-104/
+183 Custom Scenery/zOrtho4XP_+20-105/
+184 Custom Scenery/zOrtho4XP_+20-106/
+185 Custom Scenery/zOrtho4XP_+21-087/
+186 Custom Scenery/zOrtho4XP_+21-088/
+187 Custom Scenery/zOrtho4XP_+21-089/
+188 Custom Scenery/zOrtho4XP_+21-090/
+189 Custom Scenery/zOrtho4XP_+21-091/
+190 Custom Scenery/zOrtho4XP_+21-098/
+191 Custom Scenery/zOrtho4XP_+21-099/
+192 Custom Scenery/zOrtho4XP_+21-100/
+193 Custom Scenery/zOrtho4XP_+21-101/
+194 Custom Scenery/zOrtho4XP_+21-102/
+195 Custom Scenery/zOrtho4XP_+21-103/
+196 Custom Scenery/zOrtho4XP_+21-104/
+197 Custom Scenery/zOrtho4XP_+21-105/
+198 Custom Scenery/zOrtho4XP_+21-106/
+199 Custom Scenery/zOrtho4XP_+22-099/
+200 Custom Scenery/zOrtho4XP_+22-100/
+201 Custom Scenery/zOrtho4XP_+22-101/
+202 Custom Scenery/zOrtho4XP_+22-102/
+203 Custom Scenery/zOrtho4XP_+22-103/
+204 Custom Scenery/zOrtho4XP_+22-104/
+205 Custom Scenery/zOrtho4XP_+22-105/
+206 Custom Scenery/zOrtho4XP_+22-106/
+207 Custom Scenery/zOrtho4XP_+23-099/
+208 Custom Scenery/zOrtho4XP_+23-100/
+209 Custom Scenery/zOrtho4XP_+23-101/
+210 Custom Scenery/zOrtho4XP_+23-102/
+211 Custom Scenery/zOrtho4XP_+23-103/
+212 Custom Scenery/zOrtho4XP_+23-104/
+213 Custom Scenery/zOrtho4XP_+23-105/
+214 Custom Scenery/zOrtho4XP_+23-106/
+215 Custom Scenery/zOrtho4XP_+23-107/
+216 Custom Scenery/zOrtho4XP_+23-110/
+217 Custom Scenery/zOrtho4XP_+23-111/
+218 Custom Scenery/zOrtho4XP_+24-099/
+219 Custom Scenery/zOrtho4XP_+24-100/
+220 Custom Scenery/zOrtho4XP_+24-101/
+221 Custom Scenery/zOrtho4XP_+24-102/
+222 Custom Scenery/zOrtho4XP_+24-103/
+223 Custom Scenery/zOrtho4XP_+24-104/
+224 Custom Scenery/zOrtho4XP_+24-105/
+225 Custom Scenery/zOrtho4XP_+24-106/
+226 Custom Scenery/zOrtho4XP_+24-107/
+227 Custom Scenery/zOrtho4XP_+24-108/
+228 Custom Scenery/zOrtho4XP_+24-111/
+229 Custom Scenery/zOrtho4XP_+24-112/
+230 Custom Scenery/zOrtho4XP_+24-113/
+231 Custom Scenery/zOrtho4XP_+25-099/
+232 Custom Scenery/zOrtho4XP_+25-100/
+233 Custom Scenery/zOrtho4XP_+25-101/
+234 Custom Scenery/zOrtho4XP_+25-102/
+235 Custom Scenery/zOrtho4XP_+25-103/
+236 Custom Scenery/zOrtho4XP_+25-104/
+237 Custom Scenery/zOrtho4XP_+25-105/
+238 Custom Scenery/zOrtho4XP_+25-106/
+239 Custom Scenery/zOrtho4XP_+25-107/
+240 Custom Scenery/zOrtho4XP_+25-108/
+241 Custom Scenery/zOrtho4XP_+25-109/
+242 Custom Scenery/zOrtho4XP_+25-110/
+243 Custom Scenery/zOrtho4XP_+25-111/
+244 Custom Scenery/zOrtho4XP_+25-112/
+245 Custom Scenery/zOrtho4XP_+25-113/
+246 Custom Scenery/zOrtho4XP_+26-100/
+247 Custom Scenery/zOrtho4XP_+26-101/
+248 Custom Scenery/zOrtho4XP_+26-102/
+249 Custom Scenery/zOrtho4XP_+26-105/
+250 Custom Scenery/zOrtho4XP_+26-106/
+251 Custom Scenery/zOrtho4XP_+26-107/
+252 Custom Scenery/zOrtho4XP_+26-108/
+253 Custom Scenery/zOrtho4XP_+26-109/
+254 Custom Scenery/zOrtho4XP_+26-110/
+255 Custom Scenery/zOrtho4XP_+26-112/
+256 Custom Scenery/zOrtho4XP_+26-113/
+257 Custom Scenery/zOrtho4XP_+26-114/
+258 Custom Scenery/zOrtho4XP_+27-101/
+259 Custom Scenery/zOrtho4XP_+27-102/
+260 Custom Scenery/zOrtho4XP_+27-105/
+261 Custom Scenery/zOrtho4XP_+27-106/
+262 Custom Scenery/zOrtho4XP_+27-107/
+263 Custom Scenery/zOrtho4XP_+27-108/
+264 Custom Scenery/zOrtho4XP_+27-109/
+265 Custom Scenery/zOrtho4XP_+27-110/
+266 Custom Scenery/zOrtho4XP_+27-111/
+267 Custom Scenery/zOrtho4XP_+27-113/
+268 Custom Scenery/zOrtho4XP_+27-114/
+269 Custom Scenery/zOrtho4XP_+27-115/
+270 Custom Scenery/zOrtho4XP_+28-101/
+271 Custom Scenery/zOrtho4XP_+28-102/
+272 Custom Scenery/zOrtho4XP_+28-105/
+273 Custom Scenery/zOrtho4XP_+28-106/
+274 Custom Scenery/zOrtho4XP_+28-107/
+275 Custom Scenery/zOrtho4XP_+28-108/
+276 Custom Scenery/zOrtho4XP_+28-109/
+277 Custom Scenery/zOrtho4XP_+28-110/
+278 Custom Scenery/zOrtho4XP_+28-111/
+279 Custom Scenery/zOrtho4XP_+28-112/
+280 Custom Scenery/zOrtho4XP_+28-113/
+281 Custom Scenery/zOrtho4XP_+28-114/
+282 Custom Scenery/zOrtho4XP_+28-115/
+283 Custom Scenery/zOrtho4XP_+29-102/
+284 Custom Scenery/zOrtho4XP_+29-105/
+285 Custom Scenery/zOrtho4XP_+29-106/
+286 Custom Scenery/zOrtho4XP_+29-107/
+287 Custom Scenery/zOrtho4XP_+29-108/
+288 Custom Scenery/zOrtho4XP_+29-109/
+289 Custom Scenery/zOrtho4XP_+29-110/
+290 Custom Scenery/zOrtho4XP_+29-111/
+291 Custom Scenery/zOrtho4XP_+29-112/
+292 Custom Scenery/zOrtho4XP_+29-113/
+293 Custom Scenery/zOrtho4XP_+29-114/
+294 Custom Scenery/zOrtho4XP_+29-115/
+295 Custom Scenery/zOrtho4XP_+29-116/
+296 Custom Scenery/zOrtho4XP_+30-106/
+297 Custom Scenery/zOrtho4XP_+30-107/
+298 Custom Scenery/zOrtho4XP_+30-108/
+299 Custom Scenery/zOrtho4XP_+30-109/
+300 Custom Scenery/zOrtho4XP_+30-110/
+301 Custom Scenery/zOrtho4XP_+30-111/
+302 Custom Scenery/zOrtho4XP_+30-112/
+303 Custom Scenery/zOrtho4XP_+30-113/
+304 Custom Scenery/zOrtho4XP_+30-115/
+305 Custom Scenery/zOrtho4XP_+30-116/
+306 Custom Scenery/zOrtho4XP_+30-117/
+307 Custom Scenery/zOrtho4XP_+31-107/
+308 Custom Scenery/zOrtho4XP_+31-113/
+309 Custom Scenery/zOrtho4XP_+31-114/
+310 Custom Scenery/zOrtho4XP_+31-115/
+311 Custom Scenery/zOrtho4XP_+31-116/
+312 Custom Scenery/zOrtho4XP_+31-117/
+313 Custom Scenery/zOrtho4XP_+32-116/
+314 Custom Scenery/zOrtho4XP_+32-117/
+315 Custom Scenery/zOrtho4XP_+17-067/
+316 Custom Scenery/zOrtho4XP_+17-068/
+317 Custom Scenery/zOrtho4XP_+18-066/
+318 Custom Scenery/zOrtho4XP_+18-067/
+319 Custom Scenery/zOrtho4XP_+18-068/
+320 Custom Scenery/zOrtho4XP_+17-066/
+321 Custom Scenery/zOrtho4XP_+30-088/
+322 Custom Scenery/zOrtho4XP_+31-086/
+323 Custom Scenery/zOrtho4XP_+31-087/
+324 Custom Scenery/zOrtho4XP_+31-088/
+325 Custom Scenery/zOrtho4XP_+32-086/
+326 Custom Scenery/zOrtho4XP_+32-087/
+327 Custom Scenery/zOrtho4XP_+32-088/
+328 Custom Scenery/zOrtho4XP_+33-086/
+329 Custom Scenery/zOrtho4XP_+33-087/
+330 Custom Scenery/zOrtho4XP_+33-088/
+331 Custom Scenery/zOrtho4XP_+34-087/
+332 Custom Scenery/zOrtho4XP_+34-088/
+333 Custom Scenery/zOrtho4XP_+58-156/
+334 Custom Scenery/zOrtho4XP_+58-157/
+335 Custom Scenery/zOrtho4XP_+58-158/
+336 Custom Scenery/zOrtho4XP_+59-156/
+337 Custom Scenery/zOrtho4XP_+59-157/
+338 Custom Scenery/zOrtho4XP_+59-158/
+339 Custom Scenery/zOrtho4XP_+60-149/
+340 Custom Scenery/zOrtho4XP_+60-150/
+341 Custom Scenery/zOrtho4XP_+60-151/
+342 Custom Scenery/zOrtho4XP_+60-152/
+343 Custom Scenery/zOrtho4XP_+60-153/
+344 Custom Scenery/zOrtho4XP_+61-149/
+345 Custom Scenery/zOrtho4XP_+61-150/
+346 Custom Scenery/zOrtho4XP_+61-151/
+347 Custom Scenery/zOrtho4XP_+61-152/
+348 Custom Scenery/zOrtho4XP_+61-153/
+349 Custom Scenery/zOrtho4XP_+62-149/
+350 Custom Scenery/zOrtho4XP_+62-150/
+351 Custom Scenery/zOrtho4XP_+62-151/
+352 Custom Scenery/zOrtho4XP_+62-152/
+353 Custom Scenery/zOrtho4XP_+62-153/
+354 Custom Scenery/zOrtho4XP_+65-161/
+355 Custom Scenery/zOrtho4XP_+65-162/
+356 Custom Scenery/zOrtho4XP_+65-163/
+357 Custom Scenery/zOrtho4XP_+66-161/
+358 Custom Scenery/zOrtho4XP_+66-162/
+359 Custom Scenery/zOrtho4XP_+66-163/
+360 Custom Scenery/zOrtho4XP_+31-110/
+361 Custom Scenery/zOrtho4XP_+31-111/
+362 Custom Scenery/zOrtho4XP_+31-112/
+363 Custom Scenery/zOrtho4XP_+32-110/
+364 Custom Scenery/zOrtho4XP_+32-111/
+365 Custom Scenery/zOrtho4XP_+32-112/
+366 Custom Scenery/zOrtho4XP_+32-113/
+367 Custom Scenery/zOrtho4XP_+32-114/
+368 Custom Scenery/zOrtho4XP_+32-115/
+369 Custom Scenery/zOrtho4XP_+33-110/
+370 Custom Scenery/zOrtho4XP_+33-111/
+371 Custom Scenery/zOrtho4XP_+33-112/
+372 Custom Scenery/zOrtho4XP_+33-113/
+373 Custom Scenery/zOrtho4XP_+33-114/
+374 Custom Scenery/zOrtho4XP_+33-115/
+375 Custom Scenery/zOrtho4XP_+34-110/
+376 Custom Scenery/zOrtho4XP_+34-111/
+377 Custom Scenery/zOrtho4XP_+34-112/
+378 Custom Scenery/zOrtho4XP_+34-113/
+379 Custom Scenery/zOrtho4XP_+34-114/
+380 Custom Scenery/zOrtho4XP_+35-110/
+381 Custom Scenery/zOrtho4XP_+35-111/
+382 Custom Scenery/zOrtho4XP_+35-112/
+383 Custom Scenery/zOrtho4XP_+35-113/
+384 Custom Scenery/zOrtho4XP_+35-114/
+385 Custom Scenery/zOrtho4XP_+35-115/
+386 Custom Scenery/zOrtho4XP_+36-110/
+387 Custom Scenery/zOrtho4XP_+36-111/
+388 Custom Scenery/zOrtho4XP_+36-112/
+389 Custom Scenery/zOrtho4XP_+36-113/
+390 Custom Scenery/zOrtho4XP_+36-114/
+391 Custom Scenery/zOrtho4XP_+33-092/
+392 Custom Scenery/zOrtho4XP_+33-093/
+393 Custom Scenery/zOrtho4XP_+33-094/
+394 Custom Scenery/zOrtho4XP_+34-092/
+395 Custom Scenery/zOrtho4XP_+34-093/
+396 Custom Scenery/zOrtho4XP_+34-094/
+397 Custom Scenery/zOrtho4XP_+35-091/
+398 Custom Scenery/zOrtho4XP_+35-092/
+399 Custom Scenery/zOrtho4XP_+35-093/
+400 Custom Scenery/zOrtho4XP_+35-094/
+401 Custom Scenery/zOrtho4XP_+32-118/
+402 Custom Scenery/zOrtho4XP_+33-116/
+403 Custom Scenery/zOrtho4XP_+33-117/
+404 Custom Scenery/zOrtho4XP_+33-118/
+405 Custom Scenery/zOrtho4XP_+33-119/
+406 Custom Scenery/zOrtho4XP_+34-115/
+407 Custom Scenery/zOrtho4XP_+34-116/
+408 Custom Scenery/zOrtho4XP_+34-117/
+409 Custom Scenery/zOrtho4XP_+34-118/
+410 Custom Scenery/zOrtho4XP_+34-119/
+411 Custom Scenery/zOrtho4XP_+34-120/
+412 Custom Scenery/zOrtho4XP_+34-121/
+413 Custom Scenery/zOrtho4XP_+35-116/
+414 Custom Scenery/zOrtho4XP_+35-117/
+415 Custom Scenery/zOrtho4XP_+35-118/
+416 Custom Scenery/zOrtho4XP_+35-119/
+417 Custom Scenery/zOrtho4XP_+35-120/
+418 Custom Scenery/zOrtho4XP_+35-121/
+419 Custom Scenery/zOrtho4XP_+35-122/
+420 Custom Scenery/zOrtho4XP_+36-118/
+421 Custom Scenery/zOrtho4XP_+36-119/
+422 Custom Scenery/zOrtho4XP_+36-120/
+423 Custom Scenery/zOrtho4XP_+36-121/
+424 Custom Scenery/zOrtho4XP_+36-122/
+425 Custom Scenery/zOrtho4XP_+37-119/
+426 Custom Scenery/zOrtho4XP_+37-120/
+427 Custom Scenery/zOrtho4XP_+37-121/
+428 Custom Scenery/zOrtho4XP_+37-122/
+429 Custom Scenery/zOrtho4XP_+37-123/
+430 Custom Scenery/zOrtho4XP_+38-120/
+431 Custom Scenery/zOrtho4XP_+38-121/
+432 Custom Scenery/zOrtho4XP_+38-122/
+433 Custom Scenery/zOrtho4XP_+38-123/
+434 Custom Scenery/zOrtho4XP_+38-124/
+435 Custom Scenery/zOrtho4XP_+39-121/
+436 Custom Scenery/zOrtho4XP_+39-122/
+437 Custom Scenery/zOrtho4XP_+39-123/
+438 Custom Scenery/zOrtho4XP_+39-124/
+439 Custom Scenery/zOrtho4XP_+40-121/
+440 Custom Scenery/zOrtho4XP_+40-122/
+441 Custom Scenery/zOrtho4XP_+40-123/
+442 Custom Scenery/zOrtho4XP_+40-124/
+443 Custom Scenery/zOrtho4XP_+40-125/
+444 Custom Scenery/zOrtho4XP_+41-121/
+445 Custom Scenery/zOrtho4XP_+41-122/
+446 Custom Scenery/zOrtho4XP_+41-123/
+447 Custom Scenery/zOrtho4XP_+41-124/
+448 Custom Scenery/zOrtho4XP_+41-125/
+449 Custom Scenery/zOrtho4XP_+37-103/
+450 Custom Scenery/zOrtho4XP_+37-104/
+451 Custom Scenery/zOrtho4XP_+37-105/
+452 Custom Scenery/zOrtho4XP_+37-106/
+453 Custom Scenery/zOrtho4XP_+37-107/
+454 Custom Scenery/zOrtho4XP_+37-108/
+455 Custom Scenery/zOrtho4XP_+37-109/
+456 Custom Scenery/zOrtho4XP_+38-103/
+457 Custom Scenery/zOrtho4XP_+38-104/
+458 Custom Scenery/zOrtho4XP_+38-105/
+459 Custom Scenery/zOrtho4XP_+38-106/
+460 Custom Scenery/zOrtho4XP_+38-107/
+461 Custom Scenery/zOrtho4XP_+38-108/
+462 Custom Scenery/zOrtho4XP_+38-109/
+463 Custom Scenery/zOrtho4XP_+39-103/
+464 Custom Scenery/zOrtho4XP_+39-104/
+465 Custom Scenery/zOrtho4XP_+39-105/
+466 Custom Scenery/zOrtho4XP_+39-106/
+467 Custom Scenery/zOrtho4XP_+39-107/
+468 Custom Scenery/zOrtho4XP_+39-108/
+469 Custom Scenery/zOrtho4XP_+39-109/
+470 Custom Scenery/zOrtho4XP_+40-103/
+471 Custom Scenery/zOrtho4XP_+40-104/
+472 Custom Scenery/zOrtho4XP_+40-105/
+473 Custom Scenery/zOrtho4XP_+40-106/
+474 Custom Scenery/zOrtho4XP_+40-107/
+475 Custom Scenery/zOrtho4XP_+40-108/
+476 Custom Scenery/zOrtho4XP_+40-109/
+477 Custom Scenery/zOrtho4XP_+25-081/
+478 Custom Scenery/zOrtho4XP_+26-081/
+479 Custom Scenery/zOrtho4XP_+26-082/
+480 Custom Scenery/zOrtho4XP_+26-083/
+481 Custom Scenery/zOrtho4XP_+27-081/
+482 Custom Scenery/zOrtho4XP_+27-082/
+483 Custom Scenery/zOrtho4XP_+27-083/
+484 Custom Scenery/zOrtho4XP_+28-081/
+485 Custom Scenery/zOrtho4XP_+28-082/
+486 Custom Scenery/zOrtho4XP_+28-083/
+487 Custom Scenery/zOrtho4XP_+29-082/
+488 Custom Scenery/zOrtho4XP_+29-083/
+489 Custom Scenery/zOrtho4XP_+29-084/
+490 Custom Scenery/zOrtho4XP_+29-085/
+491 Custom Scenery/zOrtho4XP_+29-086/
+492 Custom Scenery/zOrtho4XP_+30-082/
+493 Custom Scenery/zOrtho4XP_+30-083/
+494 Custom Scenery/zOrtho4XP_+30-084/
+495 Custom Scenery/zOrtho4XP_+30-085/
+496 Custom Scenery/zOrtho4XP_+30-086/
+497 Custom Scenery/zOrtho4XP_+30-087/
+498 Custom Scenery/zOrtho4XP_+31-082/
+499 Custom Scenery/zOrtho4XP_+31-083/
+500 Custom Scenery/zOrtho4XP_+31-084/
+501 Custom Scenery/zOrtho4XP_+31-085/
+502 Custom Scenery/zOrtho4XP_+32-083/
+503 Custom Scenery/zOrtho4XP_+32-084/
+504 Custom Scenery/zOrtho4XP_+32-085/
+505 Custom Scenery/zOrtho4XP_+33-083/
+506 Custom Scenery/zOrtho4XP_+33-084/
+507 Custom Scenery/zOrtho4XP_+33-085/
+508 Custom Scenery/zOrtho4XP_+34-084/
+509 Custom Scenery/zOrtho4XP_+34-085/
+510 Custom Scenery/zOrtho4XP_+34-086/
+511 Custom Scenery/zOrtho4XP_+42-112/
+512 Custom Scenery/zOrtho4XP_+42-113/
+513 Custom Scenery/zOrtho4XP_+42-114/
+514 Custom Scenery/zOrtho4XP_+42-115/
+515 Custom Scenery/zOrtho4XP_+42-116/
+516 Custom Scenery/zOrtho4XP_+42-117/
+517 Custom Scenery/zOrtho4XP_+43-112/
+518 Custom Scenery/zOrtho4XP_+43-113/
+519 Custom Scenery/zOrtho4XP_+43-114/
+520 Custom Scenery/zOrtho4XP_+43-115/
+521 Custom Scenery/zOrtho4XP_+43-116/
+522 Custom Scenery/zOrtho4XP_+43-117/
+523 Custom Scenery/zOrtho4XP_+44-112/
+524 Custom Scenery/zOrtho4XP_+44-114/
+525 Custom Scenery/zOrtho4XP_+44-115/
+526 Custom Scenery/zOrtho4XP_+44-116/
+527 Custom Scenery/zOrtho4XP_+44-117/
+528 Custom Scenery/zOrtho4XP_+45-115/
+529 Custom Scenery/zOrtho4XP_+45-116/
+530 Custom Scenery/zOrtho4XP_+45-117/
+531 Custom Scenery/zOrtho4XP_+46-115/
+532 Custom Scenery/zOrtho4XP_+46-116/
+533 Custom Scenery/zOrtho4XP_+46-117/
+534 Custom Scenery/zOrtho4XP_+47-117/
+535 Custom Scenery/zOrtho4XP_+48-117/
+536 Custom Scenery/zOrtho4XP_+37-089/
+537 Custom Scenery/zOrtho4XP_+38-089/
+538 Custom Scenery/zOrtho4XP_+38-090/
+539 Custom Scenery/zOrtho4XP_+39-089/
+540 Custom Scenery/zOrtho4XP_+39-090/
+541 Custom Scenery/zOrtho4XP_+39-091/
+542 Custom Scenery/zOrtho4XP_+40-089/
+543 Custom Scenery/zOrtho4XP_+40-090/
+544 Custom Scenery/zOrtho4XP_+40-091/
+545 Custom Scenery/zOrtho4XP_+41-089/
+546 Custom Scenery/zOrtho4XP_+41-090/
+547 Custom Scenery/zOrtho4XP_+41-091/
+548 Custom Scenery/zOrtho4XP_+38-087/
+549 Custom Scenery/zOrtho4XP_+38-088/
+550 Custom Scenery/zOrtho4XP_+39-087/
+551 Custom Scenery/zOrtho4XP_+39-088/
+552 Custom Scenery/zOrtho4XP_+40-086/
+553 Custom Scenery/zOrtho4XP_+40-087/
+554 Custom Scenery/zOrtho4XP_+40-088/
+555 Custom Scenery/zOrtho4XP_+41-086/
+556 Custom Scenery/zOrtho4XP_+41-087/
+557 Custom Scenery/zOrtho4XP_+41-088/
+558 Custom Scenery/zOrtho4XP_+37-096/
+559 Custom Scenery/zOrtho4XP_+37-097/
+560 Custom Scenery/zOrtho4XP_+37-098/
+561 Custom Scenery/zOrtho4XP_+37-099/
+562 Custom Scenery/zOrtho4XP_+37-100/
+563 Custom Scenery/zOrtho4XP_+37-101/
+564 Custom Scenery/zOrtho4XP_+37-102/
+565 Custom Scenery/zOrtho4XP_+38-096/
+566 Custom Scenery/zOrtho4XP_+38-097/
+567 Custom Scenery/zOrtho4XP_+38-098/
+568 Custom Scenery/zOrtho4XP_+38-099/
+569 Custom Scenery/zOrtho4XP_+38-100/
+570 Custom Scenery/zOrtho4XP_+38-101/
+571 Custom Scenery/zOrtho4XP_+38-102/
+572 Custom Scenery/zOrtho4XP_+39-096/
+573 Custom Scenery/zOrtho4XP_+39-097/
+574 Custom Scenery/zOrtho4XP_+39-098/
+575 Custom Scenery/zOrtho4XP_+39-099/
+576 Custom Scenery/zOrtho4XP_+39-100/
+577 Custom Scenery/zOrtho4XP_+39-101/
+578 Custom Scenery/zOrtho4XP_+39-102/
+579 Custom Scenery/zOrtho4XP_+36-089/
+580 Custom Scenery/zOrtho4XP_+36-090/
+581 Custom Scenery/zOrtho4XP_+37-087/
+582 Custom Scenery/zOrtho4XP_+37-088/
+583 Custom Scenery/zOrtho4XP_+29-090/
+584 Custom Scenery/zOrtho4XP_+29-091/
+585 Custom Scenery/zOrtho4XP_+29-092/
+586 Custom Scenery/zOrtho4XP_+29-093/
+587 Custom Scenery/zOrtho4XP_+30-091/
+588 Custom Scenery/zOrtho4XP_+30-092/
+589 Custom Scenery/zOrtho4XP_+30-093/
+590 Custom Scenery/zOrtho4XP_+30-094/
+591 Custom Scenery/zOrtho4XP_+31-093/
+592 Custom Scenery/zOrtho4XP_+31-094/
+593 Custom Scenery/zOrtho4XP_+32-092/
+594 Custom Scenery/zOrtho4XP_+32-093/
+595 Custom Scenery/zOrtho4XP_+32-094/
+596 Custom Scenery/zOrtho4XP_+42-072/
+597 Custom Scenery/zOrtho4XP_+42-073/
+598 Custom Scenery/zOrtho4XP_+42-084/
+599 Custom Scenery/zOrtho4XP_+42-085/
+600 Custom Scenery/zOrtho4XP_+43-083/
+601 Custom Scenery/zOrtho4XP_+43-084/
+602 Custom Scenery/zOrtho4XP_+43-085/
+603 Custom Scenery/zOrtho4XP_+44-083/
+604 Custom Scenery/zOrtho4XP_+44-084/
+605 Custom Scenery/zOrtho4XP_+44-085/
+606 Custom Scenery/zOrtho4XP_+44-086/
+607 Custom Scenery/zOrtho4XP_+44-087/
+608 Custom Scenery/zOrtho4XP_+45-084/
+609 Custom Scenery/zOrtho4XP_+45-085/
+610 Custom Scenery/zOrtho4XP_+45-086/
+611 Custom Scenery/zOrtho4XP_+45-087/
+612 Custom Scenery/zOrtho4XP_+45-088/
+613 Custom Scenery/zOrtho4XP_+30-089/
+614 Custom Scenery/zOrtho4XP_+30-090/
+615 Custom Scenery/zOrtho4XP_+31-089/
+616 Custom Scenery/zOrtho4XP_+31-090/
+617 Custom Scenery/zOrtho4XP_+31-091/
+618 Custom Scenery/zOrtho4XP_+31-092/
+619 Custom Scenery/zOrtho4XP_+32-089/
+620 Custom Scenery/zOrtho4XP_+32-090/
+621 Custom Scenery/zOrtho4XP_+32-091/
+622 Custom Scenery/zOrtho4XP_+33-089/
+623 Custom Scenery/zOrtho4XP_+33-090/
+624 Custom Scenery/zOrtho4XP_+33-091/
+625 Custom Scenery/zOrtho4XP_+34-089/
+626 Custom Scenery/zOrtho4XP_+34-090/
+627 Custom Scenery/zOrtho4XP_+34-091/
+628 Custom Scenery/zOrtho4XP_+36-091/
+629 Custom Scenery/zOrtho4XP_+36-092/
+630 Custom Scenery/zOrtho4XP_+36-093/
+631 Custom Scenery/zOrtho4XP_+36-094/
+632 Custom Scenery/zOrtho4XP_+36-095/
+633 Custom Scenery/zOrtho4XP_+37-090/
+634 Custom Scenery/zOrtho4XP_+37-091/
+635 Custom Scenery/zOrtho4XP_+37-092/
+636 Custom Scenery/zOrtho4XP_+37-093/
+637 Custom Scenery/zOrtho4XP_+37-094/
+638 Custom Scenery/zOrtho4XP_+37-095/
+639 Custom Scenery/zOrtho4XP_+38-091/
+640 Custom Scenery/zOrtho4XP_+38-092/
+641 Custom Scenery/zOrtho4XP_+38-093/
+642 Custom Scenery/zOrtho4XP_+38-094/
+643 Custom Scenery/zOrtho4XP_+38-095/
+644 Custom Scenery/zOrtho4XP_+39-092/
+645 Custom Scenery/zOrtho4XP_+39-093/
+646 Custom Scenery/zOrtho4XP_+39-094/
+647 Custom Scenery/zOrtho4XP_+39-095/
+648 Custom Scenery/zOrtho4XP_+44-113/
+649 Custom Scenery/zOrtho4XP_+45-105/
+650 Custom Scenery/zOrtho4XP_+45-106/
+651 Custom Scenery/zOrtho4XP_+45-107/
+652 Custom Scenery/zOrtho4XP_+45-108/
+653 Custom Scenery/zOrtho4XP_+45-109/
+654 Custom Scenery/zOrtho4XP_+45-110/
+655 Custom Scenery/zOrtho4XP_+45-111/
+656 Custom Scenery/zOrtho4XP_+45-112/
+657 Custom Scenery/zOrtho4XP_+45-113/
+658 Custom Scenery/zOrtho4XP_+45-114/
+659 Custom Scenery/zOrtho4XP_+46-105/
+660 Custom Scenery/zOrtho4XP_+46-106/
+661 Custom Scenery/zOrtho4XP_+46-107/
+662 Custom Scenery/zOrtho4XP_+46-108/
+663 Custom Scenery/zOrtho4XP_+46-109/
+664 Custom Scenery/zOrtho4XP_+46-110/
+665 Custom Scenery/zOrtho4XP_+46-111/
+666 Custom Scenery/zOrtho4XP_+46-112/
+667 Custom Scenery/zOrtho4XP_+46-113/
+668 Custom Scenery/zOrtho4XP_+46-114/
+669 Custom Scenery/zOrtho4XP_+47-105/
+670 Custom Scenery/zOrtho4XP_+47-106/
+671 Custom Scenery/zOrtho4XP_+47-107/
+672 Custom Scenery/zOrtho4XP_+47-108/
+673 Custom Scenery/zOrtho4XP_+47-109/
+674 Custom Scenery/zOrtho4XP_+47-110/
+675 Custom Scenery/zOrtho4XP_+47-111/
+676 Custom Scenery/zOrtho4XP_+47-112/
+677 Custom Scenery/zOrtho4XP_+47-113/
+678 Custom Scenery/zOrtho4XP_+47-114/
+679 Custom Scenery/zOrtho4XP_+47-115/
+680 Custom Scenery/zOrtho4XP_+47-116/
+681 Custom Scenery/zOrtho4XP_+48-105/
+682 Custom Scenery/zOrtho4XP_+48-106/
+683 Custom Scenery/zOrtho4XP_+48-107/
+684 Custom Scenery/zOrtho4XP_+48-108/
+685 Custom Scenery/zOrtho4XP_+48-109/
+686 Custom Scenery/zOrtho4XP_+48-110/
+687 Custom Scenery/zOrtho4XP_+48-111/
+688 Custom Scenery/zOrtho4XP_+48-112/
+689 Custom Scenery/zOrtho4XP_+48-113/
+690 Custom Scenery/zOrtho4XP_+48-114/
+691 Custom Scenery/zOrtho4XP_+48-115/
+692 Custom Scenery/zOrtho4XP_+48-116/
+693 Custom Scenery/zOrtho4XP_+36-115/
+694 Custom Scenery/zOrtho4XP_+36-116/
+695 Custom Scenery/zOrtho4XP_+36-117/
+696 Custom Scenery/zOrtho4XP_+37-115/
+697 Custom Scenery/zOrtho4XP_+37-116/
+698 Custom Scenery/zOrtho4XP_+37-117/
+699 Custom Scenery/zOrtho4XP_+37-118/
+700 Custom Scenery/zOrtho4XP_+38-115/
+701 Custom Scenery/zOrtho4XP_+38-116/
+702 Custom Scenery/zOrtho4XP_+38-117/
+703 Custom Scenery/zOrtho4XP_+38-118/
+704 Custom Scenery/zOrtho4XP_+38-119/
+705 Custom Scenery/zOrtho4XP_+39-115/
+706 Custom Scenery/zOrtho4XP_+39-116/
+707 Custom Scenery/zOrtho4XP_+39-117/
+708 Custom Scenery/zOrtho4XP_+39-118/
+709 Custom Scenery/zOrtho4XP_+39-119/
+710 Custom Scenery/zOrtho4XP_+39-120/
+711 Custom Scenery/zOrtho4XP_+40-115/
+712 Custom Scenery/zOrtho4XP_+40-116/
+713 Custom Scenery/zOrtho4XP_+40-117/
+714 Custom Scenery/zOrtho4XP_+40-118/
+715 Custom Scenery/zOrtho4XP_+40-119/
+716 Custom Scenery/zOrtho4XP_+40-120/
+717 Custom Scenery/zOrtho4XP_+41-115/
+718 Custom Scenery/zOrtho4XP_+41-116/
+719 Custom Scenery/zOrtho4XP_+41-117/
+720 Custom Scenery/zOrtho4XP_+41-118/
+721 Custom Scenery/zOrtho4XP_+41-119/
+722 Custom Scenery/zOrtho4XP_+41-120/
+723 Custom Scenery/zOrtho4XP_+43-072/
+724 Custom Scenery/zOrtho4XP_+31-108/
+725 Custom Scenery/zOrtho4XP_+31-109/
+726 Custom Scenery/zOrtho4XP_+32-104/
+727 Custom Scenery/zOrtho4XP_+32-105/
+728 Custom Scenery/zOrtho4XP_+32-106/
+729 Custom Scenery/zOrtho4XP_+32-107/
+730 Custom Scenery/zOrtho4XP_+32-108/
+731 Custom Scenery/zOrtho4XP_+32-109/
+732 Custom Scenery/zOrtho4XP_+33-104/
+733 Custom Scenery/zOrtho4XP_+33-105/
+734 Custom Scenery/zOrtho4XP_+33-106/
+735 Custom Scenery/zOrtho4XP_+33-107/
+736 Custom Scenery/zOrtho4XP_+33-108/
+737 Custom Scenery/zOrtho4XP_+33-109/
+738 Custom Scenery/zOrtho4XP_+34-104/
+739 Custom Scenery/zOrtho4XP_+34-105/
+740 Custom Scenery/zOrtho4XP_+34-106/
+741 Custom Scenery/zOrtho4XP_+34-107/
+742 Custom Scenery/zOrtho4XP_+34-108/
+743 Custom Scenery/zOrtho4XP_+34-109/
+744 Custom Scenery/zOrtho4XP_+35-104/
+745 Custom Scenery/zOrtho4XP_+35-105/
+746 Custom Scenery/zOrtho4XP_+35-106/
+747 Custom Scenery/zOrtho4XP_+35-107/
+748 Custom Scenery/zOrtho4XP_+35-108/
+749 Custom Scenery/zOrtho4XP_+35-109/
+750 Custom Scenery/zOrtho4XP_+36-104/
+751 Custom Scenery/zOrtho4XP_+36-105/
+752 Custom Scenery/zOrtho4XP_+36-106/
+753 Custom Scenery/zOrtho4XP_+36-107/
+754 Custom Scenery/zOrtho4XP_+36-108/
+755 Custom Scenery/zOrtho4XP_+36-109/
+756 Custom Scenery/zOrtho4XP_+42-074/
+757 Custom Scenery/zOrtho4XP_+42-080/
+758 Custom Scenery/zOrtho4XP_+43-074/
+759 Custom Scenery/zOrtho4XP_+35-078/
+760 Custom Scenery/zOrtho4XP_+35-079/
+761 Custom Scenery/zOrtho4XP_+35-080/
+762 Custom Scenery/zOrtho4XP_+36-078/
+763 Custom Scenery/zOrtho4XP_+36-079/
+764 Custom Scenery/zOrtho4XP_+36-080/
+765 Custom Scenery/zOrtho4XP_+40-082/
+766 Custom Scenery/zOrtho4XP_+40-083/
+767 Custom Scenery/zOrtho4XP_+40-084/
+768 Custom Scenery/zOrtho4XP_+40-085/
+769 Custom Scenery/zOrtho4XP_+41-082/
+770 Custom Scenery/zOrtho4XP_+41-083/
+771 Custom Scenery/zOrtho4XP_+41-084/
+772 Custom Scenery/zOrtho4XP_+41-085/
+773 Custom Scenery/zOrtho4XP_+34-095/
+774 Custom Scenery/zOrtho4XP_+34-096/
+775 Custom Scenery/zOrtho4XP_+34-097/
+776 Custom Scenery/zOrtho4XP_+34-098/
+777 Custom Scenery/zOrtho4XP_+34-099/
+778 Custom Scenery/zOrtho4XP_+34-100/
+779 Custom Scenery/zOrtho4XP_+35-095/
+780 Custom Scenery/zOrtho4XP_+35-096/
+781 Custom Scenery/zOrtho4XP_+35-097/
+782 Custom Scenery/zOrtho4XP_+35-098/
+783 Custom Scenery/zOrtho4XP_+35-099/
+784 Custom Scenery/zOrtho4XP_+35-100/
+785 Custom Scenery/zOrtho4XP_+36-096/
+786 Custom Scenery/zOrtho4XP_+36-097/
+787 Custom Scenery/zOrtho4XP_+36-098/
+788 Custom Scenery/zOrtho4XP_+36-099/
+789 Custom Scenery/zOrtho4XP_+36-100/
+790 Custom Scenery/zOrtho4XP_+42-118/
+791 Custom Scenery/zOrtho4XP_+42-119/
+792 Custom Scenery/zOrtho4XP_+42-120/
+793 Custom Scenery/zOrtho4XP_+42-121/
+794 Custom Scenery/zOrtho4XP_+42-122/
+795 Custom Scenery/zOrtho4XP_+42-123/
+796 Custom Scenery/zOrtho4XP_+42-124/
+797 Custom Scenery/zOrtho4XP_+42-125/
+798 Custom Scenery/zOrtho4XP_+43-118/
+799 Custom Scenery/zOrtho4XP_+43-119/
+800 Custom Scenery/zOrtho4XP_+43-120/
+801 Custom Scenery/zOrtho4XP_+43-121/
+802 Custom Scenery/zOrtho4XP_+43-122/
+803 Custom Scenery/zOrtho4XP_+43-123/
+804 Custom Scenery/zOrtho4XP_+43-124/
+805 Custom Scenery/zOrtho4XP_+43-125/
+806 Custom Scenery/zOrtho4XP_+44-118/
+807 Custom Scenery/zOrtho4XP_+44-119/
+808 Custom Scenery/zOrtho4XP_+44-120/
+809 Custom Scenery/zOrtho4XP_+44-121/
+810 Custom Scenery/zOrtho4XP_+44-122/
+811 Custom Scenery/zOrtho4XP_+44-123/
+812 Custom Scenery/zOrtho4XP_+44-124/
+813 Custom Scenery/zOrtho4XP_+44-125/
+814 Custom Scenery/zOrtho4XP_+45-118/
+815 Custom Scenery/zOrtho4XP_+45-119/
+816 Custom Scenery/zOrtho4XP_+45-120/
+817 Custom Scenery/zOrtho4XP_+45-121/
+818 Custom Scenery/zOrtho4XP_+45-122/
+819 Custom Scenery/zOrtho4XP_+45-123/
+820 Custom Scenery/zOrtho4XP_+45-124/
+821 Custom Scenery/zOrtho4XP_+40-080/
+822 Custom Scenery/zOrtho4XP_+40-081/
+823 Custom Scenery/zOrtho4XP_+41-080/
+824 Custom Scenery/zOrtho4XP_+41-081/
+825 Custom Scenery/zOrtho4XP_+34-083/
+826 Custom Scenery/zOrtho4XP_+35-087/
+827 Custom Scenery/zOrtho4XP_+35-088/
+828 Custom Scenery/zOrtho4XP_+35-089/
+829 Custom Scenery/zOrtho4XP_+35-090/
+830 Custom Scenery/zOrtho4XP_+36-087/
+831 Custom Scenery/zOrtho4XP_+36-088/
+832 Custom Scenery/zOrtho4XP_+26-098/
+833 Custom Scenery/zOrtho4XP_+26-099/
+834 Custom Scenery/zOrtho4XP_+27-098/
+835 Custom Scenery/zOrtho4XP_+27-099/
+836 Custom Scenery/zOrtho4XP_+27-100/
+837 Custom Scenery/zOrtho4XP_+28-097/
+838 Custom Scenery/zOrtho4XP_+28-098/
+839 Custom Scenery/zOrtho4XP_+28-099/
+840 Custom Scenery/zOrtho4XP_+28-100/
+841 Custom Scenery/zOrtho4XP_+29-094/
+842 Custom Scenery/zOrtho4XP_+29-095/
+843 Custom Scenery/zOrtho4XP_+29-096/
+844 Custom Scenery/zOrtho4XP_+29-097/
+845 Custom Scenery/zOrtho4XP_+29-098/
+846 Custom Scenery/zOrtho4XP_+29-099/
+847 Custom Scenery/zOrtho4XP_+29-100/
+848 Custom Scenery/zOrtho4XP_+29-101/
+849 Custom Scenery/zOrtho4XP_+30-095/
+850 Custom Scenery/zOrtho4XP_+30-096/
+851 Custom Scenery/zOrtho4XP_+30-097/
+852 Custom Scenery/zOrtho4XP_+30-098/
+853 Custom Scenery/zOrtho4XP_+30-099/
+854 Custom Scenery/zOrtho4XP_+30-100/
+855 Custom Scenery/zOrtho4XP_+30-101/
+856 Custom Scenery/zOrtho4XP_+30-102/
+857 Custom Scenery/zOrtho4XP_+30-103/
+858 Custom Scenery/zOrtho4XP_+30-104/
+859 Custom Scenery/zOrtho4XP_+30-105/
+860 Custom Scenery/zOrtho4XP_+31-095/
+861 Custom Scenery/zOrtho4XP_+31-096/
+862 Custom Scenery/zOrtho4XP_+31-097/
+863 Custom Scenery/zOrtho4XP_+31-098/
+864 Custom Scenery/zOrtho4XP_+31-099/
+865 Custom Scenery/zOrtho4XP_+31-100/
+866 Custom Scenery/zOrtho4XP_+31-101/
+867 Custom Scenery/zOrtho4XP_+31-102/
+868 Custom Scenery/zOrtho4XP_+31-103/
+869 Custom Scenery/zOrtho4XP_+31-104/
+870 Custom Scenery/zOrtho4XP_+31-105/
+871 Custom Scenery/zOrtho4XP_+31-106/
+872 Custom Scenery/zOrtho4XP_+32-095/
+873 Custom Scenery/zOrtho4XP_+32-096/
+874 Custom Scenery/zOrtho4XP_+32-097/
+875 Custom Scenery/zOrtho4XP_+32-098/
+876 Custom Scenery/zOrtho4XP_+32-099/
+877 Custom Scenery/zOrtho4XP_+32-100/
+878 Custom Scenery/zOrtho4XP_+32-101/
+879 Custom Scenery/zOrtho4XP_+32-102/
+880 Custom Scenery/zOrtho4XP_+32-103/
+881 Custom Scenery/zOrtho4XP_+33-095/
+882 Custom Scenery/zOrtho4XP_+33-096/
+883 Custom Scenery/zOrtho4XP_+33-097/
+884 Custom Scenery/zOrtho4XP_+33-098/
+885 Custom Scenery/zOrtho4XP_+33-099/
+886 Custom Scenery/zOrtho4XP_+33-100/
+887 Custom Scenery/zOrtho4XP_+33-101/
+888 Custom Scenery/zOrtho4XP_+33-102/
+889 Custom Scenery/zOrtho4XP_+33-103/
+890 Custom Scenery/zOrtho4XP_+34-101/
+891 Custom Scenery/zOrtho4XP_+34-102/
+892 Custom Scenery/zOrtho4XP_+34-103/
+893 Custom Scenery/zOrtho4XP_+35-101/
+894 Custom Scenery/zOrtho4XP_+35-102/
+895 Custom Scenery/zOrtho4XP_+35-103/
+896 Custom Scenery/zOrtho4XP_+36-101/
+897 Custom Scenery/zOrtho4XP_+36-102/
+898 Custom Scenery/zOrtho4XP_+36-103/
+899 Custom Scenery/zOrtho4XP_+37-110/
+900 Custom Scenery/zOrtho4XP_+37-111/
+901 Custom Scenery/zOrtho4XP_+37-112/
+902 Custom Scenery/zOrtho4XP_+37-113/
+903 Custom Scenery/zOrtho4XP_+37-114/
+904 Custom Scenery/zOrtho4XP_+38-110/
+905 Custom Scenery/zOrtho4XP_+38-111/
+906 Custom Scenery/zOrtho4XP_+38-112/
+907 Custom Scenery/zOrtho4XP_+38-113/
+908 Custom Scenery/zOrtho4XP_+38-114/
+909 Custom Scenery/zOrtho4XP_+39-110/
+910 Custom Scenery/zOrtho4XP_+39-111/
+911 Custom Scenery/zOrtho4XP_+39-112/
+912 Custom Scenery/zOrtho4XP_+39-113/
+913 Custom Scenery/zOrtho4XP_+39-114/
+914 Custom Scenery/zOrtho4XP_+40-110/
+915 Custom Scenery/zOrtho4XP_+40-111/
+916 Custom Scenery/zOrtho4XP_+40-112/
+917 Custom Scenery/zOrtho4XP_+40-113/
+918 Custom Scenery/zOrtho4XP_+40-114/
+919 Custom Scenery/zOrtho4XP_+41-112/
+920 Custom Scenery/zOrtho4XP_+41-113/
+921 Custom Scenery/zOrtho4XP_+41-114/
+922 Custom Scenery/zOrtho4XP_+43-073/
+923 Custom Scenery/zOrtho4XP_+46-118/
+924 Custom Scenery/zOrtho4XP_+46-119/
+925 Custom Scenery/zOrtho4XP_+46-120/
+926 Custom Scenery/zOrtho4XP_+46-121/
+927 Custom Scenery/zOrtho4XP_+46-122/
+928 Custom Scenery/zOrtho4XP_+46-123/
+929 Custom Scenery/zOrtho4XP_+46-124/
+930 Custom Scenery/zOrtho4XP_+47-118/
+931 Custom Scenery/zOrtho4XP_+47-119/
+932 Custom Scenery/zOrtho4XP_+47-120/
+933 Custom Scenery/zOrtho4XP_+47-121/
+934 Custom Scenery/zOrtho4XP_+47-122/
+935 Custom Scenery/zOrtho4XP_+47-123/
+936 Custom Scenery/zOrtho4XP_+47-124/
+937 Custom Scenery/zOrtho4XP_+47-125/
+938 Custom Scenery/zOrtho4XP_+48-118/
+939 Custom Scenery/zOrtho4XP_+48-119/
+940 Custom Scenery/zOrtho4XP_+48-120/
+941 Custom Scenery/zOrtho4XP_+48-121/
+942 Custom Scenery/zOrtho4XP_+48-122/
+943 Custom Scenery/zOrtho4XP_+48-123/
+944 Custom Scenery/zOrtho4XP_+44-088/
+945 Custom Scenery/zOrtho4XP_+44-089/
+946 Custom Scenery/zOrtho4XP_+44-090/
+947 Custom Scenery/zOrtho4XP_+44-091/
+948 Custom Scenery/zOrtho4XP_+44-092/
+949 Custom Scenery/zOrtho4XP_+45-089/
+950 Custom Scenery/zOrtho4XP_+45-090/
+951 Custom Scenery/zOrtho4XP_+45-091/
+952 Custom Scenery/zOrtho4XP_+45-092/
+953 Custom Scenery/zOrtho4XP_+41-110/
+954 Custom Scenery/zOrtho4XP_+41-111/
+955 Custom Scenery/zOrtho4XP_+42-110/
+956 Custom Scenery/zOrtho4XP_+42-111/
+957 Custom Scenery/zOrtho4XP_+43-105/
+958 Custom Scenery/zOrtho4XP_+43-106/
+959 Custom Scenery/zOrtho4XP_+43-107/
+960 Custom Scenery/zOrtho4XP_+43-108/
+961 Custom Scenery/zOrtho4XP_+43-109/
+962 Custom Scenery/zOrtho4XP_+43-110/
+963 Custom Scenery/zOrtho4XP_+43-111/
+964 Custom Scenery/zOrtho4XP_+44-105/
+965 Custom Scenery/zOrtho4XP_+44-106/
+966 Custom Scenery/zOrtho4XP_+44-107/
+967 Custom Scenery/zOrtho4XP_+44-108/
+968 Custom Scenery/zOrtho4XP_+44-109/
+969 Custom Scenery/zOrtho4XP_+44-110/
+970 Custom Scenery/zOrtho4XP_+44-111/
+971 Custom Scenery/zOrtho4XP_+00-076/
+972 Custom Scenery/zOrtho4XP_+00-077/
+973 Custom Scenery/zOrtho4XP_+00-078/
+974 Custom Scenery/zOrtho4XP_+01-076/
+975 Custom Scenery/zOrtho4XP_+01-077/
+976 Custom Scenery/zOrtho4XP_+01-078/
+977 Custom Scenery/zOrtho4XP_+01-079/
+978 Custom Scenery/zOrtho4XP_+02-076/
+979 Custom Scenery/zOrtho4XP_+02-077/
+980 Custom Scenery/zOrtho4XP_+02-078/
+981 Custom Scenery/zOrtho4XP_+02-079/
+982 Custom Scenery/zOrtho4XP_+03-076/
+983 Custom Scenery/zOrtho4XP_+03-077/
+984 Custom Scenery/zOrtho4XP_+03-078/
+985 Custom Scenery/zOrtho4XP_+04-076/
+986 Custom Scenery/zOrtho4XP_+04-077/
+987 Custom Scenery/zOrtho4XP_+04-078/
+988 Custom Scenery/zOrtho4XP_+05-076/
+989 Custom Scenery/zOrtho4XP_+05-077/
+990 Custom Scenery/zOrtho4XP_+05-078/
+991 Custom Scenery/zOrtho4XP_+06-076/
+992 Custom Scenery/zOrtho4XP_+06-077/
+993 Custom Scenery/zOrtho4XP_+06-078/
+994 Custom Scenery/zOrtho4XP_+00-079/
+995 Custom Scenery/zOrtho4XP_+00-080/
+996 Custom Scenery/zOrtho4XP_+01-080/
+997 Custom Scenery/zOrtho4XP_-01-076/
+998 Custom Scenery/zOrtho4XP_-01-077/
+999 Custom Scenery/zOrtho4XP_-01-078/
+1000 Custom Scenery/zOrtho4XP_-01-079/
+1001 Custom Scenery/zOrtho4XP_-01-080/
+1002 Custom Scenery/zOrtho4XP_-01-081/
+1003 Custom Scenery/zOrtho4XP_+22+113/
+1004 Custom Scenery/zOrtho4XP_+22+114/
+1005 Custom Scenery/zOrtho4XP_+22+115/
+1006 Custom Scenery/zOrtho4XP_+23+113/
+1007 Custom Scenery/zOrtho4XP_+23+114/
+1008 Custom Scenery/zOrtho4XP_+23+115/
+1009 Custom Scenery/zOrtho4XP_+00+104/
+1010 Custom Scenery/zOrtho4XP_+01+104/
+1011 Custom Scenery/zOrtho4XP_+01+103/
+1012 Custom Scenery/zOrtho4XP_+02+103/
+1013 Custom Scenery/zOrtho4XP_+04-074/
+1014 Custom Scenery/zOrtho4XP_+04-075/
+1015 Custom Scenery/zOrtho4XP_+05-075/
+1016 Custom Scenery/zOrtho4XP_+37-080/
+1017 Custom Scenery/zOrtho4XP_+37-081/
+1018 Custom Scenery/zOrtho4XP_+37-082/
+1019 Custom Scenery/zOrtho4XP_+37-083/
+1020 Custom Scenery/zOrtho4XP_+37-084/
+1021 Custom Scenery/zOrtho4XP_+37-085/
+1022 Custom Scenery/zOrtho4XP_+37-086/
+1023 Custom Scenery/zOrtho4XP_+38-080/
+1024 Custom Scenery/zOrtho4XP_+38-081/
+1025 Custom Scenery/zOrtho4XP_+38-082/
+1026 Custom Scenery/zOrtho4XP_+38-083/
+1027 Custom Scenery/zOrtho4XP_+38-084/
+1028 Custom Scenery/zOrtho4XP_+38-085/
+1029 Custom Scenery/zOrtho4XP_+38-086/
+1030 Custom Scenery/zOrtho4XP_+39-080/
+1031 Custom Scenery/zOrtho4XP_+39-081/
+1032 Custom Scenery/zOrtho4XP_+39-082/
+1033 Custom Scenery/zOrtho4XP_+39-083/
+1034 Custom Scenery/zOrtho4XP_+39-084/
+1035 Custom Scenery/zOrtho4XP_+39-085/
+1036 Custom Scenery/zOrtho4XP_+39-086/
+1037 Global Scenery/X-Plane 12 Demo Areas/
+1038 Global Scenery/X-Plane 12 Global Scenery/
+1039 Resources/default scenery/1000 autogen/
+1040 Resources/default scenery/1000 decals/
+1041 Resources/default scenery/1000 roads/
+1042 Resources/default scenery/1000 world terrain/
+1043 Resources/default scenery/1200 atc data/
+1044 Resources/default scenery/1200 beaches/
+1045 Resources/default scenery/1200 forests/
+1046 Resources/default scenery/700 roads/
+1047 Resources/default scenery/900 beaches/
+1048 Resources/default scenery/900 europe objects/
+1049 Resources/default scenery/900 forests/
+1050 Resources/default scenery/900 roads/
+1051 Resources/default scenery/900 us objects/
+1052 Resources/default scenery/900 world object placeholders/
+1053 Resources/default scenery/airport scenery/
+1054 Resources/default scenery/sim objects/
+1055 Resources/tutorials/tutorials_Alaska/
+1056 Resources/tutorials/tutorials_Hawaii/
+1057 Resources/tutorials/tutorials_Portland/
+1058 Resources/tutorials/tutorials_Seattle/
+
+0:00:00.000 D/HID: HID Bridge Running
+0:00:00.000 I/INS: Global scenery version: 121407
+0:00:00.000 W/DRM: Warning: the user's product key is on disk but cannot be decoded.  It is either from another computer or the DRM system is not working.
+0:00:00.000 D/DRM: User has no DRM - will prompt for DVD or product key.
+0:00:00.000 I/NAVT: 342032 Obstacles are done loading async...
+Fetching plugins for Custom Scenery/Nimbus Simulation - KPHX - Phoenix/plugins
+
+Loaded: Custom Scenery/Nimbus Simulation - KPHX - Phoenix/plugins/GroundTraffic/64/win.xpl (Marginal.GroundTraffic.Nimbus Simulation - KPHX - Phoenix).
+
+Initializing off screen memory.
+Initializing off screen memory complete.
+0:00:00.000 W/APT: Unknown key 'altimeter_setting' for '[H] Uniklinik Frankfurt a.M.' in Global Scenery/Global Airports/Earth nav data/apt.dat on line 434191.
+0:00:00.000 E/APT: The airport ETOU (Wiesbaden Erbenheim AAF) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport ETHB (Bueckeburg AB) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport EEEI (Ämari AB) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport EBCV (Chievres Air Base) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport EHLW (Leeuwarden) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 I/NAVT: Airspaces are done loading async...
+0:00:00.000 E/APT: The airport KPSM (PORTSMOUTH INTL AT PEASE) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport KAGC (Allegheny Co) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport KTRI (Tri Cities Rgnl Tn Va) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport LIED (Decimomannu) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport LERT (Cadiz Rota) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 W/APT: Unknown key 'altimeter_setting' for 'Washington Dulles Intl' in Global Scenery/Global Airports/Earth nav data/apt.dat on line 6737874.
+0:00:00.000 E/APT: The airport XLT0003 (Cukurova) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport KAFW (Fort Worth Alliance) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport LCPH (Pafos Intl) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport RJOP ([H] Komatsushima AB) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport RCKH (Kaohsiung Intl) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport RCFN (Taitung Fongnian) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport OEMA (Prince Mohammad bin Abdulaziz) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 E/APT: The airport OEDF (King Fahd Intl) has lost some controllers due to bad frequencies.  Each controller needs at least one frequency in the range of 118.00 to 136.990 mhz.
+0:00:00.000 W/APT: WARNING: airport Hubbard (ID TA49) overrides code 25TX but it has already been overridden by Chennault Airfield (ID XK00BR)
+0:00:00.000 W/APT: WARNING: airport Standard Field (ID 1M6) overrides code 5KY4 but it has already been overridden by Muhlenberg Co (ID M21)
+0:00:00.000 W/APT: WARNING: airport Stony Creek (ID XY000M) overrides code AU999 but it has already been overridden by Bunurong Field (ID XY000G)
+0:00:00.000 W/APT: WARNING: airport Washington Island (ID XK2P2) overrides code WI47 but it has already been overridden by Timberline (ID XKWI47)
+0:00:00.000 W/APT: WARNING: airport [H] Cape Decision C. G. (ID PACE) overrides code CDE but it has already been overridden by Caledonia (ID XMP0008)
+0:00:00.000 W/APT: WARNING: airport [H] Grace Hospital Emergency Medical (ID 5NC3) overrides code BQ1 but it has already been overridden by Gilliam-McConnell (ID XK002J)
+0:00:00.000 W/APT: WARNING: airport [H] Mays (ID OH71) overrides code 6CM but it has already been overridden by Chapman Memorial Field (ID 00I)
+0:00:00.000 W/APT: WARNING: airport [X] Stockton Muni (ID SN07) overrides code 07S but it has already been overridden by Beaumont Hotel (ID 7K9)
+0:00:00.000 I/APT: Airport '[H] Mendota Community Hospital' (ID 74IL, code 14IL) overrides '[H] Kewanee Hospital' (ID 14IL).
+0:00:00.000 I/APT: Airport 'Outlaw Flyers' (ID XK009M, code 16XS) overrides 'Propwash' (ID 16XS).
+0:00:00.000 I/APT: Airport 'Slack' (ID 9N6, code 18PA) overrides 'Echo' (ID 18PA).
+0:00:00.000 I/APT: Airport 'Nest of Eagles' (ID 9WI7, code 1H9) overrides 'Ribble' (ID 1H9).
+0:00:00.000 I/APT: Airport 'Ickes' (ID XK006G, code 1PS0) overrides '[H] Southern Adams County' (ID 1PS0).
+0:00:00.000 I/APT: Airport 'Pela 15' (ID XK007J, code 1TN1) overrides '[H] Clayton' (ID 1TN1).
+0:00:00.000 I/APT: Airport 'Etna' (ID XK004V, code 2AR1) overrides 'Ozark Aerodrome' (ID 2AR1).
+0:00:00.000 I/APT: Airport 'Flying Hare Field' (ID XK009C, code 34XS) overrides 'Kenley Ranch' (ID 34XS).
+0:00:00.000 I/APT: Airport 'Clark' (ID 3TX6, code 3T6) overrides 'Gum Island' (ID 3T6).
+0:00:00.000 I/APT: Airport 'Middle Bass Island' (ID XK0033, code 3T7) overrides 'Pavlat' (ID 3T7).
+0:00:00.000 I/APT: Airport 'Gerald Weidner' (ID H33, code 4IS9) overrides '[H] Doctors Hospital' (ID 4IS9).
+0:00:00.000 I/APT: Airport 'Kapaun-Wilson Field' (ID 00Y, code 4MN5) overrides '[H] Chisago Health Services' (ID 4MN5).
+0:00:00.000 I/APT: Airport '[H] Meritus Hospital' (ID XK005Q, code 5MD3) overrides '[H] Sinai Hospital' (ID 5MD3).
+0:00:00.000 I/APT: Airport 'Old Hoppe Place' (ID 67TX, code 67T) overrides 'Fisher Ranch' (ID 67T).
+0:00:00.000 I/APT: Airport 'American Creek' (ID AK80, code 80A) overrides 'McLean Brothers' (ID 80A).
+0:00:00.000 I/APT: Airport 'Maxson Airfield' (ID 89N, code 89NY) overrides 'Sheldon Airstrip' (ID 89NY).
+0:00:00.000 I/APT: Airport 'Barnesville Muni' (ID 8M3, code 9MN3) overrides '[S] Fountain Lake' (ID 9MN3).
+0:00:00.000 I/APT: Airport 'Albritton' (ID XK00CA, code 9WA7) overrides 'Hillcrest' (ID 9WA7).
+0:00:00.000 I/APT: Airport 'CD-3 Airstrip' (ID XPA000D, code AK20) overrides 'Quail Creek' (ID AK20).
+0:00:00.000 I/APT: Airport 'Big Creek' (ID XPA000J, code AK51) overrides '[S] Tazlina Smokey Lake' (ID AK51).
+0:00:00.000 I/APT: Airport 'Snowy Range' (ID XY000K, code AU53) overrides 'Mundrabilla Road' (ID AU53).
+0:00:00.000 I/APT: Airport 'Dingo' (ID XY0034, code AU90) overrides 'Cranbrook' (ID AU90).
+0:00:00.000 I/APT: Airport 'Hidden Valley' (ID XK0011, code AZ43) overrides 'Solair Estates' (ID AZ43).
+0:00:00.000 I/APT: Airport 'Lower Loon Creek' (ID ID67, code C53) overrides 'John Deere Dubuque Works' (ID C53).
+0:00:00.000 I/APT: Airport 'Cayuse Creek USFS' (ID S74, code C64) overrides 'Wawasee' (ID C64).
+0:00:00.000 I/APT: Airport 'Ullswater' (ID XC008L, code CLW2) overrides 'Lewvan (Farr Air)' (ID CLW2).
+0:00:00.000 I/APT: Airport 'Colorado Springs East' (ID A50, code CO49) overrides 'Flying Lazy D Ranch' (ID CO49).
+0:00:00.000 I/APT: Airport 'Pakuba Airfield' (ID HUKF, code HUPA) overrides 'Bugungu Airstrip' (ID HUPA).
+0:00:00.000 I/APT: Airport 'Ed-Air' (ID KOTN, code I20) overrides 'Skydive Greene County Inc' (ID I20).
+0:00:00.000 I/APT: Airport 'Hell Roaring Ranch' (ID XK00CE, code ID39) overrides 'Owen Ranches Inc' (ID ID39).
+0:00:00.000 I/APT: Airport 'Fairfield Ranch (pvt)' (ID XK00CD, code ID70) overrides '[H] Adams Gulch' (ID ID70).
+0:00:00.000 I/APT: Airport 'Foster Field' (ID 7A4, code IL28) overrides 'Werries' (ID IL28).
+0:00:00.000 I/APT: Airport 'Harrold' (ID 2IN6, code IN16) overrides 'Wilkins Strip' (ID IN16).
+0:00:00.000 I/APT: Airport 'Wolfe Field' (ID 3C9, code IN65) overrides 'Culp Farms' (ID IN65).
+0:00:00.000 I/APT: Airport '[H] Kantonsspital St.Gallen' (ID XLS0010, code LSHG) overrides '[H] Gampel' (ID LSHG).
+0:00:00.000 I/APT: Airport 'Mountainair Muni' (ID Q04, code M10) overrides 'Hunter' (ID M10).
+0:00:00.000 I/APT: Airport 'Bel-Voir Acres' (ID MO61, code MO04) overrides 'Lyell' (ID MO04).
+0:00:00.000 I/APT: Airport 'Sassuolo' (ID XLI001U, code MO07) overrides '[S] Bagnell' (ID MO07).
+0:00:00.000 I/APT: Airport 'Table Rock' (ID 36M, code MO32) overrides 'Princeton-Kauffman Meml' (ID MO32).
+0:00:00.000 I/APT: Airport '[H] Red River Heliport' (ID XK006N, code N02) overrides '[H] Keystone' (ID N02).
+0:00:00.000 I/APT: Airport 'Blue Heron' (ID NK93, code N25) overrides 'Westport' (ID N25).
+0:00:00.000 I/APT: Airport 'Harvey Point Defense Test Act' (ID XK008A, code NC01) overrides 'May' (ID NC01).
+0:00:00.000 I/APT: Airport 'Deck Airpark' (ID 02W, code NC11) overrides 'Bear Creek' (ID NC11).
+0:00:00.000 I/APT: Airport 'Meadstown Airstrip' (ID XK00EQ, code NC28) overrides 'Meadow Brook Field' (ID NC28).
+0:00:00.000 I/APT: Airport 'Old Forge NY' (ID XK00CM, code NK26) overrides 'Coles Landing' (ID NK26).
+0:00:00.000 I/APT: Airport 'Cielo Dorado Estates' (ID TA50, code NM05) overrides 'Williams' (ID NM05).
+0:00:00.000 I/APT: Airport 'Porter' (ID 2I6, code OH92) overrides 'Camstra' (ID OH92).
+0:00:00.000 I/APT: Airport 'JJ & PK Airstrip' (ID 73W, code PA08) overrides 'Moorhead Airpark' (ID PA08).
+0:00:00.000 I/APT: Airport 'Kingsdale Air Park' (ID 76W, code PA23) overrides 'Mifflintown' (ID PA23).
+0:00:00.000 I/APT: Airport 'Cloudbound' (ID XK006F, code PA47) overrides 'Jim Shearer' (ID PA47).
+0:00:00.000 I/APT: Airport 'Port Alsworth' (ID XPA000G, code PALJ) overrides 'Wilder Runway' (ID PALJ).
+0:00:00.000 I/APT: Airport 'Adjuntas' (ID XTJ0003, code PR20) overrides '[H] Old San Juan' (ID PR20).
+0:00:00.000 I/APT: Airport 'Flying R.N.' (ID KS10, code S10) overrides 'Lake Chelan' (ID S10).
+0:00:00.000 I/APT: Airport 'Weaver Field' (ID XK00DM, code SC94) overrides 'Free Fall Farms' (ID SC94).
+0:00:00.000 I/APT: Airport 'Fazenda Sao Miguel' (ID SJOY, code SDTV) overrides '[H] Tivoli Center' (ID SDTV).
+0:00:00.000 I/APT: Airport 'Agropastoril Bom Pastor' (ID SDRO, code SDWC) overrides 'Aldeia Bau' (ID SDWC).
+0:00:00.000 I/APT: Airport 'Clube CEU' (ID XSB000R, code SIAN) overrides '[H] Hospital Dom Vicente Scherer' (ID SIAN).
+0:00:00.000 I/APT: Airport 'Irmãos Gonçalves' (ID XSB0008, code SIDG) overrides 'Fazenda Jotabasso' (ID SIDG).
+0:00:00.000 I/APT: Airport 'Rio Negrinho' (ID SSRN, code SILN) overrides 'Fazenda Rio Capim' (ID SILN).
+0:00:00.000 I/APT: Airport 'Manoel Urbano' (ID SSPX, code SIMB) overrides '[H] Monumental Business' (ID SIMB).
+0:00:00.000 I/APT: Airport 'Grupo Scheffer' (ID SJIE, code SJIF) overrides 'Fazenda Nova Era' (ID SJIF).
+0:00:00.000 I/APT: Airport 'Jorge Luiz Stocco' (ID XSB000C, code SJOY) overrides 'Fazenda Sao Miguel' (ID SJOY).
+0:00:00.000 I/APT: Airport 'Cond. Aeron. Santos Dumont' (ID XSB000I, code SNDD) overrides 'Fazenda Eldorado' (ID SNDD).
+0:00:00.000 I/APT: Airport 'Tancredo Thomas de Faria' (ID SBGU, code SSGG) overrides 'Fazenda Jacare de Chifre' (ID SSGG).
+0:00:00.000 I/APT: Airport 'Forquilhinha' (ID SBCM, code SSIM) overrides 'Boqueirao Alegre' (ID SSIM).
+0:00:00.000 I/APT: Airport 'Fazenda Serra Dourada' (ID SNIF, code SSUD) overrides '[H] Bom Dia Cafe' (ID SSUD).
+0:00:00.000 I/APT: Airport 'Telemaco Borba' (ID SBTL, code SSVL) overrides 'Fazenda Santa Claudina' (ID SSVL).
+0:00:00.000 I/APT: Airport 'Sao Joao dos Patos' (ID XSB0003, code SSYR) overrides 'Fazenda Santa Maria' (ID SSYR).
+0:00:00.000 I/APT: Airport 'Zirondi' (ID XSB0009, code SSZD) overrides '[H] Aficel' (ID SSZD).
+0:00:00.000 I/APT: Airport 'Playa Pintada' (ID XSVPQ, code SVPQ) overrides 'El Pardillero' (ID SVPQ).
+0:00:00.000 I/APT: Airport 'Luis Eduardo Magalhaes' (ID XSB000G, code SWNB) overrides 'Nobres' (ID SWNB).
+0:00:00.000 I/APT: Airport 'Aero Estates' (ID TS96, code T25) overrides 'Jennings Ranch' (ID T25).
+0:00:00.000 I/APT: Airport 'Goldthwaite Muni' (ID XK007O, code T37) overrides 'Locker Brothers' (ID T37).
+0:00:00.000 I/APT: Airport 'Southwest Lubbock' (ID XK00DD, code T96) overrides 'El Campo Airpark' (ID T96).
+0:00:00.000 I/APT: Airport 'Flying B Ranch' (ID XK009L, code TA12) overrides '[H] Petroleum Helicopters Inc' (ID TA12).
+0:00:00.000 I/APT: Airport 'West Liberty' (ID XK009G, code TS35) overrides '[H] Marriott Astrodome' (ID TS35).
+0:00:00.000 I/APT: Airport 'Hammer Airfield' (ID XK009K, code TS75) overrides 'Mitchell Nr One' (ID TS75).
+0:00:00.000 I/APT: Airport 'El Campo Airpark' (ID T96, code TS96) overrides 'Aero Estates' (ID TS96).
+0:00:00.000 I/APT: Airport 'Fair Weather Field' (ID XK009I, code TX42) overrides 'Bransom Farm' (ID TX42).
+0:00:00.000 I/APT: Airport 'Eberly Ranch' (ID XK008Z, code TX70) overrides 'Hess' (ID TX70).
+0:00:00.000 I/APT: Airport 'Bolaang Mongondow' (ID XWI000P, code WAMI) overrides 'Toli-Toli/Lalos (DGAC)' (ID WAMI).
+0:00:00.000 I/APT: Airport 'Morowali Industrial Park' (ID XWI000L, code WAMP) overrides 'Kasiguncu' (ID WAMP).
+0:00:00.000 I/APT: Airport 'Mukah Lapangan Terbang' (ID XWB0005, code WBGK) overrides 'Mukah' (ID WBGK).
+0:00:00.000 I/APT: Airport 'Rainelle' (ID 9W4, code WV30) overrides 'Leon' (ID WV30).
+0:00:00.000 I/APT: Airport 'Mundaring Weir' (ID YMWR, code YMDW) overrides 'MAITLAND DOWNS' (ID YMDW).
+0:00:00.000 I/APT: Airport 'Mandemar' (ID XY004M, code YMMR) overrides 'MUNMARLARY' (ID YMMR).
+0:00:00.000 I/APT: Airport 'Port Hedland/Wodgina' (ID XY001Z, code YWGA) overrides 'Wonga Beach' (ID YWGA).
+0:00:00.000 I/IDENT: Getting keystore from disk...
+0:00:00.000 I/REN: Setting texture resolution read from prefs as 5
+0:00:00.000 I/REN: Settings for profile 'default':
+0:00:00.000 I/REN: Setting |dim under high G-load or hypoxia read from prefs as 1.
+0:00:00.000 I/REN: Setting |3-d drawing detail read from prefs as 3.
+0:00:00.000 I/REN: Setting |drawing range read from prefs as 3.
+0:00:00.000 I/REN: Setting |draw parked aircraft at airports read from prefs as 0.
+0:00:00.000 I/REN: Setting |draw boats in the water  read from prefs as 0.
+0:00:00.000 I/REN: Setting |Cloud quality read from prefs as 2.
+0:00:00.000 I/REN: Setting |FSR quality level read from prefs as 0.
+0:00:00.000 I/REN: Setting |SSAO quality level read from prefs as 4.
+0:00:00.000 I/REN: Setting |Enable 3D trees read from prefs as 0.
+0:00:00.000 I/REN: Setting |3-d shadows read from prefs as 3.
+0:00:00.000 I/REN: Setting |Tree quality level read from prefs as 3.
+0:00:00.000 I/REN: Setting |HDR anti-aliasing read from prefs as 2.
+0:00:00.000 I/REN: Setting |Enable FXAA read from prefs as 1.
+0:00:00.000 I/REN: Setting |Texture Resolution read from prefs as 4.
+0:00:00.000 I/REN: Setting |Anisotropic Filtering read from prefs as 16.
+0:00:00.000 I/REN: Settings for profile 'VR':
+0:00:00.000 I/REN: Setting |dim under high G-load or hypoxia read from prefs as 1.
+0:00:00.000 I/REN: Setting |3-d drawing detail read from prefs as 4.
+0:00:00.000 I/REN: Setting |drawing range read from prefs as 3.
+0:00:00.000 I/REN: Setting |draw parked aircraft at airports read from prefs as 1.
+0:00:00.000 I/REN: Setting |draw boats in the water  read from prefs as 1.
+0:00:00.000 I/REN: Setting |Cloud quality read from prefs as 2.
+0:00:00.000 I/REN: Setting |FSR quality level read from prefs as 0.
+0:00:00.000 I/REN: Setting |SSAO quality level read from prefs as 2.
+0:00:00.000 I/REN: Setting |Enable 3D trees read from prefs as 1.
+0:00:00.000 I/REN: Setting |3-d shadows read from prefs as 2.
+0:00:00.000 I/REN: Setting |Tree quality level read from prefs as 4.
+0:00:00.000 I/REN: Setting |HDR anti-aliasing read from prefs as 0.
+0:00:00.000 I/REN: Setting |Enable FXAA read from prefs as 1.
+0:00:00.000 I/REN: Setting |Texture Resolution read from prefs as 4.
+0:00:00.000 I/REN: Setting |Anisotropic Filtering read from prefs as 16.
+0:00:00.000 D/KTX2: [Resources/bitmaps/world/moon_NML.ktx2] 1024x1024x0 0 layers 11 levels 1 faces none
+0:00:00.000 I/VR: Viable VR factories: avp (Apple Vision Pro)
+0:00:00.000 I/VR: User selected factory: avp (Apple Vision Pro)
+0:00:00.000 D/PCSB: Server socket created: handle=8208 port=55000 IPV6_V6ONLY=0
+0:00:00.000 I/AVP: TCP server listening on port 55000 (socket 000001A0D7834860)
+0:00:00.000 I/AVP_HELPER: Successfully loaded all RPC client functions from DLL
+0:00:00.000 I/VR: Factory activated successfully: avp (Apple Vision Pro)
+0:00:00.000 I/VR: Initialization selected factory: avp (Apple Vision Pro)
+0:00:00.000 D/PCSB: Server socket created: handle=8360 port=8086 IPV6_V6ONLY=0
+0:00:00.000 I/WEBSRV: Port 8086 bound
+0:00:00.000 I/WEBSRV: Port 49386 bound
+0:00:00.000 I/gfx: Max budget for managed buffers changed to 536870912
+0:00:00.000 I/NET: OS has RFC 4941 Privacy Extensions for IPv6 *enabled*, using TEMPORARY IPv6 addresses
+0:00:00.000 I/NET: Wi-Fi (Qualcomm FastConnect 7800 Wi-Fi 7 High Band Simultaneous (HBS) Network Adapter) 192.168.1.157
+0:00:00.000 I/NET: Wi-Fi (Qualcomm FastConnect 7800 Wi-Fi 7 High Band Simultaneous (HBS) Network Adapter) 2600:100f:a020:a8b3:105:e01a:ae48:7a2b
+0:00:00.000 I/NET: Wi-Fi (Qualcomm FastConnect 7800 Wi-Fi 7 High Band Simultaneous (HBS) Network Adapter) 2600:100f:a020:a8b3:2497:27b9:3b17:ee86
+0:00:00.000 I/NET: Wi-Fi (Qualcomm FastConnect 7800 Wi-Fi 7 High Band Simultaneous (HBS) Network Adapter) 2600:100f:a020:a8b3:5d5f:e710:772a:3f31
+0:00:00.000 I/NET: Wi-Fi (Qualcomm FastConnect 7800 Wi-Fi 7 High Band Simultaneous (HBS) Network Adapter) 2600:100f:a020:a8b3:64:a631:7ad9:594e
+0:00:00.000 I/NET: Wi-Fi (Qualcomm FastConnect 7800 Wi-Fi 7 High Band Simultaneous (HBS) Network Adapter) 2600:100f:a020:a8b3:7dee:8e15:33e1:bf47
+0:00:00.000 I/NET: Wi-Fi (Qualcomm FastConnect 7800 Wi-Fi 7 High Band Simultaneous (HBS) Network Adapter) 2600:100f:a020:a8b3:b1d9:5d20:569a:888c
+0:00:00.000 I/NET: Wi-Fi (Qualcomm FastConnect 7800 Wi-Fi 7 High Band Simultaneous (HBS) Network Adapter) 2600:100f:a020:a8b3:cdde:be51:64d:1236
+0:00:00.000 I/NET: (RakNet) Init: Successful!
+0:00:00.000 I/NET: Networking initialized successfully
+0:00:00.000 D/MDNS: Opened mDNS socket on 192.168.1.157 (Wi-Fi)
+0:00:00.000 D/MDNS: Skipping loopback adapter: Loopback Pseudo-Interface 1
+0:00:00.000 D/MDNS: Opened 1 mDNS socket(s)
+0:00:00.000 D/MDNS: mDNS service started: X-Plane on DESKTOP-J9TLGOF (_apple-foveated-streaming._tcp) on port 55000
+0:00:00.000 D/AVP_HELPER: State transition: StartingUp -> WaitingForAVPTCP
+0:00:00.000 D/HID: Hardware ADDED(294b, 1901) - Bravo Throttle Quadrant at path \\?\hid#vid_294b&pid_1901#8&2d481511&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}
+0:00:00.000 I/JOY: REGISTER Joystick device: Bravo Throttle Quadrant - VID:10571PID:6401, this is a familiar device.
+0:00:00.000 D/HID: 	BUTTON Added Index: 0 (HID_Page_Button/01) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 1 (HID_Page_Button/02) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 2 (HID_Page_Button/03) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 3 (HID_Page_Button/04) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 4 (HID_Page_Button/05) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 5 (HID_Page_Button/06) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 6 (HID_Page_Button/07) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 7 (HID_Page_Button/08) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 8 (HID_Page_Button/09) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 9 (HID_Page_Button/0a) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 10 (HID_Page_Button/0b) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 11 (HID_Page_Button/0c) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 12 (HID_Page_Button/0d) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 13 (HID_Page_Button/0e) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 14 (HID_Page_Button/0f) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 15 (HID_Page_Button/10) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 16 (HID_Page_Button/11) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 17 (HID_Page_Button/12) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 18 (HID_Page_Button/13) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 19 (HID_Page_Button/14) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 20 (HID_Page_Button/15) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 21 (HID_Page_Button/16) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 22 (HID_Page_Button/17) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 23 (HID_Page_Button/18) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 24 (HID_Page_Button/19) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 25 (HID_Page_Button/1a) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 26 (HID_Page_Button/1b) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 27 (HID_Page_Button/1c) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 28 (HID_Page_Button/1d) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 29 (HID_Page_Button/1e) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 30 (HID_Page_Button/1f) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 31 (HID_Page_Button/20) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 32 (HID_Page_Button/21) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 33 (HID_Page_Button/22) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 34 (HID_Page_Button/23) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 35 (HID_Page_Button/24) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 36 (HID_Page_Button/25) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 37 (HID_Page_Button/26) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 38 (HID_Page_Button/27) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 39 (HID_Page_Button/28) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 40 (HID_Page_Button/29) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 41 (HID_Page_Button/2a) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 42 (HID_Page_Button/2b) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 43 (HID_Page_Button/2c) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 44 (HID_Page_Button/2d) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 45 (HID_Page_Button/2e) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 46 (HID_Page_Button/2f) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	BUTTON Added Index: 47 (HID_Page_Button/30) for handle: 000001A0B59F4320
+0:00:00.000 D/HID: 	AXIS Added Index: 0 (HID_Page_GenericDesktop/HID_Usage_GD_Y) for handle: 000001A0B59F4320. Min/Max 0 - 1023
+0:00:00.000 D/HID: 	AXIS Added Index: 1 (HID_Page_GenericDesktop/HID_Usage_GD_X) for handle: 000001A0B59F4320. Min/Max 0 - 1023
+0:00:00.000 D/HID: 	AXIS Added Index: 2 (HID_Page_GenericDesktop/HID_Usage_GD_Rz) for handle: 000001A0B59F4320. Min/Max 0 - 1023
+0:00:00.000 D/HID: 	AXIS Added Index: 3 (HID_Page_GenericDesktop/HID_Usage_GD_Ry) for handle: 000001A0B59F4320. Min/Max 0 - 1023
+0:00:00.000 D/HID: 	AXIS Added Index: 4 (HID_Page_GenericDesktop/HID_Usage_GD_Rx) for handle: 000001A0B59F4320. Min/Max 0 - 1023
+0:00:00.000 D/HID: 	AXIS Added Index: 5 (HID_Page_GenericDesktop/HID_Usage_GD_Z) for handle: 000001A0B59F4320. Min/Max 0 - 1023
+0:00:00.000 D/HID: END HARDWARE
+0:00:00.000 E/JOY: UNCALIBRATED AXIS DETECTED: Bravo Throttle Quadrant (VID:10571PID:6401) Axis #1, assigned to joy_use_none, has an expected min/max range of [0.000000, 1023.000000], but is calibrated for [8999999488.000000, -8999999488.000000]. You should recalibrate the device in the Settings menu.
+0:00:00.000 E/JOY: CALIBRATION OVERRIDE: Bravo Throttle Quadrant (VID:10571PID:6401) Axis #1 forced to be treated as calibrated due to a user pref.
+0:00:00.000 E/JOY: UNCALIBRATED AXIS DETECTED: Bravo Throttle Quadrant (VID:10571PID:6401) Axis #4, assigned to joy_use_thro4, has an expected min/max range of [0.000000, 1023.000000], but is calibrated for [8999999488.000000, -8999999488.000000]. You should recalibrate the device in the Settings menu.
+0:00:00.000 E/JOY: CALIBRATION OVERRIDE: Bravo Throttle Quadrant (VID:10571PID:6401) Axis #4 forced to be treated as calibrated due to a user pref.
+0:00:00.000 D/HID: Hardware ADDED(044f, 040e) - TCA Sidestick X Pilot at path \\?\hid#vid_044f&pid_040e&mi_00#7&32fb13d4&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}
+0:00:00.000 I/JOY: REGISTER Joystick device: TCA Sidestick X Pilot - VID:1103PID:1038, this is a familiar device.
+0:00:00.000 D/HID: 	BUTTON Added Index: 0 (HID_Page_Button/01) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 1 (HID_Page_Button/02) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 2 (HID_Page_Button/03) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 3 (HID_Page_Button/04) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 4 (HID_Page_Button/05) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 5 (HID_Page_Button/06) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 6 (HID_Page_Button/07) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 7 (HID_Page_Button/08) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 8 (HID_Page_Button/09) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 9 (HID_Page_Button/0a) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 10 (HID_Page_Button/0b) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 11 (HID_Page_Button/0c) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 12 (HID_Page_Button/0d) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 13 (HID_Page_Button/0e) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 14 (HID_Page_Button/0f) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 15 (HID_Page_Button/10) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 16 (HID_Page_Button/11) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 17 (HID_Page_Button/12) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 18 (HID_Page_Button/13) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 19 (HID_Page_Button/14) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 20 (HID_Page_Button/15) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	BUTTON Added Index: 21 (HID_Page_Button/16) for handle: 000001A0B59F43E0
+0:00:00.000 D/HID: 	HATSWITCH Added Index: 0 (HID_Page_GenericDesktop/HID_Usage_GD_Hatswitch) for handle: 000001A0B59F43E0. It has 8 positions.
+0:00:00.000 D/HID: 	AXIS Added Index: 0 (HID_Page_GenericDesktop/HID_Usage_GD_Slider) for handle: 000001A0B59F43E0. Min/Max 0 - 65535
+0:00:00.000 D/HID: 	AXIS Added Index: 1 (HID_Page_GenericDesktop/HID_Usage_GD_Rz) for handle: 000001A0B59F43E0. Min/Max 0 - 65535
+0:00:00.000 D/HID: 	AXIS Added Index: 2 (HID_Page_GenericDesktop/HID_Usage_GD_Y) for handle: 000001A0B59F43E0. Min/Max 0 - 65535
+0:00:00.000 D/HID: 	AXIS Added Index: 3 (HID_Page_GenericDesktop/HID_Usage_GD_X) for handle: 000001A0B59F43E0. Min/Max 0 - 65535
+0:00:00.000 D/HID: 	SKIPPED (fff0/59) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/53) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: 	SKIPPED (fff0/50) for handle: 000001A0B59F43E0 because of usage page.
+0:00:00.000 D/HID: END HARDWARE
+0:00:00.000 D/HID: Hardware ADDED(16d0, 0a38) - MFG Crosswind V2/3 at path \\?\hid#vid_16d0&pid_0a38#8&33bf0f2b&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}
+0:00:00.000 I/JOY: REGISTER Joystick device: MFG Crosswind V2/3 - VID:5840PID:2616, this is a familiar device.
+0:00:00.000 D/HID: 	BUTTON Added Index: 0 (HID_Page_Button/01) for handle: 000001A0B59F4020
+0:00:00.000 D/HID: 	BUTTON Added Index: 1 (HID_Page_Button/02) for handle: 000001A0B59F4020
+0:00:00.000 D/HID: 	AXIS Added Index: 0 (HID_Page_GenericDesktop/HID_Usage_GD_Rz) for handle: 000001A0B59F4020. Min/Max 0 - 8192
+0:00:00.000 D/HID: 	AXIS Added Index: 1 (HID_Page_GenericDesktop/HID_Usage_GD_Y) for handle: 000001A0B59F4020. Min/Max 0 - 8192
+0:00:00.000 D/HID: 	AXIS Added Index: 2 (HID_Page_GenericDesktop/HID_Usage_GD_X) for handle: 000001A0B59F4020. Min/Max 0 - 8192
+0:00:00.000 D/HID: 	AXIS Added Index: 3 (HID_Page_Undefined/00) for handle: 000001A0B59F4020. Min/Max 0 - 255
+0:00:00.000 D/HID: END HARDWARE
+0:00:00.000 E/JOY: UNCALIBRATED AXIS DETECTED: MFG Crosswind V2/3 (VID:5840PID:2616) Axis #3, assigned to joy_use_none, has an expected min/max range of [0.000000, 255.000000], but is calibrated for [8999999488.000000, -8999999488.000000]. You should recalibrate the device in the Settings menu.
+0:00:00.000 E/JOY: CALIBRATION OVERRIDE: MFG Crosswind V2/3 (VID:5840PID:2616) Axis #3 forced to be treated as calibrated due to a user pref.
+0:00:00.000 D/STM: Transitioning from state state_InitialLoading to state_QuickFlightWizard
+0:00:00.000 I/ACF: Loading airplane number 20 with Aircraft/737NG Series_V2.S1/737_80NG.acf
+0:00:00.000 I/IDENT: Accepting user
+0:00:00.000 I/IDENT: Getting certificate from disk...
+0:00:00.000 I/IDENT: Accepting receipt
+0:00:00.000 I/WXR: Will fetch 'https://weatherservice.x-plane.com/api/v1/manifest/debug/2026-09-02T00:18:31Z' for epoch '1788308311'
+0:00:00.000 I/WIN: Showing subscreen Main Menu
+0:00:00.000 I/OVR: rebuild_teleport_matrix: parent=holodeck psi=0.0 pilot_head=0
+0:00:00.000 I/OVR: User is entering the holodeck.
+0:00:00.000 I/WIN: Opened window Primary V11 UI
+0:00:00.000 I/WXR: Parsing weather manifest ID '96891'
+0:00:00.000 I/WXR: wxr cache: (window 000001A01526AC90) 960 x 540
+0:00:00.000 I/REN: Updating REN_context (window 000001A01526AC90) to 1920x1080x1
+0:00:03.021 I/NAVT: NavData is done loading async...
+0:00:03.125 I/NAVT: Navaids are done loading async...
+0:00:03.292 I/NAVT: Fixes are done loading async...
+0:00:03.827 I/NAVT: Airways are done loading async...
+0:00:03.827 I/NAVT: All navt data is done loading async...
+0:00:05.655 I/IDENT: Getting keystore from disk...
+0:00:05.667 I/IDENT: Accepting user
+0:00:06.877 I/IDENT: Getting certificate from disk...
+0:00:06.884 I/IDENT: Accepting receipt
+0:03:00.722 I/WIN: Showing subscreen Freeflight
+0:03:06.269 I/WXR: Will fetch 'https://weatherservice.x-plane.com/api/v1/manifest/debug/2026-09-02T00:21:38Z' for epoch '1788308498'
+0:03:06.679 I/WXR: Will fetch 'https://weatherservice.x-plane.com/api/v1/manifest/debug/2026-09-02T00:21:38Z' for epoch '1788308498'
+0:03:06.873 I/WXR: Will fetch 'https://weatherservice.x-plane.com/api/v1/manifest/debug/2026-09-02T00:21:39Z' for epoch '1788308499'
+0:03:07.208 I/WXR: Parsing weather manifest ID '96892'
+0:03:08.493 I/WIN: Showing subscreen FreeFlight Location Controller (Advanced)
+0:03:09.100 I/WXR: KEZM had a METAR from the future (020035Z)
+0:03:14.011 I/FCG: Applying changes from Flight Configuration screen
+0:03:14.011 I/FCG: Starting new flight in Aircraft/737NG Series_V2.S1/737_80NG.acf at 34 (Size Class C)
+0:03:14.011 I/REN: Updating REN_context (environment_probes) to 256x256x1
+0:03:19.040 I/WXR: Will fetch 'https://weatherservice.x-plane.com/api/v1/manifest/debug/2026-09-02T00:21:51Z' for epoch '1788308511'
+0:03:19.040 D/STM: Transitioning from state state_QuickFlightWizard to state_NormalLoading
+WebFMC [debug]: Plane unloaded: 0
+Aircraft plugin unload complete.
+0:03:19.040 I/ACF: Loading airplane number 0 with Aircraft/737NG Series_V2.S1/737_80NG.acf
+FlyWithLua Info: XPLM_MSG_FMOD_BANK_UNLOADING & xplm_RadioBank  true
+FlyWithLua Info: fmod_uninitialize() FmodSounds.size =  0
+FlyWithLua Info: fmod_uninitialize()  Should be 0 now FmodSounds.size =  0
+2026-09-01 17:21:51 BpB[bp.c:1741]: [W] Aircraft not on the ground.
+WebFMC [debug]: Plane loaded: 0
+WebFMC [debug]: WebFMC main loop enabled
+Fetching plugins for C:\X-Plane 12/Aircraft/737NG Series_V2.S1/plugins
+
+0:00:00.000 I/LUA: Running scripts/B738.anav/B738.anav.lua
+[xlua/win_x64/xlua.xpl]: Dataref 'sim/weather/precipitation_on_aircraft_ratio' has been replaced. Please use the new name.
+[xlua/win_x64/xlua.xpl]: Dataref 'sim/weather/rain_percent' has been replaced. Please use the new name.
+0:03:19.040 I/LUA: Running scripts/B738.a_AXP_1_EQ_commands/B738.a_AXP_1_EQ_commands.lua
+0:03:19.040 I/LUA: Running scripts/B738.a_AXP_2_flightcontrol_commands/B738.a_AXP_2_flightcontrol_commands.lua
+0:03:19.040 I/LUA: Running scripts/B738.a_AXP_3_FMOD_commands/B738.a_AXP_3_FMOD_commands.lua
+0:03:19.040 I/LUA: Running scripts/B738.a_AXP_4_FMOD_logic/B738.a_AXP_4_FMOD_logic.lua
+0:03:19.040 I/LUA: Running scripts/B738.a_fms/B738.a_fms.lua
+0:03:19.040 I/WXR: Parsing weather manifest ID '96892'
+0:03:19.040 I/LUA: scripts/B738.a_fms/B738.a_fms.lua
+0:03:19.040 I/LUA: LevelUp VNAV descent tables loaded! 
+[xlua/win_x64/xlua.xpl]: Dataref 'sim/cockpit2/controls/flap_ratio' has been replaced. Please use the new name.
+[xlua/win_x64/xlua.xpl]: Dataref 'sim/flightmodel/misc/cgz_ref_to_default' has been replaced. Please use the new name.
+[xlua/win_x64/xlua.xpl]: Dataref 'sim/cockpit/pressure/cabin_vvi_set_m_msec' has been replaced. Please use the new name.
+[xlua/win_x64/xlua.xpl]: Dataref 'sim/cockpit2/controls/parking_brake_ratio' has been replaced. Please use the new name.
+[xlua/win_x64/xlua.xpl]: Dataref 'sim/weather/barometer_sealevel_inhg' has been replaced. Please use the new name.
+0:03:19.040 I/LUA: Running scripts/B738.calc/B738.calc.lua
+[xlua/win_x64/xlua.xpl]: Dataref 'sim/weather/barometer_current_inhg' has been replaced. Please use the new name.
+0:03:19.040 I/LUA: Running scripts/B738.glaresheild/B738.glaresheild.lua
+[xlua/win_x64/xlua.xpl]: Dataref 'sim/cockpit/switches/EFIS_map_mode' is deprecated and will be removed in a future version.
+0:03:19.040 I/LUA: Running scripts/B738.LATLON/B738.LATLON.lua
+0:03:19.040 I/LUA: Running scripts/B738.sine/B738.sine.lua
+0:03:19.040 E/LUA: Error during load module 'scripts/B738.sine/B738.sine.lua'
+0:03:19.040 I/LUA: (null)
+load module failed: -1
+0:03:19.040 I/LUA: Running scripts/B738.sound/B738.sound.lua
+0:03:19.040 E/LUA: Error during load module 'scripts/B738.sound/B738.sound.lua'
+0:03:19.040 I/LUA: (null)
+load module failed: -1
+0:03:19.040 I/LUA: Running scripts/B738.tablet/B738.tablet.lua
+0:03:19.040 I/LUA: Running scripts/B738.zz.sim_cockpit/B738.zz.sim_cockpit.lua
+0:03:19.040 I/LUA: Running scripts/B738.ZZZ_AXP_5_added_logic_ULTIMATE/B738.ZZZ_AXP_5_added_logic_ULTIMATE.lua
+0:03:19.040 I/LUA: Running scripts/HUD_FIX/HUD_FIX.lua
+0:03:19.040 I/LUA: Running scripts/LU_737NG.sine/LU_737NG.sine.lua
+0:03:19.040 I/LUA: Running scripts/LU_737NG.sound/LU_737NG.sound.lua
+Loaded: C:\X-Plane 12/Aircraft/737NG Series_V2.S1/plugins/xlua/win_x64/xlua.xpl (com.x-plane.xlua.1.3.0r1).
+
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/flightmodel2/controls/flap_handle_deploy_ratio' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/cockpit2/controls/flap_ratio' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/flightmodel/misc/cgz_ref_to_default' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/weather/barometer_current_inhg' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/cockpit/pressure/cabin_vvi_set_m_msec' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/cockpit2/controls/parking_brake_ratio' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/weather/barometer_sealevel_inhg' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/cockpit2/engine/indicators/EGT_deg_C' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/operation/failures/rel_antice' is deprecated and will be removed in a future version.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/weather/speed_sound_ms' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/cockpit/pressure/cabin_altitude_set_m_msl' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/aircraft2/engine/flap_extension_time_sec' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/aircraft2/engine/flap_retraction_time_sec' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/weather/runway_friction' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/weather/temperature_sealevel_c' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/weather/dewpoi_sealevel_c' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/weather/temperature_ambient_c' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/weather/precipitation_on_aircraft_ratio' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/weather/temperature_le_c' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/weather/wind_speed_kt' has been replaced. Please use the new name.
+[zibomod/win_x64/zibomod.xpl]: Dataref 'sim/weather/rain_percent' has been replaced. Please use the new name.
+Zibomod plugin running.
+Zibomod plugin: Reading navigation data...
+Zibomod plugin: Loaded file >C:\X-Plane 12/Custom Data/earth_nav.dat<
+Navaids: 7923
+Zibomod plugin: Loaded file >C:\X-Plane 12/Custom Data/earth_fix.dat<
+Navaids & Fixs: 258685
+Loaded: C:\X-Plane 12/Aircraft/737NG Series_V2.S1/plugins/zibomod/win_x64/zibomod.xpl (zibomod.by.Zibo).
+
+0:03:19.040 E/SCN: Failed to find resource '737cfm56.dds', referenced from file 'Aircraft/737NG Series_V2.S1/objects/'.
+0:03:19.040 I/OBJ: object Aircraft/737NG Series_V2.S1/objects/737_alpha.obj uses blend glass but is not set to glass lighting.
+0:03:19.040 I/FMOD: Master bank Aircraft/737NG Series_V2.S1/fmod/ Sample rate: 48000 speaker mode: 7 (8 speakers)
+0:03:19.040 I/SND: This aircraft is using FMOD in FULL mode.
+FlyWithLua Info: XPLM_MSG_FMOD_BANK_LOADED & xplm_RadioBank  true
+WARNING: auto-gen annotation not inside a tile.
+0:03:19.040 I/FLT: Init dat_p0 type:'ramp_start' apt:KAUS start at:34
+0:03:19.040 I/SCN: DSF load time: 46395 for file Global Scenery/Global Airports/Earth nav data/+20-100/+29-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 13111 for file Global Scenery/Global Airports/Earth nav data/+30-100/+31-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 30054 for file Global Scenery/Global Airports/Earth nav data/+20-100/+29-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 36902 for file Custom Scenery/EXT_World_Lights/Earth nav data/+20-100/+29-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 35242 for file Custom Scenery/EXT_World_Lights/Earth nav data/+30-100/+31-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 17766 for file Custom Scenery/simHeaven_X-World_America-5-footprints/Earth nav data/+20-100/+29-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 13380 for file Custom Scenery/simHeaven_X-World_America-5-footprints/Earth nav data/+30-100/+31-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 38982 for file Custom Scenery/EXT_World_Lights/Earth nav data/+20-100/+29-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 23923 for file Custom Scenery/simHeaven_X-World_America-6-scenery/Earth nav data/+20-100/+29-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 688 for file Custom Scenery/simHeaven_X-World_America-7-forests/Earth nav data/+20-100/+29-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 18802 for file Custom Scenery/simHeaven_X-World_America-6-scenery/Earth nav data/+30-100/+31-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 199 for file Custom Scenery/simHeaven_X-World_America-7-forests/Earth nav data/+30-100/+31-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 34710 for file Custom Scenery/simHeaven_X-World_America-5-footprints/Earth nav data/+20-100/+29-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 30502 for file Custom Scenery/simHeaven_X-World_America-6-scenery/Earth nav data/+20-100/+29-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 1671 for file Custom Scenery/simHeaven_X-World_America-7-forests/Earth nav data/+20-100/+29-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 489564 for file Custom Scenery/KGRK/Earth nav data/+30-100/+31-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 374211 for file Custom Scenery/yOrtho4XP_Overlays/Earth nav data/+30-100/+31-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 377725 for file Custom Scenery/yOrtho4XP_Overlays/Earth nav data/+20-100/+29-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 331734 for file Custom Scenery/yOrtho4XP_Overlays/Earth nav data/+20-100/+29-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 35409 for file Global Scenery/Global Airports/Earth nav data/+30-100/+31-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 49095 for file Custom Scenery/EXT_World_Lights/Earth nav data/+30-100/+31-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 53195 for file Custom Scenery/simHeaven_X-World_America-5-footprints/Earth nav data/+30-100/+31-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 54204 for file Custom Scenery/simHeaven_X-World_America-6-scenery/Earth nav data/+30-100/+31-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 1613 for file Custom Scenery/simHeaven_X-World_America-7-forests/Earth nav data/+30-100/+31-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 139963 for file Custom Scenery/yOrtho4XP_Overlays/Earth nav data/+30-100/+31-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 952196 for file Custom Scenery/zOrtho4XP_+31-100/Earth nav data/+30-100/+31-100.dsf (311605 tris, 3 skipped for -0.9 m^2)
+0:03:19.040 I/SCN: DSF load time: 52320 for file Global Scenery/Global Airports/Earth nav data/+20-100/+29-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 1597337 for file Custom Scenery/zOrtho4XP_+29-098/Earth nav data/+20-100/+29-098.dsf (416398 tris, 12 skipped for -0.4 m^2)
+0:03:19.040 I/SCN: DSF load time: 59990 for file Custom Scenery/EXT_World_Lights/Earth nav data/+20-100/+29-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 37328 for file Custom Scenery/simHeaven_X-World_America-5-footprints/Earth nav data/+20-100/+29-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 61379 for file Custom Scenery/simHeaven_X-World_America-6-scenery/Earth nav data/+20-100/+29-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 2266 for file Custom Scenery/simHeaven_X-World_America-7-forests/Earth nav data/+20-100/+29-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 56039 for file Custom Scenery/yOrtho4XP_Overlays/Earth nav data/+20-100/+29-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 18840 for file Global Scenery/Global Airports/Earth nav data/+30-100/+31-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 19183 for file Global Scenery/Global Airports/Earth nav data/+30-100/+31-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 33360 for file Custom Scenery/EXT_World_Lights/Earth nav data/+30-100/+31-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 45833 for file Custom Scenery/EXT_World_Lights/Earth nav data/+30-100/+31-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 20495 for file Custom Scenery/simHeaven_X-World_America-5-footprints/Earth nav data/+30-100/+31-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 24442 for file Custom Scenery/simHeaven_X-World_America-5-footprints/Earth nav data/+30-100/+31-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 18713 for file Custom Scenery/simHeaven_X-World_America-6-scenery/Earth nav data/+30-100/+31-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 902 for file Custom Scenery/simHeaven_X-World_America-7-forests/Earth nav data/+30-100/+31-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 19896 for file Custom Scenery/simHeaven_X-World_America-6-scenery/Earth nav data/+30-100/+31-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 832 for file Custom Scenery/simHeaven_X-World_America-7-forests/Earth nav data/+30-100/+31-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 26827 for file Custom Scenery/yOrtho4XP_Overlays/Earth nav data/+30-100/+31-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 38814 for file Custom Scenery/yOrtho4XP_Overlays/Earth nav data/+30-100/+31-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 2397045 for file Custom Scenery/zOrtho4XP_+31-098/Earth nav data/+30-100/+31-098.dsf (693466 tris, 82 skipped for -4.5 m^2)
+0:03:19.040 I/SCN: DSF load time: 1098526 for file Custom Scenery/zOrtho4XP_+29-097/Earth nav data/+20-100/+29-097.dsf (360108 tris, 15 skipped for -2.2 m^2)
+0:03:19.040 I/SCN: DSF load time: 101893 for file Global Scenery/Global Airports/Earth nav data/+20-100/+29-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 3373939 for file Custom Scenery/zOrtho4XP_+29-100/Earth nav data/+20-100/+29-100.dsf (1224314 tris, 41 skipped for -1.8 m^2)
+0:03:19.040 I/SCN: DSF load time: 300416 for file Custom Scenery/EXT_World_Lights/Earth nav data/+20-100/+29-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 441361 for file Custom Scenery/simHeaven_X-World_America-5-footprints/Earth nav data/+20-100/+29-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 E/DSF: The DSF Custom Scenery/KGRK/Earth nav data/+30-100/+31-098.dsf has a number of problems with its road network: 1 doubled nodes, 0 direction reverses, 0 short segments, 0 roads deleted.
+0:03:19.040 I/SCN: DSF load time: 143868 for file Custom Scenery/simHeaven_X-World_America-6-scenery/Earth nav data/+20-100/+29-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 3106 for file Custom Scenery/simHeaven_X-World_America-7-forests/Earth nav data/+20-100/+29-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 409582 for file Custom Scenery/yOrtho4XP_Overlays/Earth nav data/+20-100/+29-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 2072944 for file Custom Scenery/zOrtho4XP_+31-099/Earth nav data/+30-100/+31-099.dsf (453359 tris, 8 skipped for -48.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 19226 for file Global Scenery/Global Airports/Earth nav data/+30-100/+30-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 36985 for file Custom Scenery/EXT_World_Lights/Earth nav data/+30-100/+30-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 26042 for file Custom Scenery/simHeaven_X-World_America-5-footprints/Earth nav data/+30-100/+30-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 32953 for file Custom Scenery/simHeaven_X-World_America-6-scenery/Earth nav data/+30-100/+30-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 1033 for file Custom Scenery/simHeaven_X-World_America-7-forests/Earth nav data/+30-100/+30-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 47234 for file Custom Scenery/yOrtho4XP_Overlays/Earth nav data/+30-100/+30-097.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 2896213 for file Custom Scenery/zOrtho4XP_+31-097/Earth nav data/+30-100/+31-097.dsf (798181 tris, 54 skipped for -21.4 m^2)
+0:03:19.040 I/SCN: DSF load time: 6556 for file Global Scenery/Global Airports/Earth nav data/+30-100/+30-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 39302 for file Custom Scenery/EXT_World_Lights/Earth nav data/+30-100/+30-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 18320 for file Custom Scenery/simHeaven_X-World_America-5-footprints/Earth nav data/+30-100/+30-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 21772 for file Custom Scenery/simHeaven_X-World_America-6-scenery/Earth nav data/+30-100/+30-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 1246 for file Custom Scenery/simHeaven_X-World_America-7-forests/Earth nav data/+30-100/+30-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 23730 for file Custom Scenery/yOrtho4XP_Overlays/Earth nav data/+30-100/+30-100.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 1995300 for file Custom Scenery/zOrtho4XP_+29-099/Earth nav data/+20-100/+29-099.dsf (771550 tris, 76 skipped for -25.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 45984 for file Global Scenery/Global Airports/Earth nav data/+30-100/+30-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 1632093 for file Custom Scenery/zOrtho4XP_+30-097/Earth nav data/+30-100/+30-097.dsf (566466 tris, 103 skipped for -4.8 m^2)
+0:03:19.040 I/SCN: DSF load time: 380222 for file Custom Scenery/EXT_World_Lights/Earth nav data/+30-100/+30-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 499 for file Custom Scenery/simHeaven_X-World_America-1-vfr/Earth nav data/+30-100/+30-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 1230019 for file Custom Scenery/zOrtho4XP_+30-100/Earth nav data/+30-100/+30-100.dsf (548125 tris, 208 skipped for -6.5 m^2)
+0:03:19.040 I/SCN: DSF load time: 315803 for file Custom Scenery/simHeaven_X-World_America-5-footprints/Earth nav data/+30-100/+30-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 963878 for file Custom Scenery/simHeaven_X-World_America-6-scenery/Earth nav data/+30-100/+30-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 3593 for file Custom Scenery/simHeaven_X-World_America-7-forests/Earth nav data/+30-100/+30-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 133112 for file Custom Scenery/yOrtho4XP_Overlays/Earth nav data/+30-100/+30-098.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 20965 for file Global Scenery/Global Airports/Earth nav data/+30-100/+30-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 34134 for file Custom Scenery/EXT_World_Lights/Earth nav data/+30-100/+30-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 17957 for file Custom Scenery/simHeaven_X-World_America-5-footprints/Earth nav data/+30-100/+30-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 24876 for file Custom Scenery/simHeaven_X-World_America-6-scenery/Earth nav data/+30-100/+30-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 1625 for file Custom Scenery/simHeaven_X-World_America-7-forests/Earth nav data/+30-100/+30-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 27713 for file Custom Scenery/yOrtho4XP_Overlays/Earth nav data/+30-100/+30-099.dsf (0 tris, 0 skipped for 0.0 m^2)
+0:03:19.040 I/SCN: DSF load time: 2731057 for file Custom Scenery/zOrtho4XP_+30-098/Earth nav data/+30-100/+30-098.dsf (1124495 tris, 67 skipped for -14.2 m^2)
+0:03:19.040 I/SCN: DSF load time: 1646388 for file Custom Scenery/zOrtho4XP_+30-099/Earth nav data/+30-100/+30-099.dsf (782713 tris, 73 skipped for -123.3 m^2)
+0:03:19.040 I/SCN: Preload time: 1368145
+0:03:19.040 I/REPLAY: Starting replay recording
+0:03:19.040 I/SCN: Preload time: 3470
+0:03:19.040 I/REPLAY: Registered birth event for flt 0, entity id: 2
+0:03:19.040 I/REPLAY: Creating flt entity with entity id 2 and p_index 0
+0:03:19.040 I/SCN: Loading sim objects for airport KAUS
+0:03:19.040 I/SCN: Loading sim objects for airport 02XS
+0:03:19.040 I/SCN: Loading sim objects for airport XK007Q
+0:03:19.040 I/SCN: Loading sim objects for airport TA55
+0:03:19.040 I/SCN: Preload time: 265499
+0:03:19.040 I/WXR: KEZM had a METAR from the future (020035Z)
+2026-09-01 17:22:22 BpB[bp.c:1718]: [I] Initialising audio: At airport KAUS, initialising messages languages
+2026-09-01 17:22:22 BpB[bp.c:1011]: [I] found : BetterPushback_doors.cfg in plugins folder
+2026-09-01 17:22:23 BpB[xplane.c:606]: [W] Command "BetterPushback/stop_planner" is currently disabled
+[DESCENT PRO] Building nav cache...
+[DESCENT PRO] Airports=38890 VORs=3584 NDBs=3081 Fixes=250762 Total=296317
+[DESCENT PRO] Nav cache build succeeded.
+FlyWithLua: User switched to a new airport (or changed the plane). Script files have to be reloaded.
+FlyWithLua: Found fwl_prefs.ini in the FlyWithLua plugin path and it is
+./Resources/plugins/FlyWithLua/fwl_prefs.ini
+FlyWithLua Info:  deinitFmodSupport() FmodSounds.size =  0
+FlyWithLua Info: deinitFmodSupport()  Should be 0 now FmodSounds.size =  0
+FlyWithLua Info: Lua engine (re)started. LUA_RUN =1, SDK_VERSION = 430, XPLANE_VERSION = 12431, XPLANE_LANGUAGE = English and XPLANE_HOSTID = 1
+FlyWithLua Info: HID access initialized.
+FlyWithLua Info: FlyWithLua.ini full path 
+C:\X-Plane 12/Resources/plugins/FlyWithLua/Internals/FlyWithLua.ini
+FlyWithLua Info: Discovered 24 HID devices.
+FlyWithLua Info: Initial assignments successfully saved.
+FlyWithLua Info: Load ini file.
+FlyWithLua Info: Searching for Lua script files
+FlyWithLua Info: Sorting Lua script files
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/747Lights.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/747Lights.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/777Lcallouts.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/777Lcallouts.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/777_reverse.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/777_reverse.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/A319Lights.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/A319Lights.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/A330Lights.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/A330Lights.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/B738Lights.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/B738Lights.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/B757Lights.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/B757Lights.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/B767Lights.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/B767Lights.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/B777Lights.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/B777Lights.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/FF757 Reverse Idle.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/FF757 Reverse Idle.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/Felis Reverse Idle.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/Felis Reverse Idle.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/MD-11 Lights.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/MD-11 Lights.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/MD11 Reverse Idle.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/MD11 Reverse Idle.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/Toliss321ReverseIdle1.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/Toliss321ReverseIdle1.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/XPFovTuner.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/XPFovTuner.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/Zibo and LevelUp Reverse Idle2.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/Zibo and LevelUp Reverse Idle2.lua
+FlyWithLua Info: Start loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/md11callouts.lua
+FlyWithLua Info: Finished loading script file C:\X-Plane 12/Resources/plugins/FlyWithLua/Scripts/md11callouts.lua
+FlyWithLua Info: All script files loaded successfully.
+FlyWithLua Info: Loading time for all scripts is 0.119 sec.
+0:03:19.040 I/LUA: WARNING: dataref jbr/737opt/result is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref jbr/737opt/query_input is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref jbr/737opt/status is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref jbr/737opt/rwy_list is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref jbr/737opt/icao is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref avitab/is_in_menu is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref avitab/brightness is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref avitab/panel_enabled is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref avitab/panel_powered is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/comm_ready is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/poll_frequency_fast is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/send_message_packet is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/send_message_type is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/send_message_to is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/poll_message_packet is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/poll_message_type is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/poll_message_origin is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/poll_message_from is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/poll_queue_clear is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/send_callsign is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/callsign is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/poll_queue is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref hoppiebridge/send_queue is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref librain/initialize is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref env/snow is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref env/rain is used but not defined.
+0:03:19.040 I/LUA: WARNING: dataref env/active is used but not defined.
+0:03:19.040 I/LUA: scripts/HUD_FIX/HUD_FIX.lua
+0:03:19.040 I/LUA: HGS_Log: LOG | Init_HGS-Ver:1.05 
+0:03:19.040 I/LUA: scripts/HUD_FIX/HUD_FIX.lua
+0:03:19.040 I/LUA: HGS_Log: LOG | Init_data_patch: Aircraft/737NG Series_V2.S1/HGS_RWY.dat 
+0:03:19.040 I/LUA: scripts/HUD_FIX/HUD_FIX.lua
+0:03:19.040 I/LUA: HGS_Log: LOG | Chek-DataGen_Ver:2.48 
+0:03:19.040 I/LUA: scripts/HUD_FIX/HUD_FIX.lua
+0:03:19.040 I/LUA: HGS_Log: LOG | Init_HUD-FullSys_Ver:2.48 
+0:03:19.040 I/OVR: Reading VR conf file: Aircraft/737NG Series_V2.S1/737_80NG_vrconfig.txt
+0:03:19.040 D/STM: Transitioning from state state_NormalLoading to state_Normal
+0:03:19.040 I/OVR: User is leaving the holodeck.
+0:03:57.070 I/WIN: Opened window menu bar
+FlyWithLua Info: Searching for Lua quarantined script files
+FlyWithLua Info: The folder /Resources/plugins/FlyWithLua/Scripts (Quarantine)/ does not exist or it is empty.
+WebFMC [debug]: IO thread running
+WebFMC [info]: Server version 2.7.0
+0:00:   nan xPilot/XPMP2 INFO  XPMPMultiplayer.cpp:540/XPMPSetDefaultPlaneICAO: Default ICAO aircraft type now is A320
+0:00:   nan xPilot/XPMP2 INFO  Sound.cpp:122/XPSoundLoadFctPtr: X-Plane's FMOD system available
+0:03:57.070 xPilot/XPMP2 INFO  XPMPMultiplayer.cpp:186/XPMPMultiplayerInit: XPMP2 3.6.0 with FMOD sound support initializing under X-Plane version 12431/Vulkan and XPLM version 430
+0:03:57.070 xPilot/XPMP2 WARN  XPMPMultiplayer.cpp:101/XPMPValidateResourceFiles: Optional file relOp.txt not available in resource directory
+0:03:57.070 I/PLG: The plugin xPilot 3.0.2 is setting global TCAS override to 1.
+0:03:57.070 xPilot: Now listening on ipc:///tmp//xpilot.ipc
+2026-09-01 17:22:29 BpB[ground_ops_ui.cpp:225]: [I] Ground Ops airport context loaded: KAUS
+0:03:57.070 I/GFX: Rebuilding offscreens for window resize: x=1920 y=1080 hdrx=1920 hdry=1080
+0:03:57.070 I/TEX: Pre-warming paging cache
+0:03:57.070 I/TEX: Target scale moved to 1.000000. Texture usage is 276.74 mb out of 17.65 gb available. Memory headroom is 17.83 gb
+0:03:57.070 D/KTX2: [Resources/bitmaps/world/moon_NML.ktx2] 1024x1024x0 0 layers 11 levels 1 faces none
+0:03:57.070 I/TEX: Finished pre-warming paging cache. Time taken: 5.543s
+Zibomod plugin: 
+Zibomod plugin: Loaded file >C:\X-Plane 12/Aircraft/737NG Series_V2.S1/B738X_apt.dat<
+Airports: 26619
+Zibomod plugin: Loaded file >C:\X-Plane 12/Aircraft/737NG Series_V2.S1/B738X_rnw.dat<
+Runways: 61534
+Zibomod plugin: Loaded file >C:\X-Plane 12/Aircraft/737NG Series_V2.S1/B738X_gate.dat<
+Gates: 180326
+Zibomod plugin: Loaded file >C:\X-Plane 12/Aircraft/737NG Series_V2.S1/B738X_jetway.dat<
+Jetways: 17440
+0:03:57.070 W/ART: 
+********************************************************** WARNING *******************************************************
+**                                                                                                                      **
+** Art controls are being modified. These are development tools which may cause unpredictable or unstable behaviour and **
+** SHOULD NOT be used in normal operation. Please avoid touching art controls if you need to file a bug report.         **
+**                                                                                                                      **
+**************************************************************************************************************************
+0:03:57.070 W/ART: Art control 'rain/force_factor' was modified by ZIBOmod_plugin.
+0:03:57.070 W/ART: Art control 'rain/dynamic_drag' was modified by ZIBOmod_plugin.
+0:03:57.070 W/ART: Art control 'rain/scale' was modified by ZIBOmod_plugin.
+0:03:57.070 W/ART: Art control 'rain/spawn_adjust' was modified by ZIBOmod_plugin.
+0:04:07.495 E/OBJ: OBJ read failed: the file path Aircraft/737NG Series_V2.S1/objects/GSE/asu.obj could not be opened.
+0:04:07.495 E/OBJ: OBJ read failed: the file path Aircraft/737NG Series_V2.S1/objects/GSE/cones.obj could not be opened.
+miniCOCKPIT: serial port connected: 6
+WebFMC [info]: Determining plane type
+WebFMC [info]: acf_ICAO: 'B738', acf_author: 'Alex Unruh', acf_descrip: 'Boeing 737-800NG'
+WebFMC [info]: Detected a zibo-based aircraft
+0:04:17.651 E/OBJ: OBJ read failed: the file path Aircraft/737NG Series_V2.S1/objects/GSE/gpu.obj could not be opened.
+0:04:22.056 I/TEX: Target scale moved to 2.000000. Texture usage is 2.52 gb out of 17.24 gb available. Memory headroom is 15.16 gb
+0:04:22.689 I/OVR: rebuild_teleport_matrix: parent=holodeck psi=0.0 pilot_head=0
+0:04:22.689 I/OVR: User is entering the holodeck.
+0:04:22.689 I/WIN: Opened window Settings
+0:04:28.893 I/OVR: User is leaving the holodeck.
+0:04:35.821 I/TEX: Target scale moved to 4.000000. Texture usage is 2.79 gb out of 17.07 gb available. Memory headroom is 14.72 gb
+0:04:48.662 I/TEX: Target scale moved to 8.000000. Texture usage is 3.01 gb out of 16.56 gb available. Memory headroom is 13.98 gb
+0:04:59.906 I/WXR: KEZM had a METAR from the future (020035Z)
+0:05:01.001 I/TEX: Target scale moved to 16.000000. Texture usage is 3.59 gb out of 16.61 gb available. Memory headroom is 13.44 gb
+0:05:59.284 I/WXR: KEZM had a METAR from the future (020035Z)
+[XVatsim] Preflight route cache unavailable; using normal route preparation.
+0:06:59.224 I/WXR: KEZM had a METAR from the future (020035Z)
+0:07:59.230 I/WXR: KEZM had a METAR from the future (020035Z)
+0:08:24.212 I/WIN: Opened window Plugin Admin
+[XVatsim] Plugin disabled.
+0:08:59.172 I/WXR: KEZM had a METAR from the future (020035Z)
+[XVatsim] Preflight route cache not active: Preflight route cache not found.
+[XVatsim] Plugin enabled.
+[XVatsim] Cruise target cleared because source VATSIM flight plan was stale, unmatched, or changed.
+[XVatsim] Preflight route cache unavailable; using normal route preparation.
+0:09:59.119 I/WXR: KEZM had a METAR from the future (020035Z)
+0:10:00.025 I/IDENT: Getting certificate from disk...
+0:10:00.025 I/IDENT: Accepting receipt
+0:10:45.044 I/PLG: The plugin xPilot 3.0.2 is setting global TCAS override to 0.
+The plugin xPilot 3.0.2 is releasing control of AI aircraft.
+0:10:45.044 I/PLG: The plugin xPilot 3.0.2 is setting global TCAS override to 0.
+[XVatsim] xPilot disconnected; current flight context preserved for reconnect recovery (KAUS -> KSAN).
+[XVatsim] Cruise target cleared because source VATSIM flight plan was stale, unmatched, or changed.
+0:10:59.061 I/WXR: KEZM had a METAR from the future (020035Z)
+0:11:29.922 I/OVR: rebuild_teleport_matrix: parent=holodeck psi=0.0 pilot_head=0
+0:11:29.922 I/OVR: User is entering the holodeck.
+0:11:29.922 I/WIN: Opened window Settings
+0:11:34.128 I/OVR: User is leaving the holodeck.
+0:11:36.690 I/SIM: Exiting the sim without confirmation
+0:11:36.690 D/STM: Transitioning from state state_Normal to state_ShuttingDown
+========= MODIFIED ART CONTROLS =========
+ PLG: rain/spawn_adjust: 5
+ PLG: rain/dynamic_drag: 0
+ PLG: rain/force_factor: 0
+ PLG: rain/scale: 0
+========= MODIFIED ART CONTROLS =========
+0:11:36.690 D/AVP_HELPER: NvStreamManager shutdown
+0:11:36.690 D/MDNS: mDNS service stopped
+0:11:36.690 D/AVP_HELPER: All resources cleaned up
+0:11:36.690 I/AVP: Closing TCP server socket 000001A0D7834860
+2026-09-01 17:30:10 BpB[cfg.cpp:1079]: [I] Write config file C:\X-Plane 12\Output\preferences\BetterPushback.cfg
+FlyWithLua Info: Load exit file.
+FlyWithLua Info: Exit file loaded.
+FlyWithLua Info:  deinitFmodSupport() FmodSounds.size =  0
+FlyWithLua Info: deinitFmodSupport()  Should be 0 now FmodSounds.size =  0
+FlyWithLua Info: FlyWithLua plugin disabled.
+WebFMC [debug]: Plugin disabled
+X-Aviation Activation (drm_system.cpp.91): Disable
+X-Aviation Activation (drm_menubar.cpp.28): Destroy Menubar
+X-Aviation Activation (drm_system.cpp.119): Disabled
+[XVatsim] Plugin disabled.
+0:11:36.690 xPilot: xPilot plugin disabled
+[XJet] 2026-09-01 17:30:10,487 [INFO] GlobalPlugin – XJet plugin disabled.
+Unloading plugin PluginAdmin (xpsdk.examples.pluginadmin)
+Unloading plugin Navigraph Simlink (Navigraph Simlink for X-Plane)
+Unloading plugin BetterPushback-v1.13 (skiselkov.BetterPushback)
+2026-09-01 17:30:10 BpB[xplane.c:1252]: [I] Unloading BetterPushBack
+Unloading plugin Descent Pro (com.darronveazey.descentpro)
+Unloading plugin FlyWithLua NG+ 2.8.13 build Aug 15 2025 10:22:52 (CarstenLynker.FlyWithLua.NG+)
+FlyWithLua Info:  deinitFmodSupport() FmodSounds.size =  0
+FlyWithLua Info: deinitFmodSupport()  Should be 0 now FmodSounds.size =  0
+Unloading plugin SimBriefing (com.simbrief.plugin)
+Unloading plugin WebFMC X-Plane plugin (com.greenarcstudios.webfmc)
+WebFMC [info]: WebFMC shutting down
+WebFMC [debug]: IO stopped
+WebFMC [debug]: Waiting for IO thread
+WebFMC [debug]: IO thread stopped
+WebFMC [debug]: Stopping backend process
+WebFMC [debug]: Backend process stopped
+WebFMC [info]: WebFMC shutdown complete
+WebFMC [debug]: IO thread finished
+Unloading plugin X-Aviation Activation (lss.xa.activation)
+X-Aviation Activation (drm_system.cpp.43): Stop
+X-Aviation Activation (drm_system.cpp.45): Stopped
+Unloading plugin XVatsim (org.xvatsim.plugin)
+[XVatsim] Plugin stopped.
+Unloading plugin miniCOCKPIT (ATS.minicockpit.status)
+Unloading plugin xPilot 3.0.2 (org.vatsim.xpilot)
+Unloading plugin Airfoillabs XJet (com.airfoillabs.xjet)
+[XJet] 2026-09-01 17:30:10,797 [INFO] GlobalPlugin – XJet plugin stopped.
+Unloading plugin GroundTraffic v1.51 Nimbus Simulation - KPHX - Phoenix (Marginal.GroundTraffic.Nimbus Simulation - KPHX - Phoenix)
+Unloading plugin XLua 1.3.0r1 (com.x-plane.xlua.1.3.0r1)
+Unloading plugin ZIBOmod_plugin (zibomod.by.Zibo)
+[ZIBOmod_plugin]: Dataref is not owned by you - you cannot unregister.
+[ZIBOmod_plugin]: Dataref is not owned by you - you cannot unregister.
+[ZIBOmod_plugin]: Dataref is not owned by you - you cannot unregister.
+[ZIBOmod_plugin]: Dataref is not owned by you - you cannot unregister.
+[ZIBOmod_plugin]: Dataref is not owned by you - you cannot unregister.
+[ZIBOmod_plugin]: Dataref is not owned by you - you cannot unregister.
+Zibomod plugin unloaded.
+Plugin unload complete.
+Clean exit from threads.
+0:11:36.690 I/JOY: Control response for axis joy_use_ptch: 0.000000
+0:11:36.690 I/JOY: Control response for axis joy_use_roll: 0.000000
+0:11:36.690 I/JOY: Control response for axis joy_use_hdng: 0.000000
+0:11:36.690 I/JOY: Control response for axis joy_use_lbrk: 0.000000
+0:11:36.690 I/JOY: Control response for axis joy_use_rbrk: 0.000000
+0:11:36.690 I/JOY: Control response for axis joy_use_flap: 0.000000
+0:11:36.690 I/JOY: Control response for axis joy_use_sbrk: 0.000000
+0:11:36.690 I/JOY: Control response for axis joy_use_thro1: 0.000000
+0:11:36.690 I/JOY: Control response for axis joy_use_thro2: 0.000000
+0:11:36.690 I/JOY: UNREGISTER Joystick device: Bravo Throttle Quadrant - VID:10571PID:6401
+0:11:36.690 I/JOY: UNREGISTER Joystick device: TCA Sidestick X Pilot - VID:1103PID:1038
+0:11:36.690 I/JOY: UNREGISTER Joystick device: MFG Crosswind V2/3 - VID:5840PID:2616
+0:11:36.690 D/HID: HID Bridge Shutdown
+----- X-Plane has shut down -----

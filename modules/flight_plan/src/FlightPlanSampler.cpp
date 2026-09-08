@@ -8,6 +8,7 @@
 #include <cstring>
 #include <limits>
 #include <string>
+#include <utility>
 
 #include "XPLMNavigation.h"
 
@@ -20,7 +21,6 @@ constexpr double kSampleMovementThresholdNm = 0.05;
 constexpr double kEarthRadiusNm = 3440.065;
 constexpr double kCurrentAirportMaxDistanceNm = 10.0;
 constexpr double kCurrentAirportMaxAglFt = 2500.0;
-constexpr int kMaxFmsEntries = 512;
 constexpr std::size_t kMaxAirportIdChars = 8;
 
 long long CurrentTickSeconds() {
@@ -79,6 +79,42 @@ bool IsValidPosition(double latitudeDeg, double longitudeDeg) {
            latitudeDeg <= 90.0 &&
            longitudeDeg >= -180.0 &&
            longitudeDeg <= 180.0;
+}
+
+bool ReadFmsAirportEndpoint(
+    int index,
+    detail::FmsAirportEndpoint* endpoint,
+    void*) {
+    if (endpoint == nullptr) {
+        return false;
+    }
+
+    XPLMNavType navType = 0;
+    char navId[256] = {};
+    float latitude = 0.0f;
+    float longitude = 0.0f;
+
+    XPLMGetFMSEntryInfo(
+        index,
+        &navType,
+        navId,
+        nullptr,
+        nullptr,
+        &latitude,
+        &longitude);
+
+    const auto normalizedAirportId = NormalizeAirportId(navId);
+    if (navType != xplm_Nav_Airport ||
+        normalizedAirportId.empty() ||
+        !IsValidPosition(latitude, longitude)) {
+        return false;
+    }
+
+    endpoint->index = index;
+    endpoint->airportIcao = normalizedAirportId;
+    endpoint->latitudeDeg = latitude;
+    endpoint->longitudeDeg = longitude;
+    return true;
 }
 
 void ApplyNearestAirportFallback(
@@ -203,6 +239,59 @@ void ApplyGpsDestinationFallback(brain::FlightPlanSnapshot* snapshot) {
 
 }  // namespace
 
+namespace detail {
+
+FmsAirportEndpoints FindFmsAirportEndpointsBidirectionally(
+    int entryCount,
+    FmsAirportEndpointReader reader,
+    void* context) {
+    FmsAirportEndpoints endpoints;
+    if (reader == nullptr) {
+        return endpoints;
+    }
+
+    const auto boundedEntryCount =
+        std::clamp(entryCount, 0, kMaximumFmsEntries);
+    int frontIndex = 0;
+    int backIndex = boundedEntryCount - 1;
+
+    while (frontIndex <= backIndex &&
+           (!endpoints.departure || !endpoints.destination)) {
+        if (!endpoints.departure) {
+            FmsAirportEndpoint candidate;
+            ++endpoints.entriesRead;
+            if (reader(frontIndex, &candidate, context)) {
+                candidate.index = frontIndex;
+                endpoints.departure = std::move(candidate);
+            }
+            ++frontIndex;
+        }
+
+        if (!endpoints.destination && backIndex >= frontIndex) {
+            FmsAirportEndpoint candidate;
+            ++endpoints.entriesRead;
+            if (reader(backIndex, &candidate, context)) {
+                candidate.index = backIndex;
+                endpoints.destination = std::move(candidate);
+            }
+            --backIndex;
+        }
+    }
+
+    // A single valid airport has historically served as both endpoints. If
+    // the two searches cross before finding their own side, all remaining
+    // entries have been examined and the found endpoint is necessarily unique.
+    if (!endpoints.departure && endpoints.destination) {
+        endpoints.departure = endpoints.destination;
+    } else if (endpoints.departure && !endpoints.destination) {
+        endpoints.destination = endpoints.departure;
+    }
+
+    return endpoints;
+}
+
+}  // namespace detail
+
 void FlightPlanSampler::Reset() {
     hasSampleCache_ = false;
     cachedSnapshot_ = {};
@@ -233,42 +322,21 @@ brain::FlightPlanSnapshot FlightPlanSampler::Sample(
 
     brain::FlightPlanSnapshot snapshot;
 
-    const auto entryCount = std::clamp(XPLMCountFMSEntries(), 0, kMaxFmsEntries);
-    for (int index = 0; index < entryCount; ++index) {
-        XPLMNavType navType = 0;
-        char navId[256] = {};
-        XPLMNavRef navRef = XPLM_NAV_NOT_FOUND;
-        int altitude = 0;
-        float latitude = 0.0f;
-        float longitude = 0.0f;
-
-        XPLMGetFMSEntryInfo(
-            index,
-            &navType,
-            navId,
-            &navRef,
-            &altitude,
-            &latitude,
-            &longitude);
-
-        const auto normalizedAirportId = NormalizeAirportId(navId);
-        if (navType != xplm_Nav_Airport ||
-            normalizedAirportId.empty() ||
-            !IsValidPosition(latitude, longitude)) {
-            continue;
-        }
-
-        if (snapshot.departureIcao.empty()) {
-            snapshot.departureIcao = normalizedAirportId;
-            snapshot.departureLatDeg = latitude;
-            snapshot.departureLonDeg = longitude;
-            snapshot.hasDepartureCoordinates = true;
-            snapshot.departureSource = brain::AirportSource::OnboardFms;
-        }
-
-        snapshot.destinationIcao = normalizedAirportId;
-        snapshot.destinationLatDeg = latitude;
-        snapshot.destinationLonDeg = longitude;
+    const auto endpoints = detail::FindFmsAirportEndpointsBidirectionally(
+        XPLMCountFMSEntries(),
+        &ReadFmsAirportEndpoint,
+        nullptr);
+    if (endpoints.departure) {
+        snapshot.departureIcao = endpoints.departure->airportIcao;
+        snapshot.departureLatDeg = endpoints.departure->latitudeDeg;
+        snapshot.departureLonDeg = endpoints.departure->longitudeDeg;
+        snapshot.hasDepartureCoordinates = true;
+        snapshot.departureSource = brain::AirportSource::OnboardFms;
+    }
+    if (endpoints.destination) {
+        snapshot.destinationIcao = endpoints.destination->airportIcao;
+        snapshot.destinationLatDeg = endpoints.destination->latitudeDeg;
+        snapshot.destinationLonDeg = endpoints.destination->longitudeDeg;
         snapshot.hasDestinationCoordinates = true;
         snapshot.destinationSource = brain::AirportSource::OnboardFms;
     }

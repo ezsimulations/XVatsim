@@ -1,0 +1,16 @@
+name=V2 operating mode persistence failure is fail soft
+operating_mode.probe=persistence-failure
+operating_mode.initial_mode=IFR
+operating_mode.selection_requests=VFR
+operating_mode.persistence=unavailable
+operating_mode.processing_cycles=5
+expect.operating_mode=VFR
+expect.operating_mode_source=pilot-menu
+expect.operating_mode_reason=explicit-selection
+expect.operating_mode_generation=1
+expect.operating_mode_change_count=1
+expect.operating_mode_persistence_requests=1
+expect.operating_mode_save_attempts=1
+expect.operating_mode_save_successes=0
+expect.operating_mode_retry_count=0
+expect.operating_mode_processing_cycles=5

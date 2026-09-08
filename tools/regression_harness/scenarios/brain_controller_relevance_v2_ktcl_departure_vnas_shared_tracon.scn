@@ -1,0 +1,30 @@
+name=Brain Controller Relevance V2 KTCL Departure vNAS Shared TRACON
+now_seconds=1000
+
+state.flight_active=true
+flight.callsign=AAL123
+flight.departure_icao=KTCL
+flight.departure_lat=33.2206
+flight.departure_lon=-87.6114
+flight.has_departure_coordinates=true
+flight.destination_icao=KDFW
+
+brain_controller_relevance.stage=Departure
+brain_controller_relevance.v2_enabled=true
+
+terminal_authority.airport_icao=KTCL
+terminal_authority.lat=33.2206
+terminal_authority.lon=-87.6114
+terminal_authority.feature=id=BHM;name=Birmingham Approach;prefixes=TCL;polygon=32.5,-88.5|34.5,-88.5|34.5,-85.5|32.5,-85.5
+
+controller.entry=callsign=BHM_APP;frequency=123.800;facility=5;actionable=true;atis=false
+transceiver.available=true
+transceiver.stale=false
+transceiver.station=callsign=BHM_APP;frequency=123.800;lat=33.5629;lon=-86.7535;facility=5;actionable=true
+transceiver.station=callsign=BHM_APP;frequency=123.800;lat=33.2206;lon=-87.6114
+
+vnas.controller_feed_json={"updatedAt":"2026-09-06T20:00:00Z","controllers":[{"artccId":"ZTL","primaryFacilityId":"BHM","primaryPositionId":"01GW3KRMM7YQ2MWZ1A0GCJT0M6","isActive":true,"isObserver":false,"positions":[{"facilityId":"BHM","facilityName":"Birmingham ATCT/TRACON","positionId":"01GW3KRMM7YQ2MWZ1A0GCJT0M6","positionName":"South Radar","positionType":"Tracon","radioName":"Birmingham Approach","defaultCallsign":"BHM_APP","frequency":123800000,"isPrimary":true,"isActive":true,"starsData":{"areaId":"01GW3KNF97SEQ44PJ3PNF670JK","assumedTcps":["1S","1N"]}}],"vatsimData":{"callsign":"BHM_APP","primaryFrequency":123800000}}]}
+vnas.artcc_facility_json={"id":"ZTL","facility":{"id":"ZTL","type":"Artcc","name":"Atlanta Center","positions":[],"childFacilities":[{"id":"BHM","type":"Tracon","name":"Birmingham ATCT/TRACON","starsConfiguration":{"internalAirports":["ANB","ASN","BHM","EET","EKY","GAD","JFX","PLR","SCD","TCL"],"areas":[{"id":"01GW3KNF97SEQ44PJ3PNF670JK","name":"Approach"}]},"positions":[{"id":"01GW3KRMM7YQ2MWZ1A0GCJT0M6","name":"South Radar","callsign":"BHM_APP","frequency":123800000,"starsConfiguration":{"areaId":"01GW3KNF97SEQ44PJ3PNF670JK"}}],"childFacilities":[]}]}}
+
+expect.brain_controller_relevance_departure_callsigns=BHM_APP
+expect.brain_controller_relevance_completions_contains=BHM_APP:accepted:departure-terminal-vnas-match,yes=airport-radio-near+vnas-terminal+terminal-owner,vnas=ARTCC=ZTL/FACILITY=BHM

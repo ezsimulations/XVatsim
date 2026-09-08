@@ -1,0 +1,8 @@
+80ae1a6c22421cb14fbbcacb6299913a00b48f0c refs/heads/main
+e4a626975513db93105b9c625f4fbb941e7f9c05 refs/heads/v1-maintenance
+ac0f86261ebb12c7cdd0fc166f971ea738ad1f22 refs/heads/v2-development
+88c1b12fc4f686394f7ec8d9525f56514e152848 refs/tags/brain-ownership-recovery-closed
+4b7d5d87c82978ac362eb43eaf537a63c2974bc3 refs/tags/v1.2.0
+39161b58501f497b0a96c4acabb16208e6b67114 refs/tags/v1.2.1
+39b5011b3621ec0f244934df255ad4c6eb20b508 refs/tags/v1.2.2
+2270624c09147ae8411cce2eea42f7e67a568426 refs/tags/v1.2.3

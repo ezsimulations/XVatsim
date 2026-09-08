@@ -1,0 +1,11 @@
+protectedFilesChecked=15
+protectedFilesChanged=0
+head=ac0f86261ebb12c7cdd0fc166f971ea738ad1f22
+branch=v2-development
+stagedCount=0
+protectedDiffPaths=0
+step1ReceiptSha256=7A762200007C2AB0817C2DBE1997624F7CA17416A542012B641C153C18A39727
+step2ReceiptSha256=9C7770DA29B354C1DE2F35224D9AFF9F0D02BC4658B8885EEDC3EA3C8F1FABF4
+commitCreated=false
+tagCreated=false
+v1Touched=false

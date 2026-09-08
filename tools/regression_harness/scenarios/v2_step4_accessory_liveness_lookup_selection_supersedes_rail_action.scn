@@ -1,0 +1,15 @@
+name=v2_step4_accessory_liveness_lookup_selection_supersedes_rail_action
+step3.action=layout:l:1920:1080:1.0:300:900:1.0:1:layout
+step3.action=new:brain
+step3.action=presenter-new:presenter
+step3.action=click-queue-new:queue
+step3.action=dispatch-new:dispatcher:56
+step3.action=dispatch-produce:dispatcher:queue:METAR:100:click
+step3.action=dispatch-begin-present:dispatcher:queue:brain:presenter:layout:main:1:101:bound
+step3.action=dispatch-draw:dispatcher:queue:presenter:110:2:2:ATIS:newer_selection
+expect.step3=newer_selection.completed=false
+expect.step3=newer_selection.terminal=true
+expect.step3=newer_selection.cancelled=true
+expect.step3=newer_selection.disposition=SELECTION_SUPERSEDED
+expect.step3=newer_selection.in_flight=false
+expect.step3=newer_selection.selection_superseded_cancellations=1

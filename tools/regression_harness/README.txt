@@ -87,6 +87,367 @@ Expectations:
 - expect.display_source=Enroute
 - expect.display_callsigns=LAX_CTR,PHL_CTR
 
+V2 operating-mode foundation replay
+-----------------------------------
+The Step 2 operating-mode probes exercise the brain-owned IFR/VFR preference,
+the settings-store source fact, reset preservation, fail-soft persistence, and
+IFR/VFR output parity. They do not enable VFR controller behavior.
+
+Operating-mode inputs:
+
+- operating_mode.probe=settings-load|round-trip|selection|reset-preservation|missing-flight-plan|parity|persistence-failure
+- operating_mode.settings_entry=<missing>|<empty>|<malformed>|<unknown>|ifr|vfr
+- operating_mode.initial_mode=IFR|VFR
+- operating_mode.selection_requests=IFR,VFR,...
+- operating_mode.round_trip_modes=IFR,VFR
+- operating_mode.reset_paths=runtime,cache-preserving,session,cold-dark,invalid-aircraft,xpilot-disconnect,xpilot-reconnect,callsign-change,plugin-disable-enable
+- operating_mode.parity_stage=Departure|Enroute|Arrival
+- operating_mode.persistence=temporary|unavailable
+- operating_mode.processing_cycles=<nonnegative integer>
+
+Operating-mode expectations:
+
+- expect.operating_mode=IFR|VFR
+- expect.operating_mode_load_status=missing|valid|invalid|unavailable
+- expect.operating_mode_source=default|settings-store|pilot-menu
+- expect.operating_mode_reason=<stable reason>
+- expect.operating_mode_generation=<nonnegative integer>
+- expect.operating_mode_change_count=<nonnegative integer>
+- expect.operating_mode_persistence_requests=<nonnegative integer>
+- expect.operating_mode_save_attempts=<nonnegative integer>
+- expect.operating_mode_save_successes=<nonnegative integer>
+- expect.operating_mode_request_source=pilot-menu|none
+- expect.operating_mode_request_reason=explicit-selection|already-active|none
+
+V2 Step 4 METAR contract replay
+--------------------------------
+The 67 files named v2_step4_*.scn use:
+
+  step4.probe=<locked probe name>
+
+They exercise production brain policy and production parser/presentation code
+with proof-only isolated transport binding. Corrective real-WinHTTP cases bind
+only to `127.0.0.1` on an ephemeral port and never contact VATSIM or another
+external address. Coverage includes target ownership, lookup interaction,
+VATSIM-only URL and response rules, send-completion callback registration,
+successful/failed terminal ledgers, parsing and category boundaries, minimal
+ORB strings and tones, freshness, history, lifecycle cleanup-only draining,
+cooperative shutdown, 100,000-cycle unchanged-idle work, and normal-binary
+source/fixture isolation. The approved complete saved-scenario count is 561.
+- expect.operating_mode_state_unchanged=true|false
+- expect.operating_mode_reset_preserved=true|false
+- expect.operating_mode_no_automatic_vfr=true|false
+- expect.operating_mode_round_trip=IFR,VFR
+- expect.operating_mode_parity=true|false
+- expect.operating_mode_allowed_parity_difference=state-diagnostic-only
+- expect.operating_mode_retry_count=<nonnegative integer>
+- expect.operating_mode_processing_cycles=<nonnegative integer>
+- expect.operating_mode_missing_plan_processed=true|false
+- expect.operating_mode_reset_trace=<ordered path:decision list>
+- expect.operating_mode_pipeline_runs=<nonnegative integer>
+- expect.operating_mode_pipeline_stage=Departure|Enroute|Arrival
+- expect.operating_mode_pipeline_controller_callsigns=<ordered callsign list>
+- expect.operating_mode_pipeline_display_callsigns=<ordered callsign list>
+
+An idempotent selection reports the request source/reason separately. It must
+not change the brain-owned mode, state source, state reason, or generation.
+
+The three parity scenarios supply ordinary aircraft, workflow, radio,
+controller-feed, transceiver, and route facts. The harness resolves the real
+workflow stage, builds the radio-reachable controller snapshot, runs the brain
+controller-relevance worker and brain-owned publisher, and builds the overlay
+view once from an IFR brain state and once from a VFR brain state. The expected
+stage and non-empty controller/display callsigns make the comparison
+non-vacuous; no board or display result is assigned before those calls run.
+
+The missing-flight-plan scenario commits an actual unavailable
+FlightPlanSnapshot through the brain-owned sampling path and then runs an
+ordinary processing cycle. It asserts the missing snapshot was processed and
+that no mode change or persistence request occurred.
+
+The reset trace is ordered and names the actual production boundary decision
+or brain-owned reset sequence exercised for runtime, cache-preserving, session,
+cold-and-dark, invalid-aircraft, xPilot disconnect, xPilot reconnect, callsign
+change, and plugin disable/enable paths. Each path starts from an independently
+seeded VFR selection and must preserve mode, source, reason, and generation.
+
+After the intentional unavailable-store save failure, processing_cycles runs
+ordinary flight-plan sampling plus workflow/controller/publisher/overlay work.
+The save-attempt counter is observed across those cycles; retry_count must stay
+zero because no ordinary-processing call path invokes settings persistence.
+
+V2 Step 3 ORB rail and drawer contract
+---------------------------------------
+Step 3 scenarios are executable scripts rather than approved-name selectors.
+Each repeated step3.action line invokes a production-facing brain or overlay
+operation. Each repeated expect.step3 line compares an operation-produced value:
+
+- step3.action=<verb>:<arguments>
+- expect.step3=<observation-path>=<literal or @other-observation-path>
+
+Supported actions cover runtime creation/destruction, operating-mode selection,
+history acceptance, ORB requests, presentation projection, concrete lifecycle
+entry points, cache-preserving reset, production layout and hit testing, wrapping,
+wheel routing, retained presentation updates, and the existing main-card pipeline.
+
+Render evidence is never produced by an action-to-counter table. The harness
+creates one production-facing AccessoryPresentationState and drives projected
+brain snapshots, layout generations, selection changes, hidden cache changes,
+duplicate insertions, and scrolling through that retained object. It observes the
+object's active snapshot identity, selection/history/layout generations, render
+signatures, cached entry keys/bodies/sequences, live drawer offset and measured
+maximum, final marker, and counters. Unchanged updates reuse the same snapshot,
+layout, and main-card signature for all 10,000 iterations.
+
+Hit proof derives center, circle-edge, immediately-outside, and inter-ORB gap
+points from production layout. The click request used by the exactly-once probe
+is constructed from the drawer identity returned by the hit test. Lifecycle
+preserve/clear probes seed METAR, ATIS, and PDC together and compare keys, bodies,
+accepted sequences, retained bytes, and generations for all three histories.
+Callsign-change probes pass the actual old and new callsigns to the dedicated
+production lifecycle entry point and inspect the subsequent projection.
+
+The locked compact geometry contract is closed 430 x 374, open 430 x 506, with
+52 design-pixel ORBs. The rail spans design y=320..372. METAR, ATIS, and PDC span
+x=118..170, 186..238, and 254..306, with centers at x=144, 212, and 280 on
+y=346 and 16 design-pixel gaps. The drawer spans y=378..494, with a 6-pixel
+rail-to-drawer gap and a 12-pixel open bottom margin. At scale 1.35, open height
+must round to 683, leaving 37 pixels of 720p vertical capacity.
+Edge clamping may touch an edge; it is not required to create a positional
+margin on every edge.
+
+Wheel-routing probes pass the resolved production layout and actual pointer
+coordinates. The production router classifies the point as drawer, main card,
+or unhandled before any offset changes. No scenario supplies boolean region
+truth to the wheel implementation.
+
+History-input probes lock stable keys at 128 accepted / 129 rejected, reject an
+empty key and invalid UTF-8 independently in key, title, and body, preserve exact
+case and non-CRLF whitespace, and permit only CRLF-to-LF conversion. Limiting
+proof accounts for the visible CONTENT LIMITED marker inside the 128-byte title,
+8,192-byte body, individual-entry, and 65,536-byte drawer budgets.
+
+Stable keys are normalized from CRLF to LF before their byte limit, storage, and
+exact comparison are applied. The focused contract proves that CRLF and LF forms
+of the same key deduplicate. Title/body source identity is a SHA-256 digest of the
+complete normalized inputs, including unambiguous big-endian title/body
+byte-length fields. It is calculated only when an entry is offered to the brain,
+never on an update/frame path, and before retained-content limiting. A change
+beyond either retained boundary is therefore accepted as an update rather than
+mistaken for a duplicate. Focused proof checks a known digest and verifies that
+title-tail and body-tail changes each produce a different 32-byte digest.
+
+Text proof calls the production Windows GDI+ measurement path directly. The
+caller explicitly initializes and shuts down one measurement context outside DLL
+loader activity. That context owns one reusable Bitmap and Graphics instance,
+caches bounded Font resources and typography metrics by genuine font role/scale,
+and is warmed at 0.85, 1.00, and 1.35 exactly as the plugin host must do. Static
+startup/shutdown and per-layout GDI object construction are prohibited.
+
+The single path uses Segoe UI, UnitPixel, AntiAliasGridFit,
+GenericTypographic, NoWrap, and MeasureTrailingSpaces with the intended roles:
+drawer body at 11.5 design pixels regular, drawer entry title at 11.5 design
+pixels bold, ORB labels at 8.0 design pixels bold, and the OPEN indicator at 6.5
+design pixels bold. Layout resolution consumes only cached typography metrics;
+it never calls GDI+.
+
+Wrapping converts each retained UTF-8 input to UTF-16 once. It submits only a
+bounded portion of the remaining paragraph to GDI+, expands that window only
+when the whole window fits, verifies the proposed line using the same production
+no-wrap measurement, and retreats or advances only at complete UTF-16 scalar
+boundaries. It never repeatedly measures the full remaining 8,192-byte suffix.
+Word-boundary wrapping and UTF-8-safe character fallback consume these measured
+boundaries; no harness width estimate or parallel font implementation is
+permitted. allLinesFit is derived from the maximum exact measured output-line
+width.
+
+The maximum-token performance action sends 20 distinct 8,192-byte valid UTF-8
+inputs through this production path without caching completed wraps. It includes
+wide, narrow, mixed, near-tail-different, two-byte, three-byte, and four-byte
+content; records every duration plus p50, p95, and maximum; independently checks
+every exact line width; and proves exact retained reconstruction. Every operation
+must be at or below 16.7 ms. The scale matrix records every measured
+maximum/available drawer width plus each ORB label and OPEN measured/available
+rectangle in the proof log.
+
+The retained production drawer plan preserves keys, titles, bodies, accepted
+sequences, measured title lines, and measured body lines in newest-first pairing.
+Title and body lines both contribute to scroll limits. A title-only limiting
+probe proves that its visible CONTENT LIMITED marker survives storage,
+projection, measured wrapping, and the cached presentation plan. Duplicate and
+hidden-cache updates must produce zero GDI measurement and zero render work.
+Anchor proof separately covers screen-change clamping
+without settings writes and an intentional open drag becoming the restorable
+closed anchor. Main-card parity compares both an unchanged production signature
+and a deliberately changed production signature; accessory code may report the
+former unchanged but must report the latter changed without requesting accessory
+or main-card raster work.
+
+The production anchor contract is explicit rather than inferred from drawer
+visibility. AccessoryAnchorState retains the current live anchor, saved pre-open
+closed anchor, temporary-open-clamp state, and intentional-open-move state.
+Initialize, OrdinaryRefresh, OpenDrawer, CloseDrawer, IntentionalMove, and
+ScreenBoundsChanged are distinct production operations. Ordinary closed refresh
+uses the current live position; only CloseDrawer may request restoration of the
+saved anchor. Closed and open drag samples pass their exact clamped coordinates
+through the same stateful production operation used by OverlayWindow, so the
+card, rail, ORBs, drawer, and hit targets must report identical deltas. Pure
+translation retains texture-local rail and drawer signatures and records zero
+history visits, copies, wrapping, GDI measurement, raster requests, or upload
+requests. The executable aggregate is:
+
+- step3.action=anchor-contract:<observation-prefix>
+
+The compact production geometry is locked at 430 x 374 closed and 430 x 506
+open design pixels. The rail is x=118..306 and y=320..372, the 52-pixel ORB
+centers are y=346, and the drawer is x=0..430 and y=378..494. The six-line
+drawer capacity is unchanged. At scale 1.35 the open height is 683 physical
+pixels, leaving exactly 37 pixels of vertical capacity on a 720-pixel screen.
+
+Drawer capacity is not supplied by a scenario or a second renderer rule. The
+production layout resolves the drawer inset, header top/height, content top and
+bottom, and the rounded 13-design-pixel line advance. At scales 0.85, 1.00, and
+1.35 this yields exactly six complete visible lines. BuildAccessoryHistoryLayout,
+BuildAccessoryDrawerRenderPlan, and OverlayWindow's production renderer consume
+that same AccessoryLayoutResult. The long-history scenario proves all measured
+lines fit, the seventh line would exceed the content rectangle, the final marker
+is visibly present at the measured maximum, and a further wheel step is a zero-
+work no-op. The relevant executable grammar is:
+
+- step3.action=history-layout:<snapshot-key>:<production-layout-key>:<observation-prefix>
+- step3.action=drawer-render-plan:<presenter-key>:<production-layout-key>:<observation-prefix>
+- step3.action=presenter-scroll-to-max:<presenter-key>:<production-layout-key>:<observation-prefix>
+
+The production AccessoryClickFactQueue is a fixed eight-fact queue. Produce
+assigns the monotonic sequence; consume removes one fact; discard removes every
+pending fact without resetting that sequence. The same queue is used by
+OverlayWindow. Forced-close and clear scenarios explicitly seed a pending fact,
+discard it before invoking each real brain lifecycle entry point, and prove a
+later consume cannot recover it. Normal hit-tested clicks still travel through
+the queue to the brain exactly once. Queue grammar is:
+
+- step3.action=click-queue-new:<queue-key>
+- step3.action=click-queue-produce:<queue-key>:<METAR|ATIS|PDC>:<started-us>:<prefix>
+- step3.action=click-queue-produce-hit:<queue-key>:<hit-key>:<started-us>:<prefix>
+- step3.action=click-queue-discard:<queue-key>:<prefix>
+- step3.action=click-queue-consume:<queue-key>:<prefix>
+- step3.action=click-queue-consume-to-brain:<queue-key>:<brain-key>:<prefix>
+
+Production ORB input dispatch is event-driven and does not use the general
+250-millisecond flight-loop cadence or its 10-second initial delay. The same
+AccessoryInputDispatchCoordinator used by OverlayWindow serializes each accepted
+fact through its brain decision, projected presentation, render generation, and
+matching completed draw. A later rapid click remains queued until the preceding
+selection generation has actually drawn; a draw of another generation cannot
+complete its timing record. Forced lifecycle boundaries invalidate any in-flight
+fact and discard queued facts without resetting the monotonic request sequence.
+The dispatcher registers no timer, recurring callback, or idle poll. Grammar is:
+
+- step3.action=dispatch-new:<dispatcher-key>:<performance-epoch>
+- step3.action=dispatch-produce:<dispatcher-key>:<queue-key>:<METAR|ATIS|PDC>:<started-us>:<prefix>
+- step3.action=dispatch-begin-present:<dispatcher-key>:<queue-key>:<brain-key>:<presenter-key>:<layout-key>:<main-signature-key>:<layout-generation>:<dispatch-us>:<prefix>
+- step3.action=dispatch-draw:<dispatcher-key>:<queue-key>:<presenter-key>:<completed-us>:<current|selection-generation>:<current|render-generation>:<prefix>
+- step3.action=dispatch-invalidate:<dispatcher-key>:<queue-key>:<prefix>
+- step3.action=dispatch-snapshot:<dispatcher-key>:<prefix>
+
+`v2_step3_click_request_exactly_once.scn` proves prompt post-enable dispatch,
+open/switch/close sequencing, rapid-input retention, exact draw-generation
+matching, end-to-end action timing, and lifecycle invalidation. The deliberately
+wrong draw generation cannot complete the open action. The 10,000-update scenario
+also proves a newly idle production dispatcher performs no notification, begin,
+binding, completion, or mismatch work.
+
+Live performance collection uses production fixed-size histograms, not a
+retained-tail sample or action-to-counter lookup. It separately records rail and
+drawer rasterization, actual rail and drawer OpenGL texture upload, completed
+accessory draw, open, atomic switch, close, effective scroll, brain/presentation
+dispatch wall time, matching accessory-draw wall time, combined action wall time,
+Windows current-thread CPU for dispatch/draw/combined work, callback wait, and
+the containing X-Plane frame interval. Each category keeps an exact complete-
+period count and maximum plus histogram-derived p50 and p95.
+
+The steady-clock fields are named dispatchWallUs, actionDrawWallUs, and
+combinedActionWallUs. They are never represented as CPU. Windows GetThreadTimes
+user-plus-kernel deltas provide dispatchThreadCpuUs, actionDrawThreadCpuUs, and
+combinedActionThreadCpuUs. All four queries occur only for an accepted action and
+its matching generation-driven draw; an unavailable query invalidates that live
+proof without substituting wall time. The 16,700-microsecond hard ceiling applies
+to actual thread CPU and to each rasterization, OpenGL upload, and draw wall
+operation. End-to-end open/switch/close latency is not mislabeled as CPU. Each
+action retains the required mouse-fact, dispatch-complete, preceding-draw-entry,
+matching-draw-entry, and matching-draw-complete timestamps plus expected/matching
+draw ordinals. A bounded dispatch-start timestamp additionally prevents time spent
+waiting behind an earlier serialized request from being mislabeled as dispatch
+work. An over-ceiling end-to-end result is FRAME-CADENCE-LIMITED only when
+all CPU components pass, the matching generation completes on its first eligible
+draw, missedEligibleDraws is zero, arithmetic is exact, the excess is accounted
+for by callback wait, and callback wait is no greater than the measured containing
+frame interval plus 1,000 microseconds. A high wall result with passing thread CPU
+is NON-CPU-WALL-OUTLIER, not inferred scheduler preemption. The remaining locked
+classifications are CPU-WITHIN-BUDGET, CPU-FAILURE, RENDER-WALL-FAILURE, and
+TIMING-UNAVAILABLE.
+
+Open, switch, and close retain fixed histograms for brain decision, brain
+projection/history copying, overlay layout/presentation, GDI+ measurement and
+wrapping, and generation binding wall stages. The first eight review/failure
+records are retained in a fixed array; later records increment a dropped count.
+No unbounded action sample list exists.
+
+Actual rasterizations are also aggregated by bounded reason: initial,
+selection/open/close/switch, effective scale/resize, typography/layout, and
+content generation. An effective scroll changes the rendered content generation.
+No per-frame sample list or diagnostic line is created. The first CPU failure,
+render-wall failure, non-CPU wall outlier, or unavailable timing result sets a
+sticky review flag and permits one warning. Aggregate
+publication is revision guarded. Disable/enable preserves the epoch and
+histograms; stop cannot republish an unchanged revision. Harness grammar is:
+
+- step3.action=perf-new:<collector-key>:<epoch>
+- step3.action=perf-record-series:<collector-key>:<category>:<comma-separated-us>:<prefix>
+- step3.action=perf-raster-reason:<collector-key>:<rail|drawer>:<reason>:<count>:<prefix>
+- step3.action=perf-begin-dual-action:<collector-key>:<Opened|Switched|Closed>:<sequence>:<mouse-wall-us>:<dispatch-start-wall-us>:<dispatch-complete-wall-us>:<selection-generation>:<render-generation>:<expected-draw-ordinal>:<thread-cpu-available>:<dispatch-thread-cpu-us>:<brain-wall-us>:<projection-wall-us>:<overlay-wall-us>:<gdi-wrap-wall-us>:<binding-wall-us>:<prefix>
+- step3.action=perf-complete-dual:<collector-key>:<draw-complete-wall-us>:<selection-generation>:<render-generation>:<draw-enter-wall-us>:<preceding-draw-enter-wall-us>:<draw-ordinal>:<action-draw-wall-us>:<thread-cpu-available>:<action-draw-thread-cpu-us>:<render-failure-category-or-none>:<render-failure-us>:<prefix>
+- step3.action=perf-begin-phased-action:<collector-key>:<Opened|Switched|Closed>:<sequence>:<mouse-fact-us>:<dispatch-complete-us>:<selection-generation>:<render-generation>:<expected-draw-ordinal>:<prefix>
+- step3.action=perf-complete-phased:<collector-key>:<draw-complete-us>:<selection-generation>:<render-generation>:<draw-enter-us>:<preceding-draw-enter-us>:<draw-ordinal>:<accessory-draw-cpu-us>:<prefix>
+- step3.action=perf-begin-action:<collector-key>:<Opened|Switched|Closed>:<sequence>:<started-us>:<prefix>
+- step3.action=perf-begin-scroll:<collector-key>:<started-us>:<prefix>
+- step3.action=perf-complete:<collector-key>:<completed-us>:<prefix>
+- step3.action=perf-warning:<collector-key>:<prefix>
+- step3.action=perf-publish:<collector-key>:<prefix>
+- step3.action=perf-snapshot:<collector-key>:<prefix>
+
+`v2_step3_action_render_work_is_bounded.scn` locks total/percentile/maximum
+selection, all six action classifications, dual-clock terminology, thread-query
+success/failure truth, generation association, five stage histograms for each
+drawer action, fixed eight-record storage, sticky failure, one-warning behavior,
+publication guarding, and epoch preservation. The 10,000 unchanged-update proof
+also requires zero thread-time queries. The scenario count remains 494;
+these are strengthened assertions inside the existing 31 Step 3 scenarios, not
+new scenario files.
+
+Future source work remains outside Step 3 but its performance ownership is
+locked: METAR becomes eligible only on the scheduled half-hour boundary and uses
+cached-content fingerprints; ATIS reacts only to a new VATSIM feed generation
+and a relevant-airport content change; PDC/private messages are event-driven.
+Hidden history changes do not render. Unchanged flight cycles perform no parsing,
+wrapping, history traversal, rasterization, upload, logging, or source polling.
+
+The harness owns no alternate decision implementation, history collection,
+layout calculation, or counter lookup. It retains production-returned state and
+stores observations needed for comparisons. A missing action,
+unknown lifecycle entry point, malformed expectation, or expectation without an
+operation-produced observation is a configuration error and exits 2.
+
+Concrete comparison failures exit 1 and emit:
+
+STEP3_ASSERTION_FAILED: <scenario-name>: <observation-path> expected=<value> observed=<value>
+
+The evaluator executes every declared action before checking every expectation.
+There is no shared unavailable short-circuit or unconditional failure. Process
+restart destroys and recreates BrainOwnedRuntimeState. Plugin disable and enable
+invoke their distinct production-facing entry points; enable never issues an ORB
+request, and a later explicit click is required to reopen retained history.
+
 Replay support
 --------------
 The harness can now also replay the real ENROUTE controller matcher by providing route sectors
@@ -577,3 +938,127 @@ Included scenarios
 
 - antimeridian_exact_crossing.scn
   Proves the exact traversal path catches a dateline crossing against an anti-meridian-spanning sector polygon without depending on sampled route points.
+
+Step 3 bounded preparation-worker proof contract
+------------------------------------------------
+
+The `worker-contract` evaluator uses the production
+`AccessoryPreparationWorker`, immutable brain preparation snapshots, GDI+
+text measurement, wrapping, and generation-checked presentation publication.
+It proves one below-normal event-driven worker; one executing job; at most one
+latest queued and one ready plan per drawer; bounded replacement and stale
+rejection; exact UTF-8 title/body/key reconstruction; final-history markers;
+three maximum-retained-byte drawer preparations; constant-time prepared open
+and atomic switch; disable/enable resource recreation with history retention;
+session-reset and callsign-change stale-plan rejection; and zero worker job,
+history, wrapping, raster, or upload activity through 10,000 unchanged updates.
+Ready-plan publication uses a single `try_lock` attempt and returns immediately
+when the worker publication path is contended; it never waits or takes a second
+counter lock on the simulator thread. The executable negative proof holds the
+real worker publication critical section, observes two immediate null readiness
+results, then proves only the exact generation publishes after contention clears.
+
+Worker startup is an explicit `Starting` to `Ready`, `Failed`, or `Stopped`
+lifecycle. `Start` does not report success until both below-normal priority and
+the worker-owned GDI+ context succeed. Injected priority and measurement failures
+fail closed, reject work, publish at most one bounded failure diagnostic, do not
+retry during 10,000 idle observations, and leave zero worker threads after stop.
+The normal successful startup path is then exercised again.
+
+Worker launch is asynchronous. `Start` publishes `Starting`, launches exactly
+one worker, and returns without waiting for priority assignment or the private
+GDI+ context. A repeated call during `Starting` is an immediate no-op. Requests
+received during `Starting` use the same one-latest-request-per-drawer queue and
+are processed after `Ready`; startup failure cancels that bounded pending work.
+The delayed-start proof gates real initialization for 250 ms and proves both
+startup calls remain below 16.7 ms, the state remains `Starting`, the queued
+exact generation publishes after success, and delayed priority/GDI failures
+become latched `Failed` states without retry, spin, or surviving threads.
+
+Job submission uses one nonblocking `try_lock` attempt. Contention leaves the
+caller's submitted key unchanged and returns immediately; the overlay retains
+only the latest exact unsent request per drawer and retries it during a later
+already-eligible accessory update. Atomic enqueue-attempt, contention, success,
+replacement, and maximum-duration counters require no second worker lock. The
+negative proof holds the production queue/publication mutex, verifies three
+rapid drawer submissions return below 16.7 ms without being marked submitted,
+then retries and publishes only their exact newest generations. The resulting
+METAR to ATIS to PDC brain requests remain exactly-once and end with one visible
+PDC drawer. Ten thousand unchanged observations add no enqueue attempt, job,
+history, wrapping, rasterization, upload, or diagnostic work.
+
+Performance observations use synchronous main-thread wall time. The historical
+per-action `GetThreadTimes` experiment is not part of the current pass/fail
+contract. Worker preparation wait is reported separately. Draw histograms count
+each unique draw once, while action records retain draw-sample identity, shared
+sample truth, and fan-out. Scroll-only raster work is reported as
+`presentation-scroll`; `content-generation` remains reserved for changed brain
+history content. Up to eight retained violations must be serialized at the
+disable/stop aggregate boundary, together with retained, serialized, and
+dropped counts.
+
+Step 4 accessory-liveness corrective proof
+-------------------------------------------
+
+The 29 `v2_step4_accessory_liveness_*` scenarios reproduce and correct the
+second-live freeze. The red proof binds one accepted METAR selection to render
+generation 1 and delivers the same selected drawer at render generation 2;
+the unmodified dispatcher rejects the forever-unreachable exact generation and
+remains in flight. Corrected proof classifies that draw as compatible render
+supersession, completes the matching performance action, and releases the next
+queued click.
+
+The set also proves wrong-drawer rejection, newer-selection cancellation,
+failed deferred-bind release, lifecycle deferred-state clearing, 1,000
+interleaved compatible completions, repeated identical lookup spotlight and
+expiry without parse/history mutation, ATIS/PDC/close ownership, zero delayed
+METAR reopen, and Segoe UI Bold 10.0-design-pixel METAR ORB text at 0.85, 1.0,
+and 1.35 scale. Together with the existing Step 3 and Step 4 suites, the saved
+baseline is 590 scenarios.
+
+Step 4 automatic ORB publication and timing proof
+--------------------------------------------------
+
+The 40 `v2_step4_orb_publication_*`, `v2_step4_accessory_timing_*`, and
+METAR parse-timing scenarios preserve both pre-correction red reproductions and
+prove the corrected production paths. They cover rendered-field rail signature
+transitions, one-raster/one-upload publication, drawer-only zero-rail changes,
+100,000 unchanged updates, deferred timing phase decomposition, frame versus
+preparation versus synchronous classification, 500-millisecond liveness,
+lifecycle cancellation, and brain-owned parse elapsed/path diagnostics.
+
+Together with the mandatory prior suites, the saved baseline is 630 scenarios
+with canonical fingerprint
+`24F3438A454DD66EF46DA334F18761F501E241884EC0E496EF2D737CBF21790C`.
+
+Step 4 brain-exclusive accessory authority proof
+-------------------------------------------------
+
+The 44 `v2_step4_brain_exclusive_*` scenarios preserve three red cases for the
+stale hidden preparation, competing commit paths, and cancelled-liveness
+accounting defects. Corrected production-path proof covers the stateless METAR
+decoder and one composite worker fact, brain-only acceptance, exact immutable
+presentation commands, one normal-update commit coordinator, no draw-time
+commit, event-latched preparation, nonblocking later clicks, all terminal
+publication outcomes, guaranteed terminal-fact capacity, exact lifecycle
+rejection, first populated METAR open, identical KDFW/KABQ quiet behavior,
+manual drawer ownership, Enroute KSAN, 1,000 fully accounted actions, and
+100,000 unchanged cycles.
+
+The saved baseline is 674 scenarios with canonical fingerprint
+`EE5B15EAE725EBA23AEA1CE9F9FEB82D0D93578C0A18EBA6129AE8B898E645C3`.
+
+Step 4 accessory input boundary proof
+-------------------------------------
+
+The 26 `v2_step4_accessory_input_boundary_*` scenarios preserve five failing
+pre-correction reproductions and exercise the corrected production-like mouse
+callback, bounded FIFO, brain-cycle selection, immutable command, mechanical
+publication, and terminal-accounting path. They cover all twelve drawer
+transitions, truthful ATIS/PDC empty states, two-click FIFO semantics, bounded
+capacity deferral, lifecycle discard/re-enable, click-after-enable and
+post-cycle wake timing, preparation-ready wake timing, 1,000 fully accounted
+clicks, and 100,000 unchanged zero-work cycles.
+
+The saved baseline is 700 scenarios with canonical fingerprint
+`C1367F24170283074D7D7371EFD4EDD1C687D7903F959CC3FA19FE3D807AAE8B`.

@@ -1,0 +1,15 @@
+name=v2_step3_drawer_wheel_scope_and_main_scroll_independence
+step3.action=layout:open:1920:1080:1.0:300:900:1.0:1:l
+step3.action=wheel-point:l:drawer:1:0:10:d
+step3.action=wheel-point:l:main:1:0:10:m
+step3.action=wheel-point:l:outside:1:0:10:o
+expect.step3=d.status=available
+expect.step3=d.scope=drawer
+expect.step3=d.handled=true
+expect.step3=d.drawer_changed=true
+expect.step3=d.main_changed=false
+expect.step3=m.main_changed=true
+expect.step3=m.scope=main
+expect.step3=m.drawer_changed=false
+expect.step3=o.handled=false
+expect.step3=o.scope=unhandled

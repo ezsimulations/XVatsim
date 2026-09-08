@@ -1,15 +1,307 @@
 # Milestone Status
 
-Updated: 2026-08-15
+Updated: 2026-09-08
 
 ## Current Position
 
-Milestones 1 through 9 are complete on the authoritative rebuild plan, and the
-five-flight live battle-test gate passed for the installed V1 runtime hash
-`81CC5DD85D579A89257670F51A0F477EAE825F5D78A9F360FBF2AE1979EEF96A`.
+XVatsim V2.0.0 is release-certified for public Windows/X-Plane 12/xPilot
+freeware publication. Steps 1 through 6, the later performance gates, the US
+vNAS/TRACON correction, and the ATIS identical-content correction are accepted.
+The release classification is:
 
-XVatsim V1.2.3 is the current public freeware Windows/X-Plane 12/xPilot
-release. It is distributed through X-Plane.org and GitHub Releases.
+`V2.0.0 — LIVE ACCEPTED, RELEASE BUILT, 882/882 REGRESSION, PACKAGE SMOKE PASSED`
+
+The final Step 6 implementation commit is
+`94825f07248dafc038d4c29e06ea61e40f49cfc3` (`feat: complete Step 6 one-shot
+PDC ORB`, exactly 84 files). The proof and closeout commit is
+`380039a4494f0b373542eced807345471f214036` (`docs: close out Step 6 PDC ORB
+proof`, exactly three files).
+
+The final release configuration passed all `882 / 882` saved scenarios,
+including release-specific update-manifest tests for both an older installed
+version and V2.0.0. The earlier Step 6 baseline remains historical proof:
+production-renderer visual `14/14`, focused `61/61`, and complete regression
+`861/861` twice.
+
+The Product Owner's normal-use UAL300 KDEN-to-KMSP flight passed without Plugin
+Admin manipulation, reset, recovery, artificial ordering, retry, private-text
+disclosure, perceived lag, or visual defect. The PDC ORB progressed
+`IDLE -> NEW 1 -> OPEN -> MSG 1`; reopening showed the same retained snapshot,
+accounting was exact, and both applications shut down normally.
+
+The public customer ZIP contains exactly nine approved files and no tests,
+logs, backups, source, symbols, or build artifacts. Package SHA-256 is
+`FFA1BE32734BA20F7E6045F9ECEE5AE27D4929927E93965EB6959A33F9E7876B`;
+packaged plugin SHA-256 is
+`C9E687E4D1430C4BD730BCF6F20F66E3A47277F27D130863E72FEBDCE188A2AB`.
+The local `V2 Test` tree is development-only and is not part of the release.
+
+The Step 2 IFR/VFR selection foundation remains. A dedicated VFR evidence engine
+or live controller projection is no longer a V2.0.0 requirement and is only an
+optional Version 3 product decision, with no promise to build it. XVatsim
+V2.0.0 is the current public freeware Windows/X-Plane 12/xPilot release, and all
+active plugin labels, version metadata, network user agents, documentation,
+package tooling, and update-manifest fields report `2.0.0`.
+
+## V2 Accepted Milestones
+
+### Step 1 - Windows V2 Proof Baseline
+
+- Status: accepted and complete.
+- Commit:
+  `2684b2f80c112673b8b9326edee1b0840c0ea9e4`.
+- Receipt:
+  `outputs/v2_step_01_windows_proof_baseline_receipt.md`.
+- Receipt SHA-256:
+  `7A762200007C2AB0817C2DBE1997624F7CA17416A542012B641C153C18A39727`.
+- Established clean Release builds, deterministic scenario discovery and
+  ordering, aggregate fingerprints, binary hashes, elapsed-time evidence,
+  atomic receipt publication, and intentional negative-count propagation.
+
+### Step 2 - Explicit IFR/VFR Mode Foundation
+
+- Status: accepted and complete.
+- Proven implementation:
+  `8b10841fd19a1ee1a908b74ffd3246e36b029647`.
+- Original receipt closeout:
+  `eaf57da8359e14ab0b23cff3bc47f1f4e04f698e`.
+- Proof-integrity correction:
+  `fc6ee9bd8962f8ddd983cfeb08875c54d4fc706d`.
+- Corrected receipt closeout:
+  `ac0f86261ebb12c7cdd0fc166f971ea738ad1f22`.
+- Receipt:
+  `outputs/v2_step_02_ifr_vfr_mode_foundation_receipt.md`.
+- Receipt SHA-256:
+  `9C7770DA29B354C1DE2F35224D9AFF9F0D02BC4658B8885EEDC3EA3C8F1FABF4`.
+- Established explicit persistent brain-owned IFR/VFR selection without
+  changing existing controller, workflow, route, frequency, or main-card
+  behavior.
+
+### Step 3 - ORB Rail And Information Drawer Foundation
+
+- Status: accepted and complete.
+- Proven implementation and evidence:
+  `219aa594adccb02143d02ea2f725761d85a6fe5f`.
+- Receipt-only closeout:
+  `0c4ac545c1e484d5029e465e9eb99aa49fd19b08`.
+- Receipt:
+  `outputs/v2_step_03_orb_rail_information_drawer_receipt.md`.
+- Receipt SHA-256:
+  `4EEFEA63980736A74B1621A8005AF3383299946C14CC4658FA41F156CBEF84A9`.
+- Added three attached ORBs, one visible drawer surface, and three independent
+  brain-owned in-memory histories.
+- The brain owns selection, ordering, deduplication, limits, eviction,
+  generations, and lifecycle decisions. The overlay owns bounded click facts,
+  presentation-only scrolling, geometry, hit testing, rasterization, and
+  rendering.
+- One below-normal event-driven preparation worker consumes immutable
+  brain-approved snapshots and publishes exact-generation prepared plans
+  through nonblocking handoffs.
+- Rendering is change-driven. Accepted idle proof showed zero recurring
+  accessory history traversal, wrapping, GDI+ measurement, enqueue,
+  rasterization, upload, or diagnostic work. Shutdown left zero worker threads.
+- Normal Step 3 has no live METAR, ATIS, PDC, or private-message source.
+  Synthetic fixture code is compile-time isolated and absent from the normal
+  plugin.
+
+## Step 3 Performance Conclusion
+
+The final fixture-ON reproof had zero synchronous, render, cadence, timing, or
+missed-draw failures. Maximum combined synchronous action work was 3,643
+microseconds; drawer rasterization was 2,534 microseconds; drawer upload was 210
+microseconds; and completed accessory draw was 188 microseconds.
+
+The final fixture-OFF smoke had no hard failure. Maximum combined synchronous
+action work was 1,357 microseconds; rasterization was 668 microseconds; upload
+was 74 microseconds; and completed accessory draw was 137 microseconds.
+
+Preparation wait is asynchronous and is kept separate from simulator-thread
+work and X-Plane frame cadence. The maximum fixture-ON preparation wait was
+2,227,032 microseconds, and the fixture-OFF cold wait was 256,838 microseconds.
+Neither produced a visible UI failure or recurring idle work.
+
+## Step 4 - METAR ORB And Drawer
+
+- Status: accepted and complete.
+- Classification:
+  `STEP 4 METAR ORB AND DRAWER — OFFLINE-PROVEN, CONTROLLED-LIVE ACCEPTED`.
+- Implementation:
+  `f381e39c9f8f477ed7b8c1d8b913dbe836374557`.
+- Acceptance and receipts:
+  `c47b6a3cf71650c4474a197efde3c5406d09c872`.
+- The removable production weather source is restricted to VATSIM's official
+  single-airport METAR endpoint. No alternate weather source is permitted.
+- The Brain is the sole product and semantic decision-maker. It owns request
+  eligibility, targets, returned-fact acceptance, category consequences,
+  primary and lookup state, history, drawer ownership, publication intent,
+  refresh eligibility, and lifecycle behavior.
+- Modules and workers perform bounded mechanical work and return facts. They do
+  not make product decisions, communicate with one another, or block the
+  simulator/draw thread.
+- IFR Departure automatically targets only departure; IFR Enroute only arrival;
+  VFR retains departure as automatic primary. Explicit lookups temporarily own
+  the drawer but never replace the primary ORB.
+- The METAR ORB is neutral `METAR` before usable weather, then exact
+  ICAO/category with the approved readable type and category tone. Detailed raw
+  weather and truthful newest-first history remain in the drawer.
+- Completed hidden commitment and visible publication timing, independent
+  command/attempt queue ordering, one publication coordinator, lossless
+  terminal delivery, single-snapshot presentation and generic preparation,
+  Brain-owned visible invalidation, repeated-lookup viewport ownership, and
+  Plugin Admin suspend/resume flight-context preservation.
+- The mouse callback captures one immutable FIFO fact, requests bounded
+  next-cycle service from the existing flight loop, and returns. Brain
+  selection occurs on the next safe plugin cycle; there is no render-dependent
+  input lock or competing completion authority.
+- Relevant Step 4: `276/276`; complete regression: `776/776`; fingerprint
+  `521A031E94DE1AA0CFFFCBCE94F0BC82945C4A875D09D4EE2CEB4603AF896CF5`.
+- Latest accepted fixture-off normal plugin:
+  `build/v2-step4-accessory-input-boundary-release-normal/dist/XVatsim/win_x64/XVatsim.xpl`;
+  size `2,303,488` bytes; SHA-256
+  `9BA85C86347B80607CD875E2EA7F52443CF0217F6E9F29FF4B646DEF4F0D2A03`.
+- Controlled-live evidence accepted neutral startup, automatic KDFW primary,
+  exact METAR/ATIS/PDC switching, repeated KABQ lookup and viewport ownership,
+  manual drawer ownership, scheduling isolation, automatic Enroute KSAN
+  primary, and final-payload suspend/resume state retention.
+- The original final Phase E procedural-stop report remains preserved; the
+  separate Director acceptance records why no additional live execution is
+  required.
+- Arrival remains
+  `OUT OF SCOPE — UNCHANGED AND OFFLINE-PROVEN`.
+- Production deployment and release are not authorized by Step 4 acceptance.
+- Initial-plan audit disposition:
+  `INITIAL-PLAN WORKLOAD ACCEPTED AS CURRENT BASELINE — NO SAFE NARROW CHANGE PROPOSED`.
+
+The accepted one-time flight-plan construction spike is established V1
+behavior for initial flight context, frequency ordering, route resolution, and
+polygon-map construction. It is outside Step 3 accessory performance
+classification. Future V2 work must continue preventing recurring flight-cycle
+CPU spikes, polling, repeated parsing, unnecessary rendering, network work, or
+diagnostic spam.
+
+## Step 5 - VATSIM ATIS
+
+- Status: accepted, complete, and frozen.
+- Classification:
+  `STEP 5 VATSIM ATIS — OFFLINE-PROVEN, FOCUSED CONTROLLED-LIVE ACCEPTED`.
+- Implementation:
+  `598a8c993bdaad43bf5ec0fff5e230a4cb746857`.
+- Acceptance and receipts:
+  `aca5304b7fc2922b6a7918dcd4c027439b02e053`.
+- Rule One remains binding: the Brain makes every final ATIS semantic decision.
+  The VATSIM module mechanically decodes and bounds raw feed facts; it does not
+  interpret airport, service role, applicability, selection, availability,
+  change identity, unread state, history, ORB, or drawer ownership.
+- ATIS uses the existing shared VATSIM network-data feed and cadence. It adds no
+  second endpoint, request, scheduler, worker, cache authority, selector,
+  snapshot, queue, renderer, or fallback path.
+- Departure selects Departure ATIS with Combined fallback. The established
+  Departure-to-Enroute transition changes the primary to Arrival ATIS with
+  Combined fallback. Manual lookup uses cached feed data, never replaces the
+  primary, and restores the primary after eight seconds.
+- Meaningful ATIS revisions are Brain-owned and exclude `last_updated` alone.
+  Unread state clears only after that exact revision reaches an accepted visible
+  frame. History remains newest-first, deduplicated, and bounded.
+- Step 5 focused: `24/24`; Step 3: `31/31`; relevant Step 4: `276/276`;
+  complete regression: `800/800` twice; fingerprint
+  `609BE47845CE65F16B2478716439B9330A895BDF7AB9B06EF47D6BD51CEDAF8A`.
+- Current-source visual proof: `48/48` images twice with identical manifests and
+  zero pixel, hash, dimension, or rendering differences.
+- Focused controlled-live proof accepted KDEN Departure, natural Enroute KIND
+  Combined, exact unread/read transitions, cached split-KDEN lookup, KIND
+  primary preservation, and eight-second restoration. All ten checkpoints
+  passed in the first approved roster attempt.
+- Accepted fixture-off `XVatsim.xpl`: `2,513,920` bytes; SHA-256
+  `BDBBB8475CC9A9ED6BE58E3AC87FF7B59BF6D9810254C9AA767FB515FD109642`.
+- Production deployment and release are not authorized by Step 5 acceptance.
+
+## Step 6 - One-Shot PDC ORB
+
+- Status: accepted, complete, and frozen.
+- Classification:
+  `STEP 6 PDC ORB — OFFLINE-PROVEN, NORMAL-USE LIVE ACCEPTED; V2.0.0 FEATURE-COMPLETE BETA ENTRY`.
+- Implementation:
+  `94825f07248dafc038d4c29e06ea61e40f49cfc3`.
+- Proof and closeout:
+  `380039a4494f0b373542eced807345471f214036`.
+- Rule One remains binding. The qualified xPilot bridge reports bounded
+  mechanical facts, the plugin supplies flight context and transports facts,
+  the Brain alone arms, accepts, retains, closes, acknowledges, resets, and
+  projects, and the overlay mechanically renders and returns visible identities.
+- Acquisition begins only for a complete Brain-owned flight identity. The
+  Brain accepts the first stable-connected positive-sequence observation with
+  a successfully read non-empty bounded body. Sender, controller roster,
+  wording, labels, IFR/VFR selection, and workflow stage do not classify or
+  veto the waiting message.
+- Exactly one flight-bound snapshot is retained. Acceptance atomically marks it
+  unread and closes all further private-source sampling for that flight. Later
+  revisions remain xPilot's responsibility; XVatsim is not a combined inbox or
+  amendment monitor.
+- PDC projections are exact `IDLE`, `SOURCE`, `CHECK`, `NEW 1`, `OPEN`, and
+  `MSG 1`. The drawer title is `PDC — <DEPARTURE ICAO>` and the warning is
+  `CAPTURED SNAPSHOT — CHECK XPILOT FOR REVISIONS`.
+- Visual proof: `14/14`; focused Step 6: `61/61`; complete regression:
+  `861/861` twice; scenario fingerprint:
+  `227121979F59CB3BB359B96DE57AC7DF601E0BE3736F82F38C19EE08437431D9`.
+- Protected evidence: `80 manifests / 4,695 rows / 0 mismatches`.
+- Preparation backup: `6/6`, manifest SHA-256
+  `6AB7CBC5CB1374AF39FED20CB41E2B14382928D06BB37D1E4B5C2900F89336C7`.
+- Readiness evidence: `5/5`, manifest SHA-256
+  `B528C16E9CCFA6E6655ECD6AA23D3A710F9D5CA385DF5FD150ABDB886C2A729A`.
+- Closeout evidence: `6/6`, manifest SHA-256
+  `3687213853EE39B5231A49D1DC3AD5AD486805C2DB0F36EF6A48B346C9FD4498`.
+- Product Owner normal-use live proof accepted the unmanipulated
+  `IDLE -> NEW 1 -> OPEN -> MSG 1` sequence, immutable reopen, exact
+  accounting, normal shutdown, and private-safe records.
+
+## Historical Feature-Complete Beta State
+
+The following records describe the accepted Step 6 beta baseline before the
+later TRACON, ATIS, and public-release work:
+
+- X-Plane/xPilot processes: `0/0`.
+- Candidate and active `win_x64`: exact `3/3` parity, zero subdirectories.
+- `XVatsim.xpl`: `2,572,288` bytes / SHA-256
+  `CA2840F6FE61124E37881124DF78E4B0A0049FD47C5BF4FA6EE179D9A6E77934`.
+- `authority_source_registry.json`: `40,340` bytes / SHA-256
+  `3676CA43E5AFB8A5E443FDE6D04616918029E004E17EFAA022695D91E23DB60B`.
+- `ui_transition.mp3`: `27,116` bytes / SHA-256
+  `C7BBE97DAD356C68FDFE40F9E8C1CF4EADEBCCD125463214F963F66356F8D9F1`.
+- Protected `V2 Test`: `50` files / `29` directories.
+- Post-test `XVatsim.prf`: `232` bytes / SHA-256
+  `118FA9430AC7B63A774770481705C9B681EE78AE13394320ABFB84E1F4837B10`.
+- Post-test X-Plane `Log.txt`: `315,094` bytes / SHA-256
+  `B630A0BCD4621CC38B4C41C32B75D223535B77C5D0AD37FB59C7ED1C425575C1`.
+- Post-test diagnostics: `225,940` bytes / SHA-256
+  `5A21476EF76BE35416B55508FFE8C957D2679CBB3D4E2898305BDCB9299B8AF8`.
+- Final canonical untracked inventory after closeout: `5,207` paths / SHA-256
+  `4EC19C3E3E4971697B6E0BB325BD2D4DA2C49DFBFAA92B8EB014B6BA979C5455`.
+
+This inventory is historical and is not the V2.0.0 customer package.
+
+## Working Arrangement
+
+- Darron is Product Owner and final approval authority.
+- ChatGPT is Project Director and develops Contract Gates with Darron.
+- Codex is the Engineering Agent and operates only within an approved Contract
+  Gate.
+- The repository is the durable shared memory between tasks.
+
+The architecture contract is repository-wide:
+
+`The Brain is the sole product and semantic decision-maker.`
+
+Modules and workers perform bounded mechanical work and return facts. The
+overlay renders Brain commands mechanically. No implementation, deployment,
+application startup, live request, or controlled-live proof occurs without
+Darron's explicit approval.
+
+## Next Authorized Project State
+
+The next state is post-release observation of V2.0.0. Any defect correction,
+new version or package, update-manifest change, or Version 3/VFR roadmap
+requires a new approved Contract Gate. Steps 1 through 6 remain frozen unless a
+separately approved correction gate explicitly reopens the affected scope.
 
 ## V1.2.3 Patch Release
 
@@ -89,8 +381,11 @@ release. It is distributed through X-Plane.org and GitHub Releases.
 - Updated the public update manifest to advertise V1.0.4 as a notify-only
   update.
 The X-Plane.org Store submission path is superseded because the store requested
-a Mac version. Future major product work starts as XVatsim V2.0.0 with
-dedicated VFR implementation, Mac support, and Linux support.
+a Mac version. The Windows-only XVatsim V2.0.0 public freeware release contains
+METAR, VATSIM ATIS, and one-shot PDC ORBs. The existing IFR/VFR mode
+foundation remains, while any dedicated VFR evidence/live model is only an
+optional Version 3 decision. Mac and Linux support are deferred until native
+validation resources exist.
 
 The live plugin uses the offline regression harness, fail-closed source
 handling, true route geometry, typed route grammar, deterministic nav-graph

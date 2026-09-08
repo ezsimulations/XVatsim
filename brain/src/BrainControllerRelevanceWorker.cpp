@@ -2,8 +2,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
+#include <iomanip>
+#include <limits>
+#include <optional>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace xvatsim::brain {
@@ -11,6 +16,7 @@ namespace {
 
 constexpr const char* kCenterTunedOffRouteNotRouteOwnedPolicy =
     "center-tuned-off-route-not-route-owned";
+constexpr double kEarthRadiusNm = 3440.065;
 
 std::string NormalizeFrequency(std::string frequency) {
     frequency.erase(
@@ -75,6 +81,54 @@ std::uint64_t HashRadioTuningIdentity(const RadioStateSnapshot& radios) {
     HashCombine(&hash, NormalizeFrequency(radios.com1ActiveFrequency));
     HashCombine(&hash, NormalizeFrequency(radios.com2ActiveFrequency));
     HashCombine(&hash, NormalizeFrequency(radios.com1StandbyFrequency));
+    return hash;
+}
+
+std::uint64_t HashTerminalRelevancePolicy(
+    bool enabled,
+    bool vnasSectorPrecedenceEnabled,
+    double transmitterRadiusNm,
+    bool hasDepartureCoordinates,
+    double departureLatitudeDeg,
+    double departureLongitudeDeg,
+    bool hasArrivalCoordinates,
+    double arrivalLatitudeDeg,
+    double arrivalLongitudeDeg) {
+    std::uint64_t hash = 1469598103934665603ULL;
+    HashCombine(&hash, static_cast<std::uint64_t>(enabled ? 1u : 0u));
+    HashCombine(
+        &hash,
+        static_cast<std::uint64_t>(
+            vnasSectorPrecedenceEnabled ? 1u : 0u));
+    HashCombine(
+        &hash,
+        static_cast<std::uint64_t>(std::llround(transmitterRadiusNm * 1000.0)));
+    HashCombine(
+        &hash,
+        static_cast<std::uint64_t>(hasDepartureCoordinates ? 1u : 0u));
+    if (hasDepartureCoordinates) {
+        HashCombine(
+            &hash,
+            static_cast<std::uint64_t>(
+                std::llround(departureLatitudeDeg * 100000.0)));
+        HashCombine(
+            &hash,
+            static_cast<std::uint64_t>(
+                std::llround(departureLongitudeDeg * 100000.0)));
+    }
+    HashCombine(
+        &hash,
+        static_cast<std::uint64_t>(hasArrivalCoordinates ? 1u : 0u));
+    if (hasArrivalCoordinates) {
+        HashCombine(
+            &hash,
+            static_cast<std::uint64_t>(
+                std::llround(arrivalLatitudeDeg * 100000.0)));
+        HashCombine(
+            &hash,
+            static_cast<std::uint64_t>(
+                std::llround(arrivalLongitudeDeg * 100000.0)));
+    }
     return hash;
 }
 
@@ -691,11 +745,17 @@ CenterRouteMatch MatchCenterToRoutePolygon(
     const BrainControllerRelevanceWorkerInput& input,
     const RadioReachableControllerCandidate& candidate) {
     CenterRouteMatch match;
+    const auto& currentSectors = input.route != nullptr
+        ? input.route->currentSectors
+        : input.currentSectors;
+    const auto& nextSectors = input.route != nullptr
+        ? input.route->nextSectors
+        : input.nextSectors;
     match.hasRouteMetadata =
-        SectorsHaveCenterMetadata(input.currentSectors) ||
-        SectorsHaveCenterMetadata(input.nextSectors);
+        SectorsHaveCenterMetadata(currentSectors) ||
+        SectorsHaveCenterMetadata(nextSectors);
 
-    for (const auto& sector : input.currentSectors) {
+    for (const auto& sector : currentSectors) {
         std::string proof;
         if (SectorMatchesCenterCandidate(sector, candidate, &proof)) {
             match.matched = true;
@@ -709,7 +769,7 @@ CenterRouteMatch MatchCenterToRoutePolygon(
         }
     }
 
-    for (const auto& sector : input.nextSectors) {
+    for (const auto& sector : nextSectors) {
         std::string proof;
         if (SectorMatchesCenterCandidate(sector, candidate, &proof)) {
             match.matched = true;
@@ -767,6 +827,7 @@ std::unordered_set<std::string> BuildCurrentRouteCenterRoots(
 }
 
 struct TerminalDecisionEvidence {
+    bool v2 = false;
     bool terminalOwnerAvailable = false;
     bool terminalOwnerMatch = false;
     bool frequencyRoleMatch = false;
@@ -774,12 +835,17 @@ struct TerminalDecisionEvidence {
     bool radioNearAirport = false;
     bool sourceAuthorityMatch = false;
     bool routeCenterRootMatch = false;
+    bool vnasMatch = false;
+    bool failSafe = false;
+    bool hasAirportRadioDistance = false;
+    double airportRadioDistanceNm = 0.0;
     bool accepted = false;
     int positiveScore = 0;
     int negativeScore = 0;
     int positiveNonFaaScore = 0;
     std::string candidateOwner;
     std::string sourceAuthorityProof;
+    std::string vnasProof;
     std::vector<std::string> positiveVotes;
     std::vector<std::string> negativeVotes;
     std::vector<std::string> neutralFacts;
@@ -856,6 +922,15 @@ std::string JoinTokens(const std::vector<std::string>& values) {
 std::string TerminalDecisionConfidence(
     const TerminalDecisionEvidence& evidence) {
     const auto margin = evidence.positiveScore - evidence.negativeScore;
+    if (evidence.v2) {
+        if (margin >= 2) {
+            return "high";
+        }
+        if (evidence.failSafe) {
+            return "fail-safe";
+        }
+        return "low";
+    }
     if (evidence.sourceAuthorityMatch ||
         (evidence.terminalOwnerMatch && evidence.routeCenterRootMatch) ||
         margin >= 5) {
@@ -882,19 +957,111 @@ std::string TerminalDecisionVoteSuffix(
            << ":families=" << evidence.positiveNonFaaFamilies.size()
            << ":confidence=" << TerminalDecisionConfidence(evidence)
            << ":final=" << (accepted ? "accept-display" : "reject-hide");
+    if (evidence.v2) {
+        stream << ":policy=equal-source-v2"
+               << ":failSafe=" << (evidence.failSafe ? 1 : 0);
+        if (evidence.hasAirportRadioDistance) {
+            stream << ":airportRadioNm=" << std::fixed << std::setprecision(1)
+                   << evidence.airportRadioDistanceNm;
+        }
+    }
     return stream.str();
+}
+
+double DegreesToRadians(double degrees) {
+    return degrees * 3.14159265358979323846 / 180.0;
+}
+
+double GreatCircleDistanceNm(
+    double latitudeDegA,
+    double longitudeDegA,
+    double latitudeDegB,
+    double longitudeDegB) {
+    const auto latitudeA = DegreesToRadians(latitudeDegA);
+    const auto latitudeB = DegreesToRadians(latitudeDegB);
+    const auto deltaLatitude = DegreesToRadians(latitudeDegB - latitudeDegA);
+    const auto deltaLongitude = DegreesToRadians(longitudeDegB - longitudeDegA);
+    const auto sinLatitude = std::sin(deltaLatitude / 2.0);
+    const auto sinLongitude = std::sin(deltaLongitude / 2.0);
+    const auto haversine =
+        sinLatitude * sinLatitude +
+        std::cos(latitudeA) * std::cos(latitudeB) *
+            sinLongitude * sinLongitude;
+    const auto clamped = std::clamp(haversine, 0.0, 1.0);
+    return kEarthRadiusNm * 2.0 * std::atan2(
+        std::sqrt(clamped),
+        std::sqrt(1.0 - clamped));
+}
+
+std::optional<double> NearestAirportTransmitterDistanceNm(
+    const RadioReachableControllerCandidate& candidate,
+    bool hasAirportCoordinates,
+    double airportLatitudeDeg,
+    double airportLongitudeDeg) {
+    if (!hasAirportCoordinates || !std::isfinite(airportLatitudeDeg) ||
+        !std::isfinite(airportLongitudeDeg)) {
+        return std::nullopt;
+    }
+
+    double nearest = std::numeric_limits<double>::infinity();
+    for (const auto& station : candidate.stationCoordinates) {
+        if (!std::isfinite(station.latitudeDeg) ||
+            !std::isfinite(station.longitudeDeg) ||
+            (station.latitudeDeg == 0.0 && station.longitudeDeg == 0.0)) {
+            continue;
+        }
+        nearest = std::min(
+            nearest,
+            GreatCircleDistanceNm(
+                airportLatitudeDeg,
+                airportLongitudeDeg,
+                station.latitudeDeg,
+                station.longitudeDeg));
+    }
+    if (!std::isfinite(nearest)) {
+        return std::nullopt;
+    }
+    return nearest;
+}
+
+const VnasTerminalEvidenceRecord* FindVnasTerminalEvidence(
+    const BrainControllerRelevanceWorkerInput& input,
+    const RadioReachableControllerCandidate& candidate,
+    const std::string& airportIcao) {
+    if (!input.vnasTerminalEvidence ||
+        !input.vnasTerminalEvidence->enabled ||
+        !input.vnasTerminalEvidence->available ||
+        input.vnasTerminalEvidence->stale) {
+        return nullptr;
+    }
+
+    const auto callsign = NormalizeCallsign(candidate.callsign);
+    const auto frequency = NormalizeFrequency(candidate.frequency);
+    const auto airport = NormalizeIcaoInput(airportIcao);
+    for (const auto& record : input.vnasTerminalEvidence->records) {
+        if (record.supportsEndpoint &&
+            NormalizeCallsign(record.controllerCallsign) == callsign &&
+            NormalizeFrequency(record.controllerFrequency) == frequency &&
+            NormalizeIcaoInput(record.airportIcao) == airport) {
+            return &record;
+        }
+    }
+    return nullptr;
 }
 
 const RelevantAuthoritySnapshot* FindRelevantSourceAuthority(
     const BrainControllerRelevanceWorkerInput& input,
     const RadioReachableControllerCandidate& candidate) {
-    if (!input.authorityRelevance.available || input.authorityRelevance.stale) {
+    if (!input.authorityRelevance ||
+        !input.authorityRelevance->available ||
+        input.authorityRelevance->stale) {
         return nullptr;
     }
 
     const auto candidateCallsign = NormalizeCallsign(candidate.callsign);
     const auto candidateFrequency = NormalizeFrequency(candidate.frequency);
-    for (const auto& authority : input.authorityRelevance.relevantAuthorities) {
+    for (const auto& authority :
+         input.authorityRelevance->relevantAuthorities) {
         if (authority.kind == AuthorityRelevanceKind::Center) {
             continue;
         }
@@ -1285,7 +1452,7 @@ BuildBrainAuthorityRelevanceDecisionPreviewInternal(
     return preview;
 }
 
-TerminalDecisionEvidence BuildTerminalDecisionEvidence(
+TerminalDecisionEvidence BuildLegacyTerminalDecisionEvidence(
     const BrainControllerRelevanceWorkerInput& input,
     const RadioReachableControllerCandidate& candidate,
     const BrainTerminalAuthorityWorkerOutput& terminalAuthority,
@@ -1354,6 +1521,163 @@ TerminalDecisionEvidence BuildTerminalDecisionEvidence(
     return evidence;
 }
 
+TerminalDecisionEvidence BuildEqualSourceTerminalDecisionEvidence(
+    const BrainControllerRelevanceWorkerInput& input,
+    const RadioReachableControllerCandidate& candidate,
+    const BrainTerminalAuthorityWorkerOutput& terminalAuthority,
+    const AirportFrequencyEvidence& frequencyEvidence,
+    const std::unordered_set<std::string>& currentRouteCenterRoots,
+    BrainAirportFrequencyEndpoint endpoint) {
+    TerminalDecisionEvidence evidence;
+    evidence.v2 = true;
+
+    // VATSIM proves that this is a live APP/DEP candidate.  It does not prove
+    // that the controller owns either flight-plan endpoint, so it is an
+    // eligibility fact rather than a positive vote.
+    AddNeutralFact(&evidence, "vatsim-appdep-online");
+
+    const auto departure = endpoint == BrainAirportFrequencyEndpoint::Departure;
+    const auto airportIcao = departure ? input.departureIcao : input.arrivalIcao;
+    const auto airportDistance = NearestAirportTransmitterDistanceNm(
+        candidate,
+        departure ? input.hasDepartureCoordinates : input.hasArrivalCoordinates,
+        departure ? input.departureLatitudeDeg : input.arrivalLatitudeDeg,
+        departure ? input.departureLongitudeDeg : input.arrivalLongitudeDeg);
+    if (airportDistance.has_value()) {
+        evidence.hasAirportRadioDistance = true;
+        evidence.airportRadioDistanceNm = *airportDistance;
+        evidence.radioNearAirport =
+            *airportDistance <= input.terminalTransmitterRadiusNm;
+        if (evidence.radioNearAirport) {
+            AddPositiveEvidence(
+                &evidence,
+                "airport-radio-near",
+                "afv-airport-proximity",
+                1);
+        } else {
+            AddNegativeEvidence(&evidence, "airport-radio-far", 1);
+        }
+    } else {
+        AddNeutralFact(&evidence, "airport-radio-unknown");
+    }
+
+    if (const auto* vnas =
+            FindVnasTerminalEvidence(input, candidate, airportIcao)) {
+        evidence.vnasMatch = true;
+        evidence.vnasProof = vnas->proof;
+        AddPositiveEvidence(
+            &evidence,
+            "vnas-terminal",
+            "vnas-operational",
+            1);
+    } else if (!input.vnasTerminalEvidence ||
+               !input.vnasTerminalEvidence->enabled) {
+        AddNeutralFact(&evidence, "vnas-disabled");
+    } else if (!input.vnasTerminalEvidence->available ||
+               input.vnasTerminalEvidence->stale) {
+        AddNeutralFact(&evidence, "vnas-unavailable");
+    } else {
+        // A vNAS non-match is intentionally UNKNOWN.  Controllers can use
+        // unsupported clients and facility data can still be loading.
+        AddNeutralFact(&evidence, "vnas-no-match");
+    }
+
+    const auto sourceAuthority = FindRelevantSourceAuthority(input, candidate);
+    if (sourceAuthority != nullptr) {
+        evidence.sourceAuthorityMatch = true;
+        evidence.sourceAuthorityProof = sourceAuthority->proofSource;
+        AddPositiveEvidence(
+            &evidence,
+            "source-owned-authority",
+            "source-authority",
+            1);
+    }
+
+    evidence.terminalOwnerAvailable =
+        TerminalAuthorityFactAvailable(terminalAuthority);
+    evidence.terminalOwnerMatch = ControllerMatchesTerminalAuthority(
+        candidate.callsign,
+        terminalAuthority,
+        &evidence.candidateOwner);
+    if (evidence.terminalOwnerMatch) {
+        AddPositiveEvidence(
+            &evidence,
+            "terminal-owner",
+            "terminal-source",
+            1);
+    } else if (evidence.terminalOwnerAvailable) {
+        AddNegativeEvidence(&evidence, "terminal-owner", 1);
+    }
+
+    evidence.frequencyRoleMatch = frequencyEvidence.roleMatch;
+    evidence.frequencyRoleMiss =
+        frequencyEvidence.endpointRoleFacts && !frequencyEvidence.roleMatch;
+    if (evidence.frequencyRoleMatch) {
+        // FAA data is confirmation-only because VATSIM may intentionally use a
+        // pseudo frequency.  A miss stays neutral and can never hide a row.
+        AddPositiveEvidence(
+            &evidence,
+            "faa-confirmation",
+            "faa-confirmation",
+            1,
+            true);
+    } else if (evidence.frequencyRoleMiss) {
+        AddNeutralFact(&evidence, "faa-no-confirmation");
+    } else {
+        AddNeutralFact(&evidence, "faa-unavailable");
+    }
+
+    const auto candidateRoot = ControllerRootToken(candidate.callsign);
+    evidence.routeCenterRootMatch =
+        !candidateRoot.empty() &&
+        currentRouteCenterRoots.find(candidateRoot) !=
+            currentRouteCenterRoots.end();
+    if (evidence.routeCenterRootMatch) {
+        AddPositiveEvidence(
+            &evidence,
+            "route-center-root",
+            "route-context",
+            1);
+    }
+
+    // At least one endpoint-specific source must establish plausibility; this
+    // prevents the expanded non-aircraft-gated pool from showing unrelated
+    // APP/DEP controllers nationwide. After that gate, only a clear two-source
+    // negative lead suppresses the candidate. A tie or one-vote margin is the
+    // requested fail-safe display state and is explicit in diagnostics.
+    evidence.accepted =
+        evidence.positiveScore > 0 &&
+        (evidence.negativeScore - evidence.positiveScore) < 2;
+    evidence.failSafe =
+        evidence.accepted &&
+        std::abs(evidence.positiveScore - evidence.negativeScore) <= 1;
+    return evidence;
+}
+
+TerminalDecisionEvidence BuildTerminalDecisionEvidence(
+    const BrainControllerRelevanceWorkerInput& input,
+    const RadioReachableControllerCandidate& candidate,
+    const BrainTerminalAuthorityWorkerOutput& terminalAuthority,
+    const AirportFrequencyEvidence& frequencyEvidence,
+    const std::unordered_set<std::string>& currentRouteCenterRoots,
+    BrainAirportFrequencyEndpoint endpoint) {
+    if (!input.terminalRelevanceV2Enabled) {
+        return BuildLegacyTerminalDecisionEvidence(
+            input,
+            candidate,
+            terminalAuthority,
+            frequencyEvidence,
+            currentRouteCenterRoots);
+    }
+    return BuildEqualSourceTerminalDecisionEvidence(
+        input,
+        candidate,
+        terminalAuthority,
+        frequencyEvidence,
+        currentRouteCenterRoots,
+        endpoint);
+}
+
 std::string TerminalDecisionReason(
     const std::string& endpointToken,
     const TerminalDecisionEvidence& evidence,
@@ -1361,7 +1685,11 @@ std::string TerminalDecisionReason(
     const AirportFrequencyEvidence& frequencyEvidence) {
     std::string baseReason;
     if (evidence.accepted) {
-        if (evidence.sourceAuthorityMatch) {
+        if (evidence.v2 && evidence.failSafe) {
+            baseReason = endpointToken + "-terminal-fail-safe-display";
+        } else if (evidence.vnasMatch) {
+            baseReason = endpointToken + "-terminal-vnas-match";
+        } else if (evidence.sourceAuthorityMatch) {
             baseReason = endpointToken + "-terminal-source-authority-match";
         } else if (evidence.terminalOwnerMatch) {
             baseReason = endpointToken + "-terminal-owner-match";
@@ -1394,7 +1722,300 @@ std::string TerminalDecisionReason(
     if (!evidence.sourceAuthorityProof.empty()) {
         reason += ":source=" + NormalizeCallsign(evidence.sourceAuthorityProof);
     }
+    if (!evidence.vnasProof.empty()) {
+        reason += ":vnas=" + NormalizeCallsign(evidence.vnasProof);
+    }
     return reason;
+}
+
+int VnasOwnershipRank(VnasTerminalOwnershipKind kind) {
+    switch (kind) {
+        case VnasTerminalOwnershipKind::DirectOwner:
+            return 3;
+        case VnasTerminalOwnershipKind::ConsolidatedFallback:
+            return 2;
+        case VnasTerminalOwnershipKind::FacilityOnly:
+            return 1;
+        case VnasTerminalOwnershipKind::Unknown:
+        default:
+            return 0;
+    }
+}
+
+const char* VnasOwnershipToken(VnasTerminalOwnershipKind kind) {
+    switch (kind) {
+        case VnasTerminalOwnershipKind::DirectOwner:
+            return "direct";
+        case VnasTerminalOwnershipKind::ConsolidatedFallback:
+            return "fallback";
+        case VnasTerminalOwnershipKind::FacilityOnly:
+            return "facility-only";
+        case VnasTerminalOwnershipKind::Unknown:
+        default:
+            return "unknown";
+    }
+}
+
+VnasTerminalOwnershipKind ResolveVnasOwnershipKind(
+    const VnasTerminalEvidenceRecord& record) {
+    if (!record.ownershipFactsComplete) {
+        return VnasTerminalOwnershipKind::Unknown;
+    }
+    if (!record.serviceCompatible) {
+        return VnasTerminalOwnershipKind::FacilityOnly;
+    }
+    if (!record.matchedTcpTokens.empty() ||
+        record.tdlsDepartureFrequencyMatch ||
+        (record.areaSupportsEndpoint &&
+         !record.positionTcpHasEndpointDescendant)) {
+        return VnasTerminalOwnershipKind::DirectOwner;
+    }
+    if (record.areaSupportsEndpoint &&
+        record.positionTcpHasEndpointDescendant) {
+        return VnasTerminalOwnershipKind::ConsolidatedFallback;
+    }
+    return VnasTerminalOwnershipKind::FacilityOnly;
+}
+
+const VnasTerminalEvidenceRecord* FindResolvedVnasOwnership(
+    const BrainControllerRelevanceWorkerInput& input,
+    const BoardStationSnapshot& station,
+    const std::string& airportIcao) {
+    if (!input.vnasTerminalEvidence ||
+        !input.vnasTerminalEvidence->enabled ||
+        !input.vnasTerminalEvidence->available ||
+        input.vnasTerminalEvidence->stale ||
+        !input.vnasTerminalEvidence->facilityDataComplete ||
+        !input.vnasTerminalEvidence->ownershipDataAvailable) {
+        return nullptr;
+    }
+    const auto callsign = NormalizeCallsign(station.callsign);
+    const auto frequency = NormalizeFrequency(station.frequency);
+    const auto airport = NormalizeIcaoInput(airportIcao);
+    for (const auto& record : input.vnasTerminalEvidence->records) {
+        if (record.supportsEndpoint && record.ownershipFactsComplete &&
+            NormalizeCallsign(record.controllerCallsign) == callsign &&
+            NormalizeFrequency(record.controllerFrequency) == frequency &&
+            NormalizeIcaoInput(record.airportIcao) == airport) {
+            return &record;
+        }
+    }
+    return nullptr;
+}
+
+bool VnasPositionDescendsFrom(
+    const VnasTerminalEvidenceRecord& descendant,
+    const VnasTerminalEvidenceRecord& possibleAncestor) {
+    if (descendant.positionTcpId.empty() ||
+        possibleAncestor.positionTcpId.empty() ||
+        descendant.positionTcpId == possibleAncestor.positionTcpId) {
+        return false;
+    }
+    return std::find(
+               descendant.positionTcpAncestorIds.begin(),
+               descendant.positionTcpAncestorIds.end(),
+               possibleAncestor.positionTcpId) !=
+           descendant.positionTcpAncestorIds.end();
+}
+
+void ApplyVnasTerminalOwnershipPrecedence(
+    const BrainControllerRelevanceWorkerInput& input,
+    BrainAirportFrequencyEndpoint endpoint,
+    ModuleBoardSnapshot* board,
+    std::vector<BrainOwnedCandidateCompletion>* completions) {
+    if (board == nullptr || completions == nullptr ||
+        !input.terminalRelevanceV2Enabled ||
+        !input.vnasSectorPrecedenceEnabled || board->stations.size() < 2) {
+        return;
+    }
+
+    struct ResolvedStation {
+        std::size_t stationIndex = 0;
+        const VnasTerminalEvidenceRecord* record = nullptr;
+        VnasTerminalOwnershipKind kind =
+            VnasTerminalOwnershipKind::Unknown;
+    };
+    std::unordered_map<std::string, std::vector<ResolvedStation>> groups;
+    for (std::size_t index = 0; index < board->stations.size(); ++index) {
+        const auto& station = board->stations[index];
+        if (station.role != StationRole::Approach &&
+            station.role != StationRole::Departure) {
+            continue;
+        }
+        const auto* record = FindResolvedVnasOwnership(
+            input, station, board->airportIcao);
+        if (record == nullptr || record->facilityId.empty()) {
+            continue;
+        }
+        const auto groupKey = NormalizeCallsign(record->artccId) + "|" +
+                              NormalizeCallsign(record->facilityId);
+        const auto kind = ResolveVnasOwnershipKind(*record);
+        if (kind == VnasTerminalOwnershipKind::Unknown) {
+            continue;
+        }
+        groups[groupKey].push_back({index, record, kind});
+    }
+
+    std::unordered_set<std::size_t> suppressedIndexes;
+    for (const auto& entry : groups) {
+        const auto& resolved = entry.second;
+        if (resolved.size() < 2) {
+            continue;
+        }
+
+        const auto suppress = [&](const ResolvedStation& loser,
+                                  const ResolvedStation& winner,
+                                  const char* basis) {
+            if (!suppressedIndexes.insert(loser.stationIndex).second) {
+                return;
+            }
+            const auto& station = board->stations[loser.stationIndex];
+            for (auto& completion : *completions) {
+                if (completion.decision !=
+                        BrainOwnedCandidateDecision::Accepted ||
+                    NormalizeCallsign(completion.callsign) !=
+                        NormalizeCallsign(station.callsign) ||
+                    NormalizeFrequency(completion.frequency) !=
+                        NormalizeFrequency(station.frequency)) {
+                    continue;
+                }
+                completion.decision = BrainOwnedCandidateDecision::Rejected;
+                completion.displayRelation = DisplayRelation::Hidden;
+                completion.reason =
+                    std::string(
+                        endpoint == BrainAirportFrequencyEndpoint::Departure
+                            ? "departure"
+                            : "arrival") +
+                    "-terminal-vnas-ownership-suppressed:owner=" +
+                    VnasOwnershipToken(loser.kind) +
+                    ":selected=" + VnasOwnershipToken(winner.kind) +
+                    ":facility=" +
+                    NormalizeCallsign(loser.record->facilityId) +
+                    ":basis=" + basis +
+                    ":final=reject-hide";
+            }
+        };
+
+        // A live vNAS position can assume multiple child TCPs. Those assumed
+        // children describe consolidation workload; they do not make the
+        // parent position equally specific to a separately staffed child.
+        // Compare the active positions' own TCP ancestry before the broader
+        // rank heuristic. Parallel/sibling positions remain fail-safe.
+        for (std::size_t leftIndex = 0;
+             leftIndex < resolved.size();
+             ++leftIndex) {
+            const auto& left = resolved[leftIndex];
+            if (!left.record->serviceCompatible) {
+                continue;
+            }
+            for (std::size_t rightIndex = leftIndex + 1;
+                 rightIndex < resolved.size();
+                 ++rightIndex) {
+                const auto& right = resolved[rightIndex];
+                if (!right.record->serviceCompatible) {
+                    continue;
+                }
+                const auto leftDescends =
+                    VnasPositionDescendsFrom(*left.record, *right.record);
+                const auto rightDescends =
+                    VnasPositionDescendsFrom(*right.record, *left.record);
+                if (leftDescends == rightDescends) {
+                    continue;
+                }
+
+                if (endpoint == BrainAirportFrequencyEndpoint::Departure) {
+                    const auto leftTdls =
+                        left.record->tdlsDepartureFrequencyMatch;
+                    const auto rightTdls =
+                        right.record->tdlsDepartureFrequencyMatch;
+                    if (leftTdls != rightTdls) {
+                        suppress(
+                            leftTdls ? right : left,
+                            leftTdls ? left : right,
+                            "tdls-departure");
+                        continue;
+                    }
+                    // Multiple route-dependent departure frequencies can be
+                    // valid at the same airport. Without SID/transition
+                    // confirmation, retain both rather than guessing.
+                    if (leftTdls && rightTdls) {
+                        continue;
+                    }
+                }
+
+                suppress(
+                    leftDescends ? right : left,
+                    leftDescends ? left : right,
+                    "tcp-descendant");
+            }
+        }
+
+        auto selectedRank = 0;
+        VnasTerminalOwnershipKind selectedKind =
+            VnasTerminalOwnershipKind::Unknown;
+        for (const auto& candidate : resolved) {
+            if (suppressedIndexes.find(candidate.stationIndex) !=
+                suppressedIndexes.end()) {
+                continue;
+            }
+            const auto rank = VnasOwnershipRank(
+                candidate.kind);
+            if (rank > selectedRank) {
+                selectedRank = rank;
+                selectedKind = candidate.kind;
+            }
+        }
+        if (selectedRank <
+            VnasOwnershipRank(
+                VnasTerminalOwnershipKind::ConsolidatedFallback)) {
+            continue;
+        }
+
+        for (const auto& candidate : resolved) {
+            if (suppressedIndexes.find(candidate.stationIndex) !=
+                suppressedIndexes.end()) {
+                continue;
+            }
+            const auto candidateRank = VnasOwnershipRank(
+                candidate.kind);
+            const auto directOwnerSelected =
+                selectedKind == VnasTerminalOwnershipKind::DirectOwner;
+            const auto explicitOperationMismatch =
+                selectedKind ==
+                    VnasTerminalOwnershipKind::ConsolidatedFallback &&
+                candidate.kind ==
+                    VnasTerminalOwnershipKind::FacilityOnly &&
+                !candidate.record->serviceCompatible;
+            if (candidateRank >= selectedRank ||
+                (!directOwnerSelected && !explicitOperationMismatch)) {
+                continue;
+            }
+            const auto selected = std::find_if(
+                resolved.begin(),
+                resolved.end(),
+                [&](const auto& value) {
+                    return suppressedIndexes.find(value.stationIndex) ==
+                               suppressedIndexes.end() &&
+                           value.kind == selectedKind;
+                });
+            if (selected != resolved.end()) {
+                suppress(candidate, *selected, "ownership-rank");
+            }
+        }
+    }
+
+    if (suppressedIndexes.empty()) {
+        return;
+    }
+    std::vector<BoardStationSnapshot> retained;
+    retained.reserve(board->stations.size() - suppressedIndexes.size());
+    for (std::size_t index = 0; index < board->stations.size(); ++index) {
+        if (suppressedIndexes.find(index) == suppressedIndexes.end()) {
+            retained.push_back(std::move(board->stations[index]));
+        }
+    }
+    board->stations = std::move(retained);
+    board->available = !board->stations.empty();
 }
 
 void AppendSelectedCenterStations(
@@ -1553,22 +2174,38 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                 const auto routeMatch =
                     MatchCenterToRoutePolygon(input, candidate);
                 if (routeMatch.matched) {
-                    const auto relation = routeMatch.displayRelation;
-                    station.polygonKey = routeMatch.polygonKey;
-                    station.sectorActive =
-                        relation == DisplayRelation::CurrentPolygon ||
-                        station.tuned;
-                    station.hasRouteEntryDistance =
-                        relation == DisplayRelation::NextPolygon &&
-                        routeMatch.hasRouteEntryDistance;
-                    station.routeEntryDistanceNm =
-                        station.hasRouteEntryDistance
-                            ? routeMatch.routeEntryDistanceNm
-                            : 0.0;
-                    centerCandidates.push_back({station});
-                    accepted = true;
-                    completionRelation = relation;
-                    reason = routeMatch.reason;
+                    // Aircraft distance is a hard display gate for Centers
+                    // only. APP/DEP relevance is evaluated separately from
+                    // endpoint-airport-to-transmitter distance and must never
+                    // use this aircraft-distance gate.
+                    if (input.terminalRelevanceV2Enabled &&
+                        (!candidate.hasDistanceNm ||
+                         !std::isfinite(candidate.distanceNm))) {
+                        completionRelation = DisplayRelation::Hidden;
+                        reason = "center-aircraft-distance-unavailable";
+                    } else if (input.terminalRelevanceV2Enabled &&
+                        candidate.distanceNm >
+                        kBrainOwnedCenterDisplayRangeNm) {
+                        completionRelation = DisplayRelation::Hidden;
+                        reason = "center-aircraft-over-250nm";
+                    } else {
+                        const auto relation = routeMatch.displayRelation;
+                        station.polygonKey = routeMatch.polygonKey;
+                        station.sectorActive =
+                            relation == DisplayRelation::CurrentPolygon ||
+                            station.tuned;
+                        station.hasRouteEntryDistance =
+                            relation == DisplayRelation::NextPolygon &&
+                            routeMatch.hasRouteEntryDistance;
+                        station.routeEntryDistanceNm =
+                            station.hasRouteEntryDistance
+                                ? routeMatch.routeEntryDistanceNm
+                                : 0.0;
+                        centerCandidates.push_back({station});
+                        accepted = true;
+                        completionRelation = relation;
+                        reason = routeMatch.reason;
+                    }
                 } else {
                     completionRelation = DisplayRelation::Hidden;
                     if (routeMatch.hasRouteMetadata && station.tuned) {
@@ -1610,7 +2247,8 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                 candidate,
                 input.departureTerminalAuthority,
                 frequencyEvidence,
-                currentRouteCenterRoots);
+                currentRouteCenterRoots,
+                BrainAirportFrequencyEndpoint::Departure);
             if (evidence.accepted) {
                 station.polygonKey = input.currentPolygonKey;
                 AppendStationUnique(
@@ -1660,7 +2298,8 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
                 candidate,
                 input.arrivalTerminalAuthority,
                 frequencyEvidence,
-                currentRouteCenterRoots);
+                currentRouteCenterRoots,
+                BrainAirportFrequencyEndpoint::Arrival);
             if (evidence.accepted) {
                 station.polygonKey = input.arrivalPolygonKey;
                 AppendStationUnique(
@@ -1702,6 +2341,20 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerRelevanceWorker(
         centerCandidates,
         &output.enrouteBoard,
         &enrouteKeys);
+    if (includeDepartureGroups) {
+        ApplyVnasTerminalOwnershipPrecedence(
+            input,
+            BrainAirportFrequencyEndpoint::Departure,
+            &output.departureBoard,
+            &output.completions);
+    }
+    if (includeArrivalGroups) {
+        ApplyVnasTerminalOwnershipPrecedence(
+            input,
+            BrainAirportFrequencyEndpoint::Arrival,
+            &output.arrivalBoard,
+            &output.completions);
+    }
     return output;
 }
 
@@ -1719,6 +2372,29 @@ BrainControllerRelevanceWorkerInput BuildBrainOwnedControllerRelevanceInput(
     input.routeProgressDistanceNm = state.routeProgressDistanceNm;
     input.departureIcao = request.departureIcao;
     input.arrivalIcao = request.arrivalIcao;
+    input.hasDepartureCoordinates = request.hasDepartureCoordinates;
+    input.departureLatitudeDeg = request.departureLatitudeDeg;
+    input.departureLongitudeDeg = request.departureLongitudeDeg;
+    input.hasArrivalCoordinates = request.hasArrivalCoordinates;
+    input.arrivalLatitudeDeg = request.arrivalLatitudeDeg;
+    input.arrivalLongitudeDeg = request.arrivalLongitudeDeg;
+    input.terminalRelevanceV2Enabled = request.terminalRelevanceV2Enabled;
+    input.vnasSectorPrecedenceEnabled =
+        request.terminalRelevanceV2Enabled &&
+        request.vnasSectorPrecedenceEnabled;
+    input.terminalTransmitterRadiusNm = request.terminalTransmitterRadiusNm;
+    input.terminalRelevancePolicyHash = HashTerminalRelevancePolicy(
+        input.terminalRelevanceV2Enabled,
+        input.vnasSectorPrecedenceEnabled,
+        input.terminalTransmitterRadiusNm,
+        input.hasDepartureCoordinates,
+        input.departureLatitudeDeg,
+        input.departureLongitudeDeg,
+        input.hasArrivalCoordinates,
+        input.arrivalLatitudeDeg,
+        input.arrivalLongitudeDeg);
+    input.vnasTerminalEvidenceHash = request.vnasTerminalEvidenceHash;
+    input.vnasTerminalEvidence = request.vnasTerminalEvidence;
     input.departureTerminalAuthorityHash =
         state.departureTerminalAuthorityHash;
     input.departureTerminalAuthority =
@@ -1735,8 +2411,7 @@ BrainControllerRelevanceWorkerInput BuildBrainOwnedControllerRelevanceInput(
     input.authorityRelevance = request.authorityRelevance;
     input.radioTuningHash = HashRadioTuningIdentity(request.radios);
     input.radios = request.radios;
-    input.currentSectors = state.routePolygonSnapshot.currentSectors;
-    input.nextSectors = state.routePolygonSnapshot.nextSectors;
+    input.route = state.routePolygonSnapshot;
     input.candidates = request.radioSnapshot.candidates;
     return input;
 }
@@ -1759,6 +2434,10 @@ BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
             input.airportFrequencyHash &&
         state->lastAuthorityRelevanceHash ==
             input.authorityRelevanceHash &&
+        state->lastVnasTerminalEvidenceHash ==
+            input.vnasTerminalEvidenceHash &&
+        state->lastTerminalRelevancePolicyHash ==
+            input.terminalRelevancePolicyHash &&
         state->lastRadioTuningHash == input.radioTuningHash &&
         state->lastWorkflowStage == input.workflowStage &&
         state->currentPolygonKey == input.currentPolygonKey;
@@ -1802,6 +2481,10 @@ BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
         input.airportFrequencyHash;
     state->lastAuthorityRelevanceHash =
         input.authorityRelevanceHash;
+    state->lastVnasTerminalEvidenceHash =
+        input.vnasTerminalEvidenceHash;
+    state->lastTerminalRelevancePolicyHash =
+        input.terminalRelevancePolicyHash;
     state->lastRadioTuningHash = input.radioTuningHash;
 
     state->candidateCompletions.clear();

@@ -10,11 +10,35 @@ enum class StoredDisplayMode {
     Sleep,
 };
 
+enum class StoredOperatingMode {
+    IFR,
+    VFR,
+};
+
+enum class StoredOperatingModeLoadStatus {
+    Missing,
+    Valid,
+    Invalid,
+    Unavailable,
+};
+
 struct PluginSettings {
+    StoredOperatingMode operatingMode = StoredOperatingMode::IFR;
+    StoredOperatingModeLoadStatus operatingModeLoadStatus =
+        StoredOperatingModeLoadStatus::Missing;
     StoredDisplayMode displayMode = StoredDisplayMode::Auto;
     bool standbyAssistEnabled = false;
     bool directCtafStandbyAssistEnabled = false;
     std::string directCtafStandbyAssistGateSource = "default";
+    // Safety switch for the endpoint-distance/equal-source terminal relevance
+    // policy and corrected 250 NM Center boundary. Set
+    // terminal_relevance_v2=false in XVatsim settings to restore the complete
+    // pre-change controller-relevance path during controlled online testing.
+    bool terminalRelevanceV2Enabled = true;
+    // Subordinate rollback switch for vNAS sector/TCP ownership precedence.
+    // The vNAS module supplies facts only; the Brain remains the sole display
+    // decision-maker. The master switch above also disables this path.
+    bool vnasSectorPrecedenceEnabled = true;
     bool sourceOwnedFallbackStableKeyLiveConsumptionEnabled = false;
     std::string sourceOwnedFallbackStableKeyLiveConsumptionGateSource =
         "default";

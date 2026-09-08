@@ -1,0 +1,12 @@
+name=V2 operating mode transitions increment once
+operating_mode.probe=selection
+operating_mode.initial_mode=IFR
+operating_mode.selection_requests=VFR,IFR
+expect.operating_mode=IFR
+expect.operating_mode_source=pilot-menu
+expect.operating_mode_reason=explicit-selection
+expect.operating_mode_generation=2
+expect.operating_mode_change_count=2
+expect.operating_mode_persistence_requests=2
+expect.operating_mode_request_source=pilot-menu
+expect.operating_mode_request_reason=explicit-selection

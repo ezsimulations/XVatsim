@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -29,8 +30,28 @@ struct VatsimDataFeedSnapshot {
     std::uint64_t generation = 0;
     int connectedControllers = 0;
     std::vector<xvatsim::brain::ControllerSnapshot> controllers;
+    std::shared_ptr<const std::vector<xvatsim::brain::ControllerSnapshot>>
+        immutableControllers;
+    std::uint64_t controllerContentDigest = 0;
+    std::uint64_t authorityControllerContentDigest = 0;
+    std::shared_ptr<const std::vector<xvatsim::brain::AuthorityControllerSnapshot>>
+        immutableAuthorityControllers;
     std::vector<PilotPlanEntry> pilotPlans;
+    bool atisRootPresent = false;
+    bool atisRootArray = false;
+    bool atisComponentComplete = false;
+    std::uint32_t atisMechanicalIssueMask = 0;
+    std::size_t atisRetainedFieldBytes = 0;
+    std::size_t atisConservativeBytes = 0;
+    std::size_t atisRejectedRecordCount = 0;
+    std::vector<xvatsim::brain::BrainRawVatsimAtisRecord> atisRecords;
 };
+
+// Production document decoder shared by the asynchronous client and bounded
+// offline proof. It performs no network work and preserves the live parser's
+// exact controller and pilot behavior.
+VatsimDataFeedSnapshot DecodeVatsimDataFeedDocument(
+    const std::string& payload);
 
 class VatsimDataFeedClient {
 public:

@@ -1,0 +1,39 @@
+Visual configuration:
+cmake -S . -B build\v2-step3-visual-proof-final -G "Visual Studio 18 2026" -A x64 "-DXPLANE_SDK_ROOT=<repository>\SDK" "-DCMAKE_CXX_FLAGS=/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS /EHsc" -DXVATSIM_BUILD_PLUGIN=OFF -DXVATSIM_BUILD_REGRESSION_HARNESS=OFF -DXVATSIM_BUILD_PREFLIGHT_CACHE_BUILDER=OFF -DXVATSIM_BUILD_STEP3_VISUAL_PROOF=ON -DXVATSIM_STEP3_LIVE_PROOF_FIXTURES=OFF
+Result: exit 0
+
+Visual build:
+cmake --build build\v2-step3-visual-proof-final --config Release --target XVatsimStep3VisualProof --parallel
+Result: exit 0
+
+Visual Run A:
+build\v2-step3-visual-proof-final\tools\XVatsimStep3VisualProof.exe --output build\v2-step3-visual-final-a
+Result: exit 0; VISUAL_PROOF_PASSED artifacts=42
+
+Visual Run B:
+build\v2-step3-visual-proof-final\tools\XVatsimStep3VisualProof.exe --output build\v2-step3-visual-final-b
+Result: exit 0; VISUAL_PROOF_PASSED artifacts=42
+
+Windows proof:
+tools\release_gate\Run-V2WindowsProofBaseline.ps1 -ExpectedScenarioCount 494 -ReceiptRelativePath outputs/v2_step_03_precommit_pass_windows_proof.md -ReceiptTitle "XVatsim V2 Step 3 PRECOMMIT PROOF PASSED"
+Result: exit 0; expected=494 discovered=494 executed=494 passed=494 failed=0
+
+Negative Windows proof:
+tools\release_gate\Run-V2WindowsProofBaseline.ps1 -ExpectedScenarioCount 495 -ReceiptRelativePath outputs/v2_step_03_precommit_pass_windows_proof.md -ReceiptTitle "XVatsim V2 Step 3 PRECOMMIT PROOF PASSED"
+Result: exit 1; expected=495 discovered=494; configuration=false; build=false; scenario execution=false; successful proof artifact unchanged
+
+Focused regression:
+Run every `v2_step3_*.scn` once through build\v2-proof-baseline\tools\XVatsimRegressionHarness.exe.
+Result: discovered=31 executed=31 passed=31 failed=0 invalid=0
+
+Legacy regression:
+Run every non-Step-3 saved `.scn` once through build\v2-proof-baseline\tools\XVatsimRegressionHarness.exe.
+Result: discovered=463 executed=463 passed=463 failed=0 invalid=0
+
+Complete regression:
+Run every saved `.scn` once through build\v2-proof-baseline\tools\XVatsimRegressionHarness.exe.
+Result: discovered=494 executed=494 passed=494 failed=0 invalid=0
+
+Fixture verifier:
+build\v2-step3-live-fixture\tools\XVatsimStep3LiveFixtureProof.exe
+Result: exit 0; assertions=63 failures=0 status=PASSED

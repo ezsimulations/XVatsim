@@ -1,4 +1,5 @@
 #include "XVatsim/brain/BrainOwnedRuntime.h"
+#include "XVatsim/brain/BrainMetarRuntime.h"
 
 #include "XVatsim/brain/BrainOwnedWorkerTypes.h"
 
@@ -4170,12 +4171,164 @@ bool AircraftWithinCruiseTargetBand(
 
 }  // namespace
 
+BrainOwnedOperationalActivationDecision DecideBrainOwnedOperationalActivation(
+    const BrainOwnedOperationalActivationState& state,
+    const BrainOwnedOperationalActivationInput& input) {
+    BrainOwnedOperationalActivationDecision decision;
+    decision.initialObservation = !state.initialized;
+    if (!input.aircraftStateValid) {
+        decision.reason =
+            BrainOwnedOperationalActivationReason::AircraftStateInvalid;
+    } else if (!input.batteryOn) {
+        decision.reason = BrainOwnedOperationalActivationReason::BatteryOff;
+    } else if (!input.xPilotConnected) {
+        decision.reason =
+            BrainOwnedOperationalActivationReason::XPilotDisconnected;
+    } else {
+        decision.reason = BrainOwnedOperationalActivationReason::Operational;
+        decision.operational = true;
+    }
+
+    decision.activationRisingEdge =
+        decision.operational && (!state.initialized || !state.operational);
+    decision.deactivationFallingEdge =
+        state.initialized && state.operational && !decision.operational;
+    decision.disconnectFallingEdge =
+        decision.deactivationFallingEdge && !input.xPilotConnected;
+    return decision;
+}
+
+void CommitBrainOwnedOperationalActivationDecision(
+    BrainOwnedOperationalActivationState* state,
+    const BrainOwnedOperationalActivationDecision& decision) {
+    if (state == nullptr) {
+        return;
+    }
+    ++state->callbacks;
+    if (decision.operational) {
+        ++state->operationalCallbacks;
+    } else {
+        ++state->dormantCallbacks;
+    }
+    if (state->enableImmediateWakePending) {
+        ++state->enableImmediateCallbacks;
+        if (decision.operational) {
+            ++state->enableImmediateOperationalCallbacks;
+        } else {
+            ++state->enableImmediateDormantCallbacks;
+        }
+        state->enableImmediateWakePending = false;
+    }
+    if (decision.activationRisingEdge) {
+        ++state->activationRisingEdges;
+    }
+    if (decision.deactivationFallingEdge) {
+        ++state->deactivationFallingEdges;
+    }
+    if (decision.disconnectFallingEdge) {
+        ++state->disconnectFallingEdges;
+    }
+    state->initialized = true;
+    state->operational = decision.operational;
+}
+
+void RecordBrainOwnedOperationalEnableWakeRequest(
+    BrainOwnedOperationalActivationState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    ++state->enableImmediateWakeRequests;
+    state->enableImmediateWakePending = true;
+}
+
+void RecordBrainOwnedOperationalServiceCall(
+    BrainOwnedOperationalActivationState* state,
+    const BrainOwnedOperationalActivationDecision& decision,
+    BrainOwnedOperationalServiceStage stage) {
+    if (state == nullptr) {
+        return;
+    }
+    const auto index = static_cast<std::size_t>(stage);
+    if (index >= kBrainOwnedOperationalServiceStageCount) {
+        return;
+    }
+    if (decision.operational) {
+        ++state->operationalServiceCalls[index];
+        return;
+    }
+    ++state->dormantOperationalAttempts[index];
+    ++state->dormantOperationalAttemptCount;
+}
+
+void SetBrainOwnedOperationalActivationSuspended(
+    BrainOwnedOperationalActivationState* state) {
+    if (state == nullptr) {
+        return;
+    }
+    state->initialized = true;
+    state->operational = false;
+    state->enableImmediateWakePending = false;
+}
+
+const char* ToString(BrainOwnedOperationalActivationReason reason) {
+    switch (reason) {
+        case BrainOwnedOperationalActivationReason::Operational:
+            return "operational";
+        case BrainOwnedOperationalActivationReason::AircraftStateInvalid:
+            return "aircraft-state-invalid";
+        case BrainOwnedOperationalActivationReason::BatteryOff:
+            return "battery-off";
+        case BrainOwnedOperationalActivationReason::XPilotDisconnected:
+            return "xpilot-disconnected";
+        default:
+            return "unknown";
+    }
+}
+
+const char* ToString(BrainOwnedOperationalServiceStage stage) {
+    switch (stage) {
+        case BrainOwnedOperationalServiceStage::VatsimFeed:
+            return "vatsim-feed";
+        case BrainOwnedOperationalServiceStage::ControllerSnapshot:
+            return "controller-snapshot";
+        case BrainOwnedOperationalServiceStage::FlightPlan:
+            return "flight-plan";
+        case BrainOwnedOperationalServiceStage::NetworkPlan:
+            return "network-plan";
+        case BrainOwnedOperationalServiceStage::Radio:
+            return "radio";
+        case BrainOwnedOperationalServiceStage::PdcPrivateSource:
+            return "pdc-private-source";
+        case BrainOwnedOperationalServiceStage::Atis:
+            return "atis";
+        case BrainOwnedOperationalServiceStage::Metar:
+            return "metar";
+        case BrainOwnedOperationalServiceStage::Ctaf:
+            return "ctaf";
+        case BrainOwnedOperationalServiceStage::Route:
+            return "route";
+        case BrainOwnedOperationalServiceStage::Authority:
+            return "authority";
+        case BrainOwnedOperationalServiceStage::ControllerRelevance:
+            return "controller-relevance";
+        case BrainOwnedOperationalServiceStage::WorkflowPublication:
+            return "workflow-publication";
+        case BrainOwnedOperationalServiceStage::StandbyAssist:
+            return "standby-assist";
+        case BrainOwnedOperationalServiceStage::Count:
+        default:
+            return "unknown";
+    }
+}
+
 void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state) {
     if (state == nullptr) {
         return;
     }
+    const auto operatingMode = state->operatingMode;
     const auto displayOverrideMode = state->displayOverrideMode;
     *state = {};
+    state->operatingMode = operatingMode;
     state->displayOverrideMode = displayOverrideMode;
 }
 
@@ -4184,6 +4337,11 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     if (state == nullptr) {
         return;
     }
+    const auto operatingMode = state->operatingMode;
+    const auto accessory = state->accessory;
+    const auto metar = state->metar;
+    const auto atis = state->atis;
+    const auto pdc = state->pdc;
     const auto flightContext = state->flightContext;
     const auto displayOverrideMode = state->displayOverrideMode;
     const auto pendingTextEntryMode = state->pendingTextEntryMode;
@@ -4192,6 +4350,11 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     const auto lastFlightPlanSnapshot = state->lastFlightPlanSnapshot;
     const auto lastNetworkPlanSnapshot = state->lastNetworkPlanSnapshot;
     *state = {};
+    state->operatingMode = operatingMode;
+    state->accessory = accessory;
+    state->metar = metar;
+    state->atis = atis;
+    state->pdc = pdc;
     state->flightContext = flightContext;
     state->displayOverrideMode = displayOverrideMode;
     state->pendingTextEntryMode = pendingTextEntryMode;
@@ -4199,6 +4362,107 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     state->lastPilotIdentitySnapshot = lastPilotIdentitySnapshot;
     state->lastFlightPlanSnapshot = lastFlightPlanSnapshot;
     state->lastNetworkPlanSnapshot = lastNetworkPlanSnapshot;
+}
+
+void InitializeBrainOwnedOperatingMode(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedOperatingModeInitializationInput& input) {
+    if (state == nullptr) {
+        return;
+    }
+
+    state->operatingMode = {};
+    switch (input.loadStatus) {
+        case BrainOwnedOperatingModeLoadStatus::Valid:
+            state->operatingMode.mode = input.storedMode;
+            state->operatingMode.source =
+                BrainOwnedOperatingModeSource::SettingsStore;
+            state->operatingMode.reason = "stored-preference";
+            break;
+        case BrainOwnedOperatingModeLoadStatus::Invalid:
+            state->operatingMode.reason = "invalid-setting";
+            break;
+        case BrainOwnedOperatingModeLoadStatus::Unavailable:
+            state->operatingMode.reason = "settings-unavailable";
+            break;
+        case BrainOwnedOperatingModeLoadStatus::Missing:
+        default:
+            state->operatingMode.reason = "missing-setting";
+            break;
+    }
+}
+
+BrainOwnedOperatingModeSelectionResult RequestBrainOwnedOperatingModeSelection(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedOperatingMode requestedMode) {
+    BrainOwnedOperatingModeSelectionResult result;
+    result.requestedMode = requestedMode;
+    result.requestSource = BrainOwnedOperatingModeSource::PilotMenu;
+
+    if (state == nullptr) {
+        result.requestReason = "state-unavailable";
+        return result;
+    }
+
+    result.previousMode = state->operatingMode.mode;
+    if (requestedMode == state->operatingMode.mode) {
+        result.effectiveMode = state->operatingMode.mode;
+        result.stateSource = state->operatingMode.source;
+        result.stateReason = state->operatingMode.reason;
+        result.requestReason = "already-active";
+        result.generation = state->operatingMode.generation;
+        return result;
+    }
+
+    state->operatingMode.mode = requestedMode;
+    state->operatingMode.source = BrainOwnedOperatingModeSource::PilotMenu;
+    state->operatingMode.reason = "explicit-selection";
+    ++state->operatingMode.generation;
+
+    result.effectiveMode = state->operatingMode.mode;
+    result.stateSource = state->operatingMode.source;
+    result.stateReason = state->operatingMode.reason;
+    result.requestReason = "explicit-selection";
+    result.generation = state->operatingMode.generation;
+    result.changed = true;
+    result.persistenceRequested = true;
+    return result;
+}
+
+const char* ToString(BrainOwnedOperatingMode mode) {
+    switch (mode) {
+        case BrainOwnedOperatingMode::VFR:
+            return "vfr";
+        case BrainOwnedOperatingMode::IFR:
+        default:
+            return "ifr";
+    }
+}
+
+const char* ToString(BrainOwnedOperatingModeSource source) {
+    switch (source) {
+        case BrainOwnedOperatingModeSource::SettingsStore:
+            return "settings-store";
+        case BrainOwnedOperatingModeSource::PilotMenu:
+            return "pilot-menu";
+        case BrainOwnedOperatingModeSource::Default:
+        default:
+            return "default";
+    }
+}
+
+const char* ToString(BrainOwnedOperatingModeLoadStatus status) {
+    switch (status) {
+        case BrainOwnedOperatingModeLoadStatus::Valid:
+            return "valid";
+        case BrainOwnedOperatingModeLoadStatus::Invalid:
+            return "invalid";
+        case BrainOwnedOperatingModeLoadStatus::Unavailable:
+            return "unavailable";
+        case BrainOwnedOperatingModeLoadStatus::Missing:
+        default:
+            return "missing";
+    }
 }
 
 void ResetBrainOwnedDisplayPublisherState(BrainOwnedRuntimeState* state) {
@@ -4496,71 +4760,6 @@ void ExpireBrainOwnedManualQuery(
     ClearBrainOwnedManualQuery(state);
 }
 
-void ResetBrainOwnedControllerMessageState(BrainOwnedRuntimeState* state) {
-    if (state == nullptr) {
-        return;
-    }
-    state->controllerMessageState = {};
-}
-
-void ClearBrainOwnedControllerMessage(BrainOwnedRuntimeState* state) {
-    if (state == nullptr) {
-        return;
-    }
-    state->controllerMessageState.visible = false;
-}
-
-void RecallBrainOwnedControllerMessage(BrainOwnedRuntimeState* state) {
-    if (state == nullptr ||
-        !state->controllerMessageState.cachedAvailable) {
-        return;
-    }
-    state->controllerMessageState.visible = true;
-}
-
-void UpdateBrainOwnedControllerMessageState(
-    BrainOwnedRuntimeState* state,
-    const XPilotPrivateMessageSnapshot& messageSnapshot,
-    bool controllerMessageUiEnabled) {
-    if (state == nullptr) {
-        return;
-    }
-    if (!controllerMessageUiEnabled || !messageSnapshot.loaded) {
-        ResetBrainOwnedControllerMessageState(state);
-        return;
-    }
-
-    auto& pendingMessage = state->controllerMessageState;
-    if (!pendingMessage.primed) {
-        pendingMessage.primed = true;
-        pendingMessage.lastSequence = messageSnapshot.sequence;
-        return;
-    }
-
-    if (messageSnapshot.sequence < pendingMessage.lastSequence) {
-        pendingMessage.lastSequence = messageSnapshot.sequence;
-        pendingMessage.visible = false;
-        pendingMessage.cachedAvailable = false;
-        pendingMessage.from.clear();
-        pendingMessage.body.clear();
-        return;
-    }
-
-    if (messageSnapshot.sequence == pendingMessage.lastSequence) {
-        return;
-    }
-
-    pendingMessage.lastSequence = messageSnapshot.sequence;
-    if (!messageSnapshot.available) {
-        return;
-    }
-
-    pendingMessage.cachedAvailable = true;
-    pendingMessage.visible = true;
-    pendingMessage.from = messageSnapshot.from;
-    pendingMessage.body = messageSnapshot.body;
-}
-
 BrainOwnedPreflightRouteCacheDecision BeginBrainOwnedPreflightRouteCacheApplication(
     BrainOwnedRuntimeState* state,
     const BrainOwnedPreflightRouteCacheInput& input) {
@@ -4701,7 +4900,7 @@ BrainOwnedRadioBoardReuseOutput TryReuseBrainOwnedRadioBoard(
 
 BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
     BrainOwnedRuntimeState* state,
-    const BrainOwnedRadioBoardCommitInput& input) {
+    BrainOwnedRadioBoardCommitInput input) {
     BrainOwnedRadioBoardCommitOutput output;
     output.radioSnapshot = input.radioSnapshot;
     const auto previousRadioSnapshot =
@@ -4729,7 +4928,26 @@ BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
     state->hasRadioBoard = true;
     state->lastRadioBoardRefreshSeconds = input.nowSeconds;
     state->lastControllerGeneration = input.controllerGeneration;
-    state->transceiverSnapshot = input.transceiverSnapshot;
+    auto authorityEvidence = BuildBrainAuthorityTransceiverEvidence(
+        input.transceiverSnapshot);
+    const auto authorityEvidenceDigest =
+        HashBrainAuthorityTransceiverEvidence(authorityEvidence);
+    if (state->authorityTransceiverEvidence == nullptr ||
+        state->authorityTransceiverEvidenceDigest !=
+            authorityEvidenceDigest) {
+        state->authorityTransceiverEvidence = std::make_shared<
+            const AuthorityTransceiverEvidenceSnapshot>(
+                std::move(authorityEvidence));
+        state->authorityTransceiverEvidenceDigest =
+            authorityEvidenceDigest;
+    }
+    ++state->transceiverObservationGeneration;
+    if (state->transceiverObservationGeneration == 0) {
+        state->transceiverObservationGeneration = 1;
+    }
+    state->transceiverSnapshot = std::make_shared<
+        const TransceiverResolutionSnapshot>(
+            std::move(input.transceiverSnapshot));
     state->radioSnapshot = input.radioSnapshot;
     state->radioDiff = output.diff;
     state->lastWakeReason =
@@ -5173,9 +5391,6 @@ BrainOwnedOverlayWakeDecision DecideBrainOwnedOverlayWake(
         autoWake = true;
     }
 
-    const auto controllerMessageWake =
-        input.controllerMessageVisible &&
-        input.displayOverrideMode != BrainOwnedDisplayOverrideMode::ForcedSleep;
     const auto criticalWake =
         input.manualQueryVisible ||
         input.textEntryActive ||
@@ -5188,7 +5403,7 @@ BrainOwnedOverlayWakeDecision DecideBrainOwnedOverlayWake(
                BrainOwnedDisplayOverrideMode::ForcedSleep) {
         decision.shouldWake = false;
     }
-    if (criticalWake || controllerMessageWake) {
+    if (criticalWake) {
         decision.shouldWake = true;
     }
 
@@ -5209,8 +5424,6 @@ BrainOwnedOverlayWakeDecision DecideBrainOwnedOverlayWake(
         decision.reason = "manual-query";
     } else if (input.textEntryActive) {
         decision.reason = "text-entry";
-    } else if (input.controllerMessageVisible) {
-        decision.reason = "controller-message";
     } else if (decision.hideUntilXpilotConnect) {
         decision.reason = "xpilot-waiting";
     } else if (decision.xPilotDisconnectedAlert) {
@@ -6357,6 +6570,1195 @@ std::string BrainOwnedRuntimeStateSummary(const BrainOwnedRuntimeState& state) {
            << " heavyRequested=" << (state.heavyFallbackRequested ? 1 : 0)
            << " heavyRunning=" << (state.heavyFallbackRunning ? 1 : 0);
     return stream.str();
+}
+
+namespace {
+
+constexpr std::size_t kAccessoryStableKeyByteLimit = 128;
+constexpr std::size_t kAccessoryTitleByteLimit = 128;
+constexpr std::size_t kAccessoryBodyByteLimit = 8192;
+constexpr std::size_t kAccessoryHistoryEntryLimit = 32;
+constexpr std::size_t kAccessoryHistoryByteLimit = 65536;
+constexpr char kAccessoryContentLimitedMarker[] = "CONTENT LIMITED";
+
+bool AccessoryDrawerIndex(
+    BrainOwnedAccessoryDrawerId drawer,
+    std::size_t* index) {
+    if (index == nullptr) {
+        return false;
+    }
+    switch (drawer) {
+        case BrainOwnedAccessoryDrawerId::Metar:
+            *index = 0;
+            return true;
+        case BrainOwnedAccessoryDrawerId::Atis:
+            *index = 1;
+            return true;
+        case BrainOwnedAccessoryDrawerId::Pdc:
+            *index = 2;
+            return true;
+        case BrainOwnedAccessoryDrawerId::None:
+        default:
+            return false;
+    }
+}
+
+bool IsValidAccessoryUtf8(const std::string& text) {
+    std::size_t index = 0;
+    while (index < text.size()) {
+        const auto first = static_cast<unsigned char>(text[index]);
+        if (first <= 0x7f) {
+            ++index;
+            continue;
+        }
+
+        std::size_t count = 0;
+        if (first >= 0xc2 && first <= 0xdf) {
+            count = 1;
+        } else if (first >= 0xe0 && first <= 0xef) {
+            count = 2;
+        } else if (first >= 0xf0 && first <= 0xf4) {
+            count = 3;
+        } else {
+            return false;
+        }
+        if (index + count >= text.size()) {
+            return false;
+        }
+        for (std::size_t offset = 1; offset <= count; ++offset) {
+            const auto value = static_cast<unsigned char>(text[index + offset]);
+            if ((value & 0xc0) != 0x80) {
+                return false;
+            }
+        }
+        if ((first == 0xe0 &&
+             static_cast<unsigned char>(text[index + 1]) < 0xa0) ||
+            (first == 0xed &&
+             static_cast<unsigned char>(text[index + 1]) >= 0xa0) ||
+            (first == 0xf0 &&
+             static_cast<unsigned char>(text[index + 1]) < 0x90) ||
+            (first == 0xf4 &&
+             static_cast<unsigned char>(text[index + 1]) >= 0x90)) {
+            return false;
+        }
+        index += count + 1;
+    }
+    return true;
+}
+
+std::string NormalizeAccessoryLineEndings(const std::string& text) {
+    std::string normalized;
+    normalized.reserve(text.size());
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        if (text[index] == '\r' && index + 1 < text.size() &&
+            text[index + 1] == '\n') {
+            normalized.push_back('\n');
+            ++index;
+        } else {
+            normalized.push_back(text[index]);
+        }
+    }
+    return normalized;
+}
+
+std::string LimitAccessoryUtf8(
+    const std::string& text,
+    std::size_t limit,
+    bool* limited) {
+    if (limited != nullptr) {
+        *limited = text.size() > limit;
+    }
+    if (text.size() <= limit) {
+        return text;
+    }
+
+    const std::string marker = kAccessoryContentLimitedMarker;
+    if (limit <= marker.size()) {
+        return marker.substr(0, limit);
+    }
+    std::size_t retained = limit - marker.size();
+    while (retained > 0 && !IsValidAccessoryUtf8(text.substr(0, retained))) {
+        --retained;
+    }
+    return text.substr(0, retained) + marker;
+}
+
+std::uint32_t AccessoryRotateRight(std::uint32_t value, unsigned int count) {
+    return (value >> count) | (value << (32U - count));
+}
+
+std::array<std::uint8_t, 32> AccessorySha256(
+    const std::vector<std::uint8_t>& source) {
+    constexpr std::uint32_t roundConstants[64]{
+        0x428a2f98U,0x71374491U,0xb5c0fbcfU,0xe9b5dba5U,0x3956c25bU,0x59f111f1U,0x923f82a4U,0xab1c5ed5U,
+        0xd807aa98U,0x12835b01U,0x243185beU,0x550c7dc3U,0x72be5d74U,0x80deb1feU,0x9bdc06a7U,0xc19bf174U,
+        0xe49b69c1U,0xefbe4786U,0x0fc19dc6U,0x240ca1ccU,0x2de92c6fU,0x4a7484aaU,0x5cb0a9dcU,0x76f988daU,
+        0x983e5152U,0xa831c66dU,0xb00327c8U,0xbf597fc7U,0xc6e00bf3U,0xd5a79147U,0x06ca6351U,0x14292967U,
+        0x27b70a85U,0x2e1b2138U,0x4d2c6dfcU,0x53380d13U,0x650a7354U,0x766a0abbU,0x81c2c92eU,0x92722c85U,
+        0xa2bfe8a1U,0xa81a664bU,0xc24b8b70U,0xc76c51a3U,0xd192e819U,0xd6990624U,0xf40e3585U,0x106aa070U,
+        0x19a4c116U,0x1e376c08U,0x2748774cU,0x34b0bcb5U,0x391c0cb3U,0x4ed8aa4aU,0x5b9cca4fU,0x682e6ff3U,
+        0x748f82eeU,0x78a5636fU,0x84c87814U,0x8cc70208U,0x90befffaU,0xa4506cebU,0xbef9a3f7U,0xc67178f2U};
+    std::uint32_t state[8]{
+        0x6a09e667U,0xbb67ae85U,0x3c6ef372U,0xa54ff53aU,
+        0x510e527fU,0x9b05688cU,0x1f83d9abU,0x5be0cd19U};
+    auto message = source;
+    const auto bitLength = static_cast<std::uint64_t>(message.size()) * 8ULL;
+    message.push_back(0x80U);
+    while ((message.size() % 64U) != 56U) message.push_back(0U);
+    for (int shift = 56; shift >= 0; shift -= 8) {
+        message.push_back(static_cast<std::uint8_t>(bitLength >> shift));
+    }
+    for (std::size_t block = 0; block < message.size(); block += 64U) {
+        std::uint32_t words[64]{};
+        for (std::size_t index = 0; index < 16U; ++index) {
+            const auto offset = block + index * 4U;
+            words[index] =
+                (static_cast<std::uint32_t>(message[offset]) << 24U) |
+                (static_cast<std::uint32_t>(message[offset + 1]) << 16U) |
+                (static_cast<std::uint32_t>(message[offset + 2]) << 8U) |
+                static_cast<std::uint32_t>(message[offset + 3]);
+        }
+        for (std::size_t index = 16U; index < 64U; ++index) {
+            const auto s0 = AccessoryRotateRight(words[index - 15U], 7U) ^
+                AccessoryRotateRight(words[index - 15U], 18U) ^
+                (words[index - 15U] >> 3U);
+            const auto s1 = AccessoryRotateRight(words[index - 2U], 17U) ^
+                AccessoryRotateRight(words[index - 2U], 19U) ^
+                (words[index - 2U] >> 10U);
+            words[index] = words[index - 16U] + s0 + words[index - 7U] + s1;
+        }
+        auto a=state[0],b=state[1],c=state[2],d=state[3];
+        auto e=state[4],f=state[5],g=state[6],h=state[7];
+        for (std::size_t index = 0; index < 64U; ++index) {
+            const auto sum1 = AccessoryRotateRight(e,6U) ^
+                AccessoryRotateRight(e,11U) ^ AccessoryRotateRight(e,25U);
+            const auto choose = (e & f) ^ ((~e) & g);
+            const auto temporary1 = h + sum1 + choose + roundConstants[index] + words[index];
+            const auto sum0 = AccessoryRotateRight(a,2U) ^
+                AccessoryRotateRight(a,13U) ^ AccessoryRotateRight(a,22U);
+            const auto majority = (a & b) ^ (a & c) ^ (b & c);
+            const auto temporary2 = sum0 + majority;
+            h=g;g=f;f=e;e=d+temporary1;d=c;c=b;b=a;a=temporary1+temporary2;
+        }
+        state[0]+=a;state[1]+=b;state[2]+=c;state[3]+=d;
+        state[4]+=e;state[5]+=f;state[6]+=g;state[7]+=h;
+    }
+    std::array<std::uint8_t,32> digest{};
+    for (std::size_t index = 0; index < 8U; ++index) {
+        digest[index*4U]=static_cast<std::uint8_t>(state[index]>>24U);
+        digest[index*4U+1U]=static_cast<std::uint8_t>(state[index]>>16U);
+        digest[index*4U+2U]=static_cast<std::uint8_t>(state[index]>>8U);
+        digest[index*4U+3U]=static_cast<std::uint8_t>(state[index]);
+    }
+    return digest;
+}
+
+std::array<std::uint8_t, 32> AccessorySourceContentDigest(
+    const std::string& title,
+    const std::string& body) {
+    std::vector<std::uint8_t> exactContent;
+    exactContent.reserve(16U + title.size() + body.size());
+    const auto appendLength = [&](std::uint64_t length) {
+        for (int shift = 56; shift >= 0; shift -= 8) {
+            exactContent.push_back(static_cast<std::uint8_t>(length >> shift));
+        }
+    };
+    appendLength(title.size());
+    exactContent.insert(exactContent.end(), title.begin(), title.end());
+    appendLength(body.size());
+    exactContent.insert(exactContent.end(), body.begin(), body.end());
+    return AccessorySha256(exactContent);
+}
+
+const char* AccessoryDrawerLabel(BrainOwnedAccessoryDrawerId drawer) {
+    switch (drawer) {
+        case BrainOwnedAccessoryDrawerId::Metar:
+            return "METAR";
+        case BrainOwnedAccessoryDrawerId::Atis:
+            return "ATIS";
+        case BrainOwnedAccessoryDrawerId::Pdc:
+            return "PDC";
+        case BrainOwnedAccessoryDrawerId::None:
+        default:
+            return "";
+    }
+}
+
+const char* AccessoryEmptyStateText(BrainOwnedAccessoryDrawerId drawer) {
+    switch (drawer) {
+        case BrainOwnedAccessoryDrawerId::Metar:
+            return "METAR data is not enabled in Step 3.";
+        case BrainOwnedAccessoryDrawerId::Atis:
+            return "VATSIM ATIS data is not enabled in Step 3.";
+        case BrainOwnedAccessoryDrawerId::Pdc:
+            return "PDC/private-message data is not enabled in Step 3.";
+        case BrainOwnedAccessoryDrawerId::None:
+        default:
+            return "";
+    }
+}
+
+BrainOwnedAccessoryHistoryEntry MetarDisplayEntry(
+    std::string key,
+    std::string title,
+    std::string body) {
+    BrainOwnedAccessoryHistoryEntry entry;
+    entry.stableKey = std::move(key);
+    entry.title = std::move(title);
+    entry.body = std::move(body);
+    entry.retainedBytes =
+        entry.stableKey.size() + entry.title.size() + entry.body.size();
+    return entry;
+}
+
+std::vector<BrainOwnedAccessoryHistoryEntry> ProjectBrainOwnedMetarDrawerPresentation(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedAccessoryHistory& history) {
+    if (!state.metar.initialized) return history.entries;
+    std::vector<BrainOwnedAccessoryHistoryEntry> entries;
+    entries.reserve(history.entries.size() + 2);
+    const auto& metar = state.metar;
+    std::string title;
+    std::string body;
+    switch (metar.transientPresentation) {
+        case BrainMetarTransientPresentation::LookupPending:
+            title = "FETCHING METAR — " + metar.pendingLookupIcao;
+            body = "PILOT REQUEST";
+            break;
+        case BrainMetarTransientPresentation::LookupSpotlight:
+            title = "METAR LOOKUP — " + metar.lookupObservation.stationIcao;
+            body = std::string(BrainMetarCategoryToken(
+                       metar.lookupObservation.category)) +
+                " · PILOT REQUEST\n" + metar.lookupObservation.rawMetar +
+                "\nReturning to primary airport " +
+                (metar.primaryAirportIcao.empty()
+                     ? std::string("UNAVAILABLE")
+                     : metar.primaryAirportIcao) + "…";
+            break;
+        case BrainMetarTransientPresentation::LookupFailure:
+            title = std::string(metar.lookupTimedOut
+                                    ? "METAR LOOKUP TIMED OUT — "
+                                    : "METAR LOOKUP FAILED — ") +
+                metar.pendingLookupIcao;
+            body = "PILOT REQUEST\nReturning to primary airport " +
+                (metar.primaryAirportIcao.empty()
+                     ? std::string("UNAVAILABLE")
+                     : metar.primaryAirportIcao) + "…";
+            break;
+        case BrainMetarTransientPresentation::None:
+        default:
+            if (metar.primaryAirportIcao.empty()) {
+                title = "METAR — PRIMARY UNAVAILABLE";
+                body = "UNKNOWN · UNAVAILABLE";
+            } else {
+                title = "METAR — " + metar.primaryAirportIcao + " · PRIMARY";
+                const auto category =
+                    metar.visibleState == BrainMetarVisibleState::Stale ||
+                            metar.visibleState == BrainMetarVisibleState::Unavailable
+                        ? BrainMetarFlightCategory::Unknown
+                        : metar.primaryObservation.category;
+                body = BrainMetarCategoryToken(category);
+                const auto* visible = BrainMetarVisibleStateToken(
+                    metar.visibleState);
+                if (visible[0] != '\0') body += std::string(" · ") + visible;
+                if (metar.primaryObservation.valid) {
+                    std::ostringstream observed;
+                    observed << " · observed " << std::setfill('0')
+                             << std::setw(2)
+                             << metar.primaryObservation.observationHour
+                             << std::setw(2)
+                             << metar.primaryObservation.observationMinute << 'Z';
+                    observed << " · updated "
+                             << metar.visibleFetchAgeMinutes << "m ago";
+                    body += observed.str() + "\n" +
+                        metar.primaryObservation.rawMetar;
+                }
+            }
+            break;
+    }
+    entries.push_back(MetarDisplayEntry(
+        "__METAR_PRIMARY_PRESENTATION__", std::move(title), std::move(body)));
+    if (!history.entries.empty()) {
+        entries.push_back(MetarDisplayEntry(
+            "__METAR_RECENT_HEADER__", "Recent METARs", ""));
+        entries.insert(entries.end(), history.entries.begin(), history.entries.end());
+    }
+    return entries;
+}
+
+void ProjectBrainOwnedMetarOrbPresentation(
+    const BrainOwnedRuntimeState& state,
+    BrainOwnedAccessoryOrbPresentation* orb) {
+    if (orb == nullptr || !state.metar.initialized) return;
+    const auto& metar = state.metar;
+    const auto category = metar.primaryObservation.category;
+    const bool usable = metar.primaryObservation.valid &&
+        !metar.primaryAirportIcao.empty() &&
+        category != BrainMetarFlightCategory::Unknown &&
+        (metar.visibleState == BrainMetarVisibleState::Fresh ||
+         metar.visibleState == BrainMetarVisibleState::Cached);
+    orb->label = usable ? "" : "METAR";
+    orb->airportIcao = usable ? metar.primaryAirportIcao : "";
+    orb->categoryText = usable ? BrainMetarCategoryToken(category) : "";
+    orb->stateText.clear();
+    orb->selectedIndicator.clear();
+    using Tone = BrainOwnedAccessoryOrbPresentation::Tone;
+    switch (usable ? category : BrainMetarFlightCategory::Unknown) {
+        case BrainMetarFlightCategory::Vfr: orb->tone = Tone::Green; break;
+        case BrainMetarFlightCategory::Mvfr: orb->tone = Tone::Blue; break;
+        case BrainMetarFlightCategory::Ifr: orb->tone = Tone::Red; break;
+        case BrainMetarFlightCategory::Lifr: orb->tone = Tone::Magenta; break;
+        case BrainMetarFlightCategory::Unknown:
+        default: orb->tone = Tone::Gray; break;
+    }
+    orb->neutral = !usable;
+}
+
+void ProjectBrainOwnedPdcOrbPresentation(
+    const BrainOwnedRuntimeState& state,
+    BrainOwnedAccessoryOrbPresentation* orb) {
+    if (orb == nullptr || !state.pdc.initialized) return;
+    orb->label = "PDC";
+    orb->airportIcao.clear();
+    orb->selectedIndicator = orb->selected ? "OPEN" : "";
+    orb->neutral = true;
+    orb->tone = BrainOwnedAccessoryOrbPresentation::Tone::Gray;
+    if (state.pdc.captureComplete && state.pdc.capturedArtifact.has_value()) {
+        const bool unread = state.pdc.capturedArtifact->unread;
+        orb->neutral = false;
+        orb->categoryText = unread ? "NEW 1" : "MSG 1";
+        orb->stateText = unread ? "captured-unread" : "captured-viewed";
+        orb->tone = unread
+            ? BrainOwnedAccessoryOrbPresentation::Tone::Amber
+            : BrainOwnedAccessoryOrbPresentation::Tone::Cyan;
+    } else if (state.pdc.preCaptureUncertain) {
+        orb->neutral = false;
+        orb->categoryText = "CHECK";
+        orb->stateText = "pre-capture-source-uncertain";
+        orb->tone = BrainOwnedAccessoryOrbPresentation::Tone::Amber;
+    } else if (state.pdc.availability == BrainPdcAvailability::SourceUnavailable) {
+        orb->categoryText = "SOURCE";
+        orb->stateText = "source-unavailable";
+    } else {
+        orb->categoryText = "IDLE";
+        orb->stateText = state.pdc.acquisitionArmed
+            ? "waiting-for-departure-pdc" : "not-armed";
+    }
+}
+
+std::vector<BrainOwnedAccessoryHistoryEntry>
+ProjectBrainOwnedPdcDrawerPresentation(
+    const BrainOwnedRuntimeState& state,
+    BrainOwnedAccessoryDrawerState* drawerState,
+    std::string* drawerTitle,
+    std::string* drawerStateText,
+    std::string* emptyStateText) {
+    std::vector<BrainOwnedAccessoryHistoryEntry> entries;
+    if (drawerTitle != nullptr) *drawerTitle = "PDC";
+    if (drawerStateText != nullptr) drawerStateText->clear();
+    if (emptyStateText != nullptr) emptyStateText->clear();
+    if (!state.pdc.captureComplete || !state.pdc.capturedArtifact.has_value()) {
+        if (state.pdc.preCaptureUncertain) {
+            if (drawerState != nullptr) *drawerState = BrainOwnedAccessoryDrawerState::Empty;
+            if (drawerStateText != nullptr) {
+                *drawerStateText = "PDC CHECK — CHECK XPILOT";
+            }
+        } else if (state.pdc.availability == BrainPdcAvailability::SourceUnavailable) {
+            if (drawerState != nullptr) {
+                *drawerState = BrainOwnedAccessoryDrawerState::Unavailable;
+            }
+            if (drawerStateText != nullptr) {
+                *drawerStateText = "PDC SOURCE UNAVAILABLE — USE XPILOT";
+            }
+        } else {
+            if (drawerState != nullptr) *drawerState = BrainOwnedAccessoryDrawerState::Empty;
+            if (emptyStateText != nullptr) {
+                *emptyStateText = "PDC IDLE — WAITING FOR DEPARTURE PDC";
+            }
+        }
+        return entries;
+    }
+
+    const auto& artifact = *state.pdc.capturedArtifact;
+    if (drawerState != nullptr) *drawerState = BrainOwnedAccessoryDrawerState::Ready;
+    if (drawerTitle != nullptr) *drawerTitle = "PDC — " + artifact.departureIcao;
+
+    BrainOwnedAccessoryHistoryEntry warning;
+    warning.stableKey = "pdc-captured-snapshot-warning";
+    warning.title = "CAPTURED SNAPSHOT — CHECK XPILOT FOR REVISIONS";
+    warning.retainedBytes = warning.stableKey.size() + warning.title.size();
+    entries.push_back(std::move(warning));
+
+    BrainOwnedAccessoryHistoryEntry entry;
+    entry.stableKey = artifact.revisionIdentity;
+    entry.title = "PDC — " + artifact.sender;
+    entry.body = artifact.body;
+    entry.acceptedSequence = static_cast<std::uint64_t>(
+        std::max<std::int64_t>(0, artifact.sourceSequence));
+    entry.chronological = true;
+    entry.chronologyKey = static_cast<std::int64_t>(
+        std::min<std::uint64_t>(artifact.acceptedMonotonicMicroseconds,
+            static_cast<std::uint64_t>(
+                std::numeric_limits<std::int64_t>::max())));
+    entry.retainedBytes = entry.stableKey.size() + entry.title.size() +
+        entry.body.size();
+    entries.push_back(std::move(entry));
+    return entries;
+}
+
+std::vector<BrainOwnedAccessoryOrbPresentation>
+ProjectBrainOwnedAccessoryRailSemantics(
+    const BrainOwnedRuntimeState& state) {
+    std::vector<BrainOwnedAccessoryOrbPresentation> orbs;
+    const BrainOwnedAccessoryDrawerId drawers[]{
+        BrainOwnedAccessoryDrawerId::Metar,
+        BrainOwnedAccessoryDrawerId::Atis,
+        BrainOwnedAccessoryDrawerId::Pdc};
+    orbs.reserve(std::size(drawers));
+    for (const auto drawer : drawers) {
+        BrainOwnedAccessoryOrbPresentation orb;
+        orb.drawer = drawer;
+        orb.label = AccessoryDrawerLabel(drawer);
+        orb.selected = drawer == state.accessory.activeDrawer;
+        orb.neutral = !orb.selected;
+        if (orb.selected) {
+            orb.selectedIndicator = "OPEN";
+        }
+        if (drawer == BrainOwnedAccessoryDrawerId::Metar) {
+            ProjectBrainOwnedMetarOrbPresentation(state, &orb);
+        } else if (drawer == BrainOwnedAccessoryDrawerId::Atis) {
+            ProjectBrainOwnedAtisOrbPresentation(state, &orb);
+        } else if (drawer == BrainOwnedAccessoryDrawerId::Pdc) {
+            ProjectBrainOwnedPdcOrbPresentation(state, &orb);
+        }
+        orbs.push_back(std::move(orb));
+    }
+    return orbs;
+}
+
+bool SameBrainOwnedAccessoryOrbSemantics(
+    const BrainOwnedAccessoryOrbPresentation& left,
+    const BrainOwnedAccessoryOrbPresentation& right) {
+    return left.drawer == right.drawer && left.label == right.label &&
+        left.neutral == right.neutral && left.selected == right.selected &&
+        left.selectedIndicator == right.selectedIndicator &&
+        left.airportIcao == right.airportIcao &&
+        left.categoryText == right.categoryText &&
+        left.stateText == right.stateText && left.tone == right.tone;
+}
+
+bool SameBrainOwnedAccessoryRailSemantics(
+    const std::vector<BrainOwnedAccessoryOrbPresentation>& left,
+    const std::vector<BrainOwnedAccessoryOrbPresentation>& right) {
+    if (left.size() != right.size()) return false;
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        if (!SameBrainOwnedAccessoryOrbSemantics(left[index], right[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+BrainOwnedAccessoryBoundaryDecision CloseAccessoryPreservingHistory(
+    BrainOwnedRuntimeState* state) {
+    BrainOwnedAccessoryBoundaryDecision decision;
+    if (state == nullptr) {
+        return decision;
+    }
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
+    decision.status = BrainOwnedAccessoryOperationStatus::Available;
+    decision.drawerClosed =
+        state->accessory.activeDrawer != BrainOwnedAccessoryDrawerId::None;
+    if (decision.drawerClosed) {
+        state->accessory.activeDrawer = BrainOwnedAccessoryDrawerId::None;
+        ++state->accessory.selectionGeneration;
+        ++state->accessory.scrollResetGeneration;
+        RecordBrainOwnedAccessorySelectionMutation(state);
+    }
+    decision.historyClearGeneration = state->accessory.historyClearGeneration;
+    decision.previousCallsign = state->accessory.callsignIdentity;
+    decision.activeCallsign = state->accessory.callsignIdentity;
+    decision.callsignIdentityGeneration =
+        state->accessory.callsignIdentityGeneration;
+    return decision;
+}
+
+BrainOwnedAccessoryBoundaryDecision ClearAccessorySessionHistory(
+    BrainOwnedRuntimeState* state) {
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
+    auto decision = CloseAccessoryPreservingHistory(state);
+    if (state == nullptr) {
+        return decision;
+    }
+    for (auto& history : state->accessory.histories) {
+        history.entries.clear();
+        history.retainedBytes = 0;
+        ++history.generation;
+        history.nextAcceptedSequence = 1;
+    }
+    const BrainOwnedAccessoryDrawerId drawers[]{
+        BrainOwnedAccessoryDrawerId::Metar,
+        BrainOwnedAccessoryDrawerId::Atis,
+        BrainOwnedAccessoryDrawerId::Pdc};
+    for (const auto drawer : drawers) {
+        RecordBrainOwnedAccessoryDrawerContentMutation(state, drawer);
+    }
+    state->accessory.lastConsumedClickSequence = 0;
+    state->accessory.pendingPresentationClickSequence = 0;
+    state->accessory.pendingPresentationClickAcceptedMicroseconds = 0;
+    state->accessory.pendingPresentationMouseCallbackExitedMicroseconds = 0;
+    ++state->accessory.lifecycleEpoch;
+    if (state->accessory.lifecycleEpoch == 0) {
+        state->accessory.lifecycleEpoch = 1;
+    }
+    ++state->accessory.historyClearGeneration;
+    RecordBrainOwnedAccessoryLifecycleMutation(state);
+    decision.historiesCleared = true;
+    decision.historyClearGeneration = state->accessory.historyClearGeneration;
+    return decision;
+}
+
+}  // namespace
+
+BrainOwnedAccessoryVisibleInvalidationBatch::
+BrainOwnedAccessoryVisibleInvalidationBatch(BrainOwnedRuntimeState* state)
+    : state_(state) {
+    BeginBrainOwnedAccessoryVisibleInvalidationBatch(state_);
+}
+
+BrainOwnedAccessoryVisibleInvalidationBatch::
+~BrainOwnedAccessoryVisibleInvalidationBatch() {
+    EndBrainOwnedAccessoryVisibleInvalidationBatch(state_);
+}
+
+void BeginBrainOwnedAccessoryVisibleInvalidationBatch(
+    BrainOwnedRuntimeState* state) {
+    if (state == nullptr) return;
+    ++state->accessory.visibleInvalidationBatchDepth;
+}
+
+void RecordBrainOwnedAccessoryDrawerContentMutation(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedAccessoryDrawerId drawer) {
+    if (state == nullptr) return;
+    const bool isolated =
+        state->accessory.visibleInvalidationBatchDepth == 0;
+    if (isolated) BeginBrainOwnedAccessoryVisibleInvalidationBatch(state);
+    std::size_t index = 0;
+    if (AccessoryDrawerIndex(drawer, &index)) {
+        state->accessory.pendingDrawerContentInvalidations[index] = true;
+    }
+    if (isolated) EndBrainOwnedAccessoryVisibleInvalidationBatch(state);
+}
+
+void RecordBrainOwnedAccessorySelectionMutation(
+    BrainOwnedRuntimeState* state) {
+    if (state == nullptr) return;
+    const bool isolated =
+        state->accessory.visibleInvalidationBatchDepth == 0;
+    if (isolated) BeginBrainOwnedAccessoryVisibleInvalidationBatch(state);
+    state->accessory.pendingSelectionInvalidation = true;
+    if (isolated) EndBrainOwnedAccessoryVisibleInvalidationBatch(state);
+}
+
+void RecordBrainOwnedAccessoryLifecycleMutation(
+    BrainOwnedRuntimeState* state) {
+    if (state == nullptr) return;
+    const bool isolated =
+        state->accessory.visibleInvalidationBatchDepth == 0;
+    if (isolated) BeginBrainOwnedAccessoryVisibleInvalidationBatch(state);
+    state->accessory.pendingLifecycleInvalidation = true;
+    if (isolated) EndBrainOwnedAccessoryVisibleInvalidationBatch(state);
+}
+
+void EndBrainOwnedAccessoryVisibleInvalidationBatch(
+    BrainOwnedRuntimeState* state) {
+    if (state == nullptr ||
+        state->accessory.visibleInvalidationBatchDepth == 0) return;
+    auto& accessory = state->accessory;
+    --accessory.visibleInvalidationBatchDepth;
+    if (accessory.visibleInvalidationBatchDepth != 0) return;
+
+    std::size_t activeIndex = 0;
+    const bool activeDrawerValid = AccessoryDrawerIndex(
+        accessory.activeDrawer, &activeIndex);
+    bool activeDrawerContentChanged = false;
+    for (std::size_t index = 0;
+         index < accessory.pendingDrawerContentInvalidations.size(); ++index) {
+        if (!accessory.pendingDrawerContentInvalidations[index]) continue;
+        ++accessory.drawerContentRevisions[index];
+        activeDrawerContentChanged = activeDrawerContentChanged ||
+            (activeDrawerValid && activeIndex == index);
+    }
+
+    const auto currentRail = ProjectBrainOwnedAccessoryRailSemantics(*state);
+    const bool railChanged = accessory.cachedPresentationSnapshot != nullptr &&
+        !SameBrainOwnedAccessoryRailSemantics(
+            accessory.cachedPresentationSnapshot->orbs, currentRail);
+    const bool visiblePresentationChanged =
+        accessory.pendingSelectionInvalidation ||
+        accessory.pendingLifecycleInvalidation ||
+        activeDrawerContentChanged || railChanged;
+
+    accessory.pendingDrawerContentInvalidations.fill(false);
+    accessory.pendingSelectionInvalidation = false;
+    accessory.pendingLifecycleInvalidation = false;
+    if (visiblePresentationChanged) {
+        ++accessory.semanticPresentationGeneration;
+    }
+}
+
+BrainOwnedAccessoryHistoryDecision AcceptBrainOwnedAccessoryHistoryEntry(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAccessoryHistoryEntryInput& input) {
+    BrainOwnedAccessoryHistoryDecision decision;
+    if (state == nullptr) {
+        return decision;
+    }
+    decision.status = BrainOwnedAccessoryOperationStatus::Available;
+
+    std::size_t historyIndex = 0;
+    const auto stableKey = NormalizeAccessoryLineEndings(input.stableKey);
+    if (!AccessoryDrawerIndex(input.drawer, &historyIndex) ||
+        stableKey.empty() ||
+        stableKey.size() > kAccessoryStableKeyByteLimit ||
+        !IsValidAccessoryUtf8(input.stableKey) ||
+        !IsValidAccessoryUtf8(input.title) ||
+        !IsValidAccessoryUtf8(input.body)) {
+        return decision;
+    }
+
+    bool titleLimited = false;
+    bool bodyLimited = false;
+    const auto normalizedTitle = NormalizeAccessoryLineEndings(input.title);
+    const auto normalizedBody = NormalizeAccessoryLineEndings(input.body);
+    const auto sourceContentDigest = AccessorySourceContentDigest(
+        normalizedTitle,
+        normalizedBody);
+    const auto title = LimitAccessoryUtf8(
+        normalizedTitle,
+        kAccessoryTitleByteLimit,
+        &titleLimited);
+    const auto body = LimitAccessoryUtf8(
+        normalizedBody,
+        kAccessoryBodyByteLimit,
+        &bodyLimited);
+    const bool contentLimited = titleLimited || bodyLimited;
+
+    auto& history = state->accessory.histories[historyIndex];
+    const auto existing = std::find_if(
+        history.entries.begin(),
+        history.entries.end(),
+        [&](const BrainOwnedAccessoryHistoryEntry& entry) {
+            return entry.stableKey == stableKey;
+        });
+    if (existing != history.entries.end() &&
+        existing->sourceContentDigest == sourceContentDigest &&
+        existing->title == title && existing->body == body &&
+        existing->contentLimited == contentLimited) {
+        decision.duplicate = true;
+        decision.historyGeneration = history.generation;
+        decision.acceptedSequence = existing->acceptedSequence;
+        decision.contentLimited = existing->contentLimited;
+        return decision;
+    }
+    if (existing != history.entries.end()) {
+        history.retainedBytes -= existing->retainedBytes;
+        history.entries.erase(existing);
+    }
+
+    BrainOwnedAccessoryHistoryEntry entry;
+    entry.stableKey = stableKey;
+    entry.title = title;
+    entry.body = body;
+    entry.acceptedSequence = history.nextAcceptedSequence++;
+    entry.chronological = input.chronological;
+    entry.chronologyKey = input.chronologyKey;
+    entry.sourceContentDigest = sourceContentDigest;
+    entry.contentLimited = contentLimited;
+    entry.retainedBytes =
+        entry.stableKey.size() + entry.title.size() + entry.body.size();
+    history.retainedBytes += entry.retainedBytes;
+    if (entry.chronological) {
+        const auto insertion = std::find_if(
+            history.entries.begin(), history.entries.end(),
+            [&](const BrainOwnedAccessoryHistoryEntry& candidate) {
+                if (!candidate.chronological) return true;
+                if (candidate.chronologyKey != entry.chronologyKey) {
+                    return candidate.chronologyKey < entry.chronologyKey;
+                }
+                return candidate.acceptedSequence < entry.acceptedSequence;
+            });
+        history.entries.insert(insertion, entry);
+    } else {
+        history.entries.insert(history.entries.begin(), entry);
+    }
+
+    while (history.entries.size() > kAccessoryHistoryEntryLimit ||
+           history.retainedBytes > kAccessoryHistoryByteLimit) {
+        history.retainedBytes -= history.entries.back().retainedBytes;
+        history.entries.pop_back();
+    }
+    ++history.generation;
+    RecordBrainOwnedAccessoryDrawerContentMutation(state, input.drawer);
+
+    decision.accepted = true;
+    decision.contentLimited = contentLimited;
+    decision.acceptedSequence = entry.acceptedSequence;
+    decision.historyGeneration = history.generation;
+    return decision;
+}
+
+BrainOwnedAccessorySelectionDecision RequestBrainOwnedAccessoryDrawerSelection(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAccessorySelectionRequest& request) {
+    BrainOwnedAccessorySelectionDecision decision;
+    if (state == nullptr) {
+        return decision;
+    }
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
+    decision.status = BrainOwnedAccessoryOperationStatus::Available;
+    decision.requestSequence = request.requestSequence;
+    decision.clickAcceptedMicroseconds = request.clickAcceptedMicroseconds;
+    decision.mouseCallbackEnteredMicroseconds =
+        request.mouseCallbackEnteredMicroseconds;
+    decision.mouseCallbackExitedMicroseconds =
+        request.mouseCallbackExitedMicroseconds;
+    decision.previousDrawer = state->accessory.activeDrawer;
+    decision.activeDrawer = state->accessory.activeDrawer;
+    decision.selectionGeneration = state->accessory.selectionGeneration;
+    decision.scrollResetGeneration = state->accessory.scrollResetGeneration;
+
+    std::size_t ignoredIndex = 0;
+    if (!AccessoryDrawerIndex(request.drawer, &ignoredIndex) ||
+        request.requestSequence == 0) {
+        return decision;
+    }
+    if (request.requestSequence <= state->accessory.lastConsumedClickSequence) {
+        decision.action = BrainOwnedAccessoryDrawerAction::DuplicateRequestIgnored;
+        return decision;
+    }
+
+    state->accessory.lastConsumedClickSequence = request.requestSequence;
+    state->accessory.pendingPresentationClickSequence = request.requestSequence;
+    state->accessory.pendingPresentationClickAcceptedMicroseconds =
+        request.clickAcceptedMicroseconds;
+    state->accessory.pendingPresentationMouseCallbackExitedMicroseconds =
+        request.mouseCallbackExitedMicroseconds;
+    if (state->accessory.activeDrawer == request.drawer) {
+        state->accessory.activeDrawer = BrainOwnedAccessoryDrawerId::None;
+        decision.action = BrainOwnedAccessoryDrawerAction::Closed;
+    } else if (state->accessory.activeDrawer == BrainOwnedAccessoryDrawerId::None) {
+        state->accessory.activeDrawer = request.drawer;
+        decision.action = BrainOwnedAccessoryDrawerAction::Opened;
+    } else {
+        state->accessory.activeDrawer = request.drawer;
+        decision.action = BrainOwnedAccessoryDrawerAction::Switched;
+    }
+    ++state->accessory.selectionGeneration;
+    ++state->accessory.scrollResetGeneration;
+    RecordBrainOwnedAccessorySelectionMutation(state);
+    decision.activeDrawer = state->accessory.activeDrawer;
+    decision.selectionGeneration = state->accessory.selectionGeneration;
+    decision.scrollResetGeneration = state->accessory.scrollResetGeneration;
+    return decision;
+}
+
+BrainOwnedAccessoryPresentationHandle ProjectBrainOwnedAccessoryPresentation(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedAccessoryProjectionCounters* counters) {
+    if (counters != nullptr) {
+        *counters = {};
+    }
+    BrainOwnedAccessoryPresentationHandle handle;
+    if (state == nullptr) {
+        return handle;
+    }
+
+    auto& accessory = state->accessory;
+    std::size_t activeIndex = 0;
+    const bool drawerOpen = AccessoryDrawerIndex(
+        accessory.activeDrawer,
+        &activeIndex);
+    const std::uint64_t historyGeneration = drawerOpen
+        ? accessory.histories[activeIndex].generation
+        : 0;
+    std::uint64_t contentGeneration = 0;
+    if (accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Metar &&
+        state->metar.initialized) {
+        contentGeneration = state->metar.presentationGeneration;
+    } else if (accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Pdc &&
+               state->pdc.initialized) {
+        contentGeneration = state->pdc.semanticGeneration;
+    }
+    const bool cacheMatches =
+        accessory.cachedPresentationSnapshot != nullptr &&
+        accessory.cachedSemanticPresentationGeneration ==
+            accessory.semanticPresentationGeneration;
+    if (cacheMatches) {
+        handle.snapshot = accessory.cachedPresentationSnapshot;
+        return handle;
+    }
+
+    auto snapshot = std::make_shared<BrainOwnedAccessoryPresentationSnapshot>();
+    snapshot->status = BrainOwnedAccessoryOperationStatus::Available;
+    snapshot->activeDrawer = accessory.activeDrawer;
+    snapshot->selectionGeneration = accessory.selectionGeneration;
+    snapshot->historyGeneration = historyGeneration;
+    snapshot->contentGeneration = contentGeneration;
+    snapshot->snapshotIdentity = accessory.nextPresentationSnapshotIdentity++;
+    snapshot->commandIdentity = accessory.nextPresentationCommandIdentity++;
+    snapshot->lifecycleEpoch = accessory.lifecycleEpoch;
+    snapshot->callsignIdentity = accessory.callsignIdentity;
+    snapshot->originatingClickSequence =
+        accessory.pendingPresentationClickSequence;
+    snapshot->originatingClickAcceptedMicroseconds =
+        accessory.pendingPresentationClickAcceptedMicroseconds;
+    snapshot->originatingMouseCallbackExitedMicroseconds =
+        accessory.pendingPresentationMouseCallbackExitedMicroseconds;
+    for (std::size_t index = 0; index < accessory.histories.size(); ++index) {
+        snapshot->drawerHistoryGenerations[index] =
+            accessory.histories[index].generation;
+    }
+
+    snapshot->orbs = ProjectBrainOwnedAccessoryRailSemantics(*state);
+
+    if (drawerOpen) {
+        const auto& history = accessory.histories[activeIndex];
+        snapshot->drawerTitle = AccessoryDrawerLabel(accessory.activeDrawer);
+        snapshot->emptyStateText = AccessoryEmptyStateText(accessory.activeDrawer);
+        snapshot->drawerStateText = snapshot->emptyStateText;
+        snapshot->drawerFinalMarker = std::string("END OF ") +
+            AccessoryDrawerLabel(accessory.activeDrawer) + " HISTORY";
+        if (accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Metar) {
+            snapshot->entries =
+                ProjectBrainOwnedMetarDrawerPresentation(*state, history);
+        } else if (accessory.activeDrawer ==
+                   BrainOwnedAccessoryDrawerId::Atis) {
+            snapshot->entries = ProjectBrainOwnedAtisDrawerPresentation(
+                *state, history, &snapshot->drawerState,
+                &snapshot->drawerTitle, &snapshot->drawerStateText,
+                &snapshot->emptyStateText,
+                &snapshot->atisVisibleRevisionIdentity);
+        } else if (accessory.activeDrawer ==
+                   BrainOwnedAccessoryDrawerId::Pdc && state->pdc.initialized) {
+            snapshot->entries = ProjectBrainOwnedPdcDrawerPresentation(
+                *state, &snapshot->drawerState, &snapshot->drawerTitle,
+                &snapshot->drawerStateText, &snapshot->emptyStateText);
+        } else {
+            snapshot->entries = history.entries;
+        }
+        if (counters != nullptr) {
+            counters->historyVisits = history.entries.size();
+            counters->entriesCopied = history.entries.size();
+        }
+        if (accessory.activeDrawer != BrainOwnedAccessoryDrawerId::Atis &&
+            !(accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Pdc &&
+              state->pdc.initialized)) {
+            snapshot->drawerState = snapshot->entries.empty()
+                ? BrainOwnedAccessoryDrawerState::Empty
+                : BrainOwnedAccessoryDrawerState::Ready;
+        }
+        if (snapshot->drawerState == BrainOwnedAccessoryDrawerState::Ready) {
+            snapshot->drawerStateText.clear();
+        }
+    }
+    const auto prior = accessory.cachedPresentationSnapshot;
+    bool railChanged = prior == nullptr || prior->orbs.size() != snapshot->orbs.size();
+    if (!railChanged) {
+        for (std::size_t index = 0; index < snapshot->orbs.size(); ++index) {
+            if (!SameBrainOwnedAccessoryOrbSemantics(
+                    prior->orbs[index], snapshot->orbs[index])) {
+                railChanged = true;
+                break;
+            }
+        }
+    }
+    if (railChanged) ++accessory.railPresentationRevision;
+    snapshot->railPresentationRevision = accessory.railPresentationRevision;
+    snapshot->selectedDrawerContentRevision = drawerOpen
+        ? accessory.drawerContentRevisions[activeIndex]
+        : 0;
+    snapshot->scrollResetGeneration = accessory.scrollResetGeneration;
+    if (counters != nullptr) {
+        counters->snapshotBuilds = 1;
+    }
+
+    accessory.cachedPresentationSnapshot = snapshot;
+    accessory.cachedSemanticPresentationGeneration =
+        accessory.semanticPresentationGeneration;
+
+    handle.snapshot = std::move(snapshot);
+    accessory.pendingPresentationClickSequence = 0;
+    accessory.pendingPresentationClickAcceptedMicroseconds = 0;
+    accessory.pendingPresentationMouseCallbackExitedMicroseconds = 0;
+    return handle;
+}
+
+std::uint64_t BrainOwnedAccessorySemanticPresentationGeneration(
+    const BrainOwnedRuntimeState& state) {
+    return state.accessory.semanticPresentationGeneration;
+}
+
+BrainOwnedAccessoryPublicationDecision
+ConsumeBrainOwnedAccessoryPublicationFact(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAccessoryPublicationFact& fact) {
+    BrainOwnedAccessoryPublicationDecision decision;
+    if (state == nullptr || fact.commandIdentity == 0) {
+        decision.reason = "publication-fact-invalid";
+        return decision;
+    }
+    if (fact.lifecycleEpoch != state->accessory.lifecycleEpoch) {
+        ++state->accessory.publicationFactsRejected;
+        decision.staleEpoch = true;
+        decision.reason = "publication-fact-stale-epoch";
+        return decision;
+    }
+    if (state->accessory.publicationOrderingLifecycleEpoch !=
+        fact.lifecycleEpoch) {
+        state->accessory.publicationOrderingLifecycleEpoch =
+            fact.lifecycleEpoch;
+        state->accessory.lastTerminalPresentationCommandIdentity = 0;
+        state->accessory.lastVisiblePublicationAttemptIdentity = 0;
+    }
+    const bool commandRole = fact.commandTerminal;
+    const bool attemptRole = fact.visiblePublicationAttemptIdentity != 0;
+    if (!commandRole && !attemptRole) {
+        ++state->accessory.publicationFactsRejected;
+        decision.reason = "publication-fact-has-no-terminal-role";
+        return decision;
+    }
+    if (commandRole && fact.commandIdentity <=
+            state->accessory.lastTerminalPresentationCommandIdentity) {
+        ++state->accessory.publicationFactsRejected;
+        decision.reason = "command-terminal-duplicate-or-out-of-order";
+        return decision;
+    }
+    if (attemptRole && fact.visiblePublicationAttemptIdentity <=
+            state->accessory.lastVisiblePublicationAttemptIdentity) {
+        ++state->accessory.publicationFactsRejected;
+        decision.reason = "visible-publication-duplicate-or-out-of-order";
+        return decision;
+    }
+    if (commandRole) {
+        state->accessory.lastTerminalPresentationCommandIdentity =
+            fact.commandIdentity;
+        state->accessory.maximumPublicationElapsedMicroseconds = std::max(
+            state->accessory.maximumPublicationElapsedMicroseconds,
+            fact.commandElapsedMicroseconds);
+        decision.commandTerminalAccepted = true;
+    }
+    if (attemptRole) {
+        state->accessory.lastVisiblePublicationAttemptIdentity =
+            fact.visiblePublicationAttemptIdentity;
+        if (fact.visibilityTimingApplicable) {
+            state->accessory.maximumVisiblePublicationMicroseconds = std::max(
+                state->accessory.maximumVisiblePublicationMicroseconds,
+                fact.visibleEligibilityToFirstFrameMicroseconds);
+        }
+        decision.visibleAttemptTerminalAccepted = true;
+    }
+    ++state->accessory.publicationFactsConsumed;
+    const bool clickTimingApplicable =
+        fact.clickTimingApplicable || fact.originatingClickSequence != 0;
+    bool livenessFailure =
+        clickTimingApplicable && fact.clickToTerminalMicroseconds >= 500'000;
+    if (fact.disposition ==
+            BrainOwnedAccessoryPublicationDisposition::LifecycleCancelled &&
+        fact.cancellationTimingApplicable) {
+        state->accessory.maximumCancellationMicroseconds = std::max(
+            state->accessory.maximumCancellationMicroseconds,
+            fact.issueToCancellationMicroseconds);
+        livenessFailure = livenessFailure ||
+            fact.issueToCancellationMicroseconds >= 500'000;
+    }
+    if (attemptRole && fact.visibilityTimingApplicable) {
+        livenessFailure = livenessFailure ||
+            fact.visibleEligibilityToFirstFrameMicroseconds >= 500'000;
+    }
+    if (livenessFailure) {
+        ++state->accessory.publicationLivenessFailureCount;
+    }
+    decision.consumed = true;
+    decision.terminal = true;
+    decision.combinedTerminalAccepted = commandRole && attemptRole;
+    decision.reason = decision.combinedTerminalAccepted
+        ? "combined-publication-terminal-fact-consumed"
+        : (commandRole
+            ? "command-publication-terminal-fact-consumed"
+            : "visible-publication-terminal-fact-consumed");
+    if (decision.visibleAttemptTerminalAccepted &&
+        fact.disposition ==
+            BrainOwnedAccessoryPublicationDisposition::FirstFrameDisplayed &&
+        fact.activeDrawerRendered == BrainOwnedAccessoryDrawerId::Atis &&
+        !fact.atisVisibleRevisionIdentity.empty()) {
+        (void)AcknowledgeBrainOwnedAtisVisibleRevision(
+            state, fact.atisVisibleRevisionIdentity);
+    }
+    if (decision.visibleAttemptTerminalAccepted &&
+        fact.disposition ==
+            BrainOwnedAccessoryPublicationDisposition::FirstFrameDisplayed &&
+        fact.activeDrawerRendered == BrainOwnedAccessoryDrawerId::Pdc &&
+        !fact.pdcVisibleRevisionIdentities.empty()) {
+        (void)AcknowledgeBrainOwnedPdcVisibleEntries(
+            state, fact.pdcVisibleRevisionIdentities);
+    }
+    return decision;
+}
+
+BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForDisplayClose(
+    BrainOwnedRuntimeState* state) {
+    return CloseAccessoryPreservingHistory(state);
+}
+BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForTemporaryXPilotDisconnect(
+    BrainOwnedRuntimeState* state) {
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
+    auto decision = CloseAccessoryPreservingHistory(state);
+    MarkBrainOwnedAtisSourceUnknownPreservingAcceptedState(state);
+    return decision;
+}
+BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForInvalidAircraft(
+    BrainOwnedRuntimeState* state) {
+    return CloseAccessoryPreservingHistory(state);
+}
+BrainOwnedAccessoryBoundaryDecision DisableBrainOwnedAccessoryRuntime(
+    BrainOwnedRuntimeState* state) {
+    BrainOwnedAccessoryVisibleInvalidationBatch invalidation(state);
+    auto decision = CloseAccessoryPreservingHistory(state);
+    if (state != nullptr) {
+        ++state->accessory.lifecycleEpoch;
+        if (state->accessory.lifecycleEpoch == 0) {
+            state->accessory.lifecycleEpoch = 1;
+        }
+        state->accessory.publicationOrderingLifecycleEpoch =
+            state->accessory.lifecycleEpoch;
+        state->accessory.lastTerminalPresentationCommandIdentity = 0;
+        state->accessory.lastVisiblePublicationAttemptIdentity = 0;
+        state->accessory.cachedPresentationSnapshot.reset();
+        RecordBrainOwnedAccessoryLifecycleMutation(state);
+        state->accessory.pendingPresentationClickSequence = 0;
+        state->accessory.pendingPresentationClickAcceptedMicroseconds = 0;
+        state->accessory.pendingPresentationMouseCallbackExitedMicroseconds = 0;
+    }
+    return decision;
+}
+BrainOwnedAccessoryBoundaryDecision EnableBrainOwnedAccessoryRuntime(
+    BrainOwnedRuntimeState* state) {
+    BrainOwnedAccessoryBoundaryDecision decision;
+    if (state == nullptr) {
+        return decision;
+    }
+    decision.status = BrainOwnedAccessoryOperationStatus::Available;
+    decision.historyClearGeneration = state->accessory.historyClearGeneration;
+    decision.previousCallsign = state->accessory.callsignIdentity;
+    decision.activeCallsign = state->accessory.callsignIdentity;
+    decision.callsignIdentityGeneration =
+        state->accessory.callsignIdentityGeneration;
+    return decision;
+}
+BrainOwnedPluginAdminLifecycleDecision
+SuspendBrainOwnedRuntimeForPluginAdmin(
+    BrainOwnedRuntimeState* state,
+    const BrainOwnedAsyncWorkerBindings& workers) {
+    BrainOwnedPluginAdminLifecycleDecision decision;
+    if (state == nullptr) {
+        return decision;
+    }
+    decision.status = BrainOwnedAccessoryOperationStatus::Available;
+    decision.suspended = true;
+    if (state->pluginAdminSuspended) {
+        decision.suspensionGeneration =
+            state->pluginAdminSuspensionGeneration;
+        decision.workerShutdown = workers.metar != nullptr
+            ? workers.metar->ShutdownSnapshot()
+            : BrainMetarWorkerShutdownSnapshot{};
+        return decision;
+    }
+
+    decision.accessory = DisableBrainOwnedAccessoryRuntime(state);
+    MarkBrainOwnedAtisSourceUnknownPreservingAcceptedState(state);
+    SuspendBrainOwnedPdcRuntime(state);
+    decision.workerShutdown = ApplyBrainOwnedAsyncWorkerLifecycleBoundary(
+        state, workers, false);
+    state->pluginAdminSuspended = true;
+    ++state->pluginAdminSuspensionGeneration;
+    if (state->pluginAdminSuspensionGeneration == 0) {
+        state->pluginAdminSuspensionGeneration = 1;
+    }
+    decision.stateChanged = true;
+    decision.suspensionGeneration = state->pluginAdminSuspensionGeneration;
+    return decision;
+}
+
+BrainOwnedPluginAdminLifecycleDecision
+ResumeBrainOwnedRuntimeFromPluginAdmin(BrainOwnedRuntimeState* state) {
+    BrainOwnedPluginAdminLifecycleDecision decision;
+    if (state == nullptr) {
+        return decision;
+    }
+    decision.status = BrainOwnedAccessoryOperationStatus::Available;
+    decision.suspensionGeneration = state->pluginAdminSuspensionGeneration;
+    decision.accessory = EnableBrainOwnedAccessoryRuntime(state);
+    if (!state->pluginAdminSuspended) {
+        return decision;
+    }
+    state->pluginAdminSuspended = false;
+    ResumeBrainOwnedPdcRuntime(state);
+    decision.stateChanged = true;
+    decision.resumed = true;
+    return decision;
+}
+BrainOwnedAccessoryBoundaryDecision CloseBrainOwnedAccessoryForTemporaryOverlaySleep(
+    BrainOwnedRuntimeState* state) {
+    return CloseAccessoryPreservingHistory(state);
+}
+BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForSessionReset(
+    BrainOwnedRuntimeState* state) {
+    auto decision = ClearAccessorySessionHistory(state);
+    ResetBrainOwnedAtisProductState(state);
+    ResetBrainOwnedPdcProductState(state, false);
+    return decision;
+}
+BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForConfirmedNewFlight(
+    BrainOwnedRuntimeState* state) {
+    auto decision = ClearAccessorySessionHistory(state);
+    ResetBrainOwnedAtisProductState(state);
+    ResetBrainOwnedPdcProductState(state, false);
+    return decision;
+}
+BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForConfirmedColdDark(
+    BrainOwnedRuntimeState* state) {
+    auto decision = ClearAccessorySessionHistory(state);
+    ResetBrainOwnedAtisProductState(state);
+    ResetBrainOwnedPdcProductState(state, false);
+    return decision;
+}
+BrainOwnedAccessoryBoundaryDecision ResetBrainOwnedAccessoryForCallsignChange(
+    BrainOwnedRuntimeState* state,
+    const std::string& previousCallsign,
+    const std::string& nextCallsign) {
+    auto decision = ClearAccessorySessionHistory(state);
+    ResetBrainOwnedAtisProductState(state);
+    ResetBrainOwnedPdcProductState(state, false);
+    if (state == nullptr) {
+        return decision;
+    }
+    decision.clearedBeforeIdentityProjection = true;
+    decision.previousCallsign = previousCallsign;
+    state->accessory.callsignIdentity = nextCallsign;
+    ++state->accessory.callsignIdentityGeneration;
+    decision.activeCallsign = nextCallsign;
+    decision.callsignIdentityGeneration =
+        state->accessory.callsignIdentityGeneration;
+    return decision;
+}
+BrainOwnedAccessoryBoundaryDecision StopBrainOwnedAccessoryRuntime(
+    BrainOwnedRuntimeState* state) {
+    auto decision = ClearAccessorySessionHistory(state);
+    ResetBrainOwnedAtisProductState(state);
+    StopBrainOwnedPdcRuntime(state);
+    return decision;
 }
 
 }  // namespace xvatsim::brain

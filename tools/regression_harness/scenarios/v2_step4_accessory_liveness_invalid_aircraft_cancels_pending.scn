@@ -1,0 +1,2 @@
+name=v2_step4_accessory_liveness_invalid_aircraft_cancels_pending
+step4.probe=accessory_deferred_binding_boundaries

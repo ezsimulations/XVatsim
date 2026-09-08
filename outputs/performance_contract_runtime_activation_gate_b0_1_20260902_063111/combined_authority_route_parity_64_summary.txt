@@ -1,0 +1,5 @@
+combined_authority_route_parity_64
+Scenarios: 64
+Passed: 64
+Failed: 0
+Elapsed seconds: 8.703

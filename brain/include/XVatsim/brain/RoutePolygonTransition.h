@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
 #include "XVatsim/brain/BrainTypes.h"
@@ -8,7 +9,7 @@ namespace xvatsim::brain {
 
 struct RoutePolygonTransitionWorkerInput {
     AircraftStateSnapshot aircraft;
-    RouteSectorSnapshot route;
+    std::shared_ptr<const RouteSectorSnapshot> route;
     std::string previousPolygonKey;
     double transitionToleranceNm = 1.0;
 };
@@ -27,7 +28,7 @@ struct RoutePolygonTransitionWorkerOutput {
     std::string nextPolygonKey;
     std::string finalRoutePolygonKey;
     std::string reason;
-    RouteSectorSnapshot route;
+    std::shared_ptr<const RouteSectorSnapshot> route;
 };
 
 RoutePolygonTransitionWorkerOutput RunRoutePolygonTransitionWorker(

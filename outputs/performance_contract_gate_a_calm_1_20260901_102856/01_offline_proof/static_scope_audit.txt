@@ -1,0 +1,12 @@
+GATE_A_CALM_1_STATIC_AUDIT
+git_diff_check=PASS
+diagnostic_filesystem_owner=modules/runtime_workers/src/AsyncDiagnosticsWriter.cpp
+plugin_diagnostic_filesystem_calls=0
+writer_xplane_ui_network_settings_route_resolver_references=0
+protected_gate_a_engine_feed_files_checked=12
+protected_gate_a_engine_feed_files_changed=0
+gate_b_changes=0
+semantic_authority_input_changes=0
+fms_sampler_changes=0
+preallocated_authority_request_changes=0
+coherent_authority_bundle_changes=0

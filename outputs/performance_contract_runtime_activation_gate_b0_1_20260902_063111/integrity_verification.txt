@@ -1,0 +1,11 @@
+Runtime Activation Gate B0.1 final integrity verification
+branch: v2-development
+HEAD: 44e5add57f070fe65a99f146e4be9b952d654ae2
+source manifest rows: 7
+binary manifest rows: 4
+tracked source scope exact: true
+staged files: 0
+git diff --check: pass with line-ending notices
+new-file trailing whitespace: none
+manifest mismatches: 0
+failures: 0
