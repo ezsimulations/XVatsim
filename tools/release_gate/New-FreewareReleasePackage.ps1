@@ -1,6 +1,8 @@
 param(
-    [string]$Version = "1.2.3",
-    [string]$PlatformName = "Windows_XP12"
+    [string]$Version = "2.0.0",
+    [string]$PlatformName = "Windows_XP12",
+    [string]$BuildRoot = "build",
+    [string]$ReleaseOutputRoot = "releases"
 )
 
 $ErrorActionPreference = "Stop"
@@ -75,15 +77,41 @@ function Assert-CleanPackage {
             throw "Expected package file is missing: $relative"
         }
     }
+
+    $actual = Get-ChildItem -LiteralPath $PackageRoot -Recurse -Force -File |
+        ForEach-Object {
+            $_.FullName.Substring($PackageRoot.Length).TrimStart('\')
+        }
+    $unexpected = $actual | Where-Object { $_ -notin $required }
+    if ($unexpected) {
+        $names = $unexpected -join "`n"
+        throw "Unexpected files found in freeware package:`n$names"
+    }
+    if ($actual.Count -ne $required.Count) {
+        throw "Freeware package must contain exactly $($required.Count) files; found $($actual.Count)."
+    }
 }
 
 $repoRoot = Resolve-RepoRoot
 $releaseName = "XVatsim_$($Version)_Freeware_$PlatformName"
-$releaseRoot = Join-Path $repoRoot "releases\$releaseName"
+$buildRootPath = if ([IO.Path]::IsPathRooted($BuildRoot)) {
+    [IO.Path]::GetFullPath($BuildRoot)
+} else {
+    [IO.Path]::GetFullPath((Join-Path $repoRoot $BuildRoot))
+}
+$releaseOutputRootPath = if ([IO.Path]::IsPathRooted($ReleaseOutputRoot)) {
+    [IO.Path]::GetFullPath($ReleaseOutputRoot)
+} else {
+    [IO.Path]::GetFullPath((Join-Path $repoRoot $ReleaseOutputRoot))
+}
+if (-not (Test-Path -LiteralPath $releaseOutputRootPath)) {
+    New-Item -ItemType Directory -Path $releaseOutputRootPath | Out-Null
+}
+$releaseRoot = Join-Path $releaseOutputRootPath $releaseName
 $payloadRoot = Join-Path $releaseRoot $releaseName
-$zipPath = Join-Path $repoRoot "releases\$releaseName.zip"
+$zipPath = Join-Path $releaseOutputRootPath "$releaseName.zip"
 
-$builtXpl = Join-Path $repoRoot "build\dist\XVatsim\win_x64\XVatsim.xpl"
+$builtXpl = Join-Path $buildRootPath "dist\XVatsim\win_x64\XVatsim.xpl"
 $transitionAudio = Join-Path $repoRoot "assets\audio\ui_transition.mp3"
 $authorityRegistry = Join-Path $repoRoot "assets\source_data\authority_source_registry.json"
 $userGuide = Join-Path $repoRoot "docs\user_guide\XVatsim_User_Guide.pdf"
@@ -111,7 +139,10 @@ XVatsim is a freeware companion plugin for xPilot in X-Plane 12. It provides a c
 What XVatsim does:
 - Shows relevant VATSIM frequencies for the current flight phase.
 - Supports departure, enroute, and arrival frequency awareness.
+- Uses VATSIM, route, airport, transmitter, authority, and US vNAS sector facts to strengthen terminal-controller selection.
 - Displays COM1, COM2, TX, RX, MODE C, and Standby Assist state.
+- Provides Brain-owned METAR and VATSIM ATIS information drawers.
+- Captures one bounded xPilot waiting-message snapshot for the PDC drawer; xPilot remains authoritative for revisions.
 - Can recover the current flight after an xPilot disconnect/reconnect.
 - Can manually check whether the installed XVatsim version is current.
 - Can show CTAF or UNICOM fallback when controlled airport service is unavailable.
@@ -186,11 +217,14 @@ $changelog = @"
 XVatsim Freeware Changelog
 Version: $Version
 
-Maintenance release:
-- Detects exact route entry into narrow or oblique authority polygons without relying on a fixed offset around the boundary crossing.
-- Restores KZFW route ownership and FTW Center relevance for the live-tested SKJ914 MMTO-KCOS route.
-- Preserves existing narrow-crossing and anti-meridian route traversal behavior.
-- Preserves brain-owned display order, standby assist consumption order, CTAF/UNICOM authority retirement, COM writer ownership, overlay cap behavior, row ordering, dedupe, completion identity, and phase reuse behavior.
+Version 2.0.0 highlights:
+- Adds three Brain-owned information ORBs and drawers: METAR, VATSIM ATIS, and a one-shot xPilot waiting-message PDC snapshot.
+- Strengthens US Approach/Departure selection with vNAS sector evidence while keeping the Brain as the sole decision owner.
+- Evaluates terminal-controller transmitter distance from the departure or arrival airport instead of the aircraft position.
+- Preserves the aircraft-distance gate for Center presentation within 250 nautical miles.
+- Prevents unchanged ATIS content from repeatedly returning to unread when VATSIM republishes the same information.
+- Moves route and authority preparation off the X-Plane flight loop and keeps settled operation calm and low-churn.
+- Includes IFR/VFR mode selection, diversion handling, flight recovery, update notifications, and exact route-polygon crossing fixes.
 
 Current scope:
 - Windows only.
@@ -204,7 +238,7 @@ Not included in this release:
 - Dedicated VFR workflow.
 - SimBrief import.
 - Navigraph AIRAC import.
-- Private-message, PDC, or AUTO_ATC card presentation.
+- A general private-message inbox or AUTO_ATC card presentation.
 "@
 
 $support = @"
@@ -242,11 +276,13 @@ Compress-Archive -LiteralPath $payloadRoot -DestinationPath $zipPath -Compressio
 
 $xplHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $pluginRoot "XVatsim.xpl")).Hash
 $zipHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash
+$zipSize = (Get-Item -LiteralPath $zipPath).Length
 
 [pscustomobject]@{
     Version = $Version
     PackageRoot = $payloadRoot
     ZipPath = $zipPath
+    ZipSizeBytes = $zipSize
     ZipSHA256 = $zipHash
     PackagedPluginSHA256 = $xplHash
 }

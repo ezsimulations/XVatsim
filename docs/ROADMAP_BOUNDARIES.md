@@ -1,10 +1,10 @@
 # Roadmap Boundaries
 
-Updated: 2026-08-31
+Updated: 2026-09-08
 
-## V1 Product Position
+## V2 Product Position
 
-XVatsim V1.2.3 is the current public freeware xPilot companion plugin for
+XVatsim V2.0.0 is the current public freeware xPilot companion plugin for
 Windows and X-Plane 12. XVatsim is not a replacement VATSIM client, not
 an xPilot fork, and not a full network/audio client.
 
@@ -17,21 +17,21 @@ The V1 reliability goal is controller-awareness trustworthiness:
 - clean lifecycle/reset behavior
 - regression coverage for known real-world failures
 
-## Do Not Reopen For V1
+## Do Not Reopen Without A New Milestone
 
 - xPilot fork/replacement planning
 - standalone desktop client planning
 - installer/updater planning
 - network/audio-client ownership
-- private-message, PDC, or AUTO_ATC card presentation
+- general private-message inbox or AUTO_ATC card presentation
 - SimBrief or Navigraph AIRAC ingestion
 - second-monitor/out-of-sim UI
-- dedicated VFR workflow
+- dedicated VFR controller-evidence workflow
 
-These items should not change the closed Version 1 freeware release path except
-for narrow patch releases that preserve the Version 1 runtime contract.
+These items should not change the released V2.0.0 path without their own
+source-of-truth, performance budget, offline proof, and live-test plan.
 
-## V2.0.0 Feature-Complete Beta Baseline
+## V2.0.0 Released Baseline
 
 Steps 1 through 6 are accepted, complete, and frozen. V2.0.0 now has three
 completed Brain-owned accessory products on the existing rail and drawer:
@@ -53,14 +53,13 @@ The accepted feature commit is
 `14/14`, focused `61/61`, complete regression `861/861` twice, `861` scenarios
 with fingerprint
 `227121979F59CB3BB359B96DE57AC7DF601E0BE3736F82F38C19EE08437431D9`,
-and a Product Owner normal-use live PASS. The exact `3/3` live-proven candidate
-remains installed as the beta baseline.
+and a Product Owner normal-use live PASS. Later TRACON and ATIS corrections were
+also live accepted before release.
 
 V2.0.0 remains Windows/X-Plane 12/xPilot only. Mac and Linux support are
-deferred until native test resources exist. V2.0.0 is feature-complete and
-entering extended multi-flight beta; it is not yet publicly released or
-release-certified. V1.2.3 remains the current public release and the retained
-beta binary deliberately retains `1.2.3` metadata.
+deferred until native test resources exist. The public package passed a fresh
+Release build, `882 / 882` saved scenarios, exact nine-file smoke extraction,
+version-string audit, and binary/package hash verification.
 
 The accepted IFR/VFR selection foundation remains. A dedicated VFR evidence
 engine and live VFR controller projection are not V2.0.0 requirements. They are
@@ -71,9 +70,9 @@ makes every product and semantic decision, the plugin obeys, and the UI renders
 Brain-approved facts. All products reuse the single accessory preparation,
 presentation, rendering, and visible-publication return architecture.
 
-The next state is extended beta observation. Any source/test correction, beta
-versioning or packaging, build/deployment change, release certification,
-publication, or Version 3 roadmap requires its own approved Contract Gate.
+The next state is post-release observation. Any source/test correction, new
+version, packaging change, or Version 3 roadmap requires its own approved
+Contract Gate.
 
 ## Future Work Rule
 

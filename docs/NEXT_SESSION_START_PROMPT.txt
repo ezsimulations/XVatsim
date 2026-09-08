@@ -1,140 +1,36 @@
-We are resuming XVatsim V2 after accepted Step 6 closeout and entry into
-V2.0.0 feature-complete beta.
+Resume XVatsim after the V2.0.0 public freeware release.
 
 Repository:
+C:\Users\DARRON\OneDrive\Documents\XVatsim
 
-C:\Users\DARRON\OneDrive\Documents\XVatsim-V2
-
-Before doing anything else, read completely:
-
+Read first:
 1. docs/NEXT_SESSION_HANDOFF.md
-2. docs/MILESTONE_STATUS.md
-3. docs/ARCHITECTURE.md
-4. docs/ROADMAP_BOUNDARIES.md
-5. docs/V2_0_0_ROADMAP.md
-6. docs/V2_STEP_06_PDC_ORB_ONE_SHOT_WAITING_MESSAGE_FINAL_ENGINEERING_BRIEF.md
-7. outputs/v2_step_06_pdc_orb_product_owner_live_test_director_acceptance.md
-8. outputs/v2_step_06_pdc_orb_v2_0_0_beta_entry_closeout_receipt.md
+2. README.md
+3. docs/MILESTONE_STATUS.md
+4. docs/ARCHITECTURE.md
+5. docs/ROADMAP_BOUNDARIES.md
 
-Begin read-only.
+Begin read-only. Verify:
+- branch main is clean;
+- tag v2.0.0 resolves to the public release commit;
+- the GitHub Release asset and X-Plane.org file are available;
+- the GitHub Pages update manifest reports V2.0.0;
+- the manifest package size and SHA-256 match the published ZIP; and
+- the current V2.0.0 plugin sees itself as current.
 
-REQUIRED BRANCH
+Release facts:
+- Package: XVatsim_2.0.0_Freeware_Windows_XP12.zip
+- Size: 1982428 bytes
+- SHA-256: FFA1BE32734BA20F7E6045F9ECEE5AE27D4929927E93965EB6959A33F9E7876B
+- Plugin SHA-256: C9E687E4D1430C4BD730BCF6F20F66E3A47277F27D130863E72FEBDCE188A2AB
+- Regression: 882 / 882
+- Customer payload: exactly nine files
 
-v2-development
+The local V2 Test directory, logs, diagnostics, backups, proof evidence, source,
+and symbols are not part of the public package.
 
-RECORDED CLOSEOUT COMMITS
+Architecture rule:
+Brain decides. Modules produce bounded mechanical facts. UI displays brain-approved facts.
 
-Commit 1:
-
-94825f07248dafc038d4c29e06ea61e40f49cfc3
-feat: complete Step 6 one-shot PDC ORB
-84 files
-
-Commit 2:
-
-380039a4494f0b373542eced807345471f214036
-docs: close out Step 6 PDC ORB proof
-3 files
-
-Do not expect this prompt to contain Commit 3's SHA. This prompt is part of
-Commit 3. Resolve current HEAD locally and verify:
-
-- HEAD^ is exactly 380039a4494f0b373542eced807345471f214036.
-- HEAD subject is exactly:
-  docs: enter V2.0.0 feature-complete beta
-- HEAD changes exactly these seven files:
-  README.md
-  docs/ARCHITECTURE.md
-  docs/MILESTONE_STATUS.md
-  docs/NEXT_SESSION_HANDOFF.md
-  docs/NEXT_SESSION_START_PROMPT.txt
-  docs/ROADMAP_BOUNDARIES.md
-  docs/V2_0_0_ROADMAP.md
-
-EXPECTED POST-CLOSEOUT LOCKS
-
-- Modified tracked / staged / unmerged: 0/0/0
-- Canonical untracked inventory: 5,207
-- Untracked inventory SHA-256:
-  4EC19C3E3E4971697B6E0BB325BD2D4DA2C49DFBFAA92B8EB014B6BA979C5455
-- Accepted scenario count: 861
-- Accepted scenario fingerprint:
-  227121979F59CB3BB359B96DE57AC7DF601E0BE3736F82F38C19EE08437431D9
-- X-Plane/xPilot processes: 0/0
-- Protected V2 Test: 50 files / 29 directories
-
-Steps 1 through 6 are accepted, complete, and frozen. The completed V2
-accessory product contains exactly three ORBs:
-
-- METAR
-- VATSIM ATIS
-- one-shot PDC presentation using mechanically neutral first-waiting-message
-  admission
-
-There is no combined private-message inbox. After stable connection and
-complete Brain-owned flight context, the Brain admits the first
-positive-sequence, non-empty, bounded waiting xPilot private record exactly
-once, without sender, wording, roster, IFR/VFR, or workflow-stage
-classification. Capture stops further private-source payload sampling for that
-flight, including identity, capability, sequence, sender, and body reads. xPilot
-remains authoritative for later revisions.
-
-Rule One is binding:
-
-- modules report bounded mechanical facts;
-- the Brain owns every product and semantic decision;
-- modules act or render only from Brain-owned decisions;
-- no bridge or overlay content classification is permitted; and
-- no second inbox, semantic owner, dispatcher, renderer, route, runner, or
-  proof architecture is permitted.
-
-ACCEPTED PROOF LOCKS
-
-- Focused Step 6 probe: 61/61
-- Production-renderer visual proof: 14/14
-- Complete regression: 861/861 twice
-- Protected evidence: 80 manifests / 4,695 rows / 0 mismatches
-- Product Owner normal-use controlled-live test: PASS
-
-The exact live-proven candidate remains installed at:
-
-C:\X-Plane 12\Resources\plugins\XVatsim\win_x64
-
-It contains exactly:
-
-- XVatsim.xpl: 2,572,288 bytes
-  CA2840F6FE61124E37881124DF78E4B0A0049FD47C5BF4FA6EE179D9A6E77934
-- authority_source_registry.json: 40,340 bytes
-  3676CA43E5AFB8A5E443FDE6D04616918029E004E17EFAA022695D91E23DB60B
-- ui_transition.mp3: 27,116 bytes
-  C7BBE97DAD356C68FDFE40F9E8C1CF4EADEBCCD125463214F963F66356F8D9F1
-
-This is the retained beta baseline. Do not roll it back, rebuild it, overwrite
-it, or redeploy it without a new gate.
-
-The preparation backup and every untracked proof, live record, screenshot,
-log, receipt, manifest, Contract Gate, and candidate artifact are protected.
-Do not run git clean. Do not delete, move, normalize, regenerate, rewrite, or
-restore anything. Do not access or reuse quarantine material. An ignored .log
-may still be required by a protected manifest.
-
-The current public release remains V1.2.3. The retained beta candidate
-deliberately still contains 1.2.3 metadata so it remains byte-identical to the
-live-proven binary. Version assignment, packaging, smoke testing, release
-certification, and publication require a later gate.
-
-V2.0.0 is feature-complete and entering extended multi-flight beta. The next
-ordinary project state is Product Owner-operated normal-use beta observation of
-this exact installed candidate. The one observed 1,713 ms route/authority
-refresh warning is a nonblocking beta-monitoring item, not a Step 6 failure.
-
-A dedicated VFR evidence engine or live VFR controller projection is outside
-V2.0.0 and is only an optional Version 3 decision. No Version 3 commitment
-exists.
-
-No implementation, correction, test change, build, deployment, evidence
-mutation, packaging, release, or Version 3 authority is granted by this prompt.
-Any such work requires a new explicit Contract Gate.
-
-Report the read-only entry verification and stop unless the Product Owner
-supplies new authority.
+Wait for the Product Owner's next instructions before changing code or release
+state.

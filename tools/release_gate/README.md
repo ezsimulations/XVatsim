@@ -107,14 +107,19 @@ The active public release path is the freeware Windows/X-Plane 12/xPilot
 package. Store-submission scripts are historical tooling unless the store path
 is deliberately reopened.
 
-To build a fresh freeware zip from the current Release payload:
+To build the V2.0.0 freeware zip from a fresh Release build and place it in the
+public release folder:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release_gate\New-FreewareReleasePackage.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release_gate\New-FreewareReleasePackage.ps1 `
+  -Version 2.0.0 `
+  -BuildRoot .\build\v2.0.0-release `
+  -ReleaseOutputRoot 'C:\Users\DARRON\OneDrive\Documents\XVatsim\releases'
 ```
 
-The builder default is V1.2.3. The verified V1.2.3 archive was generated on
-2026-08-15 after the current Release build and full regression suite passed.
+The builder defaults to V2.0.0. It accepts explicit build and output roots so a
+fresh release configuration can be packaged directly into the public release
+folder.
 
 The freeware builder creates:
 
@@ -123,7 +128,9 @@ The freeware builder creates:
 
 It includes the plugin, transition audio, authority registry, user guide,
 README, quick start, freeware license, changelog, and support instructions. It
-rejects debug symbols, temporary files, logs, and build-output folders.
+requires exactly those nine files and rejects extra files, debug symbols,
+temporary files, logs, and build-output folders. Local `V2 Test`, source,
+backup, evidence, and diagnostics folders are never copied.
 
 ## Historical Milestone 6 Gate
 

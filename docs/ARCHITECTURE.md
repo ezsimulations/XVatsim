@@ -206,12 +206,12 @@ The exact candidate and active deployment retain `3/3` parity:
 | `authority_source_registry.json` | `40,340` | `3676CA43E5AFB8A5E443FDE6D04616918029E004E17EFAA022695D91E23DB60B` |
 | `ui_transition.mp3` | `27,116` | `C7BBE97DAD356C68FDFE40F9E8C1CF4EADEBCCD125463214F963F66356F8D9F1` |
 
-Accepted live maximum synchronous accessory work was `23` microseconds and maximum
-click-to-terminal was `32,467` microseconds. The single `1,713 ms`
+Accepted live maximum synchronous accessory work was `23` microseconds and
+maximum click-to-terminal was `32,467` microseconds. The single `1,713 ms`
 route/authority refresh warning occurred after capture, was unrelated to PDC
-sampling/rendering, caused no perceived lag, and is a nonblocking extended-beta
-observation. Multi-flight beta must continue verifying that bounded startup
-preparation settles into stable, calm, low-churn operation.
+sampling/rendering, caused no perceived lag, and did not block release.
+Post-release observation continues verifying that bounded startup preparation
+settles into stable, calm, low-churn operation.
 
 ## Harness-Only Legacy Coverage
 
@@ -222,16 +222,15 @@ part of the live plugin module set. They compile only for
 scenarios can keep guarding old evidence while Engineer 3 remains the single
 live runtime.
 
-## Non-Goals For V1
+## Non-Goals For V2.0.0
 
-- no private-message, PDC, or AUTO_ATC card presentation
+- no general private-message inbox or AUTO_ATC card presentation
 - no SimBrief import
 - no Navigraph AIRAC import
-- no dedicated VFR workflow
+- no dedicated VFR controller-evidence workflow
 - no second-monitor/out-of-sim window mode
 
-V1.2.3 remains the current public release. The V2.0.0 METAR, ATIS, and one-shot
-PDC feature set is complete and is in extended beta, not public release or
-release certification. The accepted IFR/VFR mode foundation remains, but a
-dedicated VFR evidence engine or live VFR projection is only an optional
-Version 3 decision with no implementation promise.
+V2.0.0 is the current public Windows/X-Plane 12/xPilot freeware release. The
+accepted IFR/VFR mode foundation remains, but a dedicated VFR evidence engine
+or live VFR projection is only an optional Version 3 decision with no
+implementation promise.

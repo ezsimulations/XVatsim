@@ -1,23 +1,22 @@
 # XVatsim V2.0.0 Roadmap
 
-Status: **FEATURE-COMPLETE — ENTERING EXTENDED BETA; NOT PUBLICLY RELEASED**
+Status: **COMPLETE — RELEASE-CERTIFIED AND PUBLISHED 2026-09-08**
 
 Approved: 2026-08-26
 
 ## Starting Point
 
-XVatsim V1.2.3 is the closed, proven Version 1 baseline. It is the current
-public freeware Windows/X-Plane 12/xPilot release. V2 begins from release
+XVatsim V1.2.3 is the closed, proven Version 1 baseline. V2 began from release
 commit `e4a6269` and tag `v1.2.3` on the `v2-development` branch.
 
 V1.2.3 passed its Release plugin and regression-harness builds, eight focused
 route/update guardrails, all `451 / 451` saved regression scenarios, package
 smoke validation, and user-guide review.
 
-V1.2.3 remains the current public release. The live-proven V2 beta candidate
-deliberately retains embedded `1.2.3` metadata so extended beta observes the
-same bytes that passed offline and live proof. Version assignment, packaging,
-release certification, and publication require a later approved gate.
+V2.0.0 is now the current public release. The release gate assigned `2.0.0`
+metadata, performed a fresh Release build, passed all `882 / 882` saved
+scenarios, generated and visually inspected the public guide, and smoke-tested
+the exact nine-file customer package.
 
 ## V2 Product Boundary
 
@@ -56,8 +55,9 @@ scenarios with fingerprint
 The Product Owner normal-use live flight passed `IDLE -> NEW 1 -> OPEN ->
 MSG 1`, immutable reopen, exact accounting, normal shutdown, and private-safe
 records without Plugin Admin manipulation, reset, recovery, artificial
-ordering, retry, perceived lag, or visual defect. The exact `3/3` candidate
-remains installed without rollback as the extended-beta baseline.
+ordering, retry, perceived lag, or visual defect. That exact Step 6 candidate
+completed extended beta without rollback; the public release adds the accepted
+later TRACON and ATIS corrections plus version-only release metadata.
 
 ## Non-Goals For V2.0
 
@@ -151,13 +151,12 @@ Version 3 decision only, and Version 3 is not promised. Any proposal must first
 justify pilot value against geometry, prediction, CPU, testing, and maintenance
 cost and requires its own roadmap decision and Contract Gate.
 
-### Future Windows V2 Release Certification
+### Windows V2 Release Certification
 
-V2.0.0 is feature-complete and entering extended multi-flight beta. Public
-release certification is future work, not accomplished by feature closeout. A
-separate gate must authorize version assignment, exact-binary build and smoke
-proof, focused/full regression, visual and performance review, multi-flight
-live evidence, packaging, user-guide updates, hashes, and publication.
+V2.0.0 release certification completed on 2026-09-08. The exact package passed
+version assignment, fresh build, `882 / 882` regression, user-guide render and
+visual review, nine-file smoke extraction, forbidden-artifact checks, embedded
+version checks, and binary/package hash verification.
 
 ## Feature Boundaries
 
@@ -247,10 +246,7 @@ scope, and clean commit history.
 - A new feature must identify its idle cost, refresh cost, worst observed cost,
   and failure/backoff behavior before acceptance.
 
-Extended beta will monitor initial flight/route/authority preparation across
-multiple flights and require stable, calm, low-churn settled operation. The one
-observed `1,713 ms` route/authority refresh warning is a nonblocking beta
-observation: it occurred after successful PDC capture, was unrelated to PDC
-sampling or rendering, caused no Product Owner-perceived lag, and tripped no
-accessory threshold. Any correction, beta version/package work, release
-certification, public release, or Version 3 roadmap requires a new Contract Gate.
+Post-release observation will continue monitoring initial
+flight/route/authority preparation for stable, calm, low-churn settled
+operation. Any correction, new version/package work, or Version 3 roadmap
+requires a new Contract Gate.

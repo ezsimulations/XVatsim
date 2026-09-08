@@ -1,14 +1,15 @@
 # Milestone Status
 
-Updated: 2026-08-31
+Updated: 2026-09-08
 
 ## Current Position
 
-XVatsim V2 development is on branch `v2-development`. Steps 1 through 6 are
-accepted, complete, and frozen as the V2.0.0 feature baseline. The Director and
-Product Owner classification is:
+XVatsim V2.0.0 is release-certified for public Windows/X-Plane 12/xPilot
+freeware publication. Steps 1 through 6, the later performance gates, the US
+vNAS/TRACON correction, and the ATIS identical-content correction are accepted.
+The release classification is:
 
-`STEP 6 PDC ORB — OFFLINE-PROVEN, NORMAL-USE LIVE ACCEPTED; V2.0.0 FEATURE-COMPLETE BETA ENTRY`
+`V2.0.0 — LIVE ACCEPTED, RELEASE BUILT, 882/882 REGRESSION, PACKAGE SMOKE PASSED`
 
 The final Step 6 implementation commit is
 `94825f07248dafc038d4c29e06ea61e40f49cfc3` (`feat: complete Step 6 one-shot
@@ -16,12 +17,11 @@ PDC ORB`, exactly 84 files). The proof and closeout commit is
 `380039a4494f0b373542eced807345471f214036` (`docs: close out Step 6 PDC ORB
 proof`, exactly three files).
 
-The accepted regression baseline is `861` saved scenarios with canonical
-fingerprint
-`227121979F59CB3BB359B96DE57AC7DF601E0BE3736F82F38C19EE08437431D9`.
-Step 6 passed production-renderer visual `14/14`, focused `61/61`, and complete
-regression `861/861` twice. Protected evidence revalidated at `80 manifests /
-4,695 rows / 0 mismatches`.
+The final release configuration passed all `882 / 882` saved scenarios,
+including release-specific update-manifest tests for both an older installed
+version and V2.0.0. The earlier Step 6 baseline remains historical proof:
+production-renderer visual `14/14`, focused `61/61`, and complete regression
+`861/861` twice.
 
 The Product Owner's normal-use UAL300 KDEN-to-KMSP flight passed without Plugin
 Admin manipulation, reset, recovery, artificial ordering, retry, private-text
@@ -29,25 +29,19 @@ disclosure, perceived lag, or visual defect. The PDC ORB progressed
 `IDLE -> NEW 1 -> OPEN -> MSG 1`; reopening showed the same retained snapshot,
 accounting was exact, and both applications shut down normally.
 
-The exact three-file candidate remains installed as the feature-complete beta
-baseline with `3/3` parity and no rollback. X-Plane and xPilot are stopped at
-`0/0`, and protected `V2 Test` remains `50` files / `29` directories. The
-preparation backup and all untracked proof, gates, logs, screenshots, and
-evidence remain protected and must not be cleaned.
-
-V2.0.0 is feature-complete and entering extended multi-flight beta. It is not a
-public release or release certification. Initial route/authority preparation
-will be monitored for bounded startup work and calm, low-churn settled
-operation; the one observed `1,713 ms` refresh warning remains a nonblocking
-beta observation because it followed successful capture, was unrelated to PDC
-sampling/rendering, caused no perceived lag, and tripped no accessory threshold.
+The public customer ZIP contains exactly nine approved files and no tests,
+logs, backups, source, symbols, or build artifacts. Package SHA-256 is
+`FFA1BE32734BA20F7E6045F9ECEE5AE27D4929927E93965EB6959A33F9E7876B`;
+packaged plugin SHA-256 is
+`C9E687E4D1430C4BD730BCF6F20F66E3A47277F27D130863E72FEBDCE188A2AB`.
+The local `V2 Test` tree is development-only and is not part of the release.
 
 The Step 2 IFR/VFR selection foundation remains. A dedicated VFR evidence engine
 or live controller projection is no longer a V2.0.0 requirement and is only an
 optional Version 3 product decision, with no promise to build it. XVatsim
-V1.2.3 remains the current public freeware Windows/X-Plane 12/xPilot release;
-embedded version metadata remains `1.2.3` until a separately approved beta
-packaging gate proves different bytes.
+V2.0.0 is the current public freeware Windows/X-Plane 12/xPilot release, and all
+active plugin labels, version metadata, network user agents, documentation,
+package tooling, and update-manifest fields report `2.0.0`.
 
 ## V2 Accepted Milestones
 
@@ -260,11 +254,10 @@ diagnostic spam.
   `IDLE -> NEW 1 -> OPEN -> MSG 1` sequence, immutable reopen, exact
   accounting, normal shutdown, and private-safe records.
 
-## Retained Feature-Complete Beta State
+## Historical Feature-Complete Beta State
 
-The Product Owner superseded the earlier rollback plan. The exact live-proven
-candidate remains installed as the beta baseline, and the preparation backup
-remains the recovery point.
+The following records describe the accepted Step 6 beta baseline before the
+later TRACON, ATIS, and public-release work:
 
 - X-Plane/xPilot processes: `0/0`.
 - Candidate and active `win_x64`: exact `3/3` parity, zero subdirectories.
@@ -284,10 +277,7 @@ remains the recovery point.
 - Final canonical untracked inventory after closeout: `5,207` paths / SHA-256
   `4EC19C3E3E4971697B6E0BB325BD2D4DA2C49DFBFAA92B8EB014B6BA979C5455`.
 
-Do not clean, move, normalize, overwrite, or delete the preparation backup,
-detailed proof, Contract Gates, logs, screenshots, preferences, candidate,
-deployed payload, failed historical campaigns, or other untracked evidence.
-V1.2.3 remains the current public release and is untouched by beta closeout.
+This inventory is historical and is not the V2.0.0 customer package.
 
 ## Working Arrangement
 
@@ -308,17 +298,10 @@ Darron's explicit approval.
 
 ## Next Authorized Project State
 
-The next state is extended multi-flight beta observation of the exact retained
-candidate. Verify the durable handoff and all locks before any action. Preserve
-the beta payload and preparation backup; do not rebuild or redeploy merely to
-begin observation.
-
-Any simulator/xPilot start or beta observation must have explicit Product Owner
-authority under the execution protocol. Any defect correction, beta version or
-package change, release certification, public release, update-manifest change,
-or Version 3/VFR roadmap requires a new approved Contract Gate. Steps 1 through
-6 remain frozen unless a separately approved correction gate explicitly reopens
-the affected scope.
+The next state is post-release observation of V2.0.0. Any defect correction,
+new version or package, update-manifest change, or Version 3/VFR roadmap
+requires a new approved Contract Gate. Steps 1 through 6 remain frozen unless a
+separately approved correction gate explicitly reopens the affected scope.
 
 ## V1.2.3 Patch Release
 
@@ -398,8 +381,8 @@ the affected scope.
 - Updated the public update manifest to advertise V1.0.4 as a notify-only
   update.
 The X-Plane.org Store submission path is superseded because the store requested
-a Mac version. The Windows-only XVatsim V2.0.0 feature-complete beta now
-contains METAR, VATSIM ATIS, and one-shot PDC ORBs. The existing IFR/VFR mode
+a Mac version. The Windows-only XVatsim V2.0.0 public freeware release contains
+METAR, VATSIM ATIS, and one-shot PDC ORBs. The existing IFR/VFR mode
 foundation remains, while any dedicated VFR evidence/live model is only an
 optional Version 3 decision. Mac and Linux support are deferred until native
 validation resources exist.
