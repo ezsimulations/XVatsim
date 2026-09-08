@@ -1081,6 +1081,8 @@ struct BrainOwnedRuntimeState {
     std::uint64_t lastArrivalTerminalAuthorityHash = 0;
     std::uint64_t lastAirportFrequencyHash = 0;
     std::uint64_t lastAuthorityRelevanceHash = 0;
+    std::uint64_t lastVnasTerminalEvidenceHash = 0;
+    std::uint64_t lastTerminalRelevancePolicyHash = 0;
     std::uint64_t lastRadioTuningHash = 0;
     std::string lastWakeReason;
     std::string lastIdleReason;

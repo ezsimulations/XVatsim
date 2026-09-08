@@ -8,6 +8,7 @@
 namespace xvatsim::brain {
 
 constexpr double kBrainOwnedMaxRadioBoardCandidateDistanceNm = 300.0;
+constexpr double kBrainOwnedCenterDisplayRangeNm = 250.0;
 
 enum class OverlayMode {
     Dormant,
@@ -147,6 +148,52 @@ struct ControllerSnapshot {
     bool actionable = true;
     bool atis = false;
     std::string textAtis;
+};
+
+// vNAS is an optional, United-States-only operational evidence source.  The
+// network/parser module reduces its live controller and facility documents to
+// these endpoint-specific facts before they enter the Brain.  It does not make
+// a display decision. A missing or incomplete record is deliberately UNKNOWN;
+// it is never evidence against a controller.
+enum class VnasTerminalOwnershipKind {
+    Unknown,
+    FacilityOnly,
+    ConsolidatedFallback,
+    DirectOwner,
+};
+
+struct VnasTerminalEvidenceRecord {
+    std::string controllerCallsign;
+    std::string controllerFrequency;
+    std::string airportIcao;
+    std::string artccId;
+    std::string facilityId;
+    std::string facilityName;
+    std::string positionId;
+    std::string positionName;
+    std::string areaName;
+    std::string positionTcpId;
+    std::vector<std::string> positionTcpAncestorIds;
+    std::string proof;
+    bool supportsEndpoint = false;
+    bool ownershipFactsComplete = false;
+    bool serviceCompatible = false;
+    bool areaSupportsEndpoint = false;
+    bool positionTcpHasEndpointDescendant = false;
+    bool tdlsDepartureFrequencyMatch = false;
+    std::vector<std::string> matchedTcpTokens;
+};
+
+struct VnasTerminalEvidenceSnapshot {
+    bool enabled = false;
+    bool available = false;
+    bool stale = true;
+    bool facilityDataComplete = false;
+    bool ownershipDataAvailable = false;
+    std::uint64_t generation = 0;
+    std::uint64_t stableHash = 0;
+    std::string statusLine;
+    std::vector<VnasTerminalEvidenceRecord> records;
 };
 
 // Canonical authority-only controller input. Radio-range presentation fields

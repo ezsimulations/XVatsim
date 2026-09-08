@@ -61,6 +61,7 @@
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
 #include "XVatsim/modules/transceiver_resolver/TransceiverResolver.h"
 #include "XVatsim/modules/update_checker/UpdateChecker.h"
+#include "XVatsim/modules/vnas_data/VnasDataClient.h"
 
 #include "Step6PdcContractProbe.h"
 #include "PerformanceContractGateACalm1Probe.h"
@@ -298,6 +299,7 @@ struct ScenarioExpectations {
     std::vector<std::string> brainControllerRelevanceArrivalCallsigns;
     std::vector<std::string> brainControllerRelevanceEnrouteCallsigns;
     std::vector<std::string> brainControllerRelevanceCompletions;
+    std::vector<std::string> brainControllerRelevanceCompletionsContains;
     std::vector<std::string> phasePublisherReuseLifecycle;
     std::vector<std::string> phasePublisherIsolationLifecycle;
     std::vector<std::string> phasePublisherWorkflowClearLifecycle;
@@ -563,6 +565,11 @@ struct ScenarioData {
     std::vector<TerminalCoverageFeatureSpec> terminalAuthorityFeatures;
     std::vector<std::string> airportFrequencyFrqRows;
     WorkflowStage controllerRelevanceWorkflowStage = WorkflowStage::Departure;
+    bool controllerRelevanceV2Enabled = false;
+    bool controllerRelevanceVnasSectorPrecedenceEnabled = true;
+    double controllerRelevanceTerminalRadiusNm = 5.0;
+    std::string vnasControllerFeedJson;
+    std::vector<std::string> vnasArtccFacilityJsons;
     bool resolveRouteWithResolver = false;
     bool resolverRouteBuildsPreRefreshSnapshot = false;
     std::vector<CenterCoverageFeatureSpec> resolverRouteCenterFeatures;
@@ -3122,9 +3129,52 @@ std::string BuildRadioReachableHashCheckProbe() {
     const auto changed =
         xvatsim::brain::BuildRadioReachableControllerSnapshot(changedControllers, options);
 
+    std::vector<xvatsim::brain::ControllerSnapshot> terminalControllers = {
+        MakeRadioReachableProbeController("IAD_M_APP", "126.650", 5)};
+    xvatsim::brain::ControllerFeedSnapshot terminalFeed;
+    terminalFeed.available = true;
+    terminalFeed.stale = false;
+    terminalFeed.controllers = &terminalControllers;
+
+    xvatsim::brain::TransceiverResolutionSnapshot terminalTransceivers;
+    terminalTransceivers.available = true;
+    terminalTransceivers.stale = false;
+    xvatsim::brain::ReceivableControllerSnapshot selected;
+    selected.callsign = "IAD_M_APP";
+    selected.frequency = "126.650";
+    selected.distanceNm = 20.0;
+    selected.latitudeDeg = 38.9445;
+    selected.longitudeDeg = -77.4558;
+    terminalTransceivers.candidates.push_back(selected);
+    xvatsim::brain::TransceiverControllerEvidenceSnapshot evidence;
+    evidence.callsign = "IAD_M_APP";
+    evidence.controllerFrequency = "126.650";
+    evidence.hasTransceiverEntry = true;
+    for (const auto& coordinates :
+         std::vector<std::pair<double, double>>{
+             {38.9445, -77.4558}, {39.1754, -76.6683}}) {
+        xvatsim::brain::TransceiverStationEvidenceSnapshot station;
+        station.sourceFrequency = "126.650";
+        station.latitudeDeg = coordinates.first;
+        station.longitudeDeg = coordinates.second;
+        evidence.stations.push_back(std::move(station));
+    }
+    terminalTransceivers.controllerEvidence.push_back(std::move(evidence));
+    const auto selectedIad =
+        xvatsim::brain::BuildRadioReachableControllerSnapshotFromTransceivers(
+            terminalTransceivers, terminalFeed, options);
+    terminalTransceivers.candidates.front().distanceNm = 175.0;
+    terminalTransceivers.candidates.front().latitudeDeg = 39.1754;
+    terminalTransceivers.candidates.front().longitudeDeg = -76.6683;
+    const auto selectedBwi =
+        xvatsim::brain::BuildRadioReachableControllerSnapshotFromTransceivers(
+            terminalTransceivers, terminalFeed, options);
+
     std::ostringstream stream;
     stream << "same=" << (original.stableHash == repeated.stableHash ? 1 : 0)
-           << ",changed=" << (original.stableHash != changed.stableHash ? 1 : 0);
+           << ",changed=" << (original.stableHash != changed.stableHash ? 1 : 0)
+           << ",terminalSelectionStable="
+           << (selectedIad.stableHash == selectedBwi.stableHash ? 1 : 0);
     return stream.str();
 }
 
@@ -6050,6 +6100,11 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
             Split(value, ',');
         return true;
     }
+    if (key == "expect.brain_controller_relevance_completions_contains") {
+        scenario->expectations.brainControllerRelevanceCompletionsContains =
+            Split(value, ',');
+        return true;
+    }
     if (key == "expect.phase_publisher_reuse_lifecycle") {
         scenario->expectations.phasePublisherReuseLifecycle = Split(value, ',');
         return true;
@@ -6948,6 +7003,99 @@ bool AddTransceiverCandidate(
 
     snapshot->candidates.push_back(std::move(candidate));
     snapshot->receivableControllers = static_cast<int>(snapshot->candidates.size());
+    return true;
+}
+
+bool AddTransceiverStation(
+    xvatsim::brain::TransceiverResolutionSnapshot* snapshot,
+    const std::string& value) {
+    if (snapshot == nullptr) {
+        return false;
+    }
+
+    std::string callsign;
+    std::string frequency;
+    double latitudeDeg = 0.0;
+    double longitudeDeg = 0.0;
+    bool hasLatitude = false;
+    bool hasLongitude = false;
+    std::optional<int> facility;
+    std::optional<bool> actionable;
+    for (const auto& part : Split(value, ';')) {
+        const auto equalsIndex = part.find('=');
+        if (equalsIndex == std::string::npos) {
+            continue;
+        }
+        const auto field = Trim(part.substr(0, equalsIndex));
+        const auto fieldValue = Trim(part.substr(equalsIndex + 1));
+        if (field == "callsign") {
+            callsign = ToUpperCopy(fieldValue);
+        } else if (field == "frequency") {
+            frequency = fieldValue;
+        } else if (field == "lat") {
+            const auto parsed = ParseDouble(fieldValue);
+            if (!parsed.has_value()) {
+                return false;
+            }
+            latitudeDeg = *parsed;
+            hasLatitude = true;
+        } else if (field == "lon") {
+            const auto parsed = ParseDouble(fieldValue);
+            if (!parsed.has_value()) {
+                return false;
+            }
+            longitudeDeg = *parsed;
+            hasLongitude = true;
+        } else if (field == "facility") {
+            const auto parsed = ParseDouble(fieldValue);
+            if (!parsed.has_value()) {
+                return false;
+            }
+            facility = static_cast<int>(*parsed);
+        } else if (field == "actionable") {
+            bool parsed = false;
+            if (!ParseBool(fieldValue, &parsed)) {
+                return false;
+            }
+            actionable = parsed;
+        }
+    }
+    if (callsign.empty() || frequency.empty() || !hasLatitude ||
+        !hasLongitude) {
+        return false;
+    }
+
+    auto evidence = std::find_if(
+        snapshot->controllerEvidence.begin(),
+        snapshot->controllerEvidence.end(),
+        [&](const auto& current) {
+            return ToUpperCopy(current.callsign) == callsign;
+        });
+    if (evidence == snapshot->controllerEvidence.end()) {
+        xvatsim::brain::TransceiverControllerEvidenceSnapshot next;
+        next.callsign = callsign;
+        next.controllerFrequency = frequency;
+        next.facility = facility.value_or(0);
+        next.actionable = actionable.value_or(false);
+        next.hasTransceiverEntry = true;
+        snapshot->controllerEvidence.push_back(std::move(next));
+        evidence = std::prev(snapshot->controllerEvidence.end());
+    }
+    if (facility.has_value()) {
+        evidence->facility = *facility;
+    }
+    if (actionable.has_value()) {
+        evidence->actionable = *actionable;
+    }
+
+    xvatsim::brain::TransceiverStationEvidenceSnapshot station;
+    station.sourceFrequency = frequency;
+    station.latitudeDeg = latitudeDeg;
+    station.longitudeDeg = longitudeDeg;
+    evidence->stations.push_back(std::move(station));
+    evidence->hasTransceiverEntry = true;
+    evidence->matchingTransceiverCount =
+        static_cast<int>(evidence->stations.size());
     return true;
 }
 
@@ -9684,6 +9832,52 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
             scenario->controllerRelevanceWorkflowStage = *parsed;
             continue;
         }
+        if (key == "brain_controller_relevance.v2_enabled") {
+            if (!ParseBool(value, &scenario->controllerRelevanceV2Enabled)) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid brain_controller_relevance.v2_enabled at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "brain_controller_relevance.vnas_sector_precedence_enabled") {
+            if (!ParseBool(
+                    value,
+                    &scenario->
+                         controllerRelevanceVnasSectorPrecedenceEnabled)) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid brain_controller_relevance.vnas_sector_precedence_enabled at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "brain_controller_relevance.terminal_radius_nm") {
+            const auto parsed = ParseDouble(value);
+            if (!parsed.has_value() || *parsed <= 0.0) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid brain_controller_relevance.terminal_radius_nm at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            scenario->controllerRelevanceTerminalRadiusNm = *parsed;
+            continue;
+        }
+        if (key == "vnas.controller_feed_json") {
+            scenario->vnasControllerFeedJson = value;
+            continue;
+        }
+        if (key == "vnas.artcc_facility_json") {
+            scenario->vnasArtccFacilityJsons.push_back(value);
+            continue;
+        }
         if (key == "controller.entry") {
             if (!AddController(&scenario->controllers, value)) {
                 if (outError != nullptr) {
@@ -9883,6 +10077,18 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
                 if (outError != nullptr) {
                     *outError =
                         "Invalid transceiver.candidate at line " +
+                        std::to_string(lineNumber);
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "transceiver.station") {
+            if (!AddTransceiverStation(
+                    &scenario->transceiverResolutionSnapshot, value)) {
+                if (outError != nullptr) {
+                    *outError =
+                        "Invalid transceiver.station at line " +
                         std::to_string(lineNumber);
                 }
                 return false;
@@ -22420,7 +22626,8 @@ int RunStep5ContractProbe(const ScenarioData& scenario) {
     } else if (probe == "exact_unread_visible_frame_acknowledgement") {
         auto step5Heap22394 = std::make_unique<Step5AtisFixture>();
         auto& fixture = *step5Heap22394;
-        fixture.Decode(Step5DefaultAtisDocument());
+        const auto firstDocument = Step5DefaultAtisDocument();
+        fixture.Decode(firstDocument);
         (void)fixture.Cycle();
         (void)fixture.Select(BrainOwnedAccessoryDrawerId::Atis, 1);
         const auto unreadCommand = fixture.Project();
@@ -22429,6 +22636,33 @@ int RunStep5ContractProbe(const ScenarioData& scenario) {
         const auto visible = seam.Present(&fixture.state, unreadCommand);
         const auto readCommand = fixture.Project();
         const auto* readOrb = Step5AtisOrb(readCommand);
+        const bool firstAcknowledged =
+            fixture.state.atis.unreadAcknowledgedCount == 1 &&
+            fixture.state.atis.unreadRevisionIdentities.empty();
+        const auto firstIdentity =
+            fixture.state.atis.primaryRevision.revisionIdentity;
+
+        const auto secondDocument = Step5ReplaceOnce(
+            firstDocument, "RUNWAY 18L", "RUNWAY 17C");
+        fixture.Decode(secondDocument, 2);
+        const auto secondDecision = fixture.Cycle(1);
+        const auto secondIdentity =
+            fixture.state.atis.primaryRevision.revisionIdentity;
+        const auto secondUnreadCommand = fixture.Project();
+        const auto* secondUnreadOrb = Step5AtisOrb(secondUnreadCommand);
+        const auto secondVisible =
+            seam.Present(&fixture.state, secondUnreadCommand);
+        const auto secondReadCommand = fixture.Project();
+        const auto* secondReadOrb = Step5AtisOrb(secondReadCommand);
+
+        fixture.Decode(firstDocument, 3);
+        const auto revisitFirst = fixture.Cycle(1);
+        const auto revisitFirstCommand = fixture.Project();
+        const auto* revisitFirstOrb = Step5AtisOrb(revisitFirstCommand);
+        fixture.Decode(secondDocument, 4);
+        const auto revisitSecond = fixture.Cycle(1);
+        const auto revisitSecondCommand = fixture.Project();
+        const auto* revisitSecondOrb = Step5AtisOrb(revisitSecondCommand);
         require(seam.Ready() && unreadOrb != nullptr &&
                     unreadOrb->tone ==
                         BrainOwnedAccessoryOrbPresentation::Tone::Amber &&
@@ -22436,14 +22670,38 @@ int RunStep5ContractProbe(const ScenarioData& scenario) {
                     visible.published && visible.brainAccepted &&
                     visible.diagnosticSerialized &&
                     !visible.fact.atisVisibleRevisionIdentity.empty() &&
-                    fixture.state.atis.unreadAcknowledgedCount == 1 &&
-                    fixture.state.atis.unreadRevisionIdentities.empty() &&
+                    firstAcknowledged &&
                     readOrb != nullptr && readOrb->tone ==
-                        BrainOwnedAccessoryOrbPresentation::Tone::Cyan,
-                "exact accepted visible frame did not acknowledge unread ATIS");
+                        BrainOwnedAccessoryOrbPresentation::Tone::Cyan &&
+                    secondDecision.semanticChanged &&
+                    secondDecision.historyMutated &&
+                    secondDecision.unreadCreated &&
+                    firstIdentity != secondIdentity &&
+                    secondUnreadOrb != nullptr &&
+                    secondUnreadOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Amber &&
+                    secondVisible.brainAccepted &&
+                    secondReadOrb != nullptr && secondReadOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Cyan &&
+                    revisitFirst.semanticChanged &&
+                    !revisitFirst.historyMutated &&
+                    !revisitFirst.unreadCreated &&
+                    revisitFirstOrb != nullptr && revisitFirstOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Cyan &&
+                    revisitSecond.semanticChanged &&
+                    !revisitSecond.historyMutated &&
+                    !revisitSecond.unreadCreated &&
+                    revisitSecondOrb != nullptr && revisitSecondOrb->tone ==
+                        BrainOwnedAccessoryOrbPresentation::Tone::Cyan &&
+                    fixture.state.atis.historyMutationCount == 2 &&
+                    fixture.state.atis.unreadCreatedCount == 2 &&
+                    fixture.state.atis.unreadAcknowledgedCount == 2 &&
+                    fixture.state.atis.unreadRevisionIdentities.empty(),
+                "acknowledged ATIS revision was re-armed after source oscillation");
         std::cout << "STEP5_UNREAD_ACK: amber_before=1 opaque_identity=1"
                      " command_terminal=1 attempt_terminal=1 cyan_after=1"
-                     " acknowledged=1\n";
+                     " acknowledged=2 same_letter_revisions=2"
+                     " oscillation_rearm=0\n";
     } else if (probe == "unread_negative_terminal_matrix") {
         auto step5Heap22420 = std::make_unique<Step5AtisFixture>();
         auto& fixture = *step5Heap22420;
@@ -24156,11 +24414,45 @@ int main(int argc, char** argv) {
         xvatsim::brain::RadioReachableSource::AFVRadioRange;
     relevanceRadioOptions.changeReason = "harness-controller-relevance";
     relevanceRadioOptions.nowSeconds = scenario.nowSeconds;
-    const auto controllerRelevanceRadioSnapshot =
+    const auto receivableControllerRelevanceRadioSnapshot =
         xvatsim::brain::BuildRadioReachableControllerSnapshotFromTransceivers(
             scenario.transceiverResolutionSnapshot,
             controllerFeedSnapshot,
             relevanceRadioOptions);
+    const auto controllerRelevanceRadioSnapshot =
+        scenario.controllerRelevanceV2Enabled
+            ? xvatsim::brain::
+                  AugmentRadioReachableControllerSnapshotWithAppDepEvidence(
+                      receivableControllerRelevanceRadioSnapshot,
+                      scenario.transceiverResolutionSnapshot)
+            : receivableControllerRelevanceRadioSnapshot;
+    const auto vnasControllerFeed =
+        xvatsim::modules::vnas_data::DecodeVnasControllerFeedDocument(
+            scenario.vnasControllerFeedJson);
+    std::vector<std::shared_ptr<const
+        xvatsim::modules::vnas_data::VnasArtccFacilityDocument>>
+        vnasFacilityDocuments;
+    vnasFacilityDocuments.reserve(scenario.vnasArtccFacilityJsons.size());
+    for (const auto& payload : scenario.vnasArtccFacilityJsons) {
+        vnasFacilityDocuments.push_back(std::make_shared<const
+            xvatsim::modules::vnas_data::VnasArtccFacilityDocument>(
+            xvatsim::modules::vnas_data::DecodeVnasArtccFacilityDocument(
+                payload)));
+    }
+    const auto vnasTerminalEvidence = std::make_shared<
+        const xvatsim::brain::VnasTerminalEvidenceSnapshot>(
+        xvatsim::modules::vnas_data::BuildVnasTerminalEvidenceSnapshot(
+            vnasControllerFeed,
+            vnasFacilityDocuments,
+            scenario.controllerRelevanceWorkflowStage ==
+                    WorkflowStage::Departure
+                ? scenario.workflowState.flightContext.departureIcao
+                : std::string{},
+            scenario.controllerRelevanceWorkflowStage == WorkflowStage::Arrival
+                ? scenario.workflowState.flightContext.destinationIcao
+                : std::string{},
+            controllerRelevanceRadioSnapshot.candidates,
+            scenario.controllerRelevanceV2Enabled));
     xvatsim::brain::BrainControllerRelevanceWorkerInput
         controllerRelevanceInput;
     controllerRelevanceInput.workflowStage =
@@ -24185,6 +24477,28 @@ int main(int argc, char** argv) {
         scenario.workflowState.flightContext.departureIcao;
     controllerRelevanceInput.arrivalIcao =
         scenario.workflowState.flightContext.destinationIcao;
+    controllerRelevanceInput.hasDepartureCoordinates =
+        scenario.workflowState.flightContext.hasDepartureCoordinates;
+    controllerRelevanceInput.departureLatitudeDeg =
+        scenario.workflowState.flightContext.departureLatDeg;
+    controllerRelevanceInput.departureLongitudeDeg =
+        scenario.workflowState.flightContext.departureLonDeg;
+    controllerRelevanceInput.hasArrivalCoordinates =
+        scenario.workflowState.flightContext.hasDestinationCoordinates;
+    controllerRelevanceInput.arrivalLatitudeDeg =
+        scenario.workflowState.flightContext.destinationLatDeg;
+    controllerRelevanceInput.arrivalLongitudeDeg =
+        scenario.workflowState.flightContext.destinationLonDeg;
+    controllerRelevanceInput.terminalRelevanceV2Enabled =
+        scenario.controllerRelevanceV2Enabled;
+    controllerRelevanceInput.vnasSectorPrecedenceEnabled =
+        scenario.controllerRelevanceV2Enabled &&
+        scenario.controllerRelevanceVnasSectorPrecedenceEnabled;
+    controllerRelevanceInput.terminalTransmitterRadiusNm =
+        scenario.controllerRelevanceTerminalRadiusNm;
+    controllerRelevanceInput.vnasTerminalEvidenceHash =
+        vnasTerminalEvidence->stableHash;
+    controllerRelevanceInput.vnasTerminalEvidence = vnasTerminalEvidence;
     if (scenario.controllerRelevanceWorkflowStage == WorkflowStage::Arrival) {
         controllerRelevanceInput.arrivalTerminalAuthorityHash = 1;
         controllerRelevanceInput.arrivalTerminalAuthority =
@@ -28021,6 +28335,13 @@ int main(int argc, char** argv) {
     if (const auto mismatch = CheckStringList(
             "brainControllerRelevanceCompletions",
             scenario.expectations.brainControllerRelevanceCompletions,
+            ExtractControllerRelevanceCompletions(controllerRelevanceOutput));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+    if (const auto mismatch = CheckStringListContains(
+            "brainControllerRelevanceCompletionsContains",
+            scenario.expectations.brainControllerRelevanceCompletionsContains,
             ExtractControllerRelevanceCompletions(controllerRelevanceOutput));
         mismatch.has_value()) {
         return *mismatch;

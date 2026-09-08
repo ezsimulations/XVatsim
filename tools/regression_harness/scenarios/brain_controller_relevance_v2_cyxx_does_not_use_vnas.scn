@@ -1,0 +1,29 @@
+name=Brain Controller Relevance V2 CYXX Does Not Use vNAS
+now_seconds=1000
+
+state.flight_active=true
+flight.callsign=ACA123
+flight.departure_icao=KSEA
+flight.destination_icao=CYXX
+flight.destination_lat=49.0253
+flight.destination_lon=-122.3600
+flight.has_destination_coordinates=true
+
+brain_controller_relevance.stage=Arrival
+brain_controller_relevance.v2_enabled=true
+
+terminal_authority.airport_icao=CYXX
+terminal_authority.lat=49.0253
+terminal_authority.lon=-122.3600
+terminal_authority.feature=id=YVR;name=Vancouver Terminal;prefixes=YVR;polygon=48.0,-124.0|50.0,-124.0|50.0,-121.0|48.0,-121.0
+
+controller.entry=callsign=YVR_APP;frequency=132.300;facility=5;actionable=true;atis=false
+transceiver.available=true
+transceiver.stale=false
+transceiver.candidate=callsign=YVR_APP;frequency=132.300;distanceNm=40;score=100;lat=49.0253;lon=-122.3600
+transceiver.station=callsign=YVR_APP;frequency=132.300;lat=49.0253;lon=-122.3600
+
+vnas.controller_feed_json={"updatedAt":"2026-09-06T20:00:00Z","controllers":[{"artccId":"ZVR","primaryFacilityId":"YVR","primaryPositionId":"01CANADASHOULDNOTBEUSED000","isActive":true,"isObserver":false,"positions":[{"facilityId":"YVR","facilityName":"Vancouver","positionId":"01CANADASHOULDNOTBEUSED000","positionName":"Vancouver","positionType":"Tracon","defaultCallsign":"YVR_APP","frequency":132300000,"isPrimary":true,"isActive":true}],"vatsimData":{"callsign":"YVR_APP","frequency":"132.300"}}]}
+
+expect.brain_controller_relevance_arrival_callsigns=YVR_APP
+expect.brain_controller_relevance_completions_contains=YVR_APP:accepted,vnas-disabled,final=accept-display,airportRadioNm=0.0

@@ -702,9 +702,10 @@ BrainOwnedAtisCycleDecision RunBrainOwnedAtisCycle(
         state->atis.workflowStage = input.workflowStage;
         if (authoritativeSelected.valid && revisionChanged) {
             state->atis.primaryRevision = authoritativeSelected;
-            decision.historyMutated = AcceptAtisHistory(
+            const bool historyAccepted = AcceptAtisHistory(
                 state, authoritativeSelected);
-            decision.unreadCreated = AddUnread(
+            decision.historyMutated = historyAccepted;
+            decision.unreadCreated = historyAccepted && AddUnread(
                 &state->atis, authoritativeSelected.revisionIdentity);
             decision.selectedRevisionIdentity =
                 authoritativeSelected.revisionIdentity;
@@ -755,12 +756,15 @@ BrainOwnedAtisCycleDecision RunBrainOwnedAtisCycle(
                     ? kAtisLookupSpotlightMilliseconds
                     : kAtisLookupFailureMilliseconds);
             for (const auto& revision : lookupRevisions) {
+                const bool historyAccepted =
+                    AcceptAtisHistory(state, revision);
                 decision.historyMutated =
-                    AcceptAtisHistory(state, revision) ||
-                    decision.historyMutated;
-                decision.unreadCreated =
-                    AddUnread(&state->atis, revision.revisionIdentity) ||
-                    decision.unreadCreated;
+                    historyAccepted || decision.historyMutated;
+                if (historyAccepted) {
+                    decision.unreadCreated =
+                        AddUnread(&state->atis, revision.revisionIdentity) ||
+                        decision.unreadCreated;
+                }
             }
             ResetAtisDrawerToTop(state);
             RecordAtisSemanticMutation(state);

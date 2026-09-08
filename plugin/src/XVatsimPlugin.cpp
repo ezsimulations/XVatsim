@@ -43,6 +43,7 @@
 #include "XVatsim/modules/transceiver_resolver/TransceiverResolver.h"
 #include "XVatsim/modules/update_checker/UpdateChecker.h"
 #include "XVatsim/modules/vatsim_data_feed/VatsimDataFeedClient.h"
+#include "XVatsim/modules/vnas_data/VnasDataClient.h"
 #include "XVatsim/modules/xpilot_bridge/XPilotBridge.h"
 #if defined(XVATSIM_STEP3_LIVE_PROOF_FIXTURES)
 #include "Step3LiveProofFixtures.h"
@@ -118,6 +119,7 @@ constexpr intptr_t kVfrModeMenuItemRef = 22;
 constexpr intptr_t kSelectMetarAirportMenuItemRef = 23;
 constexpr intptr_t kSelectAtisAirportMenuItemRef = 24;
 constexpr double kArrivalWakeDistanceNm = 200.0;
+constexpr double kTerminalTransmitterRadiusNm = 5.0;
 constexpr float kDepartureReleaseHoldSeconds = 180.0f;
 constexpr float kEnrouteInitialDisplaySeconds = 180.0f;
 constexpr float kOpacityStep = 0.10f;
@@ -166,6 +168,7 @@ struct RefreshDiagnosticsFrame {
     bool routeResolved = false;
     std::string routeStatus;
     std::string authorityStatus;
+    std::string vnasStatus;
     int controllerCount = 0;
     int authorityCount = 0;
     int enrouteStationCount = 0;
@@ -176,6 +179,7 @@ struct RefreshDiagnosticsFrame {
     std::size_t authorityProofHash = 0;
     long long xpilotPollMs = 0;
     long long vatsimFeedMs = 0;
+    long long vnasFeedMs = 0;
     long long controllerFeedMs = 0;
     long long flightPlanMs = 0;
     long long networkPlanMs = 0;
@@ -195,6 +199,7 @@ struct RefreshDiagnosticsFrame {
     long long aircraftStateUs = 0;
     long long xpilotPollUs = 0;
     long long vatsimFeedUs = 0;
+    long long vnasFeedUs = 0;
     long long controllerFeedUs = 0;
     long long flightPlanUs = 0;
     long long networkPlanUs = 0;
@@ -255,6 +260,14 @@ struct AccessoryInputRuntimeAccounting {
         publication;
 };
 
+struct TerminalEvidenceRadioRuntimeCache {
+    bool valid = false;
+    std::uint64_t baseRadioHash = 0;
+    const xvatsim::brain::TransceiverResolutionSnapshot*
+        transceiverIdentity = nullptr;
+    xvatsim::brain::RadioReachableControllerSnapshot augmented;
+};
+
 xvatsim::modules::aircraft_state::AircraftStateSampler gAircraftStateSampler;
 xvatsim::modules::ctaf_lookup::CtafLookupService gCtafLookupService;
 xvatsim::modules::controller_feed::ControllerFeedClient gControllerFeedClient;
@@ -275,6 +288,7 @@ xvatsim::modules::terminal_authority::TerminalAuthorityResolver
 xvatsim::modules::transceiver_resolver::TransceiverResolver gTransceiverResolver;
 xvatsim::modules::update_checker::UpdateChecker gUpdateChecker;
 xvatsim::modules::vatsim_data_feed::VatsimDataFeedClient gVatsimDataFeedClient;
+xvatsim::modules::vnas_data::VnasDataClient gVnasDataClient;
 xvatsim::modules::xpilot_bridge::XPilotBridge gXPilotBridge;
 xvatsim::modules::xpilot_bridge::XPilotPrivateObservationQueue
     gXPilotPrivateObservationQueue;
@@ -304,6 +318,7 @@ xvatsim::plugin::step3_live_proof::Step3LiveProofFixtureSession
 #endif
 PluginDiagnosticsState gDiagnosticsState;
 AccessoryInputRuntimeAccounting gAccessoryInputAccounting;
+TerminalEvidenceRadioRuntimeCache gTerminalEvidenceRadioCache;
 std::uint64_t gFlightLoopTimingSequence = 0;
 
 struct AuthorityAsyncRuntimeState {
@@ -693,6 +708,7 @@ void ResetSessionRuntimeCaches(
     gXPilotPrivateQualificationEventLatch.Reset();
     if (resetVatsimFeed) {
         gVatsimDataFeedClient.Reset();
+        gVnasDataClient.Reset();
     }
     gNetworkPlanLink.Reset();
     gFlightPlanSampler.Reset();
@@ -703,6 +719,7 @@ void ResetSessionRuntimeCaches(
     ResetBrainOwnedRuntimeCache(preserveAccessory);
     ResetDiagnosticsTraceState();
     gTransceiverResolver.Reset();
+    gTerminalEvidenceRadioCache = {};
     ResetBrainDisplayPublisherCache();
 }
 
@@ -3886,6 +3903,7 @@ long long SumTrackedRefreshMicroseconds(const RefreshDiagnosticsFrame& frame) {
     return frame.aircraftStateUs +
            frame.xpilotPollUs +
            frame.vatsimFeedUs +
+           frame.vnasFeedUs +
            frame.controllerFeedUs +
            frame.flightPlanUs +
            frame.networkPlanUs +
@@ -3989,6 +4007,7 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
                    << " enrouteStations=" << frame.enrouteStationCount
                    << " timings=xpilot:" << frame.xpilotPollMs
                    << ",vatsim:" << frame.vatsimFeedMs
+                   << ",vnas:" << frame.vnasFeedMs
                    << ",controllers:" << frame.controllerFeedMs
                    << ",flightPlan:" << frame.flightPlanMs
                    << ",networkPlan:" << frame.networkPlanMs
@@ -4008,6 +4027,7 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
                    << " usTimings=aircraft:" << frame.aircraftStateUs
                    << ",xpilot:" << frame.xpilotPollUs
                    << ",vatsim:" << frame.vatsimFeedUs
+                   << ",vnas:" << frame.vnasFeedUs
                    << ",controllers:" << frame.controllerFeedUs
                    << ",flightPlan:" << frame.flightPlanUs
                    << ",networkPlan:" << frame.networkPlanUs
@@ -4036,6 +4056,8 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
                    << SanitizeLogText(frame.routeStatus, 180)
                    << "\" authorityStatus=\""
                    << SanitizeLogText(frame.authorityStatus, 180)
+                   << "\" vnasStatus=\""
+                   << SanitizeLogText(frame.vnasStatus, 180)
                    << "\" authorityProofs=\""
                    << frame.authorityProofSummary
                    << "\" jobs=\""
@@ -4218,8 +4240,10 @@ void PreserveFlightStateForNetworkDisconnect() {
     xvatsim::brain::CloseBrainOwnedAccessoryForTemporaryXPilotDisconnect(
         &gBrainOwnedRuntimeState);
     gVatsimDataFeedClient.Reset();
+    gVnasDataClient.Reset();
     gNetworkPlanLink.Reset();
     gTransceiverResolver.Reset();
+    gTerminalEvidenceRadioCache = {};
     ResetBrainDisplayPublisherCache();
     ResetStandbyAssistLatch();
 
@@ -6518,12 +6542,59 @@ void RefreshOverlayFromBrainEngineer3() {
             radioSnapshot,
             gBrainOwnedRuntimeState.radioDiff);
 
+        const auto* relevanceRadioSnapshot = &radioSnapshot;
+        if (gPluginSettings.terminalRelevanceV2Enabled &&
+            (workflowDecision.stage ==
+                 xvatsim::brain::WorkflowStage::Departure ||
+             workflowDecision.stage ==
+                 xvatsim::brain::WorkflowStage::Arrival)) {
+            if (!gTerminalEvidenceRadioCache.valid ||
+                gTerminalEvidenceRadioCache.baseRadioHash !=
+                    radioSnapshot.stableHash ||
+                gTerminalEvidenceRadioCache.transceiverIdentity !=
+                    transceiverResolutionSnapshot) {
+                gTerminalEvidenceRadioCache.augmented =
+                    xvatsim::brain::
+                        AugmentRadioReachableControllerSnapshotWithAppDepEvidence(
+                            radioSnapshot, *transceiverResolutionSnapshot);
+                gTerminalEvidenceRadioCache.baseRadioHash =
+                    radioSnapshot.stableHash;
+                gTerminalEvidenceRadioCache.transceiverIdentity =
+                    transceiverResolutionSnapshot;
+                gTerminalEvidenceRadioCache.valid = true;
+            }
+            relevanceRadioSnapshot = &gTerminalEvidenceRadioCache.augmented;
+        }
         gatedRadioSnapshot =
             xvatsim::brain::RunBrainOwnedRadioPhaseGate(
                 &gBrainOwnedRuntimeState,
-                radioSnapshot,
+                *relevanceRadioSnapshot,
                 workflowDecision.stage,
                 "engineer3-clean-runtime");
+
+        timingStarted = std::chrono::steady_clock::now();
+        // vNAS only applies to the endpoint currently being resolved. This
+        // keeps a US departure from enabling vNAS while resolving a Canadian
+        // arrival (and vice versa).
+        const auto vnasDepartureIcao =
+            workflowDecision.stage == xvatsim::brain::WorkflowStage::Departure
+                ? flightContext.departureIcao
+                : std::string{};
+        const auto vnasArrivalIcao =
+            workflowDecision.stage == xvatsim::brain::WorkflowStage::Arrival
+                ? flightContext.destinationIcao
+                : std::string{};
+        const auto vnasTerminalEvidence = gVnasDataClient.Poll(
+            vnasDepartureIcao,
+            vnasArrivalIcao,
+            gatedRadioSnapshot.candidates,
+            gPluginSettings.terminalRelevanceV2Enabled);
+        diagnostics.vnasFeedUs = ElapsedMicrosecondsSince(timingStarted);
+        diagnostics.vnasFeedMs = diagnostics.vnasFeedUs / 1000;
+        diagnostics.vnasStatus =
+            vnasTerminalEvidence != nullptr
+                ? vnasTerminalEvidence->statusLine
+                : "vnas-no-snapshot";
 
         xvatsim::brain::BrainOwnedControllerRelevanceInputRequest
             relevanceRequest;
@@ -6531,6 +6602,26 @@ void RefreshOverlayFromBrainEngineer3() {
         relevanceRequest.radioSnapshot = gatedRadioSnapshot;
         relevanceRequest.departureIcao = flightContext.departureIcao;
         relevanceRequest.arrivalIcao = flightContext.destinationIcao;
+        relevanceRequest.hasDepartureCoordinates =
+            flightContext.hasDepartureCoordinates;
+        relevanceRequest.departureLatitudeDeg = flightContext.departureLatDeg;
+        relevanceRequest.departureLongitudeDeg = flightContext.departureLonDeg;
+        relevanceRequest.hasArrivalCoordinates =
+            flightContext.hasDestinationCoordinates;
+        relevanceRequest.arrivalLatitudeDeg = flightContext.destinationLatDeg;
+        relevanceRequest.arrivalLongitudeDeg = flightContext.destinationLonDeg;
+        relevanceRequest.terminalRelevanceV2Enabled =
+            gPluginSettings.terminalRelevanceV2Enabled;
+        relevanceRequest.vnasSectorPrecedenceEnabled =
+            gPluginSettings.terminalRelevanceV2Enabled &&
+            gPluginSettings.vnasSectorPrecedenceEnabled;
+        relevanceRequest.terminalTransmitterRadiusNm =
+            kTerminalTransmitterRadiusNm;
+        relevanceRequest.vnasTerminalEvidenceHash =
+            vnasTerminalEvidence != nullptr
+                ? vnasTerminalEvidence->stableHash
+                : 0;
+        relevanceRequest.vnasTerminalEvidence = vnasTerminalEvidence;
         relevanceRequest.authorityRelevanceHash =
             authorityRelevanceSnapshot ==
                     gAuthorityAsyncRuntime.acceptedSnapshot
@@ -6964,6 +7055,18 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
         " generation=" +
         std::to_string(
             gBrainOwnedRuntimeState.operatingMode.generation));
+    AppendDiagnosticsLogLine(
+        std::string{"event=terminal-relevance-policy policy="} +
+            (gPluginSettings.terminalRelevanceV2Enabled
+                 ? "equal-source-v2"
+                 : "legacy") +
+            " endpointTransmitterRadiusNm=" +
+            std::to_string(kTerminalTransmitterRadiusNm) +
+            " vnas=us-only vnasSectorPrecedence=" +
+            (gPluginSettings.vnasSectorPrecedenceEnabled ? "enabled"
+                                                         : "disabled") +
+            " rollbackSettings=terminal_relevance_v2:false|vnas_sector_precedence:false",
+        xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
     RegisterPluginCommands();
     RegisterPluginMenu();
 
@@ -7218,8 +7321,10 @@ PLUGIN_API void XPluginDisable() {
     InvalidateRouteAsyncRuntime("plugin-admin-disable");
     InvalidateAuthorityAsyncRuntime("plugin-admin-disable");
     gVatsimDataFeedClient.Reset();
+    gVnasDataClient.Reset();
     gNetworkPlanLink.Reset();
     gTransceiverResolver.Reset();
+    gTerminalEvidenceRadioCache = {};
     gLastAccessorySemanticPresentationGeneration = 0;
     xvatsim::brain::SetBrainOwnedDisplayOverrideMode(
         &gBrainOwnedRuntimeState,

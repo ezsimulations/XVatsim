@@ -1,0 +1,27 @@
+name=Brain Controller Relevance V2 vNAS Precedence Switch Restores Fail Safe
+now_seconds=1000
+
+state.flight_active=true
+flight.callsign=SWA102
+flight.departure_icao=KCRQ
+flight.departure_lat=33.1283
+flight.departure_lon=-117.2800
+flight.has_departure_coordinates=true
+flight.destination_icao=KLAS
+
+brain_controller_relevance.stage=Departure
+brain_controller_relevance.v2_enabled=true
+brain_controller_relevance.vnas_sector_precedence_enabled=false
+
+controller.entry=callsign=SAN_W_APP;frequency=119.600;facility=5;actionable=true;atis=false
+controller.entry=callsign=SCT_APP;frequency=128.050;facility=5;actionable=true;atis=false
+transceiver.available=true
+transceiver.stale=false
+transceiver.station=callsign=SAN_W_APP;frequency=119.600;lat=33.1283;lon=-117.2800;facility=5;actionable=true
+transceiver.station=callsign=SCT_APP;frequency=128.050;lat=33.1283;lon=-117.2800;facility=5;actionable=true
+
+vnas.controller_feed_json={"controllers":[{"artccId":"ZLA","isActive":true,"positions":[{"facilityId":"SCT","positionId":"P_SAN_W","positionType":"Tracon","frequency":119600000,"isActive":true,"starsData":{"areaId":"A_SAN","assumedTcps":["5W"]}}],"vatsimData":{"callsign":"SAN_W_APP","primaryFrequency":119600000}},{"artccId":"ZLA","isActive":true,"positions":[{"facilityId":"SCT","positionId":"P_SCT","positionType":"Tracon","frequency":128050000,"isActive":true,"starsData":{"areaId":"A_ALL","assumedTcps":["6G"]}}],"vatsimData":{"callsign":"SCT_APP","primaryFrequency":128050000}}]}
+vnas.artcc_facility_json={"id":"ZLA","facility":{"id":"ZLA","positions":[],"childFacilities":[{"id":"SCT","starsConfiguration":{"internalAirports":["CRQ"],"areas":[{"id":"A_SAN","underlyingAirports":["CRQ"]},{"id":"A_ALL","underlyingAirports":["CRQ"]}],"tcps":[{"id":"T_6G","subset":6,"sectorId":"G"},{"id":"T_5W","subset":5,"sectorId":"W","parentTcpId":"T_6G"}]},"positions":[{"id":"P_SAN_W","callsign":"SAN_W_APP","starsConfiguration":{"areaId":"A_SAN","tcpId":"T_5W"}},{"id":"P_SCT","callsign":"SCT_APP","starsConfiguration":{"areaId":"A_ALL","tcpId":"T_6G"}}],"childFacilities":[]}]}}
+
+expect.brain_controller_relevance_departure_callsigns=SAN_W_APP,SCT_APP
+expect.brain_controller_relevance_completions_contains=SAN_W_APP:accepted,SCT_APP:accepted

@@ -35,6 +35,12 @@ struct RadioReachableBuildOptions {
     double nowSeconds = 0.0;
 };
 
+struct RadioReachableStationCoordinate {
+    std::string frequency;
+    double latitudeDeg = 0.0;
+    double longitudeDeg = 0.0;
+};
+
 struct RadioReachableControllerCandidate {
     std::string callsign;
     std::string frequency;
@@ -49,6 +55,11 @@ struct RadioReachableControllerCandidate {
     bool hasStationCoordinates = false;
     double stationLatitudeDeg = 0.0;
     double stationLongitudeDeg = 0.0;
+    // Every valid AFV transmitter for this controller/frequency.  The selected
+    // station above remains the aircraft-reception result; terminal relevance
+    // uses this complete set so its endpoint distance cannot oscillate as the
+    // aircraft changes which transmitter is best.
+    std::vector<RadioReachableStationCoordinate> stationCoordinates;
     double firstSeenSeconds = 0.0;
     double lastSeenSeconds = 0.0;
     std::string stableKey;
@@ -138,6 +149,14 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshotFromTransc
     const TransceiverResolutionSnapshot& transceiverSnapshot,
     const ControllerFeedSnapshot& controllerFeedSnapshot,
     const RadioReachableBuildOptions& options);
+
+// Adds online APP/DEP candidates from complete transceiver evidence even when
+// the aircraft cannot currently receive them. This is used only by the V2
+// endpoint-relevance path; Center eligibility remains aircraft/range gated.
+RadioReachableControllerSnapshot
+AugmentRadioReachableControllerSnapshotWithAppDepEvidence(
+    const RadioReachableControllerSnapshot& snapshot,
+    const TransceiverResolutionSnapshot& transceiverSnapshot);
 
 bool RadioReachableGroupAllowedForStage(
     RadioReachableFacilityGroup group,

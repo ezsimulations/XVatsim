@@ -392,6 +392,17 @@ PluginSettings SettingsStore::Load() const {
             continue;
         }
 
+        if (key == "terminal_relevance_v2" ||
+            key == "terminal_relevance_equal_source") {
+            TryParseBool(value, &settings.terminalRelevanceV2Enabled);
+            continue;
+        }
+
+        if (key == "vnas_sector_precedence") {
+            TryParseBool(value, &settings.vnasSectorPrecedenceEnabled);
+            continue;
+        }
+
         if (key == "source_owned_fallback_stable_key_live_consumption" ||
             key ==
                 "source_owned_fallback_stable_key_live_consumption_enabled") {
@@ -494,6 +505,14 @@ bool SettingsStore::Save(const PluginSettings& settings) const {
                << (normalizedSettings.standbyAssistEnabled ? "true" : "false") << "\n";
         output << "direct_ctaf_standby_assist="
                << (normalizedSettings.directCtafStandbyAssistEnabled ? "true" : "false")
+               << "\n";
+        output << "terminal_relevance_v2="
+               << (normalizedSettings.terminalRelevanceV2Enabled ? "true"
+                                                                : "false")
+               << "\n";
+        output << "vnas_sector_precedence="
+               << (normalizedSettings.vnasSectorPrecedenceEnabled ? "true"
+                                                                  : "false")
                << "\n";
         if (normalizedSettings
                 .sourceOwnedFallbackStableKeyLiveConsumptionEnabled ||

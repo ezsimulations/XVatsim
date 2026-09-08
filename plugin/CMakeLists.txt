@@ -89,6 +89,7 @@ target_link_libraries(XVatsimPlugin PRIVATE
     XVatsimTransceiverResolver
     XVatsimUpdateChecker
     XVatsimVatsimDataFeed
+    XVatsimVnasData
     XVatsimWorkflowCore
     XVatsimXPilotBridge
 )

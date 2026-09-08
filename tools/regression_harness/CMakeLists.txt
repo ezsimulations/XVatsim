@@ -37,6 +37,7 @@ target_link_libraries(XVatsimRegressionHarness PRIVATE
     XVatsimTransceiverResolver
     XVatsimUpdateChecker
     XVatsimVatsimDataFeed
+    XVatsimVnasData
     XVatsimWorkflowCore
     XVatsimXPilotBridge
 )
