@@ -6,23 +6,40 @@ flight-plan operations.
 
 ## Current Release
 
-XVatsim V2.0.0 is the current public freeware release for Windows, X-Plane 12,
-and xPilot.
+XVatsim V2.0.1 is the current public freeware maintenance release for Windows,
+X-Plane 12, and xPilot.
 
 - Freeware package:
-  `releases/XVatsim_2.0.0_Freeware_Windows_XP12.zip`
-- Package size: `1982428` bytes
+  `releases/XVatsim_2.0.1_Freeware_Windows_XP12.zip`
+- Package size: `1986566` bytes
 - Package SHA-256:
-  `FFA1BE32734BA20F7E6045F9ECEE5AE27D4929927E93965EB6959A33F9E7876B`
+  `1324EF4B851B6467F00A6A1DBCC96354EF165D7AC3AD80A01780503A130AE928`
 - Packaged plugin SHA-256:
-  `C9E687E4D1430C4BD730BCF6F20F66E3A47277F27D130863E72FEBDCE188A2AB`
+  `8CD354F954B1730BF869D789C079A29F6C5531FF81B25211DA1E7F2EEBD671FA`
 - User guide:
   `docs/user_guide/XVatsim_User_Guide.pdf`
 - Download pages:
-  [X-Plane.org](https://forums.x-plane.org/files/file/100224-xvatsim-100-freeware-windows-xp12zip/)
-  or [GitHub Releases](https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.0)
+  [X-Plane.org](https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/)
+  and [GitHub Releases](https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.1)
 
-## Version 2.0.0 Highlights
+## Version 2.0.1 Maintenance Changes
+
+- Adds a Brain-owned settled operational refresh gate. Unchanged simulator
+  callbacks take a lightweight path while relevant VATSIM, controller, radio,
+  presentation, PDC, air/ground, activation, and worker-state changes wake the
+  full refresh immediately.
+- Retains a one-second safety refresh instead of allowing settled state to
+  remain unobserved indefinitely.
+- Avoids repeated inactive vNAS terminal-evidence scans outside the supported
+  United States scope.
+- Avoids unnecessary diagnostic job formatting and collection between
+  scheduled diagnostic frames.
+- Preserves the accepted controller-selection, information ORB, Standby Assist,
+  and UI behavior.
+- Does not adopt the beta X-Plane SDK 4.4 renderer. Panel Graphics is recorded
+  as a separate future engineering milestone.
+
+## Version 2.0.0 Feature Foundation
 
 - Adds three Brain-owned information ORBs and drawers: VATSIM METAR, VATSIM
   ATIS, and a one-shot xPilot waiting-message PDC snapshot.
@@ -82,12 +99,13 @@ official GitHub Release. XVatsim never downloads or installs an update.
 
 ## Release Verification
 
-The V2.0.0 source was configured and built from a fresh Release directory on
-2026-09-08. All `882 / 882` saved regression scenarios passed. The customer ZIP
+The V2.0.1 source was configured and built from a fresh Release directory on
+2026-09-11. All `884 / 884` saved regression scenarios passed. The customer ZIP
 was independently extracted and contains exactly nine approved files: the
 plugin, transition audio, authority registry, user guide, README, quick start,
 freeware license, changelog, and support instructions. It contains no tests,
-logs, source files, backups, symbols, or build artifacts.
+logs, source files, backups, symbols, or build artifacts. The packaged plugin
+is byte-identical to the verified Release build.
 
 ## Repository Layout
 

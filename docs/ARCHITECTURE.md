@@ -213,6 +213,23 @@ sampling/rendering, caused no perceived lag, and did not block release.
 Post-release observation continues verifying that bounded startup preparation
 settles into stable, calm, low-churn operation.
 
+## V2.0.1 Maintenance Boundary
+
+The live-accepted V2.0.1 correction adds a Brain-owned settled operational
+refresh gate around the existing runtime pipeline. Meaningful source and
+presentation identities, activation transitions, air/ground transitions, and
+active workers wake the full path immediately. Unchanged callbacks use a
+lightweight path, with a one-second safety refresh retained.
+
+The gate changes scheduling, not product authority. It does not create a second
+decision path and does not alter controller selection, accessory semantics,
+Standby Assist, or rendering. Reuse of the stable inactive vNAS result outside
+the supported United States scope and conditional diagnostic job construction
+follow the same bounded-work rule.
+
+X-Plane SDK 4.4 Panel Graphics is not included in V2.0.1. Its future renderer
+direction is recorded in `docs/XPLANE_SDK_4_4_PANEL_GRAPHICS_DIRECTION.md`.
+
 ## Harness-Only Legacy Coverage
 
 The old `arrival`, `departure`, and `enroute` board collectors are no longer

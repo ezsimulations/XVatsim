@@ -1,65 +1,54 @@
-# XVatsim Next Session Handoff — V2.0.0 Public Release
+# XVatsim Next Session Handoff - V2.0.1 Public Release
 
-Updated: 2026-09-08
+Updated: 2026-09-11
 
 ## Current State
 
-XVatsim V2.0.0 is the current public freeware release for Windows, X-Plane 12,
-and xPilot. The release follows Product Owner live acceptance of the completed
-METAR, VATSIM ATIS, one-shot PDC, performance, US TRACON/vNAS, and ATIS
-identical-content work.
+XVatsim V2.0.1 is the current public focused performance maintenance release
+for Windows, X-Plane 12, and xPilot. The Product Owner's controlled live test
+confirmed that the previously constant 64-80 microsecond settled flight-loop
+workload was no longer visible.
+
+The exact verified package is available from X-Plane.org and the `v2.0.1`
+GitHub Release. The public `docs/xvatsim_update.json` reports V2.0.1.
 
 The governing architecture remains:
 
 `Brain decides. Modules produce bounded mechanical facts. UI displays brain-approved facts.`
 
-## Release Proof
+## V2.0.1 Proof
 
+- Accepted correction commit:
+  `0c626a99dfd74399eaed84e3d1e7a93b71ab7c5e`.
 - Fresh Visual Studio 18 x64 Release configuration and build: PASS.
-- Saved regression: `882 / 882` PASS.
-- V1.2.3-to-V2.0.0 update notification scenario: PASS.
-- V2.0.0 current-version/silent automatic check scenario: PASS.
+- Saved regression: `884 / 884` PASS.
 - User-guide PDF render and page-by-page visual review: PASS, nine pages.
 - Customer package smoke extraction: PASS, exactly nine files.
 - Forbidden tests, logs, backups, source, symbols, and build artifacts: `0`.
-- Packaged plugin matches the fresh Release build.
-- Compiled V2.0.0 string hits: `4`; compiled V1.2.3 string hits: `0`.
+- Packaged plugin matches the fresh Release build byte-for-byte.
 
 ## Release Artifacts
 
-- Package: `releases/XVatsim_2.0.0_Freeware_Windows_XP12.zip`
-- Package size: `1982428` bytes
+- Package:
+  `C:\Users\DARRON\OneDrive\Documents\XVatsim\releases\XVatsim_2.0.1_Freeware_Windows_XP12.zip`
+- Package size: `1986566` bytes
 - Package SHA-256:
-  `FFA1BE32734BA20F7E6045F9ECEE5AE27D4929927E93965EB6959A33F9E7876B`
+  `1324EF4B851B6467F00A6A1DBCC96354EF165D7AC3AD80A01780503A130AE928`
 - Packaged plugin SHA-256:
-  `C9E687E4D1430C4BD730BCF6F20F66E3A47277F27D130863E72FEBDCE188A2AB`
-- GitHub Release:
-  `https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.0`
-- X-Plane.org:
-  `https://forums.x-plane.org/files/file/100224-xvatsim-100-freeware-windows-xp12zip/`
-- Update manifest:
-  `https://ezsimulations.github.io/XVatsim/xvatsim_update.json`
+  `8CD354F954B1730BF869D789C079A29F6C5531FF81B25211DA1E7F2EEBD671FA`
+- Regression: `884 / 884`
+- Customer payload: exactly nine files
 
-## Customer Package Boundary
+## Post-Publication State
 
-The ZIP contains only:
+- X-Plane.org package: published and Product Owner confirmed.
+- GitHub tag and Release: `v2.0.1`.
+- GitHub Pages manifest: V2.0.1, notify-only, non-critical.
+- Offline V2.0.0-to-V2.0.1 notice: PASS.
+- Offline V2.0.1 current-version silent behavior: PASS.
 
-1. `README.txt`
-2. `QUICK_START.txt`
-3. `FREEWARE_LICENSE.txt`
-4. `CHANGELOG.txt`
-5. `SUPPORT.txt`
-6. `XVatsim_User_Guide.pdf`
-7. `Resources/plugins/XVatsim/win_x64/XVatsim.xpl`
-8. `Resources/plugins/XVatsim/win_x64/ui_transition.mp3`
-9. `Resources/plugins/XVatsim/win_x64/authority_source_registry.json`
+## Deferred Direction
 
-The local X-Plane `V2 Test` directory, diagnostics, logs, development backups,
-proof evidence, source, and symbols are not customer payloads.
-
-## Next Work
-
-Begin with a read-only post-release check. Confirm `main`, tag `v2.0.0`, the
-GitHub Release asset, the X-Plane.org download, the GitHub Pages manifest, and a
-clean repository. Do not change controller logic, source scheduling, package
-contents, or the update manifest without a new Product Owner-approved scope.
+X-Plane SDK 4.4 Panel Graphics research is recorded in
+`docs/XPLANE_SDK_4_4_PANEL_GRAPHICS_DIRECTION.md`. It is not part of V2.0.1 and
+must enter through a separate renderer milestone.

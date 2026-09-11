@@ -74,6 +74,23 @@ The next state is post-release observation. Any source/test correction, new
 version, packaging change, or Version 3 roadmap requires its own approved
 Contract Gate.
 
+## V2.0.1 Maintenance Release
+
+V2.0.1 is a focused performance patch built from the live-accepted settled
+operational refresh gate at commit `0c626a9`. It reduces repeated flight-loop
+work after operational inputs settle while preserving immediate wake behavior
+for meaningful changes and a one-second safety refresh. It also avoids repeated
+inactive vNAS scans outside the supported United States scope and unnecessary
+diagnostic job construction between scheduled diagnostic frames.
+
+The V2.0.1 package passed a clean Release build, all `884 / 884` saved
+regression scenarios, nine-file package inspection, binary identity checks,
+and the Product Owner's controlled live performance test. The public manifest
+reports V2.0.1 after both download destinations were prepared.
+
+V2.0.1 does not change controller-selection policy, information ORBs, Standby
+Assist, or UI rendering. It does not adopt X-Plane SDK 4.4 Panel Graphics.
+
 ## Recorded X-Plane SDK Direction
 
 X-Plane SDK 4.4 introduces backend-native Panel Graphics and establishes the

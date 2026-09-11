@@ -1,0 +1,15 @@
+name=V2.0.1 manifest reports an installed V2.0.1 plugin current
+
+update.installed_version=2.0.1
+update.manifest_payload={"schema":1,"product":"XVatsim","channel":"stable","latest_version":"2.0.1","minimum_supported_version":"1.0.0","published_date":"2026-09-11","download_filename":"XVatsim_2.0.1_Freeware_Windows_XP12.zip","package_sha256":"1324EF4B851B6467F00A6A1DBCC96354EF165D7AC3AD80A01780503A130AE928","package_size_bytes":1986566,"plugin_sha256":"8CD354F954B1730BF869D789C079A29F6C5531FF81B25211DA1E7F2EEBD671FA","download_page_url":"https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/","github_release_url":"https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.1","update_policy":"notify_only","critical":false,"message":"XVatsim 2.0.1 is available. Download the freeware Windows XP12 package from X-Plane.org or GitHub Releases.","release_notes":["Reduces settled X-Plane flight-loop workload while preserving immediate full refreshes for meaningful operational changes.","Retains a one-second safety refresh while unchanged callbacks use the lightweight settled path.","Avoids repeated inactive vNAS work outside the supported United States scope and unnecessary diagnostic job formatting.","Preserves the accepted controller-selection, information ORB, Standby Assist, and UI behavior."]}
+
+expect.update_status=current
+expect.update_latest_version=2.0.1
+expect.update_critical=false
+expect.update_download_page_url=https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/
+expect.update_error_class=none
+expect.overlay_version_text=V2.0.1
+expect.overlay_version_alternate_text=
+expect.overlay_version_tone=Current
+expect.overlay_version_rotates=false
+expect.overlay_notice_visible=false

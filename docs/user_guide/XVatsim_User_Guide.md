@@ -1,6 +1,6 @@
 # XVatsim Freeware User Guide
 
-Version 2.0.0
+Version 2.0.1
 
 Updated: September 2026
 
@@ -10,7 +10,23 @@ XVatsim is intended for home flight simulation only. It is not approved for real
 
 ![Clean XVatsim overlay](assets/01_clean_ui.jpg)
 
-## What's New In Version 2.0.0
+## What's New In Version 2.0.1
+
+Version 2.0.1 is a focused performance maintenance update. Once the active
+flight context is settled, unchanged X-Plane callbacks now use a lightweight
+path instead of repeating the complete operational refresh. Relevant VATSIM,
+controller, radio, presentation, PDC, air/ground, activation, and worker-state
+changes still wake the full processing path immediately, and a one-second
+safety refresh remains in place.
+
+The update also avoids repeated inactive vNAS work outside its supported United
+States terminal scope and avoids unnecessary diagnostic formatting between
+scheduled diagnostic frames. It does not change the accepted controller
+selection, information ORBs, Standby Assist, or UI behavior. It does not adopt
+the beta X-Plane SDK 4.4 drawing APIs; that renderer work is reserved for a
+separate future milestone.
+
+## Version 2.0.0 Feature Foundation
 
 Version 2.0.0 adds three information ORBs below the main frequency card:
 METAR, VATSIM ATIS, and a one-shot PDC snapshot from xPilot. Each ORB opens its
@@ -50,7 +66,7 @@ XVatsim can sleep when there is nothing useful to show and wake when controller 
 - VATSIM account and active xPilot connection
 - IFR flight plan filed on VATSIM
 
-XVatsim Version 2.0.0 does not include Mac support, Linux support, X-Plane 11 support, SimBrief import, Navigraph AIRAC import, a general private-message inbox, or a dedicated VFR controller-evidence workflow.
+XVatsim Version 2.0.1 does not include Mac support, Linux support, X-Plane 11 support, SimBrief import, Navigraph AIRAC import, a general private-message inbox, or a dedicated VFR controller-evidence workflow.
 
 ## Installation
 
@@ -99,7 +115,7 @@ Color and labels matter:
 
 Tuning a frequency does not make a row green by itself. XVatsim colors controller rows from route and authority context, not from radio tuning alone.
 
-In Version 2.0.0, the brain owns the final radio-board order, controller relevance decisions, information ORBs and drawers, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
+In Version 2.0.1, the brain owns the final radio-board order, controller relevance decisions, information ORBs and drawers, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
 
 When an update is available, XVatsim shows a dismissible update notice panel
 with the installed version, latest version, and an X-Plane.org or GitHub
@@ -164,7 +180,7 @@ Open X-Plane's menu bar and choose `Plugins > XVatsim`.
 
 ### IFR Mode / VFR Mode
 
-Selects the saved operating-mode preference. Version 2.0.0 retains the VFR mode
+Selects the saved operating-mode preference. Version 2.0.1 retains the VFR mode
 foundation, but controller projection remains designed and proven for the IFR
 flight-plan workflow.
 
@@ -385,4 +401,4 @@ Support contact:
 
 ## Freeware Notes
 
-XVatsim is being provided as freeware. Please keep the package intact when sharing it so pilots receive the plugin, transition audio, authority registry, README, quick start, and this user guide together. XVatsim 2.0.0 is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.
+XVatsim is being provided as freeware. Please keep the package intact when sharing it so pilots receive the plugin, transition audio, authority registry, README, quick start, and this user guide together. XVatsim 2.0.1 is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.

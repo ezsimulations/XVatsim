@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "2.0.0",
+    [string]$Version = "2.0.1",
     [string]$PlatformName = "Windows_XP12",
     [string]$BuildRoot = "build",
     [string]$ReleaseOutputRoot = "releases"
@@ -217,13 +217,21 @@ $changelog = @"
 XVatsim Freeware Changelog
 Version: $Version
 
-Version 2.0.0 highlights:
+Version 2.0.1 maintenance update:
+- Reduces steady X-Plane flight-loop work after the active flight context has settled.
+- Runs the full operational refresh immediately when relevant VATSIM, controller, radio, presentation, PDC, air/ground, activation, or worker state changes.
+- Retains a one-second safety refresh while unchanged callbacks use the lightweight settled fast path.
+- Avoids repeated inactive vNAS terminal-evidence scans outside the supported United States scope.
+- Avoids unnecessary diagnostic job formatting and collection between scheduled diagnostic frames.
+- Preserves the accepted controller-selection, information ORB, UI, and Standby Assist behavior.
+
+Version 2.0.0 feature foundation:
 - Adds three Brain-owned information ORBs and drawers: METAR, VATSIM ATIS, and a one-shot xPilot waiting-message PDC snapshot.
 - Strengthens US Approach/Departure selection with vNAS sector evidence while keeping the Brain as the sole decision owner.
 - Evaluates terminal-controller transmitter distance from the departure or arrival airport instead of the aircraft position.
 - Preserves the aircraft-distance gate for Center presentation within 250 nautical miles.
 - Prevents unchanged ATIS content from repeatedly returning to unread when VATSIM republishes the same information.
-- Moves route and authority preparation off the X-Plane flight loop and keeps settled operation calm and low-churn.
+- Moves route and authority preparation off the X-Plane flight loop.
 - Includes IFR/VFR mode selection, diversion handling, flight recovery, update notifications, and exact route-polygon crossing fixes.
 
 Current scope:

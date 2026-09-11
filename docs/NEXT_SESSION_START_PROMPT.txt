@@ -1,36 +1,32 @@
-Resume XVatsim after the V2.0.0 public freeware release.
+Resume XVatsim after the V2.0.1 public maintenance release.
 
 Repository:
-C:\Users\DARRON\OneDrive\Documents\XVatsim
+C:\Users\DARRON\OneDrive\Documents\XVatsim-V2
 
 Read first:
 1. docs/NEXT_SESSION_HANDOFF.md
-2. README.md
-3. docs/MILESTONE_STATUS.md
-4. docs/ARCHITECTURE.md
+2. docs/V2_0_1_PATCH_RELEASE.md
+3. README.md
+4. docs/UPDATE_MANIFEST.md
 5. docs/ROADMAP_BOUNDARIES.md
 
-Begin read-only. Verify:
-- branch main is clean;
-- tag v2.0.0 resolves to the public release commit;
-- the GitHub Release asset and X-Plane.org file are available;
-- the GitHub Pages update manifest reports V2.0.0;
-- the manifest package size and SHA-256 match the published ZIP; and
-- the current V2.0.0 plugin sees itself as current.
+Current boundary:
+- The V2.0.1 customer package is built, verified, and public.
+- The Product Owner's live performance test passed.
+- The fresh Release build and all 884 saved regression scenarios passed.
+- The X-Plane.org package and `v2.0.1` GitHub Release are available.
+- The public update manifest reports V2.0.1.
 
-Release facts:
-- Package: XVatsim_2.0.0_Freeware_Windows_XP12.zip
-- Size: 1982428 bytes
-- SHA-256: FFA1BE32734BA20F7E6045F9ECEE5AE27D4929927E93965EB6959A33F9E7876B
-- Plugin SHA-256: C9E687E4D1430C4BD730BCF6F20F66E3A47277F27D130863E72FEBDCE188A2AB
-- Regression: 882 / 882
+Prepared release facts:
+- Package: XVatsim_2.0.1_Freeware_Windows_XP12.zip
+- Size: 1986566 bytes
+- SHA-256: 1324EF4B851B6467F00A6A1DBCC96354EF165D7AC3AD80A01780503A130AE928
+- Plugin SHA-256: 8CD354F954B1730BF869D789C079A29F6C5531FF81B25211DA1E7F2EEBD671FA
+- Regression: 884 / 884
 - Customer payload: exactly nine files
-
-The local V2 Test directory, logs, diagnostics, backups, proof evidence, source,
-and symbols are not part of the public package.
 
 Architecture rule:
 Brain decides. Modules produce bounded mechanical facts. UI displays brain-approved facts.
 
-Wait for the Product Owner's next instructions before changing code or release
+Begin with a read-only public-release check before changing source or release
 state.

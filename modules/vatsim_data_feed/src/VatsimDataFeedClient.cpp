@@ -23,7 +23,7 @@ namespace xvatsim::modules::vatsim_data_feed {
 
 namespace {
 
-constexpr wchar_t kUserAgent[] = L"XVatsim/2.0.0";
+constexpr wchar_t kUserAgent[] = L"XVatsim/2.0.1";
 constexpr wchar_t kHost[] = L"data.vatsim.net";
 constexpr wchar_t kPath[] = L"/v3/vatsim-data.json";
 constexpr long long kRefreshCadenceSeconds = 15;

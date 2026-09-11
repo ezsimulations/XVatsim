@@ -15,18 +15,18 @@ Releases; XVatsim does not download or install updates.
 
 ## Current Publication
 
-V2.0.0 was published on 2026-09-08.
+V2.0.1 was published on 2026-09-11.
 
-- Download filename: `XVatsim_2.0.0_Freeware_Windows_XP12.zip`
-- Package size: `1982428` bytes
+- Download filename: `XVatsim_2.0.1_Freeware_Windows_XP12.zip`
+- Package size: `1986566` bytes
 - Package SHA-256:
-  `FFA1BE32734BA20F7E6045F9ECEE5AE27D4929927E93965EB6959A33F9E7876B`
+  `1324EF4B851B6467F00A6A1DBCC96354EF165D7AC3AD80A01780503A130AE928`
 - Packaged plugin SHA-256:
-  `C9E687E4D1430C4BD730BCF6F20F66E3A47277F27D130863E72FEBDCE188A2AB`
+  `8CD354F954B1730BF869D789C079A29F6C5531FF81B25211DA1E7F2EEBD671FA`
 - X-Plane.org:
   `https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/`
 - GitHub Release:
-  `https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.0`
+  `https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.1`
 
 `download_page_url` remains the primary X-Plane.org page for compatibility.
 `github_release_url` is an informational field for clients and documentation
@@ -40,15 +40,16 @@ unknown manifest fields, so the schema remains `1`.
    final package.
 3. Update the version, date, filename, message, release notes, and download
    URLs in `xvatsim_update.json`.
-4. Commit the release closeout locally.
-5. Create and publish the matching GitHub tag and Release, then upload the exact
+4. Update the X-Plane.org file page with that exact verified archive.
+5. After the X-Plane.org upload is confirmed, commit the release closeout
+   locally.
+6. Create and publish the matching GitHub tag and Release, then upload the same
    verified archive.
-6. Update the X-Plane.org file page with that same archive.
 7. Push the manifest to the GitHub Pages source branch last, so installed
    plugins are not notified before both download destinations are ready.
 8. Verify anonymous access to the raw manifest, GitHub Pages manifest, GitHub
    Release asset, and X-Plane.org page. Confirm an older installed version sees
-   an available-update result and V2.0.0 sees a current-version result.
+   an available-update result and V2.0.1 sees a current-version result.
 
 Current-version automatic checks remain silent. Manual checks may show that the
 installed version is current. Anonymous HTTPS access to the manifest is
