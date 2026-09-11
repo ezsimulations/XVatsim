@@ -135,6 +135,7 @@ constexpr long long kRadioBoardPendingRouteRetrySeconds = 2;
 constexpr long long kExpandedFmsObservationIntervalMs = 15000;
 constexpr long long kActiveFlightPlanSampleCadenceSeconds = 15;
 constexpr long long kEngineer3RadioBoardRefreshSeconds = 5;
+constexpr long long kSettledOperationalRefreshIntervalMs = 1000;
 constexpr std::size_t kDiagnosticsMaxTraceItems = 24;
 constexpr bool kDiagnosticsVerboseUnchangedCandidateDiff = false;
 
@@ -155,6 +156,8 @@ struct DiagnosticJobRecord {
 
 struct RefreshDiagnosticsFrame {
     bool valid = false;
+    bool collectJobs = false;
+    bool settledFastPath = false;
     bool flightContextActive = false;
     bool xpilotConnected = false;
     bool onGround = false;
@@ -222,6 +225,8 @@ struct RefreshDiagnosticsFrame {
     long long overlayBuildUs = 0;
     long long overlayUpdateUs = 0;
     long long displayLoggingUs = 0;
+    long long refreshGateUs = 0;
+    std::string refreshGateReason;
     std::vector<DiagnosticJobRecord> jobs;
 };
 
@@ -647,6 +652,10 @@ void HashCombineString(std::size_t* seed, const std::string& value) {
     HashCombine(seed, std::hash<std::string>{}(value));
 }
 
+void HashCombineDouble(std::size_t* seed, double value) {
+    HashCombine(seed, std::hash<double>{}(value));
+}
+
 std::size_t HashControllerFeedIdentity(const xvatsim::brain::ControllerFeedSnapshot& snapshot) {
     std::size_t hash = 0;
     HashCombineBool(&hash, snapshot.available);
@@ -671,6 +680,80 @@ std::size_t HashPilotSessionBoardInputs(const xvatsim::brain::XPilotSessionSnaps
     HashCombineBool(&hash, snapshot.connected);
     HashCombineString(&hash, NormalizeCallsign(snapshot.callsign));
     return hash;
+}
+
+std::uint64_t HashOperationalRadioIdentity(
+    const xvatsim::brain::RadioStateSnapshot& snapshot) {
+    std::size_t hash = 0;
+    HashCombineBool(&hash, snapshot.valid);
+    HashCombineString(&hash, snapshot.com1ActiveFrequency);
+    HashCombineString(&hash, snapshot.com2ActiveFrequency);
+    HashCombineString(&hash, snapshot.com1StandbyFrequency);
+    HashCombineBool(&hash, snapshot.standbyAssistEnabled);
+    HashCombineBool(&hash, snapshot.com1Powered);
+    HashCombineBool(&hash, snapshot.com2Powered);
+    HashCombineBool(&hash, snapshot.com1TxAvailable);
+    HashCombineBool(&hash, snapshot.com1RxAvailable);
+    HashCombineBool(&hash, snapshot.com2TxAvailable);
+    HashCombineBool(&hash, snapshot.com2RxAvailable);
+    HashCombineBool(&hash, snapshot.com1TxActive);
+    HashCombineBool(&hash, snapshot.com1RxActive);
+    HashCombineBool(&hash, snapshot.com2TxActive);
+    HashCombineBool(&hash, snapshot.com2RxActive);
+    HashCombineBool(&hash, snapshot.modeCActive);
+    return static_cast<std::uint64_t>(hash);
+}
+
+std::uint64_t HashOperationalPresentationIdentity(
+    const xvatsim::brain::OverlayUpdateSnapshot& updateSnapshot) {
+    std::size_t hash = 0;
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(gBrainOwnedRuntimeState.operatingMode.mode));
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(gBrainOwnedRuntimeState.operatingMode.generation));
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(gBrainOwnedRuntimeState.displayOverrideMode));
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(gBrainOwnedRuntimeState.pendingTextEntryMode));
+    HashCombineBool(
+        &hash, gBrainOwnedRuntimeState.manualQuerySnapshot.visible);
+    HashCombineString(&hash, gBrainOwnedRuntimeState.manualQuerySnapshot.line);
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(
+            gBrainOwnedRuntimeState.accessory.semanticPresentationGeneration));
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(
+            gBrainOwnedRuntimeState.atis.lookupPresentationSelectionGeneration));
+    HashCombine(
+        &hash,
+        static_cast<std::size_t>(
+            gBrainOwnedRuntimeState.metar.presentationGeneration));
+    HashCombineBool(&hash, gBrainOwnedRuntimeState.pendingAutomaticFlightRecovery);
+    HashCombineBool(&hash, gBrainOwnedRuntimeState.manualFlightRecoveryRequested);
+    HashCombineBool(&hash, gBrainOwnedRuntimeState.hasActiveCruiseTarget);
+    HashCombineBool(&hash, gBrainOwnedRuntimeState.cruiseTargetManualOverride);
+    HashCombineBool(&hash, gBrainOwnedRuntimeState.cruiseAltitudeReachedThisFlight);
+    HashCombineDouble(&hash, gBrainOwnedRuntimeState.activeCruiseTargetFt);
+    HashCombineString(&hash, gBrainOwnedRuntimeState.diversionOverrideSourceKey);
+    HashCombineBool(&hash, gPluginSettings.terminalRelevanceV2Enabled);
+    HashCombineBool(&hash, gPluginSettings.vnasSectorPrecedenceEnabled);
+    HashCombineBool(&hash, gPluginSettings.standbyAssistEnabled);
+    HashCombineBool(&hash, gPluginSettings.directCtafStandbyAssistEnabled);
+    HashCombineString(&hash, updateSnapshot.installedVersion);
+    HashCombineString(&hash, updateSnapshot.latestVersion);
+    HashCombineString(&hash, updateSnapshot.downloadPageUrl);
+    HashCombineString(&hash, updateSnapshot.errorClass);
+    HashCombine(&hash, static_cast<std::size_t>(updateSnapshot.status));
+    HashCombineBool(&hash, updateSnapshot.critical);
+    HashCombineBool(&hash, updateSnapshot.manualNoticeRequested);
+    HashCombineBool(&hash, updateSnapshot.automaticNoticeRequested);
+    return static_cast<std::uint64_t>(hash);
 }
 
 void ResetBrainDisplayPublisherCache() {
@@ -762,6 +845,7 @@ void RecordDiagnosticJob(
     std::string result,
     std::string sourceGenerations,
     std::string routeKey);
+bool DiagnosticJobsEnabled();
 
 std::string FormatOverlayUpdateResult(bool visible) {
     return std::string("visible=") + (visible ? "1" : "0") + "," +
@@ -907,14 +991,16 @@ void ApplyStandbyRecommendation(
             standbyPlan,
             standbyLoaded);
 
-    RecordDiagnosticJob(
-        "BrainStandbyAssist",
-        "decision-ledger",
-        0,
-        "brain-owned",
-        SummarizeBrainStandbyAssist(standbyPlan, sideEffectDecision),
-        {},
-        standbyInput.planKey);
+    if (DiagnosticJobsEnabled()) {
+        RecordDiagnosticJob(
+            "BrainStandbyAssist",
+            "decision-ledger",
+            0,
+            "brain-owned",
+            SummarizeBrainStandbyAssist(standbyPlan, sideEffectDecision),
+            {},
+            standbyInput.planKey);
+    }
 }
 
 void ResetCruiseTargetState() {
@@ -1669,7 +1755,7 @@ void RecordDiagnosticJob(
     std::string result,
     std::string sourceGenerations = {},
     std::string routeKey = {}) {
-    if (!gDiagnosticsState.frame.valid) {
+    if (!DiagnosticJobsEnabled()) {
         return;
     }
 
@@ -1683,6 +1769,11 @@ void RecordDiagnosticJob(
     job.routeKey = std::move(routeKey);
     job.durationMs = durationMs;
     gDiagnosticsState.frame.jobs.push_back(std::move(job));
+}
+
+bool DiagnosticJobsEnabled() {
+    return gDiagnosticsState.frame.valid &&
+           gDiagnosticsState.frame.collectJobs;
 }
 
 xvatsim::brain::BrainOwnedCtafLookupFact BuildBrainOwnedCtafLookupFact(
@@ -1764,7 +1855,7 @@ RefreshBrainControllerRelevance(
     const auto elapsedMs =
         runtimeOutput.cacheHit ? 0 : ElapsedMicrosecondsSince(started) / 1000;
 
-    if (recordDiagnostics) {
+    if (recordDiagnostics && DiagnosticJobsEnabled()) {
         RecordDiagnosticJob(
             "BrainControllerRelevanceWorker",
             runtimeOutput.relevance.reason,
@@ -1857,37 +1948,39 @@ xvatsim::brain::BrainOwnedPublisherOutput RunBrainPublisher(
 
     LogCandidateCompletionTrace(workflowStage, planKey);
 
-    RecordDiagnosticJob(
-        "BrainDisplayIntentWorker",
-        output.displayIntent.reason,
-        0,
-        "brain-display-intent",
-        SummarizeBrainDisplayIntent(output.displayIntent),
-        {},
-        planKey);
+    if (DiagnosticJobsEnabled()) {
+        RecordDiagnosticJob(
+            "BrainDisplayIntentWorker",
+            output.displayIntent.reason,
+            0,
+            "brain-display-intent",
+            SummarizeBrainDisplayIntent(output.displayIntent),
+            {},
+            planKey);
 
-    std::ostringstream phasePublishResult;
-    phasePublishResult << output.phasePublish.statusLine
-                       << ",state="
-                       << output.phasePublisherStateSummary;
-    RecordDiagnosticJob(
-        "PhaseSnapshotPublisher",
-        publisherFacts.publishReason,
-        0,
-        output.phasePublish.usedLastProven ? "ui-last-proven-reused"
-                                           : "ui-candidate-published",
-        phasePublishResult.str(),
-        {},
-        planKey);
+        std::ostringstream phasePublishResult;
+        phasePublishResult << output.phasePublish.statusLine
+                           << ",state="
+                           << output.phasePublisherStateSummary;
+        RecordDiagnosticJob(
+            "PhaseSnapshotPublisher",
+            publisherFacts.publishReason,
+            0,
+            output.phasePublish.usedLastProven ? "ui-last-proven-reused"
+                                               : "ui-candidate-published",
+            phasePublishResult.str(),
+            {},
+            planKey);
 
-    RecordDiagnosticJob(
-        "BrainPublisher",
-        "brain-approved-display-only",
-        0,
-        "ui-from-accepted-completions",
-        SummarizeBrainPublisherOutput(output, relevanceOutput),
-        {},
-        planKey);
+        RecordDiagnosticJob(
+            "BrainPublisher",
+            "brain-approved-display-only",
+            0,
+            "ui-from-accepted-completions",
+            SummarizeBrainPublisherOutput(output, relevanceOutput),
+            {},
+            planKey);
+    }
     return output;
 }
 
@@ -1928,14 +2021,16 @@ xvatsim::brain::RadioReachableControllerSnapshot BuildEngineer3RadioSnapshot(
             diagnostics->radioRangeResolveUs = 0;
             diagnostics->radioRangeResolveMs = 0;
         }
-        RecordDiagnosticJob(
-            "Engineer3RadioBoard",
-            reuseOutput.reason,
-            0,
-            reuseOutput.cacheStatus,
-            reuseOutput.radioSnapshot.statusLine,
-            {},
-            planKey);
+        if (DiagnosticJobsEnabled()) {
+            RecordDiagnosticJob(
+                "Engineer3RadioBoard",
+                reuseOutput.reason,
+                0,
+                reuseOutput.cacheStatus,
+                reuseOutput.radioSnapshot.statusLine,
+                {},
+                planKey);
+        }
         return reuseOutput.radioSnapshot;
     }
 
@@ -1957,17 +2052,19 @@ xvatsim::brain::RadioReachableControllerSnapshot BuildEngineer3RadioSnapshot(
             &gBrainOwnedRuntimeState,
             std::move(commitInput));
 
-    std::ostringstream result;
-    result << commitOutput.radioSnapshot.statusLine << ","
-           << commitOutput.diff.statusLine;
-    RecordDiagnosticJob(
-        "Engineer3RadioBoard",
-        commitOutput.reason,
-        diagnostics != nullptr ? diagnostics->radioRangeResolveMs : 0,
-        commitOutput.cacheStatus,
-        result.str(),
-        {},
-        planKey);
+    if (DiagnosticJobsEnabled()) {
+        std::ostringstream result;
+        result << commitOutput.radioSnapshot.statusLine << ","
+               << commitOutput.diff.statusLine;
+        RecordDiagnosticJob(
+            "Engineer3RadioBoard",
+            commitOutput.reason,
+            diagnostics != nullptr ? diagnostics->radioRangeResolveMs : 0,
+            commitOutput.cacheStatus,
+            result.str(),
+            {},
+            planKey);
+    }
     return commitOutput.radioSnapshot;
 }
 
@@ -2386,7 +2483,7 @@ xvatsim::brain::BrainRoutePolygonWorkerOutput RefreshBrainRoutePolygonSnapshot(
 
     const auto recordTransitionDiagnostic =
         [&](const xvatsim::brain::BrainOwnedRoutePolygonRuntimeOutput& record) {
-            if (!record.transitionEvaluated) {
+            if (!record.transitionEvaluated || !DiagnosticJobsEnabled()) {
                 return;
             }
             RecordDiagnosticJob(
@@ -2912,14 +3009,16 @@ xvatsim::brain::BrainRoutePolygonWorkerOutput RefreshBrainRoutePolygonSnapshot(
             ElapsedMicrosecondsSince(completeStageStarted);
         diagnostics->routeResolveMs = diagnostics->routeResolveUs / 1000;
     }
-    RecordDiagnosticJob(
-        "BrainRoutePolygonWorker",
-        runtimeOutput.reason,
-        diagnostics != nullptr ? diagnostics->routeResolveMs : 0,
-        runtimeOutput.cacheStatus,
-        runtimeOutput.diagnosticResult,
-        {},
-        routeRuntimeKey);
+    if (DiagnosticJobsEnabled()) {
+        RecordDiagnosticJob(
+            "BrainRoutePolygonWorker",
+            runtimeOutput.reason,
+            diagnostics != nullptr ? diagnostics->routeResolveMs : 0,
+            runtimeOutput.cacheStatus,
+            runtimeOutput.diagnosticResult,
+            {},
+            routeRuntimeKey);
+    }
     return runtimeOutput.route;
 }
 
@@ -3343,23 +3442,26 @@ RefreshBrainAuthorityRelevanceSnapshot(
         diagnostics->authorityProofHash = hash;
     }
 
-    std::ostringstream result;
-    result << "authorities=" << snapshot->relevantAuthorities.size()
-           << ",status=" << SanitizeLogText(snapshot->statusLine, 72)
-           << ",proofRecords=" << snapshot->relevantAuthorities.size()
-           << ",identityUs=" << currentInputsUs
-           << ",harvestUs=" << harvestUs
-           << ",running=" << (gAuthorityRelevanceWorker.IsRunning() ? 1 : 0);
-    RecordDiagnosticJob(
-        "BrainAuthorityRelevanceWorker",
-        snapshot->diagnosticReason.empty()
-            ? snapshot->statusLine
-            : snapshot->diagnosticReason,
-        elapsedUs / 1000,
-        snapshot->diagnosticCacheStatus,
-        result.str(),
-        FormatSourceGenerations(*snapshot),
-        planKey);
+    if (DiagnosticJobsEnabled()) {
+        std::ostringstream result;
+        result << "authorities=" << snapshot->relevantAuthorities.size()
+               << ",status=" << SanitizeLogText(snapshot->statusLine, 72)
+               << ",proofRecords=" << snapshot->relevantAuthorities.size()
+               << ",identityUs=" << currentInputsUs
+               << ",harvestUs=" << harvestUs
+               << ",running="
+               << (gAuthorityRelevanceWorker.IsRunning() ? 1 : 0);
+        RecordDiagnosticJob(
+            "BrainAuthorityRelevanceWorker",
+            snapshot->diagnosticReason.empty()
+                ? snapshot->statusLine
+                : snapshot->diagnosticReason,
+            elapsedUs / 1000,
+            snapshot->diagnosticCacheStatus,
+            result.str(),
+            FormatSourceGenerations(*snapshot),
+            planKey);
+    }
     return snapshot;
 }
 
@@ -3381,15 +3483,17 @@ xvatsim::brain::FlightPlanSnapshot SampleFlightPlanForRuntime(
             diagnostics->flightPlanUs = 0;
             diagnostics->flightPlanMs = 0;
         }
-        RecordDiagnosticJob(
-            "FlightPlanSampler",
-            decision.reason,
-            0,
-            "flight-plan-cache-hit",
-            "sample=skipped",
-            {},
-            flightContext.departureIcao + "->" +
-                flightContext.destinationIcao);
+        if (DiagnosticJobsEnabled()) {
+            RecordDiagnosticJob(
+                "FlightPlanSampler",
+                decision.reason,
+                0,
+                "flight-plan-cache-hit",
+                "sample=skipped",
+                {},
+                flightContext.departureIcao + "->" +
+                    flightContext.destinationIcao);
+        }
         return decision.cachedSnapshot;
     }
 
@@ -3515,8 +3619,10 @@ void LogOperationalActivationTransition(
 
 void LogOperationalActivationSummary() {
     const auto snapshot = gOperationalActivationState;
+    const auto refreshGate =
+        gBrainOwnedRuntimeState.operationalRefreshGate;
     AppendDeferredDiagnosticsLogLine(
-        [snapshot]() {
+        [snapshot, refreshGate]() {
             std::ostringstream stream;
             stream << "event=runtime-activation-gate-summary"
                    << " callbacks=" << snapshot.callbacks
@@ -3540,7 +3646,12 @@ void LogOperationalActivationSummary() {
                    << " disconnectFallingEdges="
                    << snapshot.disconnectFallingEdges
                    << " dormantOperationalAttempts="
-                   << snapshot.dormantOperationalAttemptCount;
+                   << snapshot.dormantOperationalAttemptCount
+                   << " fullRefreshes=" << refreshGate.fullRefreshCount
+                   << " settledFastPaths="
+                   << refreshGate.settledFastPathCount
+                   << " refreshGateReason="
+                   << SanitizeLogText(refreshGate.lastDecisionReason, 64);
             for (std::size_t index = 0;
                  index < xvatsim::brain::kBrainOwnedOperationalServiceStageCount;
                  ++index) {
@@ -3925,7 +4036,8 @@ long long SumTrackedRefreshMicroseconds(const RefreshDiagnosticsFrame& frame) {
            frame.radioRangeResolveUs +
            frame.overlayBuildUs +
            frame.overlayUpdateUs +
-           frame.displayLoggingUs;
+           frame.displayLoggingUs +
+           frame.refreshGateUs;
 }
 
 void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefreshUs) {
@@ -3996,6 +4108,8 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
                    << " reason=" << SanitizeLogText(frame.stageReason, 40)
                    << " wake=" << (frame.shouldWake ? 1 : 0)
                    << " wakeReason=" << SanitizeLogText(frame.wakeReason, 40)
+                   << " refreshGate="
+                   << SanitizeLogText(frame.refreshGateReason, 40)
                    << " xpilot=" << (frame.xpilotConnected ? 1 : 0)
                    << " battery=" << (frame.batteryOn ? 1 : 0)
                    << " ground=" << (frame.onGround ? 1 : 0)
@@ -4050,6 +4164,7 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
                    << ",overlayBuild:" << frame.overlayBuildUs
                    << ",overlayUpdate:" << frame.overlayUpdateUs
                    << ",displayLog:" << frame.displayLoggingUs
+                   << ",refreshGate:" << frame.refreshGateUs
                    << ",tracked:" << trackedRefreshUs
                    << ",untracked:" << untrackedRefreshUs
                    << " routeStatus=\""
@@ -6281,6 +6396,11 @@ void RefreshOverlayFromBrainEngineer3() {
     gDiagnosticsState.frame = {};
     auto& diagnostics = gDiagnosticsState.frame;
     diagnostics.valid = true;
+    const auto diagnosticsNowSeconds = CurrentTickSeconds();
+    diagnostics.collectJobs =
+        !gBrainOwnedRuntimeState.operationalRefreshGate.initialized ||
+        (diagnosticsNowSeconds - gDiagnosticsState.lastSummarySeconds) >=
+            kDiagnosticsSummaryIntervalSeconds;
     HarvestUpdateCheckerResult();
     HandleUpdateNoticeDismissRequest();
     RequestAutomaticUpdateCheckIfDue();
@@ -6373,6 +6493,70 @@ void RefreshOverlayFromBrainEngineer3() {
     timingStarted = std::chrono::steady_clock::now();
     RecordOperationalServiceCall(
         activationDecision,
+        xvatsim::brain::BrainOwnedOperationalServiceStage::Radio);
+    auto radioStateSnapshot = gRadioStateSampler.Sample();
+    diagnostics.radioUs = ElapsedMicrosecondsSince(timingStarted);
+    diagnostics.radioMs = diagnostics.radioUs / 1000;
+    radioStateSnapshot.standbyAssistEnabled = gPluginSettings.standbyAssistEnabled;
+
+    timingStarted = std::chrono::steady_clock::now();
+    (void)gOverlayWindow.ConsumeAcknowledgeRequest();
+    (void)gOverlayWindow.ConsumeRecallRequest();
+    diagnostics.pdcPrivateSourceUs = ElapsedMicrosecondsSince(timingStarted);
+
+    timingStarted = std::chrono::steady_clock::now();
+    RefreshManualQueryState();
+    diagnostics.manualQueryUs = ElapsedMicrosecondsSince(timingStarted);
+
+    timingStarted = std::chrono::steady_clock::now();
+    RecordOperationalServiceCall(
+        activationDecision,
+        xvatsim::brain::BrainOwnedOperationalServiceStage::PdcPrivateSource);
+    ServicePdcPrivateSource();
+    diagnostics.pdcPrivateSourceUs += ElapsedMicrosecondsSince(timingStarted);
+
+    const auto updateSnapshot = BuildOverlayUpdateSnapshot();
+    timingStarted = std::chrono::steady_clock::now();
+    xvatsim::brain::BrainOwnedOperationalRefreshGateInput refreshGateInput;
+    refreshGateInput.monotonicMs = CurrentTickMilliseconds();
+    refreshGateInput.settledRefreshIntervalMs =
+        kSettledOperationalRefreshIntervalMs;
+    refreshGateInput.vatsimGeneration = vatsimDataFeedSnapshot.generation;
+    refreshGateInput.controllerContentDigest =
+        vatsimDataFeedSnapshot.controllerContentDigest;
+    refreshGateInput.radioIdentity =
+        HashOperationalRadioIdentity(radioStateSnapshot);
+    refreshGateInput.presentationIdentity =
+        HashOperationalPresentationIdentity(updateSnapshot);
+    refreshGateInput.pdcSemanticGeneration =
+        gBrainOwnedRuntimeState.pdc.semanticGeneration;
+    refreshGateInput.aircraftOnGround = aircraftState.onGround;
+    refreshGateInput.activationRisingEdge =
+        activationDecision.activationRisingEdge;
+    refreshGateInput.routeWorkerRunning =
+        gRoutePreparationWorker.IsRunning();
+    refreshGateInput.authorityWorkerRunning =
+        gAuthorityRelevanceWorker.IsRunning();
+    refreshGateInput.forceRefresh = diagnostics.collectJobs;
+    const auto refreshGateDecision =
+        xvatsim::brain::DecideBrainOwnedOperationalRefresh(
+            gBrainOwnedRuntimeState.operationalRefreshGate,
+            refreshGateInput);
+    xvatsim::brain::CommitBrainOwnedOperationalRefreshDecision(
+        &gBrainOwnedRuntimeState.operationalRefreshGate,
+        refreshGateInput,
+        refreshGateDecision);
+    diagnostics.refreshGateUs = ElapsedMicrosecondsSince(timingStarted);
+    diagnostics.refreshGateReason = refreshGateDecision.reason;
+    diagnostics.settledFastPath = refreshGateDecision.settledFastPath;
+    if (!refreshGateDecision.shouldRunFullRefresh) {
+        diagnostics.valid = false;
+        return;
+    }
+
+    timingStarted = std::chrono::steady_clock::now();
+    RecordOperationalServiceCall(
+        activationDecision,
         xvatsim::brain::BrainOwnedOperationalServiceStage::ControllerSnapshot);
     const auto controllerFeedSnapshot =
         gControllerFeedClient.BuildSnapshot(vatsimDataFeedSnapshot);
@@ -6402,24 +6586,6 @@ void RefreshOverlayFromBrainEngineer3() {
         flightPlanSnapshot,
         networkPlanSnapshot);
     SyncCruiseTargetFromNetworkPlan(networkPlanSnapshot);
-
-    timingStarted = std::chrono::steady_clock::now();
-    RecordOperationalServiceCall(
-        activationDecision,
-        xvatsim::brain::BrainOwnedOperationalServiceStage::Radio);
-    auto radioStateSnapshot = gRadioStateSampler.Sample();
-    diagnostics.radioUs = ElapsedMicrosecondsSince(timingStarted);
-    diagnostics.radioMs = diagnostics.radioUs / 1000;
-    radioStateSnapshot.standbyAssistEnabled = gPluginSettings.standbyAssistEnabled;
-
-    timingStarted = std::chrono::steady_clock::now();
-    (void)gOverlayWindow.ConsumeAcknowledgeRequest();
-    (void)gOverlayWindow.ConsumeRecallRequest();
-    diagnostics.pdcPrivateSourceUs = ElapsedMicrosecondsSince(timingStarted);
-
-    timingStarted = std::chrono::steady_clock::now();
-    RefreshManualQueryState();
-    diagnostics.manualQueryUs = ElapsedMicrosecondsSince(timingStarted);
 
     timingStarted = std::chrono::steady_clock::now();
     const auto effectiveNetworkPlanSnapshot =
@@ -6655,14 +6821,16 @@ void RefreshOverlayFromBrainEngineer3() {
         hasPublisherOutput = true;
         finalDisplaySnapshot = publisherOutput.finalDisplay;
 
-        RecordDiagnosticJob(
-            "Engineer3Runtime",
-            "clean-runtime-no-old-authority-path",
-            0,
-            "old-authority-quarantined",
-            "routeResolve=0,airportCoverage=0,authorityProof=0,enrouteCollect=0,arrivalCollect=0,noHeavyFallback=1",
-            {},
-            planKey);
+        if (DiagnosticJobsEnabled()) {
+            RecordDiagnosticJob(
+                "Engineer3Runtime",
+                "clean-runtime-no-old-authority-path",
+                0,
+                "old-authority-quarantined",
+                "routeResolve=0,airportCoverage=0,authorityProof=0,enrouteCollect=0,arrivalCollect=0,noHeavyFallback=1",
+                {},
+                planKey);
+        }
     }
 
     const auto workflowStage = workflowDecision.stage;
@@ -6670,12 +6838,6 @@ void RefreshOverlayFromBrainEngineer3() {
         diagnostics.stage = WorkflowStageToken(workflowStage);
         diagnostics.stageReason = workflowDecision.reason;
     }
-    timingStarted = std::chrono::steady_clock::now();
-    RecordOperationalServiceCall(
-        activationDecision,
-        xvatsim::brain::BrainOwnedOperationalServiceStage::PdcPrivateSource);
-    ServicePdcPrivateSource();
-    diagnostics.pdcPrivateSourceUs += ElapsedMicrosecondsSince(timingStarted);
     RecordOperationalServiceCall(
         activationDecision,
         xvatsim::brain::BrainOwnedOperationalServiceStage::Atis);
@@ -6736,7 +6898,6 @@ void RefreshOverlayFromBrainEngineer3() {
     wakeInput.enrouteInitialHoldActive = enrouteInitialHoldActive;
     const auto wakeDecision =
         xvatsim::brain::DecideBrainOwnedOverlayWake(wakeInput);
-    const auto updateSnapshot = BuildOverlayUpdateSnapshot();
     const auto updateNoticeWake =
         xvatsim::brain::OverlayUpdateRequestsWake(updateSnapshot);
     const auto shouldWakeOverlay =
@@ -6768,14 +6929,16 @@ void RefreshOverlayFromBrainEngineer3() {
             gOverlayWindow.Hide();
             diagnostics.overlayUpdateUs = ElapsedMicrosecondsSince(timingStarted);
             diagnostics.overlayUpdateMs = diagnostics.overlayUpdateUs / 1000;
-            RecordDiagnosticJob(
-                "OverlayUpdate",
-                "hide-until-xpilot-connect",
-                diagnostics.overlayUpdateMs,
-                "ui-update",
-                FormatOverlayUpdateResult(false),
-                {},
-                diagnostics.route);
+            if (DiagnosticJobsEnabled()) {
+                RecordDiagnosticJob(
+                    "OverlayUpdate",
+                    "hide-until-xpilot-connect",
+                    diagnostics.overlayUpdateMs,
+                    "ui-update",
+                    FormatOverlayUpdateResult(false),
+                    {},
+                    diagnostics.route);
+            }
             timingStarted = std::chrono::steady_clock::now();
             PersistOverlayGeometryIfChanged();
             diagnostics.displayLoggingUs += ElapsedMicrosecondsSince(timingStarted);
@@ -6786,14 +6949,16 @@ void RefreshOverlayFromBrainEngineer3() {
         UpdateOverlayWindow(overlayModel);
         diagnostics.overlayUpdateUs = ElapsedMicrosecondsSince(timingStarted);
         diagnostics.overlayUpdateMs = diagnostics.overlayUpdateUs / 1000;
-        RecordDiagnosticJob(
-            "OverlayUpdate",
-            "dormant-model",
-            diagnostics.overlayUpdateMs,
-            "ui-update",
-            FormatOverlayUpdateResult(false),
-            {},
-            diagnostics.route);
+        if (DiagnosticJobsEnabled()) {
+            RecordDiagnosticJob(
+                "OverlayUpdate",
+                "dormant-model",
+                diagnostics.overlayUpdateMs,
+                "ui-update",
+                FormatOverlayUpdateResult(false),
+                {},
+                diagnostics.route);
+        }
         timingStarted = std::chrono::steady_clock::now();
         PersistOverlayGeometryIfChanged();
         diagnostics.displayLoggingUs += ElapsedMicrosecondsSince(timingStarted);
@@ -6814,14 +6979,16 @@ void RefreshOverlayFromBrainEngineer3() {
         updateSnapshot);
     diagnostics.overlayBuildUs = ElapsedMicrosecondsSince(timingStarted);
     diagnostics.overlayBuildMs = diagnostics.overlayBuildUs / 1000;
-    RecordDiagnosticJob(
-        "OverlayBuild",
-        "build-view-model",
-        diagnostics.overlayBuildMs,
-        "ui-model-build",
-        std::string("mode=") + WorkflowStageToken(workflowStage),
-        {},
-        diagnostics.route);
+    if (DiagnosticJobsEnabled()) {
+        RecordDiagnosticJob(
+            "OverlayBuild",
+            "build-view-model",
+            diagnostics.overlayBuildMs,
+            "ui-model-build",
+            std::string("mode=") + WorkflowStageToken(workflowStage),
+            {},
+            diagnostics.route);
+    }
     const auto cruiseHeaderText =
         xvatsim::brain::BuildBrainOwnedCruiseTargetHeaderText(
             gBrainOwnedRuntimeState);
@@ -6835,14 +7002,16 @@ void RefreshOverlayFromBrainEngineer3() {
     UpdateOverlayWindow(overlayModel);
     diagnostics.overlayUpdateUs = ElapsedMicrosecondsSince(timingStarted);
     diagnostics.overlayUpdateMs = diagnostics.overlayUpdateUs / 1000;
-    RecordDiagnosticJob(
-        "OverlayUpdate",
-        "visible-model",
-        diagnostics.overlayUpdateMs,
-        "ui-update",
-        FormatOverlayUpdateResult(true),
-        {},
-        diagnostics.route);
+    if (DiagnosticJobsEnabled()) {
+        RecordDiagnosticJob(
+            "OverlayUpdate",
+            "visible-model",
+            diagnostics.overlayUpdateMs,
+            "ui-update",
+            FormatOverlayUpdateResult(true),
+            {},
+            diagnostics.route);
+    }
     timingStarted = std::chrono::steady_clock::now();
     PersistOverlayGeometryIfChanged();
     diagnostics.displayLoggingUs += ElapsedMicrosecondsSince(timingStarted);

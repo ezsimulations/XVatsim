@@ -74,6 +74,18 @@ The next state is post-release observation. Any source/test correction, new
 version, packaging change, or Version 3 roadmap requires its own approved
 Contract Gate.
 
+## Recorded X-Plane SDK Direction
+
+X-Plane SDK 4.4 introduces backend-native Panel Graphics and establishes the
+preferred future replacement for XVatsim's legacy OpenGL overlay renderer. The
+research, architectural boundaries, compatibility risks, and phased migration
+plan are recorded in
+[`XPLANE_SDK_4_4_PANEL_GRAPHICS_DIRECTION.md`](XPLANE_SDK_4_4_PANEL_GRAPHICS_DIRECTION.md).
+
+This is a future, separately gated renderer milestone. It is not part of the
+V2.0.1 settled operational refresh-gate maintenance scope, and it must not move
+Brain decisions into the UI or introduce continuous flight-loop work.
+
 ## Future Work Rule
 
 Future features must enter through a milestone plan with:

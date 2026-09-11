@@ -1790,6 +1790,43 @@ struct VnasDataClient::Impl {
             enabled &&
             (IsUnitedStatesTerminalIcao(departureIcao) ||
              IsUnitedStatesTerminalIcao(arrivalIcao));
+
+        // Outside the supported US terminal scope (or when disabled), vNAS
+        // is a stable negative fact. Do not scan or hash the live radio board
+        // on every simulator callback just to rediscover that result.
+        if (!usEnabled) {
+            std::uint64_t inactiveRequestKey = 1469598103934665603ULL;
+            HashCombine(&inactiveRequestKey, NormalizeId(departureIcao));
+            HashCombine(&inactiveRequestKey, NormalizeId(arrivalIcao));
+            HashCombine(&inactiveRequestKey, enabled ? 1U : 0U);
+            if (published && inactiveRequestKey == lastRequestKey) {
+                return published;
+            }
+
+            static const std::vector<
+                std::shared_ptr<const VnasArtccFacilityDocument>>
+                kNoFacilityDocuments;
+            static const std::vector<
+                brain::RadioReachableControllerCandidate>
+                kNoCandidates;
+            auto next = BuildVnasTerminalEvidenceSnapshot(
+                controllerFeed,
+                kNoFacilityDocuments,
+                departureIcao,
+                arrivalIcao,
+                kNoCandidates,
+                enabled);
+            if (!published || published->stableHash != next.stableHash) {
+                next.generation = ++evidenceGeneration;
+            } else {
+                next.generation = published->generation;
+            }
+            published = std::make_shared<
+                const brain::VnasTerminalEvidenceSnapshot>(std::move(next));
+            lastRequestKey = inactiveRequestKey;
+            return published;
+        }
+
         const auto hasTerminalCandidate = std::any_of(
             candidates.begin(),
             candidates.end(),

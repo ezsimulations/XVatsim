@@ -113,6 +113,41 @@ struct BrainOwnedOperationalActivationState {
         dormantOperationalAttempts{};
 };
 
+struct BrainOwnedOperationalRefreshGateInput {
+    long long monotonicMs = 0;
+    long long settledRefreshIntervalMs = 1000;
+    std::uint64_t vatsimGeneration = 0;
+    std::uint64_t controllerContentDigest = 0;
+    std::uint64_t radioIdentity = 0;
+    std::uint64_t presentationIdentity = 0;
+    std::uint64_t pdcSemanticGeneration = 0;
+    bool aircraftOnGround = false;
+    bool activationRisingEdge = false;
+    bool routeWorkerRunning = false;
+    bool authorityWorkerRunning = false;
+    bool forceRefresh = false;
+};
+
+struct BrainOwnedOperationalRefreshGateDecision {
+    bool shouldRunFullRefresh = true;
+    bool settledFastPath = false;
+    std::string reason;
+};
+
+struct BrainOwnedOperationalRefreshGateState {
+    bool initialized = false;
+    long long lastFullRefreshMonotonicMs = 0;
+    std::uint64_t lastVatsimGeneration = 0;
+    std::uint64_t lastControllerContentDigest = 0;
+    std::uint64_t lastRadioIdentity = 0;
+    std::uint64_t lastPresentationIdentity = 0;
+    std::uint64_t lastPdcSemanticGeneration = 0;
+    bool lastAircraftOnGround = false;
+    std::uint64_t fullRefreshCount = 0;
+    std::uint64_t settledFastPathCount = 0;
+    std::string lastDecisionReason;
+};
+
 struct BrainOwnedOperatingModeState {
     BrainOwnedOperatingMode mode = BrainOwnedOperatingMode::IFR;
     BrainOwnedOperatingModeSource source =
@@ -981,6 +1016,7 @@ public:
 
 struct BrainOwnedRuntimeState {
     BrainOwnedOperatingModeState operatingMode;
+    BrainOwnedOperationalRefreshGateState operationalRefreshGate;
     BrainOwnedAccessoryRuntimeState accessory;
     BrainOwnedMetarRuntimeState metar;
     BrainOwnedAtisRuntimeState atis;
@@ -2134,6 +2170,15 @@ BrainOwnedOperationalActivationDecision DecideBrainOwnedOperationalActivation(
 void CommitBrainOwnedOperationalActivationDecision(
     BrainOwnedOperationalActivationState* state,
     const BrainOwnedOperationalActivationDecision& decision);
+BrainOwnedOperationalRefreshGateDecision DecideBrainOwnedOperationalRefresh(
+    const BrainOwnedOperationalRefreshGateState& state,
+    const BrainOwnedOperationalRefreshGateInput& input);
+void CommitBrainOwnedOperationalRefreshDecision(
+    BrainOwnedOperationalRefreshGateState* state,
+    const BrainOwnedOperationalRefreshGateInput& input,
+    const BrainOwnedOperationalRefreshGateDecision& decision);
+void ResetBrainOwnedOperationalRefreshGate(
+    BrainOwnedOperationalRefreshGateState* state);
 void RecordBrainOwnedOperationalEnableWakeRequest(
     BrainOwnedOperationalActivationState* state);
 void RecordBrainOwnedOperationalServiceCall(

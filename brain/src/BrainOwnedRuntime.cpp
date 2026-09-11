@@ -4232,6 +4232,105 @@ void CommitBrainOwnedOperationalActivationDecision(
     state->operational = decision.operational;
 }
 
+BrainOwnedOperationalRefreshGateDecision DecideBrainOwnedOperationalRefresh(
+    const BrainOwnedOperationalRefreshGateState& state,
+    const BrainOwnedOperationalRefreshGateInput& input) {
+    BrainOwnedOperationalRefreshGateDecision decision;
+    const auto wake = [&](const char* reason) {
+        decision.shouldRunFullRefresh = true;
+        decision.settledFastPath = false;
+        decision.reason = reason;
+    };
+
+    if (!state.initialized) {
+        wake("initial-operational-refresh");
+        return decision;
+    }
+    if (input.forceRefresh) {
+        wake("explicit-refresh-request");
+        return decision;
+    }
+    if (input.activationRisingEdge) {
+        wake("operational-activation");
+        return decision;
+    }
+    if (input.vatsimGeneration != state.lastVatsimGeneration) {
+        wake("vatsim-generation-changed");
+        return decision;
+    }
+    if (input.controllerContentDigest !=
+        state.lastControllerContentDigest) {
+        wake("controller-content-changed");
+        return decision;
+    }
+    if (input.radioIdentity != state.lastRadioIdentity) {
+        wake("radio-state-changed");
+        return decision;
+    }
+    if (input.presentationIdentity != state.lastPresentationIdentity) {
+        wake("presentation-state-changed");
+        return decision;
+    }
+    if (input.pdcSemanticGeneration !=
+        state.lastPdcSemanticGeneration) {
+        wake("pdc-semantic-change");
+        return decision;
+    }
+    if (input.aircraftOnGround != state.lastAircraftOnGround) {
+        wake("air-ground-transition");
+        return decision;
+    }
+    if (input.routeWorkerRunning || input.authorityWorkerRunning) {
+        wake("brain-worker-active");
+        return decision;
+    }
+
+    const auto intervalMs = std::max<long long>(
+        1, input.settledRefreshIntervalMs);
+    if (input.monotonicMs < state.lastFullRefreshMonotonicMs ||
+        input.monotonicMs - state.lastFullRefreshMonotonicMs >= intervalMs) {
+        wake("settled-safety-deadline");
+        return decision;
+    }
+
+    decision.shouldRunFullRefresh = false;
+    decision.settledFastPath = true;
+    decision.reason = "settled-inputs-unchanged";
+    return decision;
+}
+
+void CommitBrainOwnedOperationalRefreshDecision(
+    BrainOwnedOperationalRefreshGateState* state,
+    const BrainOwnedOperationalRefreshGateInput& input,
+    const BrainOwnedOperationalRefreshGateDecision& decision) {
+    if (state == nullptr) {
+        return;
+    }
+
+    state->lastDecisionReason = decision.reason;
+    if (!decision.shouldRunFullRefresh) {
+        ++state->settledFastPathCount;
+        return;
+    }
+
+    state->initialized = true;
+    state->lastFullRefreshMonotonicMs = input.monotonicMs;
+    state->lastVatsimGeneration = input.vatsimGeneration;
+    state->lastControllerContentDigest = input.controllerContentDigest;
+    state->lastRadioIdentity = input.radioIdentity;
+    state->lastPresentationIdentity = input.presentationIdentity;
+    state->lastPdcSemanticGeneration = input.pdcSemanticGeneration;
+    state->lastAircraftOnGround = input.aircraftOnGround;
+    ++state->fullRefreshCount;
+}
+
+void ResetBrainOwnedOperationalRefreshGate(
+    BrainOwnedOperationalRefreshGateState* state) {
+    if (state != nullptr) {
+        *state = {};
+    }
+}
+
 void RecordBrainOwnedOperationalEnableWakeRequest(
     BrainOwnedOperationalActivationState* state) {
     if (state == nullptr) {

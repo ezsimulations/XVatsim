@@ -11,6 +11,7 @@
 
 #include "XVatsim/brain/BrainOwnedRuntime.h"
 #include "XVatsim/brain/BrainWorkflow.h"
+#include "XVatsim/modules/vnas_data/VnasDataClient.h"
 
 namespace xvatsim::tools::runtime_activation_gate {
 namespace {
@@ -544,6 +545,114 @@ int RunRuntimeActivationGateProbe() {
                     0,
             "lifecycle stress repeated or lost a transition");
 
+    brain::BrainOwnedOperationalRefreshGateState refreshGate;
+    brain::BrainOwnedOperationalRefreshGateInput refreshInput;
+    refreshInput.monotonicMs = 10'000;
+    refreshInput.settledRefreshIntervalMs = 1000;
+    refreshInput.vatsimGeneration = 7;
+    refreshInput.controllerContentDigest = 70;
+    refreshInput.radioIdentity = 80;
+    refreshInput.presentationIdentity = 90;
+    refreshInput.pdcSemanticGeneration = 4;
+    refreshInput.aircraftOnGround = true;
+    const auto runRefreshGate = [&]() {
+        const auto decision = brain::DecideBrainOwnedOperationalRefresh(
+            refreshGate, refreshInput);
+        brain::CommitBrainOwnedOperationalRefreshDecision(
+            &refreshGate, refreshInput, decision);
+        return decision;
+    };
+
+    const auto initialRefresh = runRefreshGate();
+    require(initialRefresh.shouldRunFullRefresh &&
+                initialRefresh.reason == "initial-operational-refresh",
+            "settled gate did not allow its initial full refresh");
+    for (int index = 1; index <= 3; ++index) {
+        refreshInput.monotonicMs = 10'000 + index * 250;
+        const auto settled = runRefreshGate();
+        require(!settled.shouldRunFullRefresh && settled.settledFastPath &&
+                    settled.reason == "settled-inputs-unchanged",
+                "unchanged 4 Hz callback did not use the settled fast path");
+    }
+    refreshInput.monotonicMs = 11'000;
+    const auto deadlineRefresh = runRefreshGate();
+    require(deadlineRefresh.shouldRunFullRefresh &&
+                deadlineRefresh.reason == "settled-safety-deadline",
+            "settled safety deadline did not wake the full pipeline");
+
+    refreshInput.monotonicMs = 11'250;
+    ++refreshInput.vatsimGeneration;
+    const auto feedRefresh = runRefreshGate();
+    require(feedRefresh.shouldRunFullRefresh &&
+                feedRefresh.reason == "vatsim-generation-changed",
+            "VATSIM generation change did not wake immediately");
+
+    refreshInput.monotonicMs = 11'500;
+    ++refreshInput.radioIdentity;
+    const auto radioRefresh = runRefreshGate();
+    require(radioRefresh.shouldRunFullRefresh &&
+                radioRefresh.reason == "radio-state-changed",
+            "radio state change did not wake immediately");
+
+    refreshInput.monotonicMs = 11'750;
+    ++refreshInput.pdcSemanticGeneration;
+    const auto pdcRefresh = runRefreshGate();
+    require(pdcRefresh.shouldRunFullRefresh &&
+                pdcRefresh.reason == "pdc-semantic-change",
+            "PDC semantic change did not wake immediately");
+
+    refreshInput.monotonicMs = 12'000;
+    ++refreshInput.presentationIdentity;
+    const auto presentationRefresh = runRefreshGate();
+    require(presentationRefresh.shouldRunFullRefresh &&
+                presentationRefresh.reason ==
+                    "presentation-state-changed",
+            "presentation state change did not wake immediately");
+
+    refreshInput.monotonicMs = 12'250;
+    refreshInput.aircraftOnGround = false;
+    const auto airGroundRefresh = runRefreshGate();
+    require(airGroundRefresh.shouldRunFullRefresh &&
+                airGroundRefresh.reason == "air-ground-transition",
+            "air-ground transition did not wake immediately");
+
+    refreshInput.monotonicMs = 12'500;
+    refreshInput.routeWorkerRunning = true;
+    const auto workerRefresh = runRefreshGate();
+    require(workerRefresh.shouldRunFullRefresh &&
+                workerRefresh.reason == "brain-worker-active",
+            "active brain worker did not keep completion harvesting awake");
+    refreshInput.routeWorkerRunning = false;
+
+    const auto fullRefreshesBeforeReset = refreshGate.fullRefreshCount;
+    brain::ResetBrainOwnedOperationalRefreshGate(&refreshGate);
+    refreshInput.monotonicMs = 12'750;
+    const auto afterResetRefresh = runRefreshGate();
+    require(afterResetRefresh.shouldRunFullRefresh &&
+                afterResetRefresh.reason == "initial-operational-refresh" &&
+                refreshGate.fullRefreshCount == 1 &&
+                refreshGate.settledFastPathCount == 0 &&
+                fullRefreshesBeforeReset == 8,
+            "settled gate reset did not restore a clean initial wake");
+
+    xvatsim::modules::vnas_data::VnasDataClient outsideUsVnas;
+    std::vector<brain::RadioReachableControllerCandidate>
+        outsideUsCandidates(1);
+    outsideUsCandidates.front().callsign = "YVR_APP";
+    outsideUsCandidates.front().frequency = "132.300";
+    outsideUsCandidates.front().group =
+        brain::RadioReachableFacilityGroup::AppDep;
+    const auto outsideUsFirst = outsideUsVnas.Poll(
+        "CYXX", {}, outsideUsCandidates, true);
+    const auto outsideUsSecond = outsideUsVnas.Poll(
+        "CYXX", {}, outsideUsCandidates, true);
+    require(outsideUsFirst != nullptr &&
+                outsideUsFirst == outsideUsSecond &&
+                !outsideUsFirst->enabled &&
+                outsideUsFirst->statusLine == "vnas-outside-us" &&
+                outsideUsFirst->generation == outsideUsSecond->generation,
+            "outside-US vNAS polling did not remain a cached dormant fact");
+
     std::cout << "RUNTIME_ACTIVATION_GATE_PROBE"
               << " enableConnectedPdcServices="
               << enabledConnected.pdcServiceCalls
@@ -587,6 +696,11 @@ int RunRuntimeActivationGateProbe() {
               << lifecycleStress.automaticRecoveryQueues
               << " lifecycleStressInvalidations="
               << lifecycleStress.asynchronousInvalidations
+              << " settledGateFullBeforeReset="
+              << fullRefreshesBeforeReset
+              << " settledGateFastBeforeReset=3"
+              << " settledGateFullAfterReset="
+              << refreshGate.fullRefreshCount
               << " stageAccountingExact="
               << (stageAccountingExact ? 1 : 0);
     for (std::size_t index = 0;
