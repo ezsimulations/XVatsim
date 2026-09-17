@@ -24,7 +24,7 @@
 namespace xvatsim::modules::vnas_data {
 namespace {
 
-constexpr wchar_t kUserAgent[] = L"XVatsim/2.0.1";
+constexpr wchar_t kUserAgent[] = L"XVatsim/2.0.2";
 constexpr wchar_t kControllerFeedHost[] = L"live.env.vnas.vatsim.net";
 constexpr wchar_t kControllerFeedPath[] = L"/data-feed/controllers.json";
 constexpr wchar_t kFacilityDataHost[] = L"data-api.vnas.vatsim.net";

@@ -1,26 +1,26 @@
 # Milestone Status
 
-Updated: 2026-09-11
+Updated: 2026-09-17
 
 ## Current Position
 
-XVatsim V2.0.1 is release-certified as a focused performance maintenance
-release. The
-settled operational refresh gate at commit
-`0c626a99dfd74399eaed84e3d1e7a93b71ab7c5e` was accepted in a controlled live
-test: the previously continuous 64-80 microsecond flight-loop workload was no
-longer visible after the flight context settled. A fresh V2.0.1 Release build
-and all `884 / 884` saved regression scenarios passed on 2026-09-11, including
-the V2.0.1 older-version notification and current-version silent checks.
+XVatsim V2.0.2 is release-certified as a controller-evidence, PDC/private
+message, and diagnostic-volume maintenance release. The Product Owner's full
+online flight test accepted the Brain-owned controller voting, Australian
+callsign and extension evidence, xPilot-log PDC/private Drawer, and preserved
+runtime performance. The validated repair commit is
+`987279e12629945d891bc63fcb3c35e13c98e252`.
 
-The public V2.0.1 archive is
-`XVatsim_2.0.1_Freeware_Windows_XP12.zip`, size `1986566` bytes, SHA-256
-`1324EF4B851B6467F00A6A1DBCC96354EF165D7AC3AD80A01780503A130AE928`.
+A fresh V2.0.2 Release build and all `886 / 886` saved regression scenarios
+passed on 2026-09-17, including V2.0.2 older-version notification and
+current-version silent checks. The public V2.0.2 archive is
+`XVatsim_2.0.2_Freeware_Windows_XP12.zip`, size `2042321` bytes, SHA-256
+`8BD0BE5137D2844AC64CA1FE444E05D12C43A3C6BEBCFC4CF6370B5B1A8596E9`.
 The packaged plugin SHA-256 is
-`8CD354F954B1730BF869D789C079A29F6C5531FF81B25211DA1E7F2EEBD671FA`.
+`31F0D5EC3766C662A474A4E113464F956AC312FB61F002130FFAE258B71FA726`.
 It contains exactly nine approved files and no test, log, source, backup,
 symbol, or build-output files. X-Plane.org and the GitHub Release carry the
-V2.0.1 archive, and the public notify-only manifest reports V2.0.1.
+V2.0.2 archive, and the public notify-only manifest reports V2.0.2.
 
 The SDK 4.4 Panel Graphics research is recorded separately and is not part of
 this maintenance release.

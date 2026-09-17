@@ -21,7 +21,7 @@ from reportlab.platypus import (
 )
 
 
-VERSION = "2.0.1"
+VERSION = "2.0.2"
 ACCENT = colors.HexColor("#17758A")
 TEXT = colors.HexColor("#263640")
 MUTED = colors.HexColor("#66757D")

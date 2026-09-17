@@ -6,21 +6,39 @@ flight-plan operations.
 
 ## Current Release
 
-XVatsim V2.0.1 is the current public freeware maintenance release for Windows,
+XVatsim V2.0.2 is the current public freeware maintenance release for Windows,
 X-Plane 12, and xPilot.
 
 - Freeware package:
-  `releases/XVatsim_2.0.1_Freeware_Windows_XP12.zip`
-- Package size: `1986566` bytes
+  `releases/XVatsim_2.0.2_Freeware_Windows_XP12.zip`
+- Package size: `2042321` bytes
 - Package SHA-256:
-  `1324EF4B851B6467F00A6A1DBCC96354EF165D7AC3AD80A01780503A130AE928`
+  `8BD0BE5137D2844AC64CA1FE444E05D12C43A3C6BEBCFC4CF6370B5B1A8596E9`
 - Packaged plugin SHA-256:
-  `8CD354F954B1730BF869D789C079A29F6C5531FF81B25211DA1E7F2EEBD671FA`
+  `31F0D5EC3766C662A474A4E113464F956AC312FB61F002130FFAE258B71FA726`
 - User guide:
   `docs/user_guide/XVatsim_User_Guide.pdf`
 - Download pages:
   [X-Plane.org](https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/)
-  and [GitHub Releases](https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.1)
+  and [GitHub Releases](https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.2)
+
+## Version 2.0.2 Controller And PDC Changes
+
+- Keeps controller selection in the Brain with simple yes, no, and neutral
+  evidence votes from VATSIM, VATSpy, airport distance, route geometry,
+  declared coverage extensions, and US vNAS data when available.
+- Recognizes Melbourne controller callsign variations and declared Australian
+  Center extensions without allowing a worker to suppress a candidate.
+- Monitors xPilot's network log every five seconds for incoming direct private
+  and PDC/ACARS messages while excluding public radio, broadcast, server,
+  outgoing, other-session, and other-callsign traffic.
+- Stores admitted messages newest first. The PDC ORB shows amber `NEW` for
+  unread content and returns to cyan `IDLE` after the pilot leaves the Drawer.
+- Replaces routine per-callback diagnostic records with one-minute timing
+  summaries while retaining rate-limited outliers and change-driven Brain
+  decision receipts.
+- Preserves route-polygon colors, controller distance, Standby Assist, METAR,
+  ATIS, CTAF, and the V2.0.1 settled performance path.
 
 ## Version 2.0.1 Maintenance Changes
 
@@ -56,11 +74,11 @@ X-Plane 12, and xPilot.
 - Includes IFR/VFR mode selection, diversion handling, current-flight recovery,
   update notifications, CTAF/UNICOM fallback, and exact route-polygon crossing.
 
-The PDC feature retains exactly one bounded snapshot after complete flight
-identity and a stable xPilot connection are available. The drawer warns
-`CAPTURED SNAPSHOT — CHECK XPILOT FOR REVISIONS`; xPilot remains authoritative
-for amendments and later messages. XVatsim is not a general private-message
-inbox and does not classify a message by sender or wording.
+The PDC feature monitors xPilot's network log at a low five-second cadence after
+complete flight identity and a stable xPilot connection are available. The
+Brain admits incoming direct messages addressed to the active callsign and
+keeps a bounded newest-first history. xPilot remains the authoritative VATSIM
+client.
 
 ## Current Scope
 
@@ -73,14 +91,14 @@ inbox and does not classify a message by sender or wording.
 - US terminal-sector confirmation using vNAS data
 - COM1/COM2, TX/RX, Mode C, and Standby Assist status
 - VATSIM METAR and ATIS information drawers
-- One-shot PDC convenience snapshot from xPilot
+- PDC/ACARS and incoming private-message Drawer sourced from xPilot logs
 
 Not included:
 
 - Mac, Linux, or X-Plane 11 support
 - A dedicated VFR controller-evidence workflow
 - SimBrief or Navigraph AIRAC import
-- A general private-message inbox or AUTO_ATC card
+- Public radio-chat display or AUTO_ATC card
 - Second-monitor/out-of-sim window mode
 
 ## Reliability Rule
@@ -99,8 +117,8 @@ official GitHub Release. XVatsim never downloads or installs an update.
 
 ## Release Verification
 
-The V2.0.1 source was configured and built from a fresh Release directory on
-2026-09-11. All `884 / 884` saved regression scenarios passed. The customer ZIP
+The V2.0.2 source was configured and built from a fresh Release directory on
+2026-09-17. All `886 / 886` saved regression scenarios passed. The customer ZIP
 was independently extracted and contains exactly nine approved files: the
 plugin, transition audio, authority registry, user guide, README, quick start,
 freeware license, changelog, and support instructions. It contains no tests,

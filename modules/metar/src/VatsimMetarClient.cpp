@@ -18,7 +18,7 @@ namespace xvatsim::modules::metar {
 
 namespace {
 
-constexpr wchar_t kUserAgent[] = L"XVatsim/2.0.1";
+constexpr wchar_t kUserAgent[] = L"XVatsim/2.0.2";
 constexpr wchar_t kHost[] = L"metar.vatsim.net";
 constexpr std::size_t kMaxPayloadBytes = 65'536;
 constexpr int kResolveTimeoutMs = 1'000;

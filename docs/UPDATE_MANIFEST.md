@@ -15,18 +15,18 @@ Releases; XVatsim does not download or install updates.
 
 ## Current Publication
 
-V2.0.1 was published on 2026-09-11.
+V2.0.2 was published on 2026-09-17.
 
-- Download filename: `XVatsim_2.0.1_Freeware_Windows_XP12.zip`
-- Package size: `1986566` bytes
+- Download filename: `XVatsim_2.0.2_Freeware_Windows_XP12.zip`
+- Package size: `2042321` bytes
 - Package SHA-256:
-  `1324EF4B851B6467F00A6A1DBCC96354EF165D7AC3AD80A01780503A130AE928`
+  `8BD0BE5137D2844AC64CA1FE444E05D12C43A3C6BEBCFC4CF6370B5B1A8596E9`
 - Packaged plugin SHA-256:
-  `8CD354F954B1730BF869D789C079A29F6C5531FF81B25211DA1E7F2EEBD671FA`
+  `31F0D5EC3766C662A474A4E113464F956AC312FB61F002130FFAE258B71FA726`
 - X-Plane.org:
   `https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/`
 - GitHub Release:
-  `https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.1`
+  `https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.2`
 
 `download_page_url` remains the primary X-Plane.org page for compatibility.
 `github_release_url` is an informational field for clients and documentation
@@ -49,7 +49,7 @@ unknown manifest fields, so the schema remains `1`.
    plugins are not notified before both download destinations are ready.
 8. Verify anonymous access to the raw manifest, GitHub Pages manifest, GitHub
    Release asset, and X-Plane.org page. Confirm an older installed version sees
-   an available-update result and V2.0.1 sees a current-version result.
+   an available-update result and V2.0.2 sees a current-version result.
 
 Current-version automatic checks remain silent. Manual checks may show that the
 installed version is current. Anonymous HTTPS access to the manifest is

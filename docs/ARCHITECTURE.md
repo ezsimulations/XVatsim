@@ -230,6 +230,24 @@ follow the same bounded-work rule.
 X-Plane SDK 4.4 Panel Graphics is not included in V2.0.1. Its future renderer
 direction is recorded in `docs/XPLANE_SDK_4_4_PANEL_GRAPHICS_DIRECTION.md`.
 
+## V2.0.2 Brain Evidence And PDC Boundary
+
+V2.0.2 keeps controller selection inside the Brain. Controller workers report
+bounded mechanical evidence as yes, no, or neutral votes; they do not suppress
+candidates. The Brain receives VATSIM and VATSpy identity, airport-distance,
+route-geometry, declared-extension, and US vNAS evidence when available. This
+supports callsign variations and extended Australian Center coverage without a
+second decision path.
+
+The PDC service uses a five-second Brain-owned cadence. A worker reads bounded
+xPilot network-log ranges and reports protocol facts. The Brain alone admits
+incoming direct messages for the active callsign, excludes other traffic,
+orders and bounds history, owns unread state, and projects `NEW` or `IDLE`.
+
+Routine callback timing is reduced in memory to one diagnostic distribution
+per minute. Detailed outlier records are rate-limited, while worker failures,
+state changes, and complete change-driven controller receipts remain logged.
+
 ## Harness-Only Legacy Coverage
 
 The old `arrival`, `departure`, and `enroute` board collectors are no longer
@@ -241,13 +259,13 @@ live runtime.
 
 ## Non-Goals For V2.0.0
 
-- no general private-message inbox or AUTO_ATC card presentation
+- no public radio-chat display or AUTO_ATC card presentation
 - no SimBrief import
 - no Navigraph AIRAC import
 - no dedicated VFR controller-evidence workflow
 - no second-monitor/out-of-sim window mode
 
-V2.0.0 is the current public Windows/X-Plane 12/xPilot freeware release. The
+V2.0.2 is the current public Windows/X-Plane 12/xPilot freeware release. The
 accepted IFR/VFR mode foundation remains, but a dedicated VFR evidence engine
 or live VFR projection is only an optional Version 3 decision with no
 implementation promise.

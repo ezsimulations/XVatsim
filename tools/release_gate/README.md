@@ -107,17 +107,17 @@ The active public release path is the freeware Windows/X-Plane 12/xPilot
 package. Store-submission scripts are historical tooling unless the store path
 is deliberately reopened.
 
-To build the V2.0.1 freeware zip from a fresh Release build and place it in the
+To build the V2.0.2 freeware zip from a fresh Release build and place it in the
 public release folder:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release_gate\New-FreewareReleasePackage.ps1 `
-  -Version 2.0.1 `
-  -BuildRoot .\build\v2.0.1-release `
+  -Version 2.0.2 `
+  -BuildRoot .\build\v2.0.2-release `
   -ReleaseOutputRoot 'C:\Users\DARRON\OneDrive\Documents\XVatsim\releases'
 ```
 
-The builder defaults to V2.0.1. It accepts explicit build and output roots so a
+The builder defaults to V2.0.2. It accepts explicit build and output roots so a
 fresh release configuration can be packaged directly into the public release
 folder.
 

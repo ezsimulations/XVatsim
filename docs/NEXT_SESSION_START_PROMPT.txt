@@ -1,28 +1,28 @@
-Resume XVatsim after the V2.0.1 public maintenance release.
+Resume XVatsim after the V2.0.2 public maintenance release.
 
 Repository:
-C:\Users\DARRON\OneDrive\Documents\XVatsim-V2
+C:\Users\DARRON\OneDrive\Documents\XVatsim
 
 Read first:
 1. docs/NEXT_SESSION_HANDOFF.md
-2. docs/V2_0_1_PATCH_RELEASE.md
+2. docs/V2_0_2_RELEASE.md
 3. README.md
 4. docs/UPDATE_MANIFEST.md
 5. docs/ROADMAP_BOUNDARIES.md
 
 Current boundary:
-- The V2.0.1 customer package is built, verified, and public.
-- The Product Owner's live performance test passed.
-- The fresh Release build and all 884 saved regression scenarios passed.
-- The X-Plane.org package and `v2.0.1` GitHub Release are available.
-- The public update manifest reports V2.0.1.
+- The V2.0.2 customer package is built, verified, and public.
+- The Product Owner's full online flight test passed.
+- The fresh Release build and all 886 saved regression scenarios passed.
+- The X-Plane.org package and `v2.0.2` GitHub Release are available.
+- The public update manifest reports V2.0.2.
 
 Prepared release facts:
-- Package: XVatsim_2.0.1_Freeware_Windows_XP12.zip
-- Size: 1986566 bytes
-- SHA-256: 1324EF4B851B6467F00A6A1DBCC96354EF165D7AC3AD80A01780503A130AE928
-- Plugin SHA-256: 8CD354F954B1730BF869D789C079A29F6C5531FF81B25211DA1E7F2EEBD671FA
-- Regression: 884 / 884
+- Package: XVatsim_2.0.2_Freeware_Windows_XP12.zip
+- Size: 2042321 bytes
+- SHA-256: 8BD0BE5137D2844AC64CA1FE444E05D12C43A3C6BEBCFC4CF6370B5B1A8596E9
+- Plugin SHA-256: 31F0D5EC3766C662A474A4E113464F956AC312FB61F002130FFAE258B71FA726
+- Regression: 886 / 886
 - Customer payload: exactly nine files
 
 Architecture rule:

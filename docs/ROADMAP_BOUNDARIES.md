@@ -91,6 +91,24 @@ reports V2.0.1 after both download destinations were prepared.
 V2.0.1 does not change controller-selection policy, information ORBs, Standby
 Assist, or UI rendering. It does not adopt X-Plane SDK 4.4 Panel Graphics.
 
+## V2.0.2 Controller And PDC Maintenance Release
+
+V2.0.2 restores the Rule One boundary for controller selection. Workers report
+bounded yes, no, or neutral facts; the Brain makes the display decision. The
+release includes callsign-variation and declared-extension evidence needed for
+Melbourne terminal controllers and extended Australian Center coverage.
+
+The PDC Drawer monitors xPilot network logs every five seconds for incoming
+direct private and PDC/ACARS messages. The Brain excludes public radio,
+broadcast, server, outgoing, other-session, and other-callsign traffic, keeps a
+bounded newest-first history, and owns the `NEW`/`IDLE` lifecycle.
+
+Routine flight-loop diagnostics are summarized once per minute with
+rate-limited outlier detail. V2.0.2 preserves route-polygon colors, controller
+distance, Standby Assist, METAR, ATIS, CTAF, and the V2.0.1 settled-performance
+gate. The release passed the Product Owner's full-flight online test, all `886 /
+886` saved scenarios, and the nine-file package gate.
+
 ## Recorded X-Plane SDK Direction
 
 X-Plane SDK 4.4 introduces backend-native Panel Graphics and establishes the
@@ -100,7 +118,7 @@ plan are recorded in
 [`XPLANE_SDK_4_4_PANEL_GRAPHICS_DIRECTION.md`](XPLANE_SDK_4_4_PANEL_GRAPHICS_DIRECTION.md).
 
 This is a future, separately gated renderer milestone. It is not part of the
-V2.0.1 settled operational refresh-gate maintenance scope, and it must not move
+V2.0.2 maintenance scope, and it must not move
 Brain decisions into the UI or introduce continuous flight-loop work.
 
 ## Future Work Rule

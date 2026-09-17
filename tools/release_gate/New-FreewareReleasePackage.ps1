@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "2.0.1",
+    [string]$Version = "2.0.2",
     [string]$PlatformName = "Windows_XP12",
     [string]$BuildRoot = "build",
     [string]$ReleaseOutputRoot = "releases"
@@ -142,7 +142,7 @@ What XVatsim does:
 - Uses VATSIM, route, airport, transmitter, authority, and US vNAS sector facts to strengthen terminal-controller selection.
 - Displays COM1, COM2, TX, RX, MODE C, and Standby Assist state.
 - Provides Brain-owned METAR and VATSIM ATIS information drawers.
-- Captures one bounded xPilot waiting-message snapshot for the PDC drawer; xPilot remains authoritative for revisions.
+- Monitors xPilot's network log for incoming direct private and PDC/ACARS messages and stores them newest first in the PDC drawer.
 - Can recover the current flight after an xPilot disconnect/reconnect.
 - Can manually check whether the installed XVatsim version is current.
 - Can show CTAF or UNICOM fallback when controlled airport service is unavailable.
@@ -162,7 +162,7 @@ Support:
 ezsimulations@gmail.com
 
 For bug reports, include your callsign, route, what xPilot showed, what XVatsim showed, screenshots if possible, and these files:
-- X-Plane 12\Resources\plugins\XVatsim\logs\xvatsim_diagnostics.log
+- X-Plane 12\Resources\plugins\XVatsim\logs\xvatsim_diagnostics_YYYY_MM_DD.log
 - X-Plane 12\Log.txt
 
 XVatsim is for home flight simulation only. It is not approved for real-world aviation, navigation, dispatch, flight planning, or air traffic control use.
@@ -217,13 +217,19 @@ $changelog = @"
 XVatsim Freeware Changelog
 Version: $Version
 
-Version 2.0.1 maintenance update:
+Version 2.0.2 controller and message update:
+- Keeps controller selection in the Brain with simple yes, no, and neutral evidence votes from VATSIM, VATSpy, airport distance, route geometry, coverage extensions, and US vNAS data when available.
+- Recognizes Melbourne controller callsign variations and declared Australian Center coverage extensions without allowing a worker to hide a candidate.
+- Monitors xPilot's network log every five seconds for incoming direct private and PDC/ACARS messages while excluding public radio, broadcast, server, outgoing, and other-callsign traffic.
+- Stores PDC/private messages newest first and returns the PDC ORB from amber NEW to cyan IDLE after the pilot leaves the opened drawer.
+- Replaces routine per-callback diagnostic records with one-minute timing summaries and rate-limited performance outliers.
+- Preserves route-polygon colors, controller distance, Standby Assist, METAR, ATIS, CTAF, and the V2.0.1 settled performance path.
+
+Version 2.0.1 performance maintenance update:
 - Reduces steady X-Plane flight-loop work after the active flight context has settled.
-- Runs the full operational refresh immediately when relevant VATSIM, controller, radio, presentation, PDC, air/ground, activation, or worker state changes.
+- Runs the full operational refresh immediately when relevant operational state changes.
 - Retains a one-second safety refresh while unchanged callbacks use the lightweight settled fast path.
-- Avoids repeated inactive vNAS terminal-evidence scans outside the supported United States scope.
-- Avoids unnecessary diagnostic job formatting and collection between scheduled diagnostic frames.
-- Preserves the accepted controller-selection, information ORB, UI, and Standby Assist behavior.
+- Avoids repeated inactive vNAS scans and unnecessary diagnostic formatting.
 
 Version 2.0.0 feature foundation:
 - Adds three Brain-owned information ORBs and drawers: METAR, VATSIM ATIS, and a one-shot xPilot waiting-message PDC snapshot.
@@ -246,7 +252,7 @@ Not included in this release:
 - Dedicated VFR workflow.
 - SimBrief import.
 - Navigraph AIRAC import.
-- A general private-message inbox or AUTO_ATC card presentation.
+- Public radio-chat display or AUTO_ATC card presentation.
 "@
 
 $support = @"
@@ -266,7 +272,7 @@ When reporting a bug, include:
 - Whether Standby Assist was on or off.
 
 Useful log files:
-- X-Plane 12\Resources\plugins\XVatsim\logs\xvatsim_diagnostics.log
+- X-Plane 12\Resources\plugins\XVatsim\logs\xvatsim_diagnostics_YYYY_MM_DD.log
 - X-Plane 12\Log.txt
 
 Diagnostic logs are generated locally while XVatsim runs. They are not included in this package.
