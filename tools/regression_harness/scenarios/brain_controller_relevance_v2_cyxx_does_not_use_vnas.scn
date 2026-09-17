@@ -26,4 +26,4 @@ transceiver.station=callsign=YVR_APP;frequency=132.300;lat=49.0253;lon=-122.3600
 vnas.controller_feed_json={"updatedAt":"2026-09-06T20:00:00Z","controllers":[{"artccId":"ZVR","primaryFacilityId":"YVR","primaryPositionId":"01CANADASHOULDNOTBEUSED000","isActive":true,"isObserver":false,"positions":[{"facilityId":"YVR","facilityName":"Vancouver","positionId":"01CANADASHOULDNOTBEUSED000","positionName":"Vancouver","positionType":"Tracon","defaultCallsign":"YVR_APP","frequency":132300000,"isPrimary":true,"isActive":true}],"vatsimData":{"callsign":"YVR_APP","frequency":"132.300"}}]}
 
 expect.brain_controller_relevance_arrival_callsigns=YVR_APP
-expect.brain_controller_relevance_completions_contains=YVR_APP:accepted,vnas-disabled,final=accept-display,airportRadioNm=0.0
+expect.brain_controller_relevance_completions_contains=YVR_APP:accepted,vnas=0[outside-us-scope,frequency-distance=+1,brain-final=display

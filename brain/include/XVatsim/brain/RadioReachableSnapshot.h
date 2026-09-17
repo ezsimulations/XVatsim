@@ -50,6 +50,7 @@ struct RadioReachableControllerCandidate {
     bool actionable = true;
     bool atis = false;
     int visualRangeNm = 0;
+    std::string textAtis;
     bool hasDistanceNm = false;
     double distanceNm = 0.0;
     bool hasStationCoordinates = false;
@@ -60,6 +61,10 @@ struct RadioReachableControllerCandidate {
     // uses this complete set so its endpoint distance cannot oscillate as the
     // aircraft changes which transmitter is best.
     std::vector<RadioReachableStationCoordinate> stationCoordinates;
+    // Complete immutable AFV facts for the controller. Unlike the selected
+    // radio-board channel, these retain extension and consolidation channels
+    // so the Brain can choose the contact channel from source evidence.
+    std::vector<TransceiverStationEvidenceSnapshot> originalTransceivers;
     double firstSeenSeconds = 0.0;
     double lastSeenSeconds = 0.0;
     std::string stableKey;

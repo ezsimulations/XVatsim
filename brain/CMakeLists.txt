@@ -1,11 +1,14 @@
 add_library(XVatsimBrain STATIC
     src/BrainOrchestrator.cpp
     src/BrainControllerRelevanceWorker.cpp
+    src/BrainControllerDecision.cpp
+    src/BrainControllerEvidencePipeline.cpp
     src/BrainDisplayIntent.cpp
     src/BrainOwnedRuntime.cpp
     src/BrainAtisRuntime.cpp
     src/BrainMetarRuntime.cpp
     src/BrainPdcRuntime.cpp
+    src/BrainPdcLogRuntime.cpp
     src/BrainWorkflow.cpp
     src/BrainRadioRangeWorker.cpp
     src/BrainRoutePolygonWorker.cpp

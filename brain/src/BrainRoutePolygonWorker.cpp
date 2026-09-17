@@ -264,6 +264,12 @@ std::uint64_t HashBrainRouteSectorSnapshot(
     for (const auto& sector : snapshot.nextSectors) {
         HashCombine(&hash, HashRouteSectorMatch(sector));
     }
+    for (const auto& alias : snapshot.airportCallsignAliases) {
+        HashCombine(&hash, std::hash<std::string>{}(alias.airportIcao));
+        HashCombine(&hash, std::hash<std::string>{}(alias.callsignPrefix));
+        HashCombine(&hash, std::hash<std::string>{}(alias.boundaryId));
+        HashCombine(&hash, std::hash<std::string>{}(alias.source));
+    }
     return static_cast<std::uint64_t>(hash);
 }
 

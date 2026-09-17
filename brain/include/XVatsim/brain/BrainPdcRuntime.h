@@ -1,11 +1,14 @@
 #pragma once
 
+#include "XVatsim/brain/BrainPdcLogTypes.h"
 #include "XVatsim/brain/BrainTypes.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace xvatsim::brain {
@@ -70,6 +73,7 @@ struct BrainPdcCapturedArtifact {
     std::string normalizedSender;
     std::string body;
     std::string acceptanceReason;
+    std::string sourceTimeUtc;
     bool unread = true;
 };
 
@@ -99,6 +103,47 @@ struct BrainPdcRuntimeCounters {
     std::uint64_t unreadAcknowledged = 0;
     std::uint64_t stalePublicationFacts = 0;
     std::uint64_t semanticMutations = 0;
+    std::uint64_t logRequestsSubmitted = 0;
+    std::uint64_t logFactsConsumed = 0;
+    std::uint64_t logBytesRead = 0;
+    std::uint64_t logWorkerWallMicroseconds = 0;
+    std::uint64_t logWorkerCpuMicroseconds = 0;
+    std::uint64_t logIgnoredProtocolLines = 0;
+    std::uint64_t logExcludedRecords = 0;
+    std::uint64_t logMalformedRecords = 0;
+    std::uint64_t logStaleFacts = 0;
+    std::uint64_t unreadEvictions = 0;
+};
+
+struct BrainPdcLogReplayCursor {
+    BrainPdcLogFileFact file;
+    std::uint64_t highWaterOffset = 0;
+};
+
+struct BrainPdcLogMonitorState {
+    bool connectionKnown = false;
+    bool connected = false;
+    bool recoveryRequired = true;
+    bool readingSnapshot = false;
+    bool committingStagedMessages = false;
+    bool sessionOpen = false;
+    bool discardLeadingFragment = false;
+    std::uint64_t connectionEpoch = 1;
+    std::uint64_t fileIncarnation = 1;
+    std::uint64_t nextRequestId = 0;
+    std::uint64_t pendingRequestId = 0;
+    std::uint64_t nextServiceMicroseconds = 0;
+    std::uint64_t cursorOffset = 0;
+    std::uint64_t snapshotEndOffset = 0;
+    std::uint64_t sessionOpenOffset = 0;
+    unsigned retryStep = 0;
+    std::string sessionCallsign;
+    std::string reason = "waiting-for-xpilot-connection";
+    BrainPdcLogFileFact file;
+    std::vector<BrainPdcLogRecordFact> stagedDirectMessages;
+    std::size_t stagedCommitIndex = 0;
+    std::array<BrainPdcLogReplayCursor, 4> replayCursors;
+    std::size_t nextReplayCursorSlot = 0;
 };
 
 struct BrainPdcRuntimeState {
@@ -126,6 +171,8 @@ struct BrainPdcRuntimeState {
     std::string boundDepartureIcao;
     std::string boundDestinationIcao;
     std::optional<BrainPdcCapturedArtifact> capturedArtifact;
+    std::vector<BrainPdcCapturedArtifact> olderArtifacts;
+    BrainPdcLogMonitorState logMonitor;
     std::size_t retainedBytes = 0;
     BrainPdcRuntimeCounters counters;
 };
@@ -191,9 +238,43 @@ bool AcknowledgeBrainOwnedPdcVisibleEntries(
     BrainOwnedRuntimeState* state,
     const std::vector<std::string>& visibleRevisionIdentities);
 
+bool AcknowledgeBrainOwnedPdcAllEntries(BrainOwnedRuntimeState* state);
+
 std::size_t BrainOwnedPdcUnreadCount(const BrainPdcRuntimeState& state);
+std::size_t BrainOwnedPdcMessageCount(const BrainPdcRuntimeState& state);
+bool AdmitBrainOwnedPdcMessage(
+    BrainOwnedRuntimeState* state,
+    std::string sender,
+    std::string body,
+    std::string revisionIdentity,
+    std::int64_t sourceSequence,
+    std::string sourceTimeUtc,
+    std::uint64_t nowMicroseconds);
 std::string BrainOwnedPdcDiagnosticSummary(const BrainPdcRuntimeState& state);
 const char* ToString(BrainPdcAvailability availability);
 const char* ToString(BrainPdcClassification classification);
+
+struct BrainPdcLogContext {
+    bool flightContextActive = false;
+    bool xpilotConnected = false;
+    std::string_view flightCallsign;
+    std::string_view xpilotCallsign;
+    std::string_view departureIcao;
+    std::string_view destinationIcao;
+};
+
+struct BrainPdcLogServiceResult {
+    bool factConsumed = false;
+    bool requestSubmitted = false;
+    bool presentationChanged = false;
+    BrainPdcLogIssue issue = BrainPdcLogIssue::None;
+    std::string reason;
+};
+
+BrainPdcLogServiceResult ServiceBrainOwnedPdcLogMonitor(
+    BrainOwnedRuntimeState* state,
+    const BrainPdcLogContext& context,
+    BrainPdcLogTransport* transport,
+    std::uint64_t nowMicroseconds);
 
 }  // namespace xvatsim::brain

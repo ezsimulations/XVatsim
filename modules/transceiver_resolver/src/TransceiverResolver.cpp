@@ -981,6 +981,7 @@ brain::TransceiverResolutionSnapshot ResolveReceivableControllers(
         brain::TransceiverControllerEvidenceSnapshot controllerEvidence;
         controllerEvidence.callsign = controller.callsign;
         controllerEvidence.controllerFrequency = controller.frequency;
+        controllerEvidence.textAtis = controller.textAtis;
         controllerEvidence.facility = controller.facility;
         controllerEvidence.actionable = controller.actionable;
         controllerEvidence.atis = controller.atis;

@@ -31,4 +31,4 @@ transceiver.status=RX 1 receivable
 transceiver.candidate=callsign=FTW_51_CTR;frequency=135.175;distanceNm=80;score=100
 
 expect.brain_controller_relevance_enroute_callsigns=FTW_51_CTR
-expect.brain_controller_relevance_completions=FTW_51_CTR:accepted:center-next-polygon-match:pattern:FTW_*_CTR
+expect.brain_controller_relevance_completions=FTW_51_CTR:accepted

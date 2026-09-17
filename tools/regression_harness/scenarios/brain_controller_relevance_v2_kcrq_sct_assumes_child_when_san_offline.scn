@@ -22,4 +22,4 @@ vnas.controller_feed_json={"updatedAt":"2026-09-07T02:31:00Z","controllers":[{"a
 vnas.artcc_facility_json={"id":"ZLA","facility":{"id":"ZLA","type":"Artcc","positions":[],"childFacilities":[{"id":"SCT","type":"Tracon","starsConfiguration":{"internalAirports":["CRQ"],"areas":[{"id":"A_SAN","name":"San Diego","underlyingAirports":["CRQ"]},{"id":"A_ALL","name":"Consolidated","underlyingAirports":["CRQ"]}],"tcps":[{"id":"T_6G","subset":6,"sectorId":"G"},{"id":"T_5W","subset":5,"sectorId":"W","parentTcpId":"T_6G"}]},"positions":[{"id":"P_SAN_W","callsign":"SAN_W_APP","frequency":119600000,"starsConfiguration":{"areaId":"A_SAN","tcpId":"T_5W"}},{"id":"P_SCT","callsign":"SCT_APP","frequency":128050000,"starsConfiguration":{"areaId":"A_ALL","tcpId":"T_6G"}}],"childFacilities":[]}]}}
 
 expect.brain_controller_relevance_departure_callsigns=SCT_APP
-expect.brain_controller_relevance_completions_contains=SCT_APP:accepted,vnas=ARTCC=ZLA/FACILITY=SCT,FACTS=1/SERVICE=1/AREA=1/HAS-CHILD=1/TCP=5W
+expect.brain_controller_relevance_completions_contains=SCT_APP:accepted,vnas=+1[endpoint-ownership-match,facility=SCT,has-child=1,tcp=5W

@@ -196,6 +196,16 @@ struct VnasTerminalEvidenceSnapshot {
     std::vector<VnasTerminalEvidenceRecord> records;
 };
 
+// A worker reports one bounded score per independent evidence family. Scores
+// are deliberately ternary so no provider can outweigh the other providers or
+// turn its confidence estimate into a hidden veto.
+struct BrainControllerEvidenceVote {
+    std::string source;
+    int score = 0;
+    std::string provenance;
+    std::string reason;
+};
+
 // Canonical authority-only controller input. Radio-range presentation fields
 // such as visual range are intentionally absent.
 struct AuthorityControllerSnapshot {
@@ -363,6 +373,7 @@ struct TransceiverStationEvidenceSnapshot {
 struct TransceiverControllerEvidenceSnapshot {
     std::string callsign;
     std::string controllerFrequency;
+    std::string textAtis;
     int facility = 0;
     bool actionable = false;
     bool atis = false;
@@ -429,6 +440,16 @@ struct RouteSectorMatchSnapshot {
     bool terminalCoverage = false;
 };
 
+// Source facts parsed from VATSpy [Airports] records. These records describe
+// published endpoint callsign aliases; they do not decide controller relevance.
+struct AirportCallsignAliasSnapshot {
+    std::string airportIcao;
+    std::string callsignPrefix;
+    std::string boundaryId;
+    std::string source;
+    std::string sourceRecord;
+};
+
 struct RouteSectorSnapshot {
     bool available = false;
     bool stale = true;
@@ -443,6 +464,7 @@ struct RouteSectorSnapshot {
     std::vector<RouteWaypointSnapshot> waypoints;
     std::vector<RouteSectorMatchSnapshot> currentSectors;
     std::vector<RouteSectorMatchSnapshot> nextSectors;
+    std::vector<AirportCallsignAliasSnapshot> airportCallsignAliases;
 };
 
 enum class AuthorityRelevanceKind {

@@ -26,4 +26,4 @@ transceiver.candidate=callsign=IAD_M_APP;frequency=126.650;distanceNm=85;score=1
 transceiver.station=callsign=IAD_M_APP;frequency=126.650;lat=39.1754;lon=-76.6683
 
 expect.brain_controller_relevance_arrival_callsigns=IAD_M_APP
-expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,faa-no-confirmation,no=terminal-owner,failSafe=1
+expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,published-frequency=0[role-frequency-not-confirmed,terminal-source=-1,brain-supported-tie-display

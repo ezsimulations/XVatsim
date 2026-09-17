@@ -24,4 +24,4 @@ transceiver.candidate=callsign=IAD_M_APP;frequency=126.650;distanceNm=90;score=1
 transceiver.station=callsign=IAD_M_APP;frequency=126.650;lat=39.1754;lon=-76.6683
 
 expect.brain_controller_relevance_arrival_callsigns=IAD_M_APP
-expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,neutral=vatsim-appdep-online+vnas-unavailable+faa-unavailable,failSafe=1
+expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,vnas=0[unavailable-or-stale,published-frequency=0,brain-supported-tie-display

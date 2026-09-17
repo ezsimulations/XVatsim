@@ -871,7 +871,7 @@ bool ProductProbe(int index, std::string* reason) {
                 state.pdc.preCaptureUncertain && state.pdc.captureComplete &&
                 state.pdc.counters.gapEvents == 1 &&
                 pdc != command.snapshot->orbs.end() &&
-                pdc->categoryText == "NEW 1",
+                pdc->categoryText == "NEW",
                 "discontinuous waiting message did not capture with internal uncertainty",
                 reason);
         }
@@ -969,13 +969,9 @@ bool ProductProbe(int index, std::string* reason) {
             const auto command = ProjectBrainOwnedAccessoryPresentation(
                 fixture->state.get(), nullptr);
             return Check(command.snapshot != nullptr &&
-                command.snapshot->drawerTitle == "PDC — KDFW" &&
-                command.snapshot->entries.size() == 2 &&
-                command.snapshot->entries[0].title ==
-                    "CAPTURED SNAPSHOT — CHECK XPILOT FOR REVISIONS" &&
-                command.snapshot->entries[1].body == connected1.body &&
-                command.snapshot->entries[1].stableKey !=
-                    command.snapshot->entries[0].stableKey,
+                command.snapshot->drawerTitle == "PDC / PRIVATE MESSAGES" &&
+                command.snapshot->entries.size() == 1 &&
+                command.snapshot->entries[0].body == connected1.body,
                 "strict PDC did not atomically project one flight-bound artifact",
                 reason);
         }
@@ -991,8 +987,8 @@ bool ProductProbe(int index, std::string* reason) {
             const auto command = ProjectBrainOwnedAccessoryPresentation(
                 fixture->state.get(), nullptr);
             return Check(captured.captureCompleted && command.snapshot != nullptr &&
-                command.snapshot->entries.size() == 2 &&
-                command.snapshot->entries[1].body == waiting.body &&
+                command.snapshot->entries.size() == 1 &&
+                command.snapshot->entries[0].body == waiting.body &&
                 state.pdc.captureComplete && state.pdc.capturedArtifact.has_value() &&
                 state.pdc.capturedArtifact->sender == "ACARS" &&
                 BrainOwnedPdcUnreadCount(state.pdc) == 1,
@@ -1126,12 +1122,12 @@ bool ProductProbe(int index, std::string* reason) {
                 unavailable->categoryText == "SOURCE" &&
                 closed != closedCommand.snapshot->orbs.end() &&
                 closed->label == "PDC" && closed->airportIcao.empty() &&
-                closed->categoryText == "NEW 1" &&
+                closed->categoryText == "NEW" &&
                 closed->tone == BrainOwnedAccessoryOrbPresentation::Tone::Amber &&
                 open != openCommand.snapshot->orbs.end() &&
                 open->selected && open->selectedIndicator == "OPEN" &&
                 restored != restoredCommand.snapshot->orbs.end() &&
-                restored->categoryText == "NEW 1",
+                restored->categoryText == "IDLE",
                 "one-shot PDC ORB state or OPEN precedence failed", reason);
         }
         case 31: {
@@ -1148,15 +1144,12 @@ bool ProductProbe(int index, std::string* reason) {
                     return orb.drawer == BrainOwnedAccessoryDrawerId::Pdc;
                 });
             return seam.passed && Check(
-                seam.command.snapshot->drawerTitle == "PDC — KDFW" &&
-                seam.command.snapshot->entries.size() == 2 &&
-                seam.command.snapshot->entries[0].stableKey ==
-                    "pdc-captured-snapshot-warning" &&
-                seam.command.snapshot->entries[0].title ==
-                    "CAPTURED SNAPSHOT — CHECK XPILOT FOR REVISIONS" &&
-                seam.command.snapshot->entries[1].body == connected1.body &&
+                seam.command.snapshot->drawerTitle ==
+                    "PDC / PRIVATE MESSAGES" &&
+                seam.command.snapshot->entries.size() == 1 &&
+                seam.command.snapshot->entries[0].body == connected1.body &&
                 pdc != closed.snapshot->orbs.end() &&
-                pdc->categoryText == "MSG 1",
+                pdc->categoryText == "IDLE",
                 "one-shot PDC drawer contract failed", reason);
         }
         case 32: {
@@ -1172,8 +1165,8 @@ bool ProductProbe(int index, std::string* reason) {
             const auto command = ProjectBrainOwnedAccessoryPresentation(
                 fixture->state.get(), nullptr);
             return Check(command.snapshot != nullptr &&
-                command.snapshot->entries.size() == 2 &&
-                command.snapshot->entries[1].body == first.body,
+                command.snapshot->entries.size() == 1 &&
+                command.snapshot->entries[0].body == first.body,
                 "later PDC input altered the one-shot artifact", reason);
         }
         case 33: {
@@ -1189,8 +1182,8 @@ bool ProductProbe(int index, std::string* reason) {
                 "N100PC CLEARED TO KSAN VIA ROUTE CLIMB 5000 SQUAWK 1234"));
             const auto seam = PublishPdc(fixture.get(), reason);
             return seam.passed && Check(accepted.captureCompleted &&
-                seam.command.snapshot->entries.size() == 2 &&
-                seam.command.snapshot->entries[1].body == first.body &&
+                seam.command.snapshot->entries.size() == 1 &&
+                seam.command.snapshot->entries[0].body == first.body &&
                 state.pdc.capturedArtifact.has_value() &&
                 state.pdc.capturedArtifact->sourceSequence == 1 &&
                 state.pdc.counters.postCaptureEarlyNoops == 3,
@@ -1211,8 +1204,8 @@ bool ProductProbe(int index, std::string* reason) {
             const auto command = ProjectBrainOwnedAccessoryPresentation(
                 fixture->state.get(), nullptr);
             return Check(accepted.captureCompleted && command.snapshot != nullptr &&
-                command.snapshot->entries.size() == 2 &&
-                command.snapshot->entries[1].body == first.body &&
+                command.snapshot->entries.size() == 1 &&
+                command.snapshot->entries[0].body == first.body &&
                 BrainOwnedPdcUnreadCount(state.pdc) == 1 &&
                 state.pdc.counters.admittedMessages == 1 &&
                 state.pdc.counters.postCaptureEarlyNoops == 39,
@@ -1342,7 +1335,7 @@ bool ProductProbe(int index, std::string* reason) {
             const auto summary = BrainOwnedPdcDiagnosticSummary(state.pdc);
             return Check(summary.find("SECRET_SENDER") == std::string::npos &&
                 summary.find("PRIVATE BODY") == std::string::npos &&
-                summary.find("captured=1") != std::string::npos &&
+                summary.find("messages=1") != std::string::npos &&
                 captured.captureCompleted && state.pdc.retainedBytes != 0,
                 "diagnostic leaked private content", reason);
         }

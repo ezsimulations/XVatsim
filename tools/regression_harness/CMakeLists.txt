@@ -1,10 +1,12 @@
 add_executable(XVatsimRegressionHarness
+    src/AustraliaBrainEvidenceProbe.cpp
     src/main.cpp
     src/PerformanceContractGateACalm1Probe.cpp
     src/PerformanceContractGateACalm2Probe.cpp
     src/PerformanceContractGateAProbe.cpp
     src/PerformanceContractGateBProbe.cpp
     src/PerformanceContractGateBTelemetryProbe.cpp
+    src/PdcLogMonitorContractProbe.cpp
     src/ProductCalm1Probe.cpp
     src/RuntimeActivationGateProbe.cpp
     src/Step6PdcContractProbe.cpp

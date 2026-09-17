@@ -1,5 +1,7 @@
 #pragma once
 
+#include "XVatsim/brain/BrainPdcLogTypes.h"
+
 #include <chrono>
 #include <array>
 #include <cstddef>
@@ -29,6 +31,7 @@ struct DiagnosticsWriterOptions {
         std::numeric_limits<std::size_t>::max();
     std::chrono::milliseconds artificialQueueLockHoldForTesting{0};
     bool forceStorageFailureForTesting = false;
+    std::filesystem::path pdcLogDirectoryForTesting;
 };
 
 struct FlightLoopTimingRecord {
@@ -139,9 +142,12 @@ struct DiagnosticsWriterSnapshot {
     std::uint64_t lastSubmittedRouteEvidenceSequence = 0;
     std::uint64_t lastWrittenRouteEvidenceSequence = 0;
     std::uint64_t workerThreadIdentity = 0;
+    std::uint64_t submittedPdcLogRequests = 0;
+    std::uint64_t completedPdcLogRequests = 0;
+    std::uint64_t rejectedPdcLogRequests = 0;
 };
 
-class AsyncDiagnosticsWriter {
+class AsyncDiagnosticsWriter : public brain::BrainPdcLogTransport {
 public:
     using DeferredFormatter = std::function<std::string()>;
 
@@ -162,6 +168,9 @@ public:
     bool TryEnqueueFlightLoopTiming(
         const FlightLoopTimingRecord& timing) noexcept;
     bool TryEnqueueRouteEvidence(RouteEvidenceRecord evidence) noexcept;
+    bool TrySubmitPdcLogRequest(
+        const brain::BrainPdcLogRequest& request) override;
+    bool TryHarvestPdcLogFact(brain::BrainPdcLogFact* fact) override;
 
     DiagnosticsWriterSnapshot Snapshot() const;
     bool WaitUntilIdle(std::chrono::milliseconds timeout);

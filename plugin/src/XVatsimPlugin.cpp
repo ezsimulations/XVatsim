@@ -38,6 +38,7 @@
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
 #include "XVatsim/modules/runtime_workers/AsyncDiagnosticsWriter.h"
 #include "XVatsim/modules/runtime_workers/AsyncFactWorkerHost.h"
+#include "XVatsim/modules/runtime_workers/FlightLoopDiagnosticsReducer.h"
 #include "XVatsim/modules/settings_store/SettingsStore.h"
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
 #include "XVatsim/modules/transceiver_resolver/TransceiverResolver.h"
@@ -130,6 +131,9 @@ constexpr long long kDiagnosticsSlowRefreshThresholdMs = 33;
 constexpr long long kDiagnosticsSlowRefreshLogIntervalSeconds = 10;
 constexpr long long kDiagnosticsSummaryIntervalSeconds = 30;
 constexpr int kDiagnosticsRetainedDateLogCount = 3;
+constexpr std::uint64_t kFlightLoopDiagnosticsSummaryIntervalSeconds = 60;
+constexpr std::uint64_t kFlightLoopDiagnosticsOutlierThresholdUs = 10'000;
+constexpr std::uint64_t kFlightLoopDiagnosticsOutlierIntervalSeconds = 5;
 constexpr long long kRadioBoardSnapshotCadenceSeconds = 1;
 constexpr long long kRadioBoardPendingRouteRetrySeconds = 2;
 constexpr long long kExpandedFmsObservationIntervalMs = 15000;
@@ -286,6 +290,13 @@ xvatsim::modules::route_sector::RouteSectorResolver gRouteSectorResolver;
 xvatsim::modules::route_sector::AuthorityRelevanceWorker gAuthorityRelevanceWorker;
 xvatsim::modules::route_sector::RoutePreparationWorker gRoutePreparationWorker;
 xvatsim::modules::runtime_workers::AsyncDiagnosticsWriter gDiagnosticsWriter;
+xvatsim::modules::runtime_workers::FlightLoopDiagnosticsReducer
+    gFlightLoopDiagnosticsReducer{
+        xvatsim::modules::runtime_workers::FlightLoopDiagnosticsPolicy{
+            kFlightLoopDiagnosticsSummaryIntervalSeconds,
+            kFlightLoopDiagnosticsOutlierThresholdUs,
+            kFlightLoopDiagnosticsOutlierIntervalSeconds,
+        }};
 xvatsim::modules::runtime_workers::AsyncFactWorkerHost gAsyncFactWorkerHost;
 xvatsim::modules::settings_store::SettingsStore gSettingsStore;
 xvatsim::modules::terminal_authority::TerminalAuthorityResolver
@@ -295,10 +306,6 @@ xvatsim::modules::update_checker::UpdateChecker gUpdateChecker;
 xvatsim::modules::vatsim_data_feed::VatsimDataFeedClient gVatsimDataFeedClient;
 xvatsim::modules::vnas_data::VnasDataClient gVnasDataClient;
 xvatsim::modules::xpilot_bridge::XPilotBridge gXPilotBridge;
-xvatsim::modules::xpilot_bridge::XPilotPrivateObservationQueue
-    gXPilotPrivateObservationQueue;
-xvatsim::modules::xpilot_bridge::XPilotPrivateQualificationEventLatch
-    gXPilotPrivateQualificationEventLatch;
 xvatsim::modules::settings_store::PluginSettings gPluginSettings;
 XPLMCommandRef gManualCtafCommand = nullptr;
 XPLMCommandRef gDisplayOpenCommand = nullptr;
@@ -420,6 +427,9 @@ void AppendDiagnosticsLogLine(
     std::string line,
     xvatsim::modules::runtime_workers::DiagnosticsImportance importance =
         xvatsim::modules::runtime_workers::DiagnosticsImportance::Routine);
+void SubmitFlightLoopTiming(
+    const xvatsim::modules::runtime_workers::FlightLoopTimingRecord& timing);
+void FlushFlightLoopTimingSummary(const char* reason);
 void AppendDeferredDiagnosticsLogLine(
     xvatsim::modules::runtime_workers::AsyncDiagnosticsWriter::DeferredFormatter
         formatter,
@@ -788,7 +798,6 @@ void ResetSessionRuntimeCaches(
     gAircraftStateSampler.Reset();
     gCtafLookupService.Reset();
     gXPilotBridge.Reset();
-    gXPilotPrivateQualificationEventLatch.Reset();
     if (resetVatsimFeed) {
         gVatsimDataFeedClient.Reset();
         gVnasDataClient.Reset();
@@ -810,7 +819,6 @@ void ResetPluginRuntimeState(
     bool resetVatsimFeed,
     bool resetColdDarkLatch,
     bool preserveAccessory = false) {
-    gXPilotPrivateObservationQueue.Clear();
     DiscardPendingTextEntryState();
     xvatsim::brain::ClearBrainOwnedManualQuery(&gBrainOwnedRuntimeState);
     ClearFlightRecoveryState();
@@ -1391,85 +1399,55 @@ std::string SanitizeLogText(std::string value, std::size_t maxChars = kMaxLogFie
     return sanitized;
 }
 
-xvatsim::brain::BrainPdcEvaluationContext BuildPdcEvaluationContext() {
-    xvatsim::brain::BrainPdcEvaluationContext context;
-    const auto& flight = gBrainOwnedRuntimeState.flightContext;
-    context.flightContextActive = flight.active;
-    context.aircraftCallsign = flight.callsign;
-    context.departureIcao = flight.departureIcao;
-    context.destinationIcao = flight.destinationIcao;
-    return context;
-}
-
-void ServicePdcPrivateSource() {
+void ServicePdcPrivateSource(
+    const xvatsim::brain::XPilotSessionSnapshot& xpilotSession) {
     if (!gBrainOwnedRuntimeState.pdc.initialized ||
         gBrainOwnedRuntimeState.pdc.pluginAdminSuspended) return;
-    const auto context = BuildPdcEvaluationContext();
-    const auto acquisition = xvatsim::brain::EvaluateBrainOwnedPdcAcquisition(
-        &gBrainOwnedRuntimeState, context);
-    if (acquisition.clearQueuedFacts || !acquisition.samplePrivatePayload) {
-        gXPilotPrivateObservationQueue.Clear();
-    }
-    if (!acquisition.samplePrivatePayload) return;
+    const auto& flight = gBrainOwnedRuntimeState.flightContext;
+    xvatsim::brain::BrainPdcLogContext context;
+    context.flightContextActive = flight.active;
+    context.xpilotConnected = xpilotSession.connected;
+    context.flightCallsign = flight.callsign;
+    context.xpilotCallsign = xpilotSession.callsign;
+    context.departureIcao = flight.departureIcao;
+    context.destinationIcao = flight.destinationIcao;
 
-    xvatsim::modules::xpilot_bridge::XPilotPrivateObservationRequest request;
-    if (acquisition.useSequenceOnlyFastPath) {
-        request.fastPathToken.applicable = true;
-        request.fastPathToken.pluginInstanceIdentity =
-            acquisition.pluginInstanceIdentity;
-        request.fastPathToken.capabilityGeneration =
-            acquisition.capabilityGeneration;
-        request.fastPathToken.brainOwnedSequence = acquisition.brainOwnedSequence;
-    }
-    const auto sampled = gXPilotBridge.SamplePrivateMessage(request);
-    const bool qualificationEvent =
-        gXPilotPrivateQualificationEventLatch.Observe(sampled);
+    const auto availabilityBefore = gBrainOwnedRuntimeState.pdc.availability;
+    const auto admittedBefore =
+        gBrainOwnedRuntimeState.pdc.counters.admittedMessages;
+    const auto lossBefore = gBrainOwnedRuntimeState.pdc.counters.capacityLosses;
+    const auto malformedBefore =
+        gBrainOwnedRuntimeState.pdc.counters.logMalformedRecords;
     const auto nowUs = static_cast<std::uint64_t>(
         std::max(0.0f, XPLMGetElapsedTime()) * 1'000'000.0f);
-    const auto observation =
-        xvatsim::modules::xpilot_bridge::ToBrainPdcMechanicalObservation(
-            sampled, nowUs);
-    if (!gXPilotPrivateObservationQueue.Produce(observation)) {
-        xvatsim::brain::RecordBrainOwnedPdcTransportCapacityLoss(
-            &gBrainOwnedRuntimeState, 1);
-    }
-    xvatsim::brain::BrainPdcMechanicalObservation fact;
-    while (gXPilotPrivateObservationQueue.Consume(&fact)) {
-        const auto decision = xvatsim::brain::EvaluateBrainOwnedPdcObservation(
-            &gBrainOwnedRuntimeState, fact, context, nowUs);
-        if (decision.productChanged || decision.gapDetected ||
-            !decision.mechanicallyAccepted) {
-            std::ostringstream line;
-            line << "event=pdc-private-observation"
-                 << " reason=" << SanitizeLogText(decision.reason, 64)
-                 << " mechanical=" << (decision.mechanicallyAccepted ? 1 : 0)
-                 << " captured=" << (decision.captureCompleted ? 1 : 0)
-                 << " uncertainty=" << (decision.gapDetected ? 1 : 0)
-                 << " samplerUs=" << fact.samplerElapsedMicroseconds
-                 << " issueMask=0x" << std::hex << fact.mechanicalIssueMask
-                 << std::dec
-                 << " "
-                 << xvatsim::brain::BrainOwnedPdcDiagnosticSummary(
-                        gBrainOwnedRuntimeState.pdc);
-            AppendDiagnosticsLogLine(line.str());
-        }
-        if (decision.captureCompleted) {
-            gXPilotPrivateObservationQueue.Clear();
-            break;
-        }
-    }
-    if (qualificationEvent) {
-        AppendDiagnosticsLogLine(
-            xvatsim::modules::xpilot_bridge::
-                FormatXPilotPrivateQualificationEvent(
-                    sampled,
-                    gBrainOwnedRuntimeState.pdc.lastObservedSequence,
-                    gBrainOwnedRuntimeState.pdc.hasConnectedDisposition
-                        ? gBrainOwnedRuntimeState.pdc.connectedDispositionedSequence
-                        : 0));
-    }
-    if (!gBrainOwnedRuntimeState.pdc.captureComplete) {
-        (void)gXPilotPrivateObservationQueue.ServiceRetained();
+    const auto service = xvatsim::brain::ServiceBrainOwnedPdcLogMonitor(
+        &gBrainOwnedRuntimeState,
+        context,
+        &gDiagnosticsWriter,
+        nowUs);
+
+    const auto& pdc = gBrainOwnedRuntimeState.pdc;
+    const bool diagnosticEvent =
+        pdc.counters.admittedMessages != admittedBefore ||
+        pdc.availability != availabilityBefore ||
+        pdc.counters.capacityLosses != lossBefore ||
+        pdc.counters.logMalformedRecords != malformedBefore ||
+        (service.factConsumed &&
+         service.issue != xvatsim::brain::BrainPdcLogIssue::None &&
+         service.issue !=
+             xvatsim::brain::BrainPdcLogIssue::DiscoveryLimitReached);
+    if (diagnosticEvent) {
+        std::ostringstream line;
+        line << "event=pdc-xpilot-log-monitor"
+             << " reason=" << SanitizeLogText(service.reason, 80)
+             << " factConsumed=" << (service.factConsumed ? 1 : 0)
+             << " requestSubmitted=" << (service.requestSubmitted ? 1 : 0)
+             << " issue=" << static_cast<int>(service.issue)
+             << " admittedDelta="
+             << (pdc.counters.admittedMessages - admittedBefore)
+             << " "
+             << xvatsim::brain::BrainOwnedPdcDiagnosticSummary(pdc);
+        AppendDiagnosticsLogLine(line.str());
     }
 }
 
@@ -3568,6 +3546,33 @@ void AppendDiagnosticsLogLine(
     (void)gDiagnosticsWriter.TryEnqueueLine(std::move(line), importance);
 }
 
+void SubmitFlightLoopTiming(
+    const xvatsim::modules::runtime_workers::FlightLoopTimingRecord& timing) {
+    const auto decision = gFlightLoopDiagnosticsReducer.Observe(
+        timing,
+        static_cast<std::uint64_t>(CurrentTickSeconds()));
+    if (decision.emitOutlier) {
+        (void)gDiagnosticsWriter.TryEnqueueFlightLoopTiming(timing);
+    }
+    if (decision.emitSummary) {
+        AppendDiagnosticsLogLine(
+            xvatsim::modules::runtime_workers::FormatFlightLoopTimingSummary(
+                decision.summary,
+                "periodic"));
+    }
+}
+
+void FlushFlightLoopTimingSummary(const char* reason) {
+    const auto summary = gFlightLoopDiagnosticsReducer.Flush(
+        static_cast<std::uint64_t>(CurrentTickSeconds()));
+    if (!summary.has_value()) return;
+    AppendDiagnosticsLogLine(
+        xvatsim::modules::runtime_workers::FormatFlightLoopTimingSummary(
+            *summary,
+            reason == nullptr ? "boundary" : reason),
+        xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
+}
+
 void AppendDeferredDiagnosticsLogLine(
     xvatsim::modules::runtime_workers::AsyncDiagnosticsWriter::DeferredFormatter
         formatter,
@@ -3794,7 +3799,27 @@ std::string FormatCompletionTrace(
            << FormatTraceDistance(
                   completion.hasRouteEntryDistance,
                   completion.routeEntryDistanceNm)
-           << ":reason=" << SanitizeLogToken(completion.reason, 80)
+           << ":scoreTotals=" << completion.positiveVotes << "/"
+           << completion.negativeVotes << "/" << completion.neutralVotes
+           << ":votes=";
+    if (completion.evidenceVotes.empty()) {
+        stream << "none";
+    } else {
+        for (std::size_t index = 0;
+             index < completion.evidenceVotes.size();
+             ++index) {
+            if (index > 0) stream << ",";
+            const auto& vote = completion.evidenceVotes[index];
+            stream << SanitizeLogToken(vote.source, 40) << "="
+                   << (vote.score > 0 ? "+1" : vote.score < 0 ? "-1" : "0")
+                   << "(" << SanitizeLogToken(vote.reason, 120);
+            if (!vote.provenance.empty()) {
+                stream << "@" << SanitizeLogToken(vote.provenance, 160);
+            }
+            stream << ")";
+        }
+    }
+    stream << ":reason=" << SanitizeLogToken(completion.reason, 768)
            << ":stable=" << SanitizeLogToken(completion.stableKey, 128);
     return stream.str();
 }
@@ -3807,8 +3832,7 @@ std::string FormatCompletionTraceList(
     }
 
     std::ostringstream stream;
-    const auto countToLog =
-        std::min<std::size_t>(completions.size(), kDiagnosticsMaxTraceItems);
+    const auto countToLog = completions.size();
     for (std::size_t index = 0; index < countToLog; ++index) {
         if (index > 0) {
             stream << ";";
@@ -3953,6 +3977,17 @@ void LogCandidateCompletionTrace(
         HashCombineBool(&traceHash, completion.displayed);
         HashCombineString(&traceHash, completion.currentPolygonKey);
         HashCombineString(&traceHash, completion.matchedPolygonKey);
+        HashCombine(&traceHash, static_cast<std::size_t>(completion.positiveVotes));
+        HashCombine(&traceHash, static_cast<std::size_t>(completion.negativeVotes));
+        HashCombine(&traceHash, static_cast<std::size_t>(completion.neutralVotes));
+        for (const auto& vote : completion.evidenceVotes) {
+            HashCombineString(&traceHash, vote.source);
+            HashCombine(
+                &traceHash,
+                static_cast<std::size_t>(vote.score + 1));
+            HashCombineString(&traceHash, vote.reason);
+            HashCombineString(&traceHash, vote.provenance);
+        }
         HashCombineString(&traceHash, completion.reason);
     }
     if (!ShouldEmitTraceHash(
@@ -6512,7 +6547,7 @@ void RefreshOverlayFromBrainEngineer3() {
     RecordOperationalServiceCall(
         activationDecision,
         xvatsim::brain::BrainOwnedOperationalServiceStage::PdcPrivateSource);
-    ServicePdcPrivateSource();
+    ServicePdcPrivateSource(xPilotSessionSnapshot);
     diagnostics.pdcPrivateSourceUs += ElapsedMicrosecondsSince(timingStarted);
 
     const auto updateSnapshot = BuildOverlayUpdateSnapshot();
@@ -7050,7 +7085,7 @@ float FlightLoopCallback(
             ElapsedMicrosecondsSince(callbackStarted);
         timing.accessoryPath = true;
         timing.activeCadence = true;
-        (void)gDiagnosticsWriter.TryEnqueueFlightLoopTiming(timing);
+        SubmitFlightLoopTiming(timing);
         return cadence.intervalSeconds;
     }
 
@@ -7091,7 +7126,7 @@ float FlightLoopCallback(
     timing.diagnosticsSubmissionUs =
         static_cast<std::uint64_t>(diagnosticsSubmissionUs);
     timing.activeCadence = activeCadence;
-    (void)gDiagnosticsWriter.TryEnqueueFlightLoopTiming(timing);
+    SubmitFlightLoopTiming(timing);
     return cadence.intervalSeconds;
 }
 
@@ -7210,7 +7245,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
         kInstalledPluginVersion +
         " logPolicy=date-stamped-daily-retention retainedDates=" +
         std::to_string(kDiagnosticsRetainedDateLogCount) +
-        " activeLogCap=bounded-1024",
+        " flightLoopPolicy=summary-60s+outlier-10ms-rate-5s",
         xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
     AppendDiagnosticsLogLine(
         std::string{"event=operating-mode-initialized effective="} +
@@ -7259,6 +7294,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
 
 PLUGIN_API void XPluginStop() {
     gPluginRuntimeEnabled = false;
+    FlushFlightLoopTimingSummary("plugin-stop");
     UnregisterFlightLoop();
     InvalidateRouteAsyncRuntime("plugin-stop");
     PersistOverlayGeometryIfChanged();
@@ -7268,7 +7304,6 @@ PLUGIN_API void XPluginStop() {
     LogAccessoryPerformanceSnapshot("plugin-stop");
     xvatsim::brain::StopBrainOwnedAccessoryRuntime(
         &gBrainOwnedRuntimeState);
-    gXPilotPrivateObservationQueue.Clear();
     (void)ApplyBoundAsyncWorkerLifecycleBoundary(true);
     DrainDeferredRouteRetirementsForStop();
     gRoutePreparationWorker.CancelAndJoin();
@@ -7443,6 +7478,7 @@ PLUGIN_API int XPluginEnable() {
     RequestAutomaticUpdateCheckIfDue();
     PreinitializeOverlayWindow();
     SynchronizeAccessoryPresentation();
+    gFlightLoopDiagnosticsReducer.Reset();
     RegisterFlightLoop(kInitialFlightLoopDelaySeconds);
     const auto immediateActivationCheckRequested =
         RequestImmediateGatedFlightLoopCallback();
@@ -7473,8 +7509,8 @@ PLUGIN_API void XPluginDisable() {
     gPluginRuntimeEnabled = false;
     xvatsim::brain::SetBrainOwnedOperationalActivationSuspended(
         &gOperationalActivationState);
+    FlushFlightLoopTimingSummary("plugin-disable");
     UnregisterFlightLoop();
-    gXPilotPrivateObservationQueue.Clear();
     PersistOverlayGeometryIfChanged();
     DiscardPendingAccessoryClickFacts();
     gOverlayWindow.Hide();

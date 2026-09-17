@@ -64,9 +64,17 @@ struct AuthorityDataGap {
     std::string sourceRecord;
 };
 
+struct AirportCallsignAlias {
+    std::string airportIcao;
+    std::string callsignPrefix;
+    std::string boundaryId;
+    std::string sourceRecord;
+};
+
 struct ControllerAuthorityCatalog {
     std::vector<ControllerAuthority> authorities;
     std::vector<AuthorityDataGap> dataGaps;
+    std::vector<AirportCallsignAlias> airportCallsignAliases;
 };
 
 struct AuthorityPolygonCatalog {

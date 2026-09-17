@@ -23,4 +23,4 @@ vnas.controller_feed_json={"updatedAt":"2026-09-07T02:33:00Z","controllers":[{"a
 vnas.artcc_facility_json={"id":"ZLA","facility":{"id":"ZLA","type":"Artcc","positions":[],"childFacilities":[{"id":"SCT","type":"Tracon","starsConfiguration":{"internalAirports":["LAX"],"areas":[{"id":"A_LAX","name":"Del Rey","underlyingAirports":["LAX"]},{"id":"A_ALL","name":"Consolidated","underlyingAirports":["LAX"]}],"tcps":[{"id":"T_6G","subset":6,"sectorId":"G"},{"id":"T_6S","subset":6,"sectorId":"S","parentTcpId":"T_6G"}]},"positions":[{"id":"P_LAX_S","callsign":"LAX_S_DEP","frequency":124300000,"starsConfiguration":{"areaId":"A_LAX","tcpId":"T_6S"}},{"id":"P_SCT","callsign":"SCT_APP","frequency":128050000,"starsConfiguration":{"areaId":"A_ALL","tcpId":"T_6G"}}],"childFacilities":[]}]}}
 
 expect.brain_controller_relevance_arrival_callsigns=SCT_APP
-expect.brain_controller_relevance_completions_contains=LAX_S_DEP:rejected:arrival-terminal-vnas-ownership-suppressed,owner=facility-only,selected=direct,SCT_APP:accepted
+expect.brain_controller_relevance_completions_contains=LAX_S_DEP:rejected,vnas=-1[operation-incompatible,brain-ineligible-operational-ownership,SCT_APP:accepted

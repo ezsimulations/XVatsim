@@ -27,4 +27,4 @@ vnas.controller_feed_json={"updatedAt":"2026-09-06T20:00:00Z","controllers":[{"a
 vnas.artcc_facility_json={"id":"ZTL","facility":{"id":"ZTL","type":"Artcc","name":"Atlanta Center","positions":[],"childFacilities":[{"id":"BHM","type":"Tracon","name":"Birmingham ATCT/TRACON","starsConfiguration":{"internalAirports":["ANB","ASN","BHM","EET","EKY","GAD","JFX","PLR","SCD","TCL"],"areas":[{"id":"01GW3KNF97SEQ44PJ3PNF670JK","name":"Approach"}]},"positions":[{"id":"01GW3KRMM7YQ2MWZ1A0GCJT0M6","name":"South Radar","callsign":"BHM_APP","frequency":123800000,"starsConfiguration":{"areaId":"01GW3KNF97SEQ44PJ3PNF670JK"}}],"childFacilities":[]}]}}
 
 expect.brain_controller_relevance_departure_callsigns=BHM_APP
-expect.brain_controller_relevance_completions_contains=BHM_APP:accepted:departure-terminal-vnas-match,yes=airport-radio-near+vnas-terminal+terminal-owner,vnas=ARTCC=ZTL/FACILITY=BHM
+expect.brain_controller_relevance_completions_contains=BHM_APP:accepted,frequency-distance=+1,vnas=+1[endpoint-ownership-match,terminal-source=+1

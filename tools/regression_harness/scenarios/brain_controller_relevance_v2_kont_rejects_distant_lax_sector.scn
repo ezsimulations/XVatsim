@@ -25,4 +25,4 @@ transceiver.candidate=callsign=LAX_S_DEP;frequency=124.300;distanceNm=3;score=10
 transceiver.station=callsign=LAX_S_DEP;frequency=124.300;lat=33.9425;lon=-118.4081
 
 expect.brain_controller_relevance_arrival_callsigns=<none>
-expect.brain_controller_relevance_completions_contains=LAX_S_DEP:rejected,no=airport-radio-far+terminal-owner,final=reject-hide,airportRadioNm=40.7
+expect.brain_controller_relevance_completions_contains=LAX_S_DEP:rejected,frequency-distance=-1[outside-airport-radius@40.7nm,terminal-source=-1,brain-final=hide

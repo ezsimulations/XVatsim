@@ -24,4 +24,4 @@ transceiver.candidate=callsign=LAX_S_DEP;frequency=124.300;distanceNm=80;score=1
 transceiver.station=callsign=LAX_S_DEP;frequency=124.300;lat=34.0560;lon=-117.6010
 
 expect.brain_controller_relevance_arrival_callsigns=LAX_S_DEP
-expect.brain_controller_relevance_completions_contains=LAX_S_DEP:accepted:arrival-terminal-fail-safe-display,score=1/1,failSafe=1,airportRadioNm=0.0
+expect.brain_controller_relevance_completions_contains=LAX_S_DEP:accepted,frequency-distance=+1,terminal-source=-1,brain-supported-tie-display

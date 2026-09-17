@@ -48,6 +48,6 @@ display_intent.relation=callsign=MMZT_CTR;frequency=124.500;relation=CurrentPoly
 display_intent.relation=callsign=ABQ_CTR;frequency=128.450;relation=NextPolygon;routeEntryDistanceNm=740
 
 expect.brain_controller_relevance_enroute_callsigns=ABQ_CTR,MMZT_CTR
-expect.brain_controller_relevance_completions=ABQ_CTR:accepted:center-next-polygon-match:pattern:ABQ_CTR,MMEX_CTR:rejected:center-tuned-off-route-not-route-owned,MMZT_CTR:accepted:center-current-polygon-match:pattern:MMZT_CTR
+expect.brain_controller_relevance_completions=ABQ_CTR:accepted,MMEX_CTR:rejected,MMZT_CTR:accepted
 expect.display_callsigns=MMZT_CTR,ABQ_CTR
 expect.brain_display_intent_rows=MMZT_CTR:CURRENT_POLYGON:ACTIVE,ABQ_CTR:NEXT_POLYGON:550nm

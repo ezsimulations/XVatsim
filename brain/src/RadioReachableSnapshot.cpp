@@ -133,6 +133,7 @@ std::uint64_t BuildStableHash(
         HashCombine(&hash, static_cast<std::uint64_t>(candidate.vatsimFacility));
         HashCombine(&hash, candidate.actionable);
         HashCombine(&hash, candidate.atis);
+        HashCombine(&hash, candidate.textAtis);
         HashCombine(&hash, static_cast<std::uint64_t>(candidate.visualRangeNm));
         HashCombine(&hash, candidate.hasStationCoordinates);
         // Once complete controller/frequency station evidence is present, the
@@ -163,6 +164,28 @@ std::uint64_t BuildStableHash(
                 &hash,
                 static_cast<std::uint64_t>(
                     std::llround(station.longitudeDeg * 100000.0)));
+        }
+        HashCombine(
+            &hash,
+            static_cast<std::uint64_t>(candidate.originalTransceivers.size()));
+        for (const auto& station : candidate.originalTransceivers) {
+            HashCombine(&hash, station.sourceFrequency);
+            HashCombine(
+                &hash,
+                static_cast<std::uint64_t>(
+                    std::llround(station.latitudeDeg * 100000.0)));
+            HashCombine(
+                &hash,
+                static_cast<std::uint64_t>(
+                    std::llround(station.longitudeDeg * 100000.0)));
+            HashCombine(&hash, station.hasAircraftDistance);
+            HashCombine(
+                &hash,
+                static_cast<std::uint64_t>(
+                    std::llround(station.aircraftDistanceNm * 1000.0)));
+            HashCombine(&hash, station.withinMaxCandidateDistance);
+            HashCombine(&hash, station.hasReceivableRange);
+            HashCombine(&hash, station.withinReceivableRange);
         }
     }
     return hash;
@@ -288,6 +311,18 @@ void PopulateAllStationCoordinates(
                        left.longitudeDeg == right.longitudeDeg;
             }),
         candidate->stationCoordinates.end());
+}
+
+void PopulateOriginalTransceivers(
+    const TransceiverControllerEvidenceSnapshot* evidence,
+    RadioReachableControllerCandidate* candidate) {
+    if (candidate == nullptr) {
+        return;
+    }
+    candidate->originalTransceivers.clear();
+    if (evidence != nullptr) {
+        candidate->originalTransceivers = evidence->stations;
+    }
 }
 
 void SortRadioReachableCandidates(RadioReachableControllerSnapshot* snapshot) {
@@ -423,6 +458,7 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshot(
         candidate.source = snapshot.source;
         candidate.actionable = controller.actionable;
         candidate.atis = controller.atis;
+        candidate.textAtis = controller.textAtis;
         candidate.visualRangeNm = controller.visualRangeNm;
         candidate.firstSeenSeconds = options.nowSeconds;
         candidate.lastSeenSeconds = options.nowSeconds;
@@ -521,6 +557,7 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshotFromTransc
         candidate.source = snapshot.source;
         candidate.actionable = controller.actionable;
         candidate.atis = controller.atis;
+        candidate.textAtis = controller.textAtis;
         candidate.visualRangeNm = controller.visualRangeNm;
         candidate.hasDistanceNm = std::isfinite(receivable.distanceNm);
         candidate.distanceNm = candidate.hasDistanceNm ? receivable.distanceNm : 0.0;
@@ -534,13 +571,16 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshotFromTransc
             candidate.hasStationCoordinates ? receivable.longitudeDeg : 0.0;
         const auto transceiverEvidence =
             transceiverEvidenceByCallsign.find(callsign);
-        if (candidate.group == RadioReachableFacilityGroup::AppDep) {
-            PopulateAllStationCoordinates(
-                transceiverEvidence == transceiverEvidenceByCallsign.end()
-                    ? nullptr
-                    : transceiverEvidence->second,
-                &candidate);
-        }
+        PopulateOriginalTransceivers(
+            transceiverEvidence == transceiverEvidenceByCallsign.end()
+                ? nullptr
+                : transceiverEvidence->second,
+            &candidate);
+        PopulateAllStationCoordinates(
+            transceiverEvidence == transceiverEvidenceByCallsign.end()
+                ? nullptr
+                : transceiverEvidence->second,
+            &candidate);
         candidate.firstSeenSeconds = options.nowSeconds;
         candidate.lastSeenSeconds = options.nowSeconds;
         candidate.stableKey = BuildStableKey(
@@ -632,8 +672,10 @@ AugmentRadioReachableControllerSnapshotWithAppDepEvidence(
         candidate.source = augmented.source;
         candidate.actionable = controller.actionable;
         candidate.atis = controller.atis;
+        candidate.textAtis = evidence.textAtis;
         candidate.visualRangeNm = controller.visualRangeNm;
         PopulateAllStationCoordinates(&evidence, &candidate);
+        PopulateOriginalTransceivers(&evidence, &candidate);
         candidate.stableKey = BuildStableKey(
             candidate.callsign, candidate.frequency, candidate.group);
         augmented.candidates.push_back(std::move(candidate));

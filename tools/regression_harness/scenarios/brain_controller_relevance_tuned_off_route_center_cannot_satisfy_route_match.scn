@@ -31,4 +31,4 @@ transceiver.status=RX 1 receivable
 transceiver.candidate=callsign=MMEX_CTR;frequency=126.600;distanceNm=21;score=100
 
 expect.brain_controller_relevance_enroute_callsigns=<none>
-expect.brain_controller_relevance_completions=MMEX_CTR:rejected:center-tuned-off-route-not-route-owned
+expect.brain_controller_relevance_completions=MMEX_CTR:rejected

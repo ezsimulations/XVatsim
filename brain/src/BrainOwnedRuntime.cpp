@@ -7022,26 +7022,23 @@ void ProjectBrainOwnedPdcOrbPresentation(
     orb->selectedIndicator = orb->selected ? "OPEN" : "";
     orb->neutral = true;
     orb->tone = BrainOwnedAccessoryOrbPresentation::Tone::Gray;
-    if (state.pdc.captureComplete && state.pdc.capturedArtifact.has_value()) {
-        const bool unread = state.pdc.capturedArtifact->unread;
+    const auto messageCount = BrainOwnedPdcMessageCount(state.pdc);
+    const auto unreadCount = BrainOwnedPdcUnreadCount(state.pdc);
+    if (messageCount != 0) {
         orb->neutral = false;
-        orb->categoryText = unread ? "NEW 1" : "MSG 1";
-        orb->stateText = unread ? "captured-unread" : "captured-viewed";
-        orb->tone = unread
+        orb->categoryText = unreadCount != 0 ? "NEW" : "IDLE";
+        orb->stateText = unreadCount != 0
+            ? "private-messages-unread"
+            : "awaiting-new-private-message";
+        orb->tone = unreadCount != 0
             ? BrainOwnedAccessoryOrbPresentation::Tone::Amber
             : BrainOwnedAccessoryOrbPresentation::Tone::Cyan;
-    } else if (state.pdc.preCaptureUncertain) {
-        orb->neutral = false;
-        orb->categoryText = "CHECK";
-        orb->stateText = "pre-capture-source-uncertain";
-        orb->tone = BrainOwnedAccessoryOrbPresentation::Tone::Amber;
     } else if (state.pdc.availability == BrainPdcAvailability::SourceUnavailable) {
         orb->categoryText = "SOURCE";
         orb->stateText = "source-unavailable";
     } else {
         orb->categoryText = "IDLE";
-        orb->stateText = state.pdc.acquisitionArmed
-            ? "waiting-for-departure-pdc" : "not-armed";
+        orb->stateText = "waiting-for-private-message";
     }
 }
 
@@ -7053,26 +7050,21 @@ ProjectBrainOwnedPdcDrawerPresentation(
     std::string* drawerStateText,
     std::string* emptyStateText) {
     std::vector<BrainOwnedAccessoryHistoryEntry> entries;
-    if (drawerTitle != nullptr) *drawerTitle = "PDC";
+    if (drawerTitle != nullptr) *drawerTitle = "PDC / PRIVATE MESSAGES";
     if (drawerStateText != nullptr) drawerStateText->clear();
     if (emptyStateText != nullptr) emptyStateText->clear();
-    if (!state.pdc.captureComplete || !state.pdc.capturedArtifact.has_value()) {
-        if (state.pdc.preCaptureUncertain) {
-            if (drawerState != nullptr) *drawerState = BrainOwnedAccessoryDrawerState::Empty;
-            if (drawerStateText != nullptr) {
-                *drawerStateText = "PDC CHECK — CHECK XPILOT";
-            }
-        } else if (state.pdc.availability == BrainPdcAvailability::SourceUnavailable) {
+    if (!state.pdc.capturedArtifact.has_value()) {
+        if (state.pdc.availability == BrainPdcAvailability::SourceUnavailable) {
             if (drawerState != nullptr) {
                 *drawerState = BrainOwnedAccessoryDrawerState::Unavailable;
             }
             if (drawerStateText != nullptr) {
-                *drawerStateText = "PDC SOURCE UNAVAILABLE — USE XPILOT";
+                *drawerStateText = "MESSAGES UNAVAILABLE — CHECK XPILOT";
             }
         } else {
             if (drawerState != nullptr) *drawerState = BrainOwnedAccessoryDrawerState::Empty;
             if (emptyStateText != nullptr) {
-                *emptyStateText = "PDC IDLE — WAITING FOR DEPARTURE PDC";
+                *emptyStateText = "WAITING FOR PDC OR PRIVATE MESSAGE";
             }
         }
         return entries;
@@ -7080,28 +7072,43 @@ ProjectBrainOwnedPdcDrawerPresentation(
 
     const auto& artifact = *state.pdc.capturedArtifact;
     if (drawerState != nullptr) *drawerState = BrainOwnedAccessoryDrawerState::Ready;
-    if (drawerTitle != nullptr) *drawerTitle = "PDC — " + artifact.departureIcao;
-
-    BrainOwnedAccessoryHistoryEntry warning;
-    warning.stableKey = "pdc-captured-snapshot-warning";
-    warning.title = "CAPTURED SNAPSHOT — CHECK XPILOT FOR REVISIONS";
-    warning.retainedBytes = warning.stableKey.size() + warning.title.size();
-    entries.push_back(std::move(warning));
-
-    BrainOwnedAccessoryHistoryEntry entry;
-    entry.stableKey = artifact.revisionIdentity;
-    entry.title = "PDC — " + artifact.sender;
-    entry.body = artifact.body;
-    entry.acceptedSequence = static_cast<std::uint64_t>(
-        std::max<std::int64_t>(0, artifact.sourceSequence));
-    entry.chronological = true;
-    entry.chronologyKey = static_cast<std::int64_t>(
-        std::min<std::uint64_t>(artifact.acceptedMonotonicMicroseconds,
-            static_cast<std::uint64_t>(
-                std::numeric_limits<std::int64_t>::max())));
-    entry.retainedBytes = entry.stableKey.size() + entry.title.size() +
-        entry.body.size();
-    entries.push_back(std::move(entry));
+    const auto appendMessage = [&entries](
+        const BrainPdcCapturedArtifact& message) {
+        BrainOwnedAccessoryHistoryEntry entry;
+        entry.stableKey = message.revisionIdentity;
+        entry.title = message.sender.empty() ? "PRIVATE MESSAGE" : message.sender;
+        if (!message.sourceTimeUtc.empty()) {
+            entry.title += " — " + message.sourceTimeUtc + " UTC";
+        }
+        entry.body = message.body;
+        entry.acceptedSequence = static_cast<std::uint64_t>(
+            std::max<std::int64_t>(0, message.sourceSequence));
+        entry.chronological = true;
+        entry.chronologyKey = static_cast<std::int64_t>(
+            std::min<std::uint64_t>(
+                message.acceptedMonotonicMicroseconds,
+                static_cast<std::uint64_t>(
+                    std::numeric_limits<std::int64_t>::max())));
+        entry.retainedBytes = entry.stableKey.size() + entry.title.size() +
+            entry.body.size();
+        entries.push_back(std::move(entry));
+    };
+    entries.reserve(BrainOwnedPdcMessageCount(state.pdc) + 1);
+    appendMessage(artifact);
+    for (auto iterator = state.pdc.olderArtifacts.rbegin();
+         iterator != state.pdc.olderArtifacts.rend(); ++iterator) {
+        appendMessage(*iterator);
+    }
+    if (!state.pdc.sourceAvailable ||
+        state.pdc.counters.historyEvictions != 0) {
+        BrainOwnedAccessoryHistoryEntry note;
+        note.stableKey = "pdc-message-cache-note";
+        note.title = !state.pdc.sourceAvailable
+            ? "SHOWING CACHED MESSAGES — CHECK XPILOT FOR UPDATES"
+            : "OLDER MESSAGES REMAIN AVAILABLE IN XPILOT";
+        note.retainedBytes = note.stableKey.size() + note.title.size();
+        entries.push_back(std::move(note));
+    }
     return entries;
 }
 
@@ -7453,6 +7460,10 @@ BrainOwnedAccessorySelectionDecision RequestBrainOwnedAccessoryDrawerSelection(
     } else {
         state->accessory.activeDrawer = request.drawer;
         decision.action = BrainOwnedAccessoryDrawerAction::Switched;
+    }
+    if (decision.previousDrawer == BrainOwnedAccessoryDrawerId::Pdc &&
+        state->accessory.activeDrawer != BrainOwnedAccessoryDrawerId::Pdc) {
+        (void)AcknowledgeBrainOwnedPdcAllEntries(state);
     }
     ++state->accessory.selectionGeneration;
     ++state->accessory.scrollResetGeneration;

@@ -24,4 +24,4 @@ transceiver.candidate=callsign=IAD_M_APP;frequency=126.650;distanceNm=200;score=
 transceiver.station=callsign=IAD_M_APP;frequency=126.650;lat=39.1754;lon=-76.6683
 
 expect.brain_controller_relevance_arrival_callsigns=<none>
-expect.brain_controller_relevance_completions_contains=IAD_M_APP:rejected,yes=vatsim-appdep,no=terminal-owner,radio-distance-over5,final=reject-hide
+expect.brain_controller_relevance_completions_contains=IAD_M_APP:rejected,frequency-distance=+1,terminal-source=-1,brain-legacy-tie-hidden

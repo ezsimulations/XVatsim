@@ -974,7 +974,7 @@ int main(int argc, char** argv) {
             }
             if (index >= 1 && index <= 3) {
                 static constexpr std::array<const char*, 3> expected{
-                    "NEW 1", "MSG 1", "CHECK"};
+                    "NEW", "IDLE", "CHECK"};
                 const auto pdc = std::find_if(
                     command.snapshot->orbs.begin(), command.snapshot->orbs.end(),
                     [](const auto& orb) {

@@ -1967,6 +1967,7 @@ ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
     const std::string& vatspyDat) {
     enum class Section {
         None,
+        Airports,
         Firs,
         Uirs,
     };
@@ -1986,6 +1987,10 @@ ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
             continue;
         }
 
+        if (trimmedLine == "[Airports]") {
+            currentSection = Section::Airports;
+            continue;
+        }
         if (trimmedLine == "[FIRs]") {
             currentSection = Section::Firs;
             continue;
@@ -1996,6 +2001,20 @@ ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
         }
         if (trimmedLine.front() == '[') {
             currentSection = Section::None;
+            continue;
+        }
+        if (currentSection == Section::Airports) {
+            const auto fields = SplitPipeFields(trimmedLine);
+            if (fields.size() >= 6) {
+                AirportCallsignAlias alias;
+                alias.airportIcao = NormalizeAuthorityToken(fields[0]);
+                alias.callsignPrefix = NormalizeAuthorityToken(fields[4]);
+                alias.boundaryId = NormalizeAuthorityToken(fields[5]);
+                alias.sourceRecord = trimmedLine;
+                if (!alias.airportIcao.empty() && !alias.callsignPrefix.empty()) {
+                    catalog.airportCallsignAliases.push_back(std::move(alias));
+                }
+            }
             continue;
         }
         if (currentSection != Section::Firs && currentSection != Section::Uirs) {
@@ -2068,6 +2087,26 @@ ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
             }
             return left.reason < right.reason;
         });
+    std::sort(
+        catalog.airportCallsignAliases.begin(),
+        catalog.airportCallsignAliases.end(),
+        [](const auto& left, const auto& right) {
+            if (left.airportIcao != right.airportIcao)
+                return left.airportIcao < right.airportIcao;
+            if (left.callsignPrefix != right.callsignPrefix)
+                return left.callsignPrefix < right.callsignPrefix;
+            return left.boundaryId < right.boundaryId;
+        });
+    catalog.airportCallsignAliases.erase(
+        std::unique(
+            catalog.airportCallsignAliases.begin(),
+            catalog.airportCallsignAliases.end(),
+            [](const auto& left, const auto& right) {
+                return left.airportIcao == right.airportIcao &&
+                       left.callsignPrefix == right.callsignPrefix &&
+                       left.boundaryId == right.boundaryId;
+            }),
+        catalog.airportCallsignAliases.end());
     return catalog;
 }
 
@@ -2327,6 +2366,11 @@ ControllerAuthorityCatalog MergeControllerAuthorityCatalogs(
         merged.dataGaps.end(),
         right.dataGaps.begin(),
         right.dataGaps.end());
+    merged.airportCallsignAliases = left.airportCallsignAliases;
+    merged.airportCallsignAliases.insert(
+        merged.airportCallsignAliases.end(),
+        right.airportCallsignAliases.begin(),
+        right.airportCallsignAliases.end());
 
     std::sort(
         merged.authorities.begin(),
@@ -2346,6 +2390,26 @@ ControllerAuthorityCatalog MergeControllerAuthorityCatalogs(
             }
             return leftGap.reason < rightGap.reason;
         });
+    std::sort(
+        merged.airportCallsignAliases.begin(),
+        merged.airportCallsignAliases.end(),
+        [](const auto& leftAlias, const auto& rightAlias) {
+            if (leftAlias.airportIcao != rightAlias.airportIcao)
+                return leftAlias.airportIcao < rightAlias.airportIcao;
+            if (leftAlias.callsignPrefix != rightAlias.callsignPrefix)
+                return leftAlias.callsignPrefix < rightAlias.callsignPrefix;
+            return leftAlias.boundaryId < rightAlias.boundaryId;
+        });
+    merged.airportCallsignAliases.erase(
+        std::unique(
+            merged.airportCallsignAliases.begin(),
+            merged.airportCallsignAliases.end(),
+            [](const auto& leftAlias, const auto& rightAlias) {
+                return leftAlias.airportIcao == rightAlias.airportIcao &&
+                       leftAlias.callsignPrefix == rightAlias.callsignPrefix &&
+                       leftAlias.boundaryId == rightAlias.boundaryId;
+            }),
+        merged.airportCallsignAliases.end());
     return merged;
 }
 

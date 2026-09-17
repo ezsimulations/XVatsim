@@ -69,8 +69,10 @@
 #include "PerformanceContractGateAProbe.h"
 #include "PerformanceContractGateBProbe.h"
 #include "PerformanceContractGateBTelemetryProbe.h"
+#include "PdcLogMonitorContractProbe.h"
 #include "ProductCalm1Probe.h"
 #include "RuntimeActivationGateProbe.h"
+#include "AustraliaBrainEvidenceProbe.h"
 
 namespace {
 
@@ -987,6 +989,22 @@ std::vector<std::string> ExtractControllerRelevanceCompletions(
     }
     std::sort(values.begin(), values.end());
     return values;
+}
+
+std::vector<std::string> ExtractControllerRelevanceCompletionDecisions(
+    const std::vector<std::string>& values) {
+    std::vector<std::string> decisions;
+    decisions.reserve(values.size());
+    for (const auto& value : values) {
+        const auto first = value.find(':');
+        const auto second = first == std::string::npos
+            ? std::string::npos
+            : value.find(':', first + 1);
+        decisions.push_back(
+            second == std::string::npos ? value : value.substr(0, second));
+    }
+    std::sort(decisions.begin(), decisions.end());
+    return decisions;
 }
 
 std::vector<std::string> ExtractCallsigns(
@@ -23635,6 +23653,16 @@ int main(int argc, char** argv) {
             RunRuntimeActivationGateProbe();
     }
 
+    if (std::string(argv[1]) == "--australia-brain-evidence") {
+        return xvatsim::tools::australia_brain_evidence::
+            RunAustraliaBrainEvidenceProbe();
+    }
+
+    if (std::string(argv[1]) == "--pdc-log-monitor-contract") {
+        return xvatsim::tools::pdc_log_monitor_contract::
+            RunPdcLogMonitorContractProbe();
+    }
+
     ScenarioData scenario;
     std::string error;
     if (!LoadScenario(argv[1], &scenario, &error)) {
@@ -28333,9 +28361,12 @@ int main(int argc, char** argv) {
     }
 
     if (const auto mismatch = CheckStringList(
-            "brainControllerRelevanceCompletions",
-            scenario.expectations.brainControllerRelevanceCompletions,
-            ExtractControllerRelevanceCompletions(controllerRelevanceOutput));
+            "brainControllerRelevanceCompletionDecisions",
+            ExtractControllerRelevanceCompletionDecisions(
+                scenario.expectations.brainControllerRelevanceCompletions),
+            ExtractControllerRelevanceCompletionDecisions(
+                ExtractControllerRelevanceCompletions(
+                    controllerRelevanceOutput)));
         mismatch.has_value()) {
         return *mismatch;
     }

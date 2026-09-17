@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "XVatsim/modules/runtime_workers/AsyncDiagnosticsWriter.h"
+#include "XVatsim/modules/runtime_workers/FlightLoopDiagnosticsReducer.h"
 
 namespace xvatsim::tools::performance_contract_gate_a_calm_1 {
 namespace {
@@ -22,6 +23,8 @@ namespace {
 using modules::runtime_workers::AsyncDiagnosticsWriter;
 using modules::runtime_workers::DiagnosticsImportance;
 using modules::runtime_workers::DiagnosticsWriterOptions;
+using modules::runtime_workers::FlightLoopDiagnosticsPolicy;
+using modules::runtime_workers::FlightLoopDiagnosticsReducer;
 using modules::runtime_workers::FlightLoopTimingRecord;
 
 std::uint64_t ThreadIdentity() {
@@ -108,6 +111,71 @@ int RunPerformanceContractGateACalm1Probe() {
     require(!cleanupError, "failed to create probe root");
     const auto callerThread = ThreadIdentity();
 
+    {
+        FlightLoopDiagnosticsReducer reducer{
+            FlightLoopDiagnosticsPolicy{60, 10'000, 5}};
+        const auto observe = [&](std::uint64_t sequence,
+                                 std::uint64_t completeUs,
+                                 std::uint64_t nowSeconds) {
+            FlightLoopTimingRecord timing;
+            timing.sequence = sequence;
+            timing.completeBeforeTelemetryUs = completeUs;
+            timing.refreshUs = completeUs > 10 ? completeUs - 10 : completeUs;
+            timing.diagnosticsSubmissionUs = 2;
+            return reducer.Observe(timing, nowSeconds);
+        };
+        require(!observe(1, 100, 1'000).emitOutlier,
+                "routine timing emitted an outlier record");
+        require(!observe(2, 1'200, 1'001).emitOutlier,
+                "sub-threshold timing emitted an outlier record");
+        require(!observe(3, 6'000, 1'002).emitOutlier,
+                "sub-threshold timing emitted an outlier record");
+        require(observe(4, 12'000, 1'003).emitOutlier,
+                "first outlier was not retained");
+        require(!observe(5, 45'000, 1'004).emitOutlier,
+                "outlier rate limit did not suppress a duplicate detail row");
+        require(observe(6, 50'000, 1'008).emitOutlier,
+                "outlier detail did not resume after the rate limit");
+        const auto summaryDecision = observe(7, 200, 1'060);
+        require(summaryDecision.emitSummary,
+                "one-minute flight-loop summary was not emitted");
+        const auto& summary = summaryDecision.summary;
+        require(
+            summary.sampleCount == 7 &&
+                summary.firstSequence == 1 &&
+                summary.lastSequence == 7 &&
+                summary.totalCompleteUs == 114'500 &&
+                summary.minimumCompleteUs == 100 &&
+                summary.maximumCompleteUs == 50'000,
+            "flight-loop summary totals were incorrect");
+        require(
+            summary.over1msCount == 5 &&
+                summary.over5msCount == 4 &&
+                summary.over10msCount == 3 &&
+                summary.over40msCount == 2 &&
+                summary.outlierRecordsEmitted == 2,
+            "flight-loop summary threshold counts were incorrect");
+        require(
+            summary.p95UpperUs == 50'000 &&
+                summary.p99UpperUs == 50'000,
+            "flight-loop summary percentile bounds were incorrect");
+        const auto formatted =
+            modules::runtime_workers::FormatFlightLoopTimingSummary(
+                summary, "probe");
+        require(
+            formatted.find("event=flight-loop-summary") != std::string::npos &&
+                formatted.find("samples=7") != std::string::npos &&
+                formatted.find("over10ms=3") != std::string::npos,
+            "flight-loop summary format omitted required evidence");
+        (void)observe(8, 75, 1'061);
+        const auto partial = reducer.Flush(1'062);
+        require(partial.has_value() && partial->sampleCount == 1,
+                "partial flight-loop window was not flushed");
+        reducer.Reset();
+        require(!reducer.Flush(1'063).has_value(),
+                "reset flight-loop reducer retained stale samples");
+    }
+
     std::atomic<std::uint64_t> formatterThread{0};
     {
         AsyncDiagnosticsWriter writer;
@@ -176,7 +244,7 @@ int RunPerformanceContractGateACalm1Probe() {
                 std::string::npos,
             "deferred formatter output was not persisted");
         require(
-            logs.find("event=flight-loop-complete sequence=17") !=
+            logs.find("event=flight-loop-outlier sequence=17") !=
                 std::string::npos,
             "complete callback timing was not persisted");
     }
@@ -302,12 +370,12 @@ int RunPerformanceContractGateACalm1Probe() {
         require(!writer.Snapshot().running, "slow writer did not stop cleanly");
         const auto logs = ReadAllLogs(options.logDirectory);
         require(
-            CountOccurrences(logs, "event=flight-loop-complete") == 5'000,
+            CountOccurrences(logs, "event=flight-loop-outlier") == 5'000,
             "slow writer timing sequence was not complete");
         require(
-            logs.find("event=flight-loop-complete sequence=1 ") !=
+            logs.find("event=flight-loop-outlier sequence=1 ") !=
                     std::string::npos &&
-                logs.find("event=flight-loop-complete sequence=5000 ") !=
+                logs.find("event=flight-loop-outlier sequence=5000 ") !=
                     std::string::npos,
             "slow writer did not preserve timing sequence endpoints");
     }

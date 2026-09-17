@@ -1,6 +1,8 @@
 add_library(XVatsimRuntimeWorkers STATIC
     src/AsyncDiagnosticsWriter.cpp
     src/AsyncFactWorkerHost.cpp
+    src/FlightLoopDiagnosticsReducer.cpp
+    src/PdcLogReader.cpp
 )
 
 target_compile_features(XVatsimRuntimeWorkers PUBLIC cxx_std_17)
@@ -14,3 +16,10 @@ target_link_libraries(XVatsimRuntimeWorkers PUBLIC
     XVatsimBrain
     XVatsimMetar
 )
+
+if (WIN32)
+    target_link_libraries(XVatsimRuntimeWorkers PUBLIC
+        ole32
+        shell32
+    )
+endif()

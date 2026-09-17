@@ -32,4 +32,4 @@ vnas.controller_feed_json={"updatedAt":"2026-09-06T20:00:00Z","controllers":[{"a
 vnas.artcc_facility_json={"id":"ZDC","lastUpdatedAt":"2026-09-06T19:00:00Z","facility":{"id":"ZDC","type":"Artcc","name":"Washington Center","positions":[],"childFacilities":[{"id":"PCT","type":"Tracon","name":"Potomac TRACON","starsConfiguration":{"internalAirports":["BWI","IAD","DCA"],"areas":[{"id":"01PCTCONSOLIDATED00000000","name":"Consolidated"}]},"positions":[{"id":"01PCTMULRRCOMBINED0000000","name":"MULRR [Comb]","callsign":"IAD_M_APP","frequency":126650000,"starsConfiguration":{"areaId":"01PCTCONSOLIDATED00000000"}}],"childFacilities":[]}]}}
 
 expect.brain_controller_relevance_arrival_callsigns=IAD_M_APP
-expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,yes=airport-radio-near+vnas-terminal,no=terminal-owner,airportRadioNm=0.0,vnas=ARTCC=ZDC/FACILITY=PCT
+expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,frequency-distance=+1,vnas=+1[endpoint-ownership-match,terminal-source=-1

@@ -930,6 +930,10 @@ struct BrainOwnedCandidateCompletion {
     bool displayed = false;
     bool hasRouteEntryDistance = false;
     double routeEntryDistanceNm = 0.0;
+    int positiveVotes = 0;
+    int negativeVotes = 0;
+    int neutralVotes = 0;
+    std::vector<BrainControllerEvidenceVote> evidenceVotes;
     std::string reason;
     std::string stableKey;
 };

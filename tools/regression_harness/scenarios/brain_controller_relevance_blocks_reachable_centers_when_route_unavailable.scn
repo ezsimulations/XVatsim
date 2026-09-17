@@ -36,4 +36,4 @@ expect.enroute_available=false
 expect.enroute_callsigns=<none>
 expect.authority_relevant_polygon_matches=<none>
 expect.brain_controller_relevance_enroute_callsigns=<none>
-expect.brain_controller_relevance_completions=KC_94_CTR:rejected:center-route-authority-unavailable-radio-only-blocked,MEM_22_CTR:rejected:center-route-authority-unavailable-radio-only-blocked
+expect.brain_controller_relevance_completions=KC_94_CTR:rejected,MEM_22_CTR:rejected

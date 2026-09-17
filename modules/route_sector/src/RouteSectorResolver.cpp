@@ -118,6 +118,8 @@ struct SectorFeature {
 struct ControllerAuthorityCatalog {
     std::unordered_map<std::string, std::vector<std::string>> prefixesByKey;
     std::unordered_map<std::string, std::vector<std::string>> callsignPatternsByKey;
+    std::vector<xvatsim::core::authority::AirportCallsignAlias>
+        airportCallsignAliases;
 };
 
 bool IsAuthorityControllerCandidate(const brain::ControllerSnapshot& controller);
@@ -1497,6 +1499,9 @@ ControllerAuthorityCatalog ParseControllerAuthorityCatalog(const std::string& pa
     if (payload.empty()) {
         return catalog;
     }
+    catalog.airportCallsignAliases =
+        xvatsim::core::authority::CompileVatSpyAuthorityCatalog(payload)
+            .airportCallsignAliases;
 
     std::unordered_map<std::string, std::unordered_set<std::string>> prefixesByKey;
     std::unordered_map<std::string, std::unordered_set<std::string>> patternsByKey;
@@ -12849,6 +12854,25 @@ void PopulateTraversalControllerPrefixes(
     }
 }
 
+void PopulateEndpointAirportCallsignAliases(
+    brain::RouteSectorSnapshot* snapshot,
+    const ControllerAuthorityCatalog& authorityCatalog) {
+    if (snapshot == nullptr) return;
+    snapshot->airportCallsignAliases.clear();
+    const auto departure = NormalizeAirportIcao(snapshot->departureIcao);
+    const auto arrival = NormalizeAirportIcao(snapshot->destinationIcao);
+    for (const auto& alias : authorityCatalog.airportCallsignAliases) {
+        if (alias.airportIcao != departure && alias.airportIcao != arrival) continue;
+        brain::AirportCallsignAliasSnapshot fact;
+        fact.airportIcao = alias.airportIcao;
+        fact.callsignPrefix = alias.callsignPrefix;
+        fact.boundaryId = alias.boundaryId;
+        fact.source = "VATSPY_AIRPORT";
+        fact.sourceRecord = alias.sourceRecord;
+        snapshot->airportCallsignAliases.push_back(std::move(fact));
+    }
+}
+
 std::shared_ptr<RouteSourceDataset> BuildRouteSourceDataset(
     const std::vector<unsigned char>& boundaryPayload,
     const std::vector<unsigned char>& authorityCatalogPayload,
@@ -12965,6 +12989,8 @@ brain::RouteSectorSnapshot PrepareRouteSnapshotCore(
     snapshot.centerBoundaryGeneration = dataset->centerBoundaryGeneration;
     snapshot.authorityCatalogGeneration =
         dataset->authorityCatalogGeneration;
+    PopulateEndpointAirportCallsignAliases(
+        &snapshot, dataset->controllerAuthorityCatalog);
     if (!request.routeAnchor.valid ||
         !networkPlan->hasDestinationCoordinates) {
         snapshot.statusLine = "ROUTE waiting for destination";
@@ -13480,6 +13506,7 @@ brain::RouteSectorSnapshot RouteSectorResolver::BuildSnapshotFrozenOracle(
     const auto& features = GetCachedSectorFeatures(boundaryPayload_);
     const auto& authorityCatalog =
         GetCachedControllerAuthorityCatalog(vatspyPayload_, ownershipPayload_);
+    PopulateEndpointAirportCallsignAliases(&snapshot, authorityCatalog);
     if (features.empty()) {
         snapshot.statusLine = "ROUTE sectors unavailable";
         return snapshot;

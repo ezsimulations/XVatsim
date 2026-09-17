@@ -26,4 +26,4 @@ transceiver.station=callsign=IAD_M_APP;frequency=126.650;lat=39.1754;lon=-76.668
 vnas.controller_feed_json={"updatedAt":"2026-09-06T20:00:00Z","controllers":[{"artccId":"ZDC","primaryFacilityId":"PCT","primaryPositionId":"01PCTMULRRCOMBINED0000000","isActive":true,"isObserver":false,"positions":[{"facilityId":"PCT","facilityName":"Potomac TRACON","positionId":"01PCTMULRRCOMBINED0000000","positionName":"MULRR [Comb]","positionType":"Tracon","defaultCallsign":"IAD_M_APP","frequency":126650000,"isPrimary":true,"isActive":true}],"vatsimData":{"callsign":"IAD_M_APP"}}]}
 
 expect.brain_controller_relevance_arrival_callsigns=IAD_M_APP
-expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,vnas-no-match,yes=airport-radio-near,no=terminal-owner,failSafe=1
+expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,vnas=0[incomplete-us-data-no-match,frequency-distance=+1,terminal-source=-1,brain-supported-tie-display

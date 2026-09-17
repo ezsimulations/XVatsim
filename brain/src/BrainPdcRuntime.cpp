@@ -96,7 +96,7 @@ std::size_t ArtifactBytes(const BrainPdcCapturedArtifact& value) {
         value.departureIcao.size() + value.destinationIcao.size() +
         value.revisionIdentity.size() + value.sender.size() +
         value.normalizedSender.size() + value.body.size() +
-        value.acceptanceReason.size();
+        value.acceptanceReason.size() + value.sourceTimeUtc.size();
 }
 
 void BindFlight(
@@ -144,6 +144,9 @@ void ResetBrainOwnedPdcProductState(
         state->pdc.hasConnectedDisposition = old.hasConnectedDisposition;
         state->pdc.connectedDispositionedSequence =
             old.connectedDispositionedSequence;
+        state->pdc.logMonitor.replayCursors = old.logMonitor.replayCursors;
+        state->pdc.logMonitor.nextReplayCursorSlot =
+            old.logMonitor.nextReplayCursorSlot;
     }
     Mutate(state);
 }
@@ -160,16 +163,22 @@ void StopBrainOwnedPdcRuntime(BrainOwnedRuntimeState* state) {
 void SuspendBrainOwnedPdcRuntime(BrainOwnedRuntimeState* state) {
     if (state == nullptr || !state->pdc.initialized) return;
     state->pdc.pluginAdminSuspended = true;
+    ++state->pdc.logMonitor.connectionEpoch;
+    state->pdc.logMonitor.pendingRequestId = 0;
+    state->pdc.logMonitor.recoveryRequired = true;
+    state->pdc.logMonitor.readingSnapshot = false;
+    state->pdc.logMonitor.stagedDirectMessages.clear();
 }
 
 void ResumeBrainOwnedPdcRuntime(BrainOwnedRuntimeState* state) {
     if (state == nullptr || !state->pdc.initialized) return;
     state->pdc.pluginAdminSuspended = false;
+    state->pdc.logMonitor.recoveryRequired = true;
+    state->pdc.logMonitor.nextServiceMicroseconds = 0;
 }
 
 void MarkBrainOwnedPdcSourceUnavailable(BrainOwnedRuntimeState* state) {
-    if (state == nullptr || !state->pdc.initialized ||
-        state->pdc.captureComplete) return;
+    if (state == nullptr || !state->pdc.initialized) return;
     if (!state->pdc.sourceAvailable && !state->pdc.sourceQualified &&
         state->pdc.availability == BrainPdcAvailability::SourceUnavailable) return;
     BrainOwnedAccessoryVisibleInvalidationBatch batch(state);
@@ -189,8 +198,9 @@ void MarkBrainOwnedPdcSourceUnavailable(BrainOwnedRuntimeState* state) {
 void RecordBrainOwnedPdcTransportCapacityLoss(
     BrainOwnedRuntimeState* state,
     std::uint64_t lostObservationCount) {
-    if (state == nullptr || !state->pdc.initialized || lostObservationCount == 0 ||
-        state->pdc.captureComplete) return;
+    if (state == nullptr || !state->pdc.initialized || lostObservationCount == 0) {
+        return;
+    }
     state->pdc.counters.capacityLosses += lostObservationCount;
     if (state->pdc.preCaptureUncertain) return;
     BrainOwnedAccessoryVisibleInvalidationBatch batch(state);
@@ -435,26 +445,157 @@ bool ReevaluateBrainOwnedPdcPendingContext(
 bool AcknowledgeBrainOwnedPdcVisibleEntries(
     BrainOwnedRuntimeState* state,
     const std::vector<std::string>& identities) {
-    if (state == nullptr || !state->pdc.initialized ||
-        !state->pdc.capturedArtifact.has_value() ||
-        !state->pdc.capturedArtifact->unread) return false;
-    std::unordered_set<std::string> visible;
-    for (std::size_t index = 0;
-         index < identities.size() && index < kVisibleLimit; ++index) {
-        if (!identities[index].empty()) visible.insert(identities[index]);
-    }
-    if (visible.find(state->pdc.capturedArtifact->revisionIdentity) == visible.end()) {
-        return false;
-    }
+    if (state == nullptr || !state->pdc.initialized) return false;
+    const auto end = identities.begin() + std::min(identities.size(), kVisibleLimit);
     BrainOwnedAccessoryVisibleInvalidationBatch batch(state);
-    state->pdc.capturedArtifact->unread = false;
-    ++state->pdc.counters.unreadAcknowledged;
-    Mutate(state);
-    return true;
+    bool changed = false;
+    const auto acknowledge = [&](BrainPdcCapturedArtifact* artifact) {
+        if (artifact == nullptr || !artifact->unread) return;
+        if (std::find(identities.begin(), end, artifact->revisionIdentity) == end) {
+            return;
+        }
+        artifact->unread = false;
+        ++state->pdc.counters.unreadAcknowledged;
+        changed = true;
+    };
+    if (state->pdc.capturedArtifact.has_value()) {
+        acknowledge(&*state->pdc.capturedArtifact);
+    }
+    for (auto& artifact : state->pdc.olderArtifacts) acknowledge(&artifact);
+    if (changed) Mutate(state);
+    return changed;
+}
+
+bool AcknowledgeBrainOwnedPdcAllEntries(BrainOwnedRuntimeState* state) {
+    if (state == nullptr || !state->pdc.initialized) return false;
+    BrainOwnedAccessoryVisibleInvalidationBatch batch(state);
+    bool changed = false;
+    const auto acknowledge = [&](BrainPdcCapturedArtifact* artifact) {
+        if (artifact == nullptr || !artifact->unread) return;
+        artifact->unread = false;
+        ++state->pdc.counters.unreadAcknowledged;
+        changed = true;
+    };
+    if (state->pdc.capturedArtifact.has_value()) {
+        acknowledge(&*state->pdc.capturedArtifact);
+    }
+    for (auto& artifact : state->pdc.olderArtifacts) acknowledge(&artifact);
+    if (changed) Mutate(state);
+    return changed;
 }
 
 std::size_t BrainOwnedPdcUnreadCount(const BrainPdcRuntimeState& state) {
-    return state.capturedArtifact.has_value() && state.capturedArtifact->unread ? 1U : 0U;
+    const auto olderUnread = std::count_if(
+        state.olderArtifacts.begin(),
+        state.olderArtifacts.end(),
+        [](const auto& artifact) { return artifact.unread; });
+    return olderUnread +
+        (state.capturedArtifact.has_value() && state.capturedArtifact->unread
+             ? 1U
+             : 0U);
+}
+
+std::size_t BrainOwnedPdcMessageCount(const BrainPdcRuntimeState& state) {
+    return state.olderArtifacts.size() +
+        (state.capturedArtifact.has_value() ? 1U : 0U);
+}
+
+bool AdmitBrainOwnedPdcMessage(
+    BrainOwnedRuntimeState* state,
+    std::string sender,
+    std::string body,
+    std::string revisionIdentity,
+    std::int64_t sourceSequence,
+    std::string sourceTimeUtc,
+    std::uint64_t nowMicroseconds) {
+    if (state == nullptr || !state->pdc.initialized ||
+        state->pdc.pluginAdminSuspended || revisionIdentity.empty() ||
+        Trim(body).empty() || body.size() > 4096 || sender.size() > 64) {
+        if (state != nullptr && state->pdc.initialized) {
+            ++state->pdc.counters.rejectedMessages;
+        }
+        return false;
+    }
+
+    auto& pdc = state->pdc;
+    const auto alreadyRetained = [&](const BrainPdcCapturedArtifact& artifact) {
+        return artifact.revisionIdentity == revisionIdentity;
+    };
+    if ((pdc.capturedArtifact.has_value() &&
+         alreadyRetained(*pdc.capturedArtifact)) ||
+        std::any_of(
+            pdc.olderArtifacts.begin(),
+            pdc.olderArtifacts.end(),
+            alreadyRetained)) {
+        ++pdc.counters.connectedDuplicates;
+        return false;
+    }
+
+    BrainPdcCapturedArtifact artifact;
+    artifact.productLifecycleEpoch = pdc.productLifecycleEpoch;
+    artifact.sourceEpoch = pdc.sourceEpoch;
+    artifact.sourceSequence = sourceSequence;
+    artifact.acceptedMonotonicMicroseconds = nowMicroseconds;
+    artifact.flightIdentity = pdc.boundFlightIdentity;
+    artifact.aircraftCallsign = pdc.boundCallsign;
+    artifact.departureIcao = pdc.boundDepartureIcao;
+    artifact.destinationIcao = pdc.boundDestinationIcao;
+    artifact.revisionIdentity = std::move(revisionIdentity);
+    artifact.sender = Trim(std::move(sender));
+    artifact.normalizedSender = SenderKey(artifact.sender);
+    artifact.body = std::move(body);
+    artifact.sourceTimeUtc = std::move(sourceTimeUtc);
+    artifact.acceptanceReason = "brain-admitted-incoming-direct-message";
+
+    std::uint64_t digest = 1469598103934665603ULL;
+    for (const auto character : artifact.normalizedSender + "\xff" + artifact.body) {
+        digest ^= static_cast<unsigned char>(character);
+        digest *= 1099511628211ULL;
+    }
+    artifact.contentDigest = digest;
+
+    const auto newBytes = ArtifactBytes(artifact);
+    if (newBytes > 256U * 1024U) {
+        ++pdc.counters.rejectedMessages;
+        return false;
+    }
+
+    BrainOwnedAccessoryVisibleInvalidationBatch batch(state);
+    while (!pdc.olderArtifacts.empty() &&
+           (BrainOwnedPdcMessageCount(pdc) >= 32 ||
+            pdc.retainedBytes + newBytes > 256U * 1024U)) {
+        const auto& oldest = pdc.olderArtifacts.front();
+        pdc.retainedBytes -= std::min(pdc.retainedBytes, ArtifactBytes(oldest));
+        if (oldest.unread) ++pdc.counters.unreadEvictions;
+        pdc.olderArtifacts.erase(pdc.olderArtifacts.begin());
+        ++pdc.counters.historyEvictions;
+    }
+    if (pdc.capturedArtifact.has_value() &&
+        pdc.retainedBytes + newBytes > 256U * 1024U) {
+        pdc.retainedBytes -= std::min(
+            pdc.retainedBytes, ArtifactBytes(*pdc.capturedArtifact));
+        if (pdc.capturedArtifact->unread) ++pdc.counters.unreadEvictions;
+        pdc.capturedArtifact.reset();
+        ++pdc.counters.historyEvictions;
+    }
+    if (pdc.olderArtifacts.capacity() == 0) pdc.olderArtifacts.reserve(31);
+    if (pdc.capturedArtifact.has_value()) {
+        pdc.olderArtifacts.push_back(std::move(*pdc.capturedArtifact));
+    }
+    pdc.capturedArtifact = std::move(artifact);
+    pdc.retainedBytes += newBytes;
+    pdc.captureComplete = true;
+    pdc.acquisitionArmed = true;
+    pdc.acquisitionClosed = false;
+    pdc.sourceQualified = true;
+    pdc.sourceAvailable = true;
+    pdc.availability = BrainPdcAvailability::Available;
+    ++pdc.counters.admittedMessages;
+    if (state->accessory.activeDrawer == BrainOwnedAccessoryDrawerId::Pdc) {
+        ++state->accessory.scrollResetGeneration;
+    }
+    Mutate(state);
+    return true;
 }
 
 std::string BrainOwnedPdcDiagnosticSummary(const BrainPdcRuntimeState& state) {
@@ -469,10 +610,16 @@ std::string BrainOwnedPdcDiagnosticSummary(const BrainPdcRuntimeState& state) {
         << " observedSequence=" << state.lastObservedSequence
         << " connectedSequence="
         << (state.hasConnectedDisposition ? state.connectedDispositionedSequence : 0)
-        << " captured=" << (state.capturedArtifact.has_value() ? 1 : 0)
+        << " messages=" << BrainOwnedPdcMessageCount(state)
         << " unread=" << BrainOwnedPdcUnreadCount(state)
         << " uncertainty=" << (state.preCaptureUncertain ? 1 : 0)
-        << " retainedBytes=" << state.retainedBytes;
+        << " retainedBytes=" << state.retainedBytes
+        << " logReason=" << state.logMonitor.reason
+        << " logRequests=" << state.counters.logRequestsSubmitted
+        << " logFacts=" << state.counters.logFactsConsumed
+        << " logBytes=" << state.counters.logBytesRead
+        << " logExcluded=" << state.counters.logExcludedRecords
+        << " logMalformed=" << state.counters.logMalformedRecords;
     return out.str();
 }
 

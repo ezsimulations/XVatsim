@@ -1,4 +1,5 @@
 #include "XVatsim/modules/runtime_workers/AsyncDiagnosticsWriter.h"
+#include "XVatsim/modules/runtime_workers/PdcLogReader.h"
 
 #include <algorithm>
 #include <atomic>
@@ -162,6 +163,13 @@ void EnforceRetention(
 }  // namespace
 
 struct AsyncDiagnosticsWriter::Implementation {
+    enum class PdcMailboxState {
+        Idle,
+        Queued,
+        Working,
+        Ready,
+    };
+
     enum class RecordKind {
         Line,
         Deferred,
@@ -350,6 +358,10 @@ struct AsyncDiagnosticsWriter::Implementation {
     std::atomic<bool> accepting{false};
     bool stopRequested = false;
     bool recordInFlight = false;
+    PdcMailboxState pdcMailboxState = PdcMailboxState::Idle;
+    brain::BrainPdcLogRequest pdcRequest;
+    brain::BrainPdcLogFact pdcFact;
+    PdcLogReader pdcLogReader;
 
     std::ofstream output;
     std::string openDateToken;
@@ -391,6 +403,9 @@ struct AsyncDiagnosticsWriter::Implementation {
     std::atomic<std::uint64_t> lastSubmittedRouteEvidenceSequence{0};
     std::atomic<std::uint64_t> lastWrittenRouteEvidenceSequence{0};
     std::atomic<std::uint64_t> workerThreadIdentity{0};
+    std::atomic<std::uint64_t> submittedPdcLogRequests{0};
+    std::atomic<std::uint64_t> completedPdcLogRequests{0};
+    std::atomic<std::uint64_t> rejectedPdcLogRequests{0};
 
     void ResetCounters() {
         workerPriorityRequested.store(false, std::memory_order_relaxed);
@@ -430,6 +445,48 @@ struct AsyncDiagnosticsWriter::Implementation {
             0, std::memory_order_relaxed);
         lastWrittenRouteEvidenceSequence.store(0, std::memory_order_relaxed);
         workerThreadIdentity.store(0, std::memory_order_relaxed);
+        submittedPdcLogRequests.store(0, std::memory_order_relaxed);
+        completedPdcLogRequests.store(0, std::memory_order_relaxed);
+        rejectedPdcLogRequests.store(0, std::memory_order_relaxed);
+    }
+
+    bool SubmitPdcLogRequest(
+        const brain::BrainPdcLogRequest& request) {
+        if (!accepting.load(std::memory_order_acquire)) {
+            rejectedPdcLogRequests.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        if (!queueMutex.try_lock()) {
+            rejectedPdcLogRequests.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        bool accepted = false;
+        if (accepting.load(std::memory_order_relaxed) &&
+            pdcMailboxState == PdcMailboxState::Idle) {
+            pdcRequest = request;
+            pdcMailboxState = PdcMailboxState::Queued;
+            submittedPdcLogRequests.fetch_add(1, std::memory_order_relaxed);
+            accepted = true;
+        } else {
+            rejectedPdcLogRequests.fetch_add(1, std::memory_order_relaxed);
+        }
+        queueMutex.unlock();
+        if (accepted) workReady.notify_one();
+        return accepted;
+    }
+
+    bool HarvestPdcLogFact(brain::BrainPdcLogFact* fact) {
+        if (fact == nullptr || !queueMutex.try_lock()) return false;
+        bool harvested = false;
+        if (pdcMailboxState == PdcMailboxState::Ready) {
+            *fact = std::move(pdcFact);
+            pdcFact = {};
+            pdcMailboxState = PdcMailboxState::Idle;
+            harvested = true;
+        }
+        queueMutex.unlock();
+        if (harvested) idleChanged.notify_all();
+        return harvested;
     }
 
     bool Enqueue(Record record, DiagnosticsImportance importance) {
@@ -717,7 +774,7 @@ struct AsyncDiagnosticsWriter::Implementation {
         }
         const auto& timing = record->flightLoopTiming;
         std::ostringstream stream;
-        stream << "event=flight-loop-complete"
+        stream << "event=flight-loop-outlier"
                << " sequence=" << timing.sequence
                << " completeUs=" << timing.completeBeforeTelemetryUs
                << " refreshUs=" << timing.refreshUs
@@ -789,15 +846,18 @@ struct AsyncDiagnosticsWriter::Implementation {
 #endif
         for (;;) {
             std::optional<Record> record;
+            std::optional<brain::BrainPdcLogRequest> pdcRequestToRead;
             {
                 std::unique_lock<std::mutex> lock(queueMutex);
                 workReady.wait_for(lock, std::chrono::milliseconds(20), [this]() {
                     return stopRequested || !criticalQueue.Empty() ||
+                           pdcMailboxState == PdcMailboxState::Queued ||
                            !flightLoopTimingQueue.Empty() ||
                            !routeEvidenceQueue.Empty() ||
                            !routineQueue.Empty();
                 });
                 if (criticalQueue.Empty() &&
+                    pdcMailboxState != PdcMailboxState::Queued &&
                     flightLoopTimingQueue.Empty() &&
                     routeEvidenceQueue.Empty() &&
                     routineQueue.Empty()) {
@@ -808,6 +868,9 @@ struct AsyncDiagnosticsWriter::Implementation {
                 }
                 if (!criticalQueue.Empty()) {
                     record.emplace(criticalQueue.Pop());
+                } else if (pdcMailboxState == PdcMailboxState::Queued) {
+                    pdcRequestToRead.emplace(std::move(pdcRequest));
+                    pdcMailboxState = PdcMailboxState::Working;
                 } else {
                     FlightLoopTimingEnvelope timing;
                     if (flightLoopTimingQueue.TryPop(&timing)) {
@@ -834,7 +897,25 @@ struct AsyncDiagnosticsWriter::Implementation {
                     }
                 }
                 recordInFlight = true;
-                dequeued.fetch_add(1, std::memory_order_relaxed);
+                if (record.has_value()) {
+                    dequeued.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+
+            if (pdcRequestToRead.has_value()) {
+                auto completedFact = pdcLogReader.Read(*pdcRequestToRead);
+                {
+                    std::lock_guard<std::mutex> lock(queueMutex);
+                    if (pdcMailboxState == PdcMailboxState::Working) {
+                        pdcFact = std::move(completedFact);
+                        pdcMailboxState = PdcMailboxState::Ready;
+                        completedPdcLogRequests.fetch_add(
+                            1, std::memory_order_relaxed);
+                    }
+                    recordInFlight = false;
+                }
+                idleChanged.notify_all();
+                continue;
             }
 
             Process(std::move(*record));
@@ -888,6 +969,11 @@ bool AsyncDiagnosticsWriter::Start(DiagnosticsWriterOptions options) {
         state.options.routeEvidenceQueueCapacity);
     state.stopRequested = false;
     state.recordInFlight = false;
+    state.pdcMailboxState = Implementation::PdcMailboxState::Idle;
+    state.pdcRequest = {};
+    state.pdcFact = {};
+    state.pdcLogReader = PdcLogReader(
+        state.options.pdcLogDirectoryForTesting);
     state.openDateToken.clear();
     state.retentionDateToken.clear();
     state.nextStorageAttempt = {};
@@ -915,6 +1001,12 @@ void AsyncDiagnosticsWriter::Stop() {
     state.workReady.notify_all();
     if (state.worker.joinable()) {
         state.worker.join();
+    }
+    {
+        std::lock_guard<std::mutex> lock(state.queueMutex);
+        state.pdcMailboxState = Implementation::PdcMailboxState::Idle;
+        state.pdcRequest = {};
+        state.pdcFact = {};
     }
     state.running.store(false, std::memory_order_release);
 }
@@ -949,6 +1041,16 @@ bool AsyncDiagnosticsWriter::TryEnqueueFlightLoopTiming(
 bool AsyncDiagnosticsWriter::TryEnqueueRouteEvidence(
     RouteEvidenceRecord evidence) noexcept {
     return implementation_->EnqueueRouteEvidence(std::move(evidence));
+}
+
+bool AsyncDiagnosticsWriter::TrySubmitPdcLogRequest(
+    const brain::BrainPdcLogRequest& request) {
+    return implementation_->SubmitPdcLogRequest(request);
+}
+
+bool AsyncDiagnosticsWriter::TryHarvestPdcLogFact(
+    brain::BrainPdcLogFact* fact) {
+    return implementation_->HarvestPdcLogFact(fact);
 }
 
 DiagnosticsWriterSnapshot AsyncDiagnosticsWriter::Snapshot() const {
@@ -1028,6 +1130,12 @@ DiagnosticsWriterSnapshot AsyncDiagnosticsWriter::Snapshot() const {
             std::memory_order_acquire);
     snapshot.workerThreadIdentity =
         state.workerThreadIdentity.load(std::memory_order_acquire);
+    snapshot.submittedPdcLogRequests =
+        state.submittedPdcLogRequests.load(std::memory_order_relaxed);
+    snapshot.completedPdcLogRequests =
+        state.completedPdcLogRequests.load(std::memory_order_relaxed);
+    snapshot.rejectedPdcLogRequests =
+        state.rejectedPdcLogRequests.load(std::memory_order_relaxed);
     return snapshot;
 }
 
@@ -1039,6 +1147,10 @@ bool AsyncDiagnosticsWriter::WaitUntilIdle(
         return state.routineQueue.Empty() && state.criticalQueue.Empty() &&
                state.flightLoopTimingQueue.Empty() &&
                state.routeEvidenceQueue.Empty() &&
+               state.pdcMailboxState !=
+                   Implementation::PdcMailboxState::Queued &&
+               state.pdcMailboxState !=
+                   Implementation::PdcMailboxState::Working &&
                !state.recordInFlight;
     });
 }

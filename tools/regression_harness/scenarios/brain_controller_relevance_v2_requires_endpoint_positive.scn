@@ -19,4 +19,4 @@ transceiver.stale=false
 transceiver.station=callsign=LAX_S_DEP;frequency=124.300;lat=33.9425;lon=-118.4081;facility=5;actionable=true
 
 expect.brain_controller_relevance_arrival_callsigns=<none>
-expect.brain_controller_relevance_completions_contains=LAX_S_DEP:rejected,yes=none,no=airport-radio-far,final=reject-hide
+expect.brain_controller_relevance_completions_contains=LAX_S_DEP:rejected,frequency-distance=-1[outside-airport-radius,brain-final=hide
