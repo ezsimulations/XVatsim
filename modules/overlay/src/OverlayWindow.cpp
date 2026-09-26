@@ -1032,10 +1032,13 @@ void DrawAccessoryText(
         return;
     }
     SolidBrush brush(color);
-    StringFormat format;
+    StringFormat format(StringFormat::GenericTypographic());
     format.SetAlignment(alignment);
     format.SetLineAlignment(StringAlignmentCenter);
-    format.SetFormatFlags(StringFormatFlagsNoWrap);
+    format.SetFormatFlags(
+        format.GetFormatFlags() |
+        StringFormatFlagsNoWrap |
+        Gdiplus::StringFormatFlagsMeasureTrailingSpaces);
     graphics->DrawString(
         wide.c_str(), static_cast<INT>(wide.size()), font, rect, &format, &brush);
 }

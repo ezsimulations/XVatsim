@@ -338,6 +338,9 @@ void SetPrimaryTarget(
     state->metar.primaryObservation = {};
     state->metar.primaryContentFingerprint = 0;
     state->metar.freshUntilMonotonicMs = 0;
+    state->metar.primaryContentAcceptedMonotonicMs = 0;
+    state->metar.nextVisibleAgeBucketMonotonicMs = 0;
+    state->metar.visibleFetchAgeMinutes = 0;
     state->metar.nextPrimaryEligibleMonotonicMs = nowMs;
     state->metar.consecutiveFailures = 0;
     state->metar.sourceHealth = target.empty()
@@ -595,10 +598,6 @@ void CommitBrainOwnedMetarWorkerFact(
         const auto oldVisible = state->metar.visibleState;
         state->metar.sourceHealth = BrainMetarSourceHealth::Healthy;
         state->metar.lastSuccessMonotonicMs = input.monotonicMs;
-        const auto ageWasVisible = state->metar.visibleFetchAgeMinutes != 0;
-        state->metar.visibleFetchAgeMinutes = 0;
-        state->metar.nextVisibleAgeBucketMonotonicMs =
-            input.monotonicMs + 60'000;
         state->metar.consecutiveFailures = 0;
         state->metar.nextPrimaryEligibleMonotonicMs =
             input.monotonicMs + kBrainMetarRefreshMs;
@@ -615,10 +614,7 @@ void CommitBrainOwnedMetarWorkerFact(
             }
             if (oldVisible != state->metar.visibleState ||
                 (oldHealth == BrainMetarSourceHealth::Failed &&
-                 oldVisible == BrainMetarVisibleState::Cached) ||
-                (ageWasVisible &&
-                 state->accessory.activeDrawer ==
-                     BrainOwnedAccessoryDrawerId::Metar)) {
+                 oldVisible == BrainMetarVisibleState::Cached)) {
                 if (oldVisible != state->metar.visibleState) {
                     EndSpotlightForPrimaryChange(state);
                 }
@@ -654,6 +650,10 @@ void CommitBrainOwnedMetarWorkerFact(
         }
         state->metar.primaryObservation = parsed;
         state->metar.primaryContentFingerprint = fingerprint;
+        state->metar.primaryContentAcceptedMonotonicMs = input.monotonicMs;
+        state->metar.visibleFetchAgeMinutes = 0;
+        state->metar.nextVisibleAgeBucketMonotonicMs =
+            input.monotonicMs + 60'000;
         const auto observationAgeSeconds = std::max<std::int64_t>(
             0, input.utcUnixSeconds - parsed.observationUnixSeconds);
         const auto remainingMs = std::max<long long>(
@@ -1179,7 +1179,7 @@ BrainOwnedAsyncFactCycleOutput RunBrainOwnedAsyncFactCycle(
         const auto ageMinutes = static_cast<int>(std::min<long long>(
             999, std::max<long long>(
                 0, (input.monotonicMs -
-                    state->metar.lastSuccessMonotonicMs) / 60'000)));
+                    state->metar.primaryContentAcceptedMonotonicMs) / 60'000)));
         state->metar.nextVisibleAgeBucketMonotonicMs =
             input.monotonicMs + 60'000;
         if (ageMinutes != state->metar.visibleFetchAgeMinutes) {

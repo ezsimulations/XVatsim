@@ -10,6 +10,7 @@ add_executable(XVatsimRegressionHarness
     src/ProductCalm1Probe.cpp
     src/RuntimeActivationGateProbe.cpp
     src/Step6PdcContractProbe.cpp
+    src/XPilot4BridgeContractProbe.cpp
 )
 
 target_compile_features(XVatsimRegressionHarness PRIVATE cxx_std_17)

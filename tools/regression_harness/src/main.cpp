@@ -73,6 +73,7 @@
 #include "ProductCalm1Probe.h"
 #include "RuntimeActivationGateProbe.h"
 #include "AustraliaBrainEvidenceProbe.h"
+#include "XPilot4BridgeContractProbe.h"
 
 namespace {
 
@@ -14579,10 +14580,17 @@ bool ExecuteStep3Action(
             "Measured wrapping keeps complete words together whenever the next word "
             "would exceed the available drawer width.";
         else if(parts[1]=="whitespace") input.text="A  B\r\nC\tD";
+        else if(parts[1]=="pdc") input.text=
+            "PDC | CALLSIGN: UAL200 | EQUIPMENT: A320/L | DEPARTURE: KDEN | "
+            "DESTINATION: KLAX | ROUTE: KDEN BAYLR6 TEHRU JASSE Q90 DNERO "
+            "ANUL4 KLAX | ALTITUDE: 340 | SQUAWK: 3413 | REMARKS: CLEARED "
+            "BAYLR6 DEPARTURE TEHRU TRSN CLIMB VIA SID EXP 340 10 MIN AFT "
+            "DEP,DPFRQ 127.650 EXP RWY 25.. CONTACT 127.65 WITH ATIS FOR PUSH";
         else if(parts[1]=="token") input.text=std::string(256,'A');
         else if(parts[1]=="long") input.text=std::string(4096,'L');
         else input.text=std::string(8189,'Z') + "\xE2\x82\xAC" + std::string(1000,'Q');
-        input.contentWidth=340; input.maxRetainedBytes=8192;
+        input.contentWidth=parts[1]=="pdc" ? 406 : 340;
+        input.maxRetainedBytes=8192;
         auto result=xvatsim::modules::overlay::BuildAccessoryTextLayout(
             context->measurementContext,input);
         context->observed[parts[2]+".status"]=Step3Status(result.status);
@@ -14597,6 +14605,10 @@ bool ExecuteStep3Action(
             std::to_string(result.maximumMeasuredLineWidth);
         context->observed[parts[2]+".measured_within_width"]=Step3Bool(
             result.maximumMeasuredLineWidth<=input.contentWidth);
+        context->observed[parts[2]+".clip_margin_reserved"]=Step3Bool(
+            result.maximumMeasuredLineWidth<=
+                input.contentWidth-
+                    std::max(2,static_cast<int>(std::ceil(2.0f*input.scale))));
         context->observed[parts[2]+".limited"]=Step3Bool(result.contentLimited);
         context->observed[parts[2]+".valid_utf8"]=Step3Bool(result.validUtf8);
         context->observed[parts[2]+".valid_boundary"]=
@@ -14619,6 +14631,28 @@ bool ExecuteStep3Action(
                 Step3RemoveLineFeeds(result.reconstructedText)==
                 Step3ConcatenateLines(result.lines));
         context->observed[parts[2]+".line_count"]=std::to_string(result.lines.size());
+        bool boundariesAtWhitespace=true;
+        std::size_t boundary=0;
+        for(std::size_t index=0;index+1<result.lines.size();++index) {
+            boundary+=result.lines[index].size();
+            if(boundary==0 || boundary>=result.reconstructedText.size()) continue;
+            const auto previous=static_cast<unsigned char>(
+                result.reconstructedText[boundary-1]);
+            const auto next=static_cast<unsigned char>(
+                result.reconstructedText[boundary]);
+            const bool previousWhitespace=previous==' ' || previous=='\t' ||
+                previous=='\n';
+            const bool nextWhitespace=next==' ' || next=='\t' || next=='\n';
+            if(!previousWhitespace && !nextWhitespace) {
+                boundariesAtWhitespace=false;
+            }
+        }
+        context->observed[parts[2]+".word_boundaries_preserved"]=
+            Step3Bool(boundariesAtWhitespace);
+        context->observed[parts[2]+".route_token_preserved"]=Step3Bool(
+            result.reconstructedText.find("ANUL4 KLAX")!=std::string::npos &&
+            Step3ConcatenateLines(result.lines).find("ANUL4 KLAX")!=
+                std::string::npos);
         context->observed[parts[2]+".duration_us"]=
             std::to_string(result.elapsedMicroseconds);
         context->observed[parts[2]+".within_16_7ms"]=
@@ -16004,6 +16038,27 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "successful ORB contains forbidden state/open text");
         require(orb->tone == tone && !orb->neutral,
                 "successful ORB tone mismatch");
+    };
+    const auto requireWarningMetarOrb = [&](
+        BrainOwnedRuntimeState* state,
+        const std::string& airport,
+        const std::string& warning) {
+        const auto handle = ProjectBrainOwnedAccessoryPresentation(
+            state, 1, nullptr);
+        const auto* orb = Step4MetarOrb(handle);
+        require(orb != nullptr, "METAR ORB missing");
+        if (orb == nullptr) return;
+        require(orb->label.empty(),
+                "accepted warning ORB must remove METAR title");
+        require(orb->airportIcao == airport &&
+                    orb->categoryText == warning,
+                "accepted warning ORB must contain exact ICAO/warning lines");
+        require(orb->stateText.empty() &&
+                    orb->selectedIndicator.empty(),
+                "accepted warning ORB contains forbidden state/open text");
+        require(orb->tone == BrainOwnedAccessoryOrbPresentation::Tone::Amber &&
+                    !orb->neutral,
+                "accepted warning ORB must use non-neutral amber tone");
     };
 
     if (probe == "plugin_suspend_resume_fresh_enroute_state_survives") {
@@ -18657,19 +18712,20 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                         stalePresentation.snapshot->commandIdentity ==
                             commandIdentityBeforeStale + 1,
                     "stale transition did not advance one semantic command");
-            require(staleOrb != nullptr && staleOrb->label == "METAR" &&
-                        staleOrb->airportIcao.empty() &&
-                        staleOrb->categoryText.empty() &&
+            require(staleOrb != nullptr && staleOrb->label.empty() &&
+                        staleOrb->airportIcao == "KDFW" &&
+                        staleOrb->categoryText == "MVFR*" &&
                         staleOrb->stateText.empty() &&
                         staleOrb->selectedIndicator.empty() &&
                         staleOrb->tone ==
-                            BrainOwnedAccessoryOrbPresentation::Tone::Gray,
-                    "Brain-owned stale transition did not neutralize METAR ORB");
+                            BrainOwnedAccessoryOrbPresentation::Tone::Amber &&
+                        !staleOrb->neutral,
+                    "Brain-owned stale transition did not warn on METAR ORB");
             require(stale.delta.railRasterRequests == 1 &&
                         stale.delta.uploadRequests == 1 &&
                         stale.delta.drawerRasterRequests == 0 &&
                         stale.publishedSnapshotCount == 1,
-                    "successful primary to neutral did not publish once");
+                    "successful primary to stale warning did not publish once");
             require(repeatedStale.delta.railRasterRequests == 0 &&
                         repeatedStale.delta.uploadRequests == 0 &&
                         repeatedStale.delta.drawerRasterRequests == 0 &&
@@ -19185,7 +19241,7 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         f.AcceptPrimary(primaryVfr);
         f.state.metar.visibleState = BrainMetarVisibleState::Stale;
         ++f.state.metar.presentationGeneration;
-        requireNeutralMetarOrb(&f.state);
+        requireWarningMetarOrb(&f.state, "KDFW", "VFR*");
     } else if (probe == "correction_orb_success_exact_two_lines") {
         auto step4Heap18940 = std::make_unique<Step4Fixture>();
         auto& f = *step4Heap18940;
@@ -19618,6 +19674,71 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "fresh cache must survive transient failure");
         require(f.state.metar.primaryObservation.category == BrainMetarFlightCategory::Vfr,
                 "fresh cached category must remain usable");
+    } else if (probe == "metar_content_age_minute_refresh") {
+        auto fixtureStorage = std::make_unique<Step4Fixture>();
+        auto& f = *fixtureStorage;
+        const auto accepted = f.AcceptPrimary(primaryVfr);
+        require(accepted.completionAccepted && accepted.contentChanged,
+                "primary METAR precondition was not accepted");
+        Step4SelectDrawer(&f.state, BrainOwnedAccessoryDrawerId::Metar);
+        const auto primaryBody = [](const BrainOwnedAccessoryPresentationHandle& handle) {
+            if (!handle.snapshot) return std::string{};
+            const auto entry = std::find_if(
+                handle.snapshot->entries.begin(), handle.snapshot->entries.end(),
+                [](const auto& candidate) {
+                    return candidate.stableKey ==
+                        "__METAR_PRIMARY_PRESENTATION__";
+                });
+            return entry == handle.snapshot->entries.end()
+                ? std::string{} : entry->body;
+        };
+        const auto initial = ProjectBrainOwnedAccessoryPresentation(
+            &f.state, 1, nullptr);
+        require(primaryBody(initial).find("updated 0m ago") != std::string::npos,
+                "new primary METAR did not begin at zero minutes");
+        const auto initialRailRevision =
+            initial.snapshot ? initial.snapshot->railPresentationRevision : 0;
+        const auto initialDrawerRevision = initial.snapshot
+            ? initial.snapshot->selectedDrawerContentRevision : 0;
+
+        const auto minuteOne = f.Cycle(60'000);
+        require(minuteOne.presentationChanged && minuteOne.freshnessChanged &&
+                    f.state.metar.visibleFetchAgeMinutes == 1,
+                "open METAR drawer did not advance at the first minute boundary");
+        const auto aged = ProjectBrainOwnedAccessoryPresentation(
+            &f.state, 1, nullptr);
+        require(primaryBody(aged).find("updated 1m ago") != std::string::npos,
+                "drawer did not publish the one-minute content age");
+        require(aged.snapshot &&
+                    aged.snapshot->railPresentationRevision == initialRailRevision &&
+                    aged.snapshot->selectedDrawerContentRevision ==
+                        initialDrawerRevision + 1,
+                "minute age changed the ORB rail or missed the drawer revision");
+
+        require(f.worker.running,
+                "scheduled METAR health refresh was not dispatched");
+        f.worker.Complete(
+            BrainMetarWorkerStatus::Success, "KDFW", primaryVfr);
+        const auto identical = f.Cycle(1);
+        require(identical.completionAccepted && !identical.contentChanged &&
+                    !identical.presentationChanged &&
+                    f.state.metar.visibleFetchAgeMinutes == 1,
+                "identical source refresh reset or republished content age");
+        const auto afterIdentical = ProjectBrainOwnedAccessoryPresentation(
+            &f.state, 1, nullptr);
+        require(primaryBody(afterIdentical).find("updated 1m ago") !=
+                    std::string::npos,
+                "identical source refresh returned drawer age to zero");
+
+        const auto minuteTwo = f.Cycle(59'999);
+        require(minuteTwo.presentationChanged && minuteTwo.freshnessChanged &&
+                    f.state.metar.visibleFetchAgeMinutes == 2,
+                "content age did not advance at the second minute boundary");
+        const auto agedAgain = ProjectBrainOwnedAccessoryPresentation(
+            &f.state, 1, nullptr);
+        require(primaryBody(agedAgain).find("updated 2m ago") !=
+                    std::string::npos,
+                "drawer did not publish the two-minute content age");
     } else if (probe == "stale_primary_gray_unknown" ||
                probe == "freshness_monotonic_deadline") {
         auto step4Heap19350 = std::make_unique<Step4Fixture>();
@@ -19629,12 +19750,14 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
         const auto* orb = Step4MetarOrb(presentation);
         require(f.state.metar.visibleState == BrainMetarVisibleState::Stale,
                 "monotonic freshness deadline must stale");
-        require(orb && orb->label == "METAR" &&
-                    orb->airportIcao.empty() && orb->categoryText.empty() &&
+        require(orb && orb->label.empty() &&
+                    orb->airportIcao == "KDFW" &&
+                    orb->categoryText == "VFR*" &&
                     orb->stateText.empty() &&
                     orb->selectedIndicator.empty() &&
-                    orb->tone == BrainOwnedAccessoryOrbPresentation::Tone::Gray,
-                "stale ORB must be neutral METAR only");
+                    orb->tone == BrainOwnedAccessoryOrbPresentation::Tone::Amber &&
+                    !orb->neutral,
+                "stale ORB must warn with exact ICAO/category marker lines");
     } else if (probe == "history_isolation") {
         auto step4Heap19365 = std::make_unique<Step4Fixture>();
         auto& f = *step4Heap19365;
@@ -19914,7 +20037,8 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
             {"KDFW 271951Z 18010KT 10SM SKC", "VFR", BrainOwnedAccessoryOrbPresentation::Tone::Green},
             {"KDFW 271951Z 18010KT 4SM BKN020", "MVFR", BrainOwnedAccessoryOrbPresentation::Tone::Blue},
             {"KDFW 271951Z 18010KT 2SM BKN008", "IFR", BrainOwnedAccessoryOrbPresentation::Tone::Red},
-            {"KDFW 271951Z 18010KT M1/4SM VV003", "LIFR", BrainOwnedAccessoryOrbPresentation::Tone::Magenta}};
+            {"KDFW 271951Z 18010KT M1/4SM VV003", "LIFR", BrainOwnedAccessoryOrbPresentation::Tone::Magenta},
+            {"KDFW 271951Z 18010KT", "UNKNOWN", BrainOwnedAccessoryOrbPresentation::Tone::Amber}};
         for (const auto& item : cases) {
             auto step4Heap19640 = std::make_unique<Step4Fixture>();
             auto& f = *step4Heap19640;
@@ -19926,7 +20050,7 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                         orb->categoryText == item.text &&
                         orb->stateText.empty() &&
                         orb->selectedIndicator.empty() &&
-                        orb->tone == item.tone,
+                        orb->tone == item.tone && !orb->neutral,
                     std::string("ORB category/tone mismatch: ") + item.text);
         }
     } else if (probe == "pinned_primary_not_history") {
@@ -23661,6 +23785,10 @@ int main(int argc, char** argv) {
     if (std::string(argv[1]) == "--pdc-log-monitor-contract") {
         return xvatsim::tools::pdc_log_monitor_contract::
             RunPdcLogMonitorContractProbe();
+    }
+    if (std::string(argv[1]) == "--xpilot4-bridge-contract") {
+        return xvatsim::tools::xpilot4_bridge_contract::
+            RunXPilot4BridgeContractProbe();
     }
 
     ScenarioData scenario;

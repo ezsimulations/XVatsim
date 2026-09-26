@@ -1,2 +1,2 @@
 name=v2_step4_orb_publication_drawer_fetch_age_no_rail
-step4.probe=orb_publication_transition_matrix
+step4.probe=metar_content_age_minute_refresh

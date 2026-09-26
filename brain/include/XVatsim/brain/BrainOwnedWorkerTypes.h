@@ -414,6 +414,8 @@ struct BrainControllerRelevanceWorkerInput {
     std::uint64_t authorityRelevanceHash = 0;
     std::shared_ptr<const AuthorityRelevanceSnapshot> authorityRelevance;
     std::uint64_t radioTuningHash = 0;
+    std::uint64_t xpilot4ControllerHash = 0;
+    std::shared_ptr<const BrainXPilot4ControllerSnapshot> xpilot4Controllers;
     RadioStateSnapshot radios;
     std::shared_ptr<const RouteSectorSnapshot> route;
     // Compatibility-only fixture inputs. Production populates route above so

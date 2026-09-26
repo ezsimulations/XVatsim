@@ -4432,7 +4432,8 @@ void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state) {
 }
 
 void ResetBrainOwnedRuntimeCachePreservingFlightContext(
-    BrainOwnedRuntimeState* state) {
+    BrainOwnedRuntimeState* state,
+    bool preserveXPilot4BridgeSession) {
     if (state == nullptr) {
         return;
     }
@@ -4448,6 +4449,10 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     const auto lastPilotIdentitySnapshot = state->lastPilotIdentitySnapshot;
     const auto lastFlightPlanSnapshot = state->lastFlightPlanSnapshot;
     const auto lastNetworkPlanSnapshot = state->lastNetworkPlanSnapshot;
+    BrainXPilot4BridgeRuntimeState xpilot4Bridge;
+    if (preserveXPilot4BridgeSession) {
+        xpilot4Bridge = std::move(state->xpilot4Bridge);
+    }
     *state = {};
     state->operatingMode = operatingMode;
     state->accessory = accessory;
@@ -4461,6 +4466,9 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     state->lastPilotIdentitySnapshot = lastPilotIdentitySnapshot;
     state->lastFlightPlanSnapshot = lastFlightPlanSnapshot;
     state->lastNetworkPlanSnapshot = lastNetworkPlanSnapshot;
+    if (preserveXPilot4BridgeSession) {
+        state->xpilot4Bridge = std::move(xpilot4Bridge);
+    }
 }
 
 void InitializeBrainOwnedOperatingMode(
@@ -6952,8 +6960,7 @@ std::vector<BrainOwnedAccessoryHistoryEntry> ProjectBrainOwnedMetarDrawerPresent
             } else {
                 title = "METAR — " + metar.primaryAirportIcao + " · PRIMARY";
                 const auto category =
-                    metar.visibleState == BrainMetarVisibleState::Stale ||
-                            metar.visibleState == BrainMetarVisibleState::Unavailable
+                    metar.visibleState == BrainMetarVisibleState::Unavailable
                         ? BrainMetarFlightCategory::Unknown
                         : metar.primaryObservation.category;
                 body = BrainMetarCategoryToken(category);
@@ -6991,26 +6998,36 @@ void ProjectBrainOwnedMetarOrbPresentation(
     if (orb == nullptr || !state.metar.initialized) return;
     const auto& metar = state.metar;
     const auto category = metar.primaryObservation.category;
-    const bool usable = metar.primaryObservation.valid &&
-        !metar.primaryAirportIcao.empty() &&
-        category != BrainMetarFlightCategory::Unknown &&
+    const bool accepted = metar.primaryObservation.valid &&
+        !metar.primaryAirportIcao.empty();
+    const bool current = accepted &&
         (metar.visibleState == BrainMetarVisibleState::Fresh ||
          metar.visibleState == BrainMetarVisibleState::Cached);
-    orb->label = usable ? "" : "METAR";
-    orb->airportIcao = usable ? metar.primaryAirportIcao : "";
-    orb->categoryText = usable ? BrainMetarCategoryToken(category) : "";
+    const bool stale = accepted &&
+        metar.visibleState == BrainMetarVisibleState::Stale;
+    const bool classified = current &&
+        category != BrainMetarFlightCategory::Unknown;
+    const bool warning = stale ||
+        (current && category == BrainMetarFlightCategory::Unknown);
+    const bool visible = classified || warning;
+    orb->label = visible ? "" : "METAR";
+    orb->airportIcao = visible ? metar.primaryAirportIcao : "";
+    orb->categoryText = visible ? BrainMetarCategoryToken(category) : "";
+    if (stale && category != BrainMetarFlightCategory::Unknown) {
+        orb->categoryText += "*";
+    }
     orb->stateText.clear();
     orb->selectedIndicator.clear();
     using Tone = BrainOwnedAccessoryOrbPresentation::Tone;
-    switch (usable ? category : BrainMetarFlightCategory::Unknown) {
+    switch (classified ? category : BrainMetarFlightCategory::Unknown) {
         case BrainMetarFlightCategory::Vfr: orb->tone = Tone::Green; break;
         case BrainMetarFlightCategory::Mvfr: orb->tone = Tone::Blue; break;
         case BrainMetarFlightCategory::Ifr: orb->tone = Tone::Red; break;
         case BrainMetarFlightCategory::Lifr: orb->tone = Tone::Magenta; break;
         case BrainMetarFlightCategory::Unknown:
-        default: orb->tone = Tone::Gray; break;
+        default: orb->tone = warning ? Tone::Amber : Tone::Gray; break;
     }
-    orb->neutral = !usable;
+    orb->neutral = !visible;
 }
 
 void ProjectBrainOwnedPdcOrbPresentation(

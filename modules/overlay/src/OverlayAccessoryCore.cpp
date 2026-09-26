@@ -73,6 +73,10 @@ constexpr AccessoryRect kMainCardDesignBounds{21, 28, 409, 332};
 constexpr AccessoryRect kRailDesignBounds{118, 320, 306, 372};
 constexpr AccessoryRect kDrawerDesignBounds{0, 378, 430, 494};
 
+int DrawerTextClipSafetyPixels(float scale) {
+    return std::max(2, static_cast<int>(std::ceil(2.0f * scale)));
+}
+
 int ScaleDesignValue(int value, float scale) {
     return static_cast<int>(std::lround(static_cast<float>(value) * scale));
 }
@@ -1783,10 +1787,13 @@ AccessoryTextLayoutResult BuildAccessoryTextLayout(
     bool limited = false;
     result.reconstructedText = LimitUtf8(
         normalized, static_cast<std::size_t>(input.maxRetainedBytes), &limited);
+    const int wrappingWidth = std::max(
+        1,
+        input.contentWidth - DrawerTextClipSafetyPixels(input.scale));
     result.lines = WrapMeasuredText(
         context,
         result.reconstructedText,
-        input.contentWidth,
+        wrappingWidth,
         input.scale,
         input.fontRole,
         &result.measurementAvailable,
@@ -1794,7 +1801,7 @@ AccessoryTextLayoutResult BuildAccessoryTextLayout(
         &result.usedCharacterFallback,
         &result.maximumMeasuredLineWidth);
     result.allLinesFit = result.measurementAvailable && !result.lines.empty() &&
-        result.maximumMeasuredLineWidth <= input.contentWidth;
+        result.maximumMeasuredLineWidth <= wrappingWidth;
     result.contentLimited = limited;
     result.validUtf8 = IsValidUtf8(result.reconstructedText);
     result.endedAtValidUtf8Boundary = result.validUtf8;

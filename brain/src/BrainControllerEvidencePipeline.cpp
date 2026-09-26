@@ -143,6 +143,67 @@ BrainControllerEvidenceVote Vote(
     return vote;
 }
 
+std::optional<BrainControllerEvidenceVote> XPilot4CorrelationVote(
+    const BrainControllerRelevanceWorkerInput& input,
+    const RadioReachableControllerCandidate& candidate) {
+    const auto& snapshot = input.xpilot4Controllers;
+    if (snapshot == nullptr || !snapshot->sourceAvailable ||
+        !snapshot->networkConnected || !snapshot->complete) {
+        return std::nullopt;
+    }
+
+    const auto candidateCallsign = Upper(candidate.callsign);
+    const auto candidateFrequency = NormalizeFrequency(candidate.frequency);
+    const BrainXPilot4ControllerFact* callsignMatch = nullptr;
+    const BrainXPilot4ControllerFact* exactMatch = nullptr;
+    for (const auto& controller : snapshot->controllers) {
+        if (Upper(controller.callsign) != candidateCallsign) continue;
+        if (callsignMatch == nullptr) callsignMatch = &controller;
+        if (!controller.hasFrequency || candidateFrequency.empty()) continue;
+        const auto controllerKhz = controller.frequencyHz >= 1'000'000
+            ? controller.frequencyHz / 1'000
+            : controller.frequencyHz;
+        if (std::to_string(controllerKhz) == candidateFrequency) {
+            exactMatch = &controller;
+            break;
+        }
+    }
+
+    const auto* observed = exactMatch != nullptr ? exactMatch : callsignMatch;
+    std::ostringstream provenance;
+    provenance << "process=" << snapshot->processEpoch
+               << ",connection=" << snapshot->connectionEpoch
+               << ",snapshot=" << snapshot->generation;
+    if (observed != nullptr) {
+        provenance << ",callsign=" << observed->callsign;
+        if (observed->hasFrequency) {
+            provenance << ",frequencyHz=" << observed->frequencyHz;
+        } else {
+            provenance << ",frequencyHz=absent";
+        }
+    }
+    return Vote(
+        "xpilot-fsd-correlation",
+        0,
+        exactMatch != nullptr
+            ? "correlated-controller-confirmed"
+            : callsignMatch != nullptr
+                ? "correlated-controller-frequency-differs-or-absent"
+                : "controller-not-observed-in-complete-xpilot4-snapshot",
+        provenance.str());
+}
+
+void AppendXPilot4CorrelationVote(
+    const BrainControllerRelevanceWorkerInput& input,
+    const RadioReachableControllerCandidate& candidate,
+    std::vector<BrainControllerEvidenceVote>* votes) {
+    if (votes == nullptr) return;
+    auto correlation = XPilot4CorrelationVote(input, candidate);
+    if (correlation.has_value()) {
+        votes->push_back(std::move(*correlation));
+    }
+}
+
 double Radians(double degrees) {
     return degrees * 3.14159265358979323846 / 180.0;
 }
@@ -667,6 +728,7 @@ EndpointEvaluation EvaluateTerminal(
         std::move(published),
         std::move(routeContext),
     };
+    AppendXPilot4CorrelationVote(input, candidate, &decision.votes);
     evaluation.receipt = DecideBrainControllerCandidate(decision);
     return evaluation;
 }
@@ -999,6 +1061,7 @@ CenterEvaluation EvaluateCenter(
             "login=" + DisplayFrequency(candidate.frequency) +
                 ",selected=" + DisplayFrequency(evaluation.frequency)),
     };
+    AppendXPilot4CorrelationVote(input, candidate, &decision.votes);
     evaluation.receipt = DecideBrainControllerCandidate(decision);
     if (evaluation.context.empty()) {
         evaluation.context = routeMetadata ? "center-not-route-polygon-match"
@@ -1154,6 +1217,7 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerEvidencePipeline(
             decision.phaseApplicable = false;
             decision.relationAvailable = false;
             decision.votes = {VatsimVote(candidate, role)};
+            AppendXPilot4CorrelationVote(input, candidate, &decision.votes);
             const auto receipt = DecideBrainControllerCandidate(decision);
             output.completions.push_back(MakeCompletion(
                 input,

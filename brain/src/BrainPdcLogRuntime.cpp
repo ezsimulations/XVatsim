@@ -45,21 +45,10 @@ void RecordPdcSemanticMutation(BrainOwnedRuntimeState* state) {
 }
 
 void SetLogAvailability(BrainOwnedRuntimeState* state, bool available) {
-    auto& pdc = state->pdc;
-    const auto nextAvailability = available
-        ? (BrainOwnedPdcMessageCount(pdc) == 0
-               ? BrainPdcAvailability::QualifiedIdle
-               : BrainPdcAvailability::Available)
-        : BrainPdcAvailability::SourceUnavailable;
-    if (pdc.sourceAvailable == available &&
-        pdc.sourceQualified == available &&
-        pdc.availability == nextAvailability) {
-        return;
-    }
-    pdc.sourceAvailable = available;
-    pdc.sourceQualified = available;
-    pdc.availability = nextAvailability;
-    RecordPdcSemanticMutation(state);
+    SetBrainOwnedPdcSourceAvailability(
+        state,
+        BrainPdcEvidenceSource::XPilot3NetworkLog,
+        available);
 }
 
 void ScheduleRetry(

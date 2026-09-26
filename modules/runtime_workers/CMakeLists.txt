@@ -3,6 +3,7 @@ add_library(XVatsimRuntimeWorkers STATIC
     src/AsyncFactWorkerHost.cpp
     src/FlightLoopDiagnosticsReducer.cpp
     src/PdcLogReader.cpp
+    src/XPilot4BridgeClient.cpp
 )
 
 target_compile_features(XVatsimRuntimeWorkers PUBLIC cxx_std_17)

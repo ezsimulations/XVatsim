@@ -25,3 +25,7 @@ releases/XVatsim_XPlaneOrg_Store_Submission_Kit_*/
 !releases/XVatsim_XPlaneOrg_Store_Submission_Kit_1.0.0_2026-05-15/
 releases/XVatsim_*_Freeware_*/
 tools/user_route_scenarios/generated_live/
+integrations/xpilot4_bridge/bin/
+integrations/xpilot4_bridge/obj/
+tools/xpilot4_bridge_probe/bin/
+tools/xpilot4_bridge_probe/obj/

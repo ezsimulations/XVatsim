@@ -1048,9 +1048,11 @@ void ResetEnrouteInitialDisplayHold() {
         &gBrainOwnedRuntimeState);
 }
 
-void ResetFlightProgressStateForNewContext() {
+void ResetFlightProgressStateForNewContext(
+    bool preserveXPilot4BridgeSession = false) {
     xvatsim::brain::ResetBrainOwnedRuntimeCachePreservingFlightContext(
-        &gBrainOwnedRuntimeState);
+        &gBrainOwnedRuntimeState,
+        preserveXPilot4BridgeSession);
     xvatsim::brain::ResetBrainOwnedWorkflowProgress(
         &gBrainOwnedRuntimeState);
     ResetEnrouteInitialDisplayHold();
@@ -1170,7 +1172,7 @@ void UpdateFlightContextIfNeeded(
         xvatsim::brain::ResetBrainOwnedAccessoryForConfirmedNewFlight(
             &gBrainOwnedRuntimeState);
         ResetFlightScopedManualPlanState();
-        ResetFlightProgressStateForNewContext();
+        ResetFlightProgressStateForNewContext(true);
         ResetBrainDisplayPublisherCache();
         ResetStandbyAssistLatch();
         return;
@@ -1413,13 +1415,36 @@ void ServicePdcPrivateSource(
     context.destinationIcao = flight.destinationIcao;
 
     const auto availabilityBefore = gBrainOwnedRuntimeState.pdc.availability;
-    const auto admittedBefore =
-        gBrainOwnedRuntimeState.pdc.counters.admittedMessages;
     const auto lossBefore = gBrainOwnedRuntimeState.pdc.counters.capacityLosses;
     const auto malformedBefore =
         gBrainOwnedRuntimeState.pdc.counters.logMalformedRecords;
+    const auto bridgeEvaluatedBefore = gBrainOwnedRuntimeState.xpilot4Bridge
+        .counters.privateMessagesEvaluated;
+    const auto bridgeAdmittedBefore = gBrainOwnedRuntimeState.xpilot4Bridge
+        .counters.privateMessagesAdmitted;
+    const auto bridgeRejectedBefore = gBrainOwnedRuntimeState.xpilot4Bridge
+        .counters.privateMessagesRejected;
+    const auto bridgeDeferredBefore = gBrainOwnedRuntimeState.xpilot4Bridge
+        .counters.privateMessagesDeferred;
+    const auto bridgeExpiredBefore = gBrainOwnedRuntimeState.xpilot4Bridge
+        .counters.privateMessagesExpired;
+    const auto bridgePendingBefore =
+        gBrainOwnedRuntimeState.xpilot4Bridge.pendingPrivateMessages.size();
     const auto nowUs = static_cast<std::uint64_t>(
         std::max(0.0f, XPLMGetElapsedTime()) * 1'000'000.0f);
+    xvatsim::brain::BrainXPilot4BridgeContext bridgeContext;
+    bridgeContext.flightContextActive = flight.active;
+    bridgeContext.flightCallsign = flight.callsign;
+    bridgeContext.departureIcao = flight.departureIcao;
+    bridgeContext.destinationIcao = flight.destinationIcao;
+    const auto bridgeService = xvatsim::brain::ServiceBrainOwnedXPilot4Bridge(
+        &gBrainOwnedRuntimeState,
+        bridgeContext,
+        gAsyncFactWorkerHost.Bindings().xpilot4,
+        nowUs,
+        8);
+    const auto admittedAfterBridge =
+        gBrainOwnedRuntimeState.pdc.counters.admittedMessages;
     const auto service = xvatsim::brain::ServiceBrainOwnedPdcLogMonitor(
         &gBrainOwnedRuntimeState,
         context,
@@ -1428,9 +1453,10 @@ void ServicePdcPrivateSource(
 
     const auto& pdc = gBrainOwnedRuntimeState.pdc;
     const bool diagnosticEvent =
-        pdc.counters.admittedMessages != admittedBefore ||
-        pdc.availability != availabilityBefore ||
-        pdc.counters.capacityLosses != lossBefore ||
+        pdc.counters.admittedMessages != admittedAfterBridge ||
+        (!bridgeService.presentationChanged &&
+         (pdc.availability != availabilityBefore ||
+          pdc.counters.capacityLosses != lossBefore)) ||
         pdc.counters.logMalformedRecords != malformedBefore ||
         (service.factConsumed &&
          service.issue != xvatsim::brain::BrainPdcLogIssue::None &&
@@ -1444,9 +1470,53 @@ void ServicePdcPrivateSource(
              << " requestSubmitted=" << (service.requestSubmitted ? 1 : 0)
              << " issue=" << static_cast<int>(service.issue)
              << " admittedDelta="
-             << (pdc.counters.admittedMessages - admittedBefore)
+             << (pdc.counters.admittedMessages - admittedAfterBridge)
              << " "
              << xvatsim::brain::BrainOwnedPdcDiagnosticSummary(pdc);
+        AppendDiagnosticsLogLine(line.str());
+    }
+    const auto& bridge = gBrainOwnedRuntimeState.xpilot4Bridge;
+    if (bridge.counters.privateMessagesEvaluated != bridgeEvaluatedBefore ||
+        bridge.counters.privateMessagesAdmitted != bridgeAdmittedBefore ||
+        bridge.counters.privateMessagesRejected != bridgeRejectedBefore ||
+        bridge.counters.privateMessagesDeferred != bridgeDeferredBefore ||
+        bridge.counters.privateMessagesExpired != bridgeExpiredBefore ||
+        bridge.pendingPrivateMessages.size() != bridgePendingBefore) {
+        std::ostringstream line;
+        line << "event=pdc-xpilot4-brain-admission"
+             << " evaluatedDelta="
+             << (bridge.counters.privateMessagesEvaluated -
+                 bridgeEvaluatedBefore)
+             << " admittedDelta="
+             << (bridge.counters.privateMessagesAdmitted -
+                 bridgeAdmittedBefore)
+             << " rejectedDelta="
+             << (bridge.counters.privateMessagesRejected -
+                 bridgeRejectedBefore)
+             << " deferredDelta="
+             << (bridge.counters.privateMessagesDeferred -
+                 bridgeDeferredBefore)
+             << " expiredDelta="
+             << (bridge.counters.privateMessagesExpired -
+                 bridgeExpiredBefore)
+             << " pending=" << bridge.pendingPrivateMessages.size()
+             << " "
+             << xvatsim::brain::BrainOwnedPdcDiagnosticSummary(pdc);
+        AppendDiagnosticsLogLine(line.str());
+    }
+    if (bridgeService.controllerEvidenceChanged ||
+        (bridgeService.healthChanged &&
+         bridgeService.observationsConsumed != 0)) {
+        std::ostringstream line;
+        line << "event=xpilot4-bridge-state"
+             << " observations=" << bridgeService.observationsConsumed
+             << " snapshotRequested="
+             << (bridgeService.commandSubmitted ? 1 : 0)
+             << " controllerChanged="
+             << (bridgeService.controllerEvidenceChanged ? 1 : 0)
+             << " "
+             << xvatsim::brain::BrainOwnedXPilot4BridgeDiagnosticSummary(
+                    gBrainOwnedRuntimeState.xpilot4Bridge);
         AppendDiagnosticsLogLine(line.str());
     }
 }
@@ -7197,6 +7267,11 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
             "[XVatsim] Diagnostics writer startup failed; "
             "diagnostics disabled.\n");
     }
+    if (!gAsyncFactWorkerHost.Start()) {
+        XPLMDebugString(
+            "[XVatsim] Optional xPilot 4 bridge worker startup failed; "
+            "xPilot 3 support remains available.\n");
+    }
     gOverlayWindow.SetAccessoryInputWakeCallback(
         RequestAccessoryFlightLoopWake, nullptr);
     gOverlayWindow.SetAccessoryPreparationFailureCallback(
@@ -7308,6 +7383,11 @@ PLUGIN_API void XPluginStop() {
     DrainDeferredRouteRetirementsForStop();
     gRoutePreparationWorker.CancelAndJoin();
     gRouteSectorResolver.StopSourceRefreshAfterFlightLoop();
+    AppendDiagnosticsLogLine(
+        std::string{"event=xpilot4-bridge-brain-stop "} +
+            xvatsim::brain::BrainOwnedXPilot4BridgeDiagnosticSummary(
+                gBrainOwnedRuntimeState.xpilot4Bridge),
+        xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
     ResetPluginRuntimeState(true, true);
     gAuthorityRelevanceWorker.CancelAndJoin();
     gRouteSectorResolver.ResetSourceCaches();
@@ -7383,6 +7463,30 @@ PLUGIN_API void XPluginStop() {
                << " harvestMaxUs=" << gRouteAsyncRuntime.maximumHarvestUs
                << " transitionMaxUs="
                << gRouteAsyncRuntime.maximumTransitionUs;
+        AppendDiagnosticsLogLine(
+            stream.str(),
+            xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
+    }
+    auto bridgeTransport = gAsyncFactWorkerHost.Bindings().xpilot4;
+    gAsyncFactWorkerHost.Stop();
+    if (bridgeTransport != nullptr) {
+        const auto snapshot = bridgeTransport->XPilot4TransportSnapshot();
+        std::ostringstream stream;
+        stream << "event=xpilot4-bridge-worker-stop"
+               << " running=" << (snapshot.running ? 1 : 0)
+               << " connected=" << (snapshot.connected ? 1 : 0)
+               << " connectAttempts=" << snapshot.connectAttempts
+               << " connections=" << snapshot.connections
+               << " disconnects=" << snapshot.disconnects
+               << " frames=" << snapshot.framesReceived
+               << " observations=" << snapshot.observationsPublished
+               << " commands=" << snapshot.commandsWritten
+               << "/" << snapshot.commandsSubmitted
+               << " corruption=" << snapshot.corruptFrames
+               << " loss=" << snapshot.localCapacityLoss
+               << " maxIncomingDepth=" << snapshot.maximumIncomingDepth
+               << " maxOutgoingDepth=" << snapshot.maximumOutgoingDepth
+               << " maxHarvestUs=" << snapshot.maximumHarvestMicroseconds;
         AppendDiagnosticsLogLine(
             stream.str(),
             xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);

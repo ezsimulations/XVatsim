@@ -9,6 +9,7 @@ add_library(XVatsimBrain STATIC
     src/BrainMetarRuntime.cpp
     src/BrainPdcRuntime.cpp
     src/BrainPdcLogRuntime.cpp
+    src/BrainXPilot4BridgeRuntime.cpp
     src/BrainWorkflow.cpp
     src/BrainRadioRangeWorker.cpp
     src/BrainRoutePolygonWorker.cpp

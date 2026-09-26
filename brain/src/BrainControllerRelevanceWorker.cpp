@@ -1324,6 +1324,10 @@ BrainControllerRelevanceWorkerInput BuildBrainOwnedControllerRelevanceInput(
     input.authorityRelevanceHash = request.authorityRelevanceHash;
     input.authorityRelevance = request.authorityRelevance;
     input.radioTuningHash = HashRadioTuningIdentity(request.radios);
+    input.xpilot4Controllers = state.xpilot4Bridge.controllerSnapshot;
+    input.xpilot4ControllerHash = input.xpilot4Controllers != nullptr
+        ? input.xpilot4Controllers->stableHash
+        : 0;
     input.radios = request.radios;
     input.route = state.routePolygonSnapshot;
     input.candidates = request.radioSnapshot.candidates;
@@ -1353,6 +1357,7 @@ BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
         state->lastTerminalRelevancePolicyHash ==
             input.terminalRelevancePolicyHash &&
         state->lastRadioTuningHash == input.radioTuningHash &&
+        state->lastXPilot4ControllerHash == input.xpilot4ControllerHash &&
         state->lastWorkflowStage == input.workflowStage &&
         state->currentPolygonKey == input.currentPolygonKey;
 
@@ -1400,6 +1405,7 @@ BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
     state->lastTerminalRelevancePolicyHash =
         input.terminalRelevancePolicyHash;
     state->lastRadioTuningHash = input.radioTuningHash;
+    state->lastXPilot4ControllerHash = input.xpilot4ControllerHash;
 
     state->candidateCompletions.clear();
     for (const auto& completion : output.relevance.completions) {

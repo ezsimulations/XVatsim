@@ -10,6 +10,7 @@
 
 #include "XVatsim/brain/BrainDisplayIntent.h"
 #include "XVatsim/brain/BrainPdcRuntime.h"
+#include "XVatsim/brain/BrainXPilot4BridgeRuntime.h"
 #include "XVatsim/brain/BrainTypes.h"
 #include "XVatsim/brain/BrainWorkflow.h"
 #include "XVatsim/brain/PhaseSnapshotPublisher.h"
@@ -720,6 +721,7 @@ struct BrainOwnedMetarRuntimeState {
     long long lastFailureMonotonicMs = 0;
     long long nextPrimaryEligibleMonotonicMs = 0;
     long long freshUntilMonotonicMs = 0;
+    long long primaryContentAcceptedMonotonicMs = 0;
     long long nextVisibleAgeBucketMonotonicMs = 0;
     int visibleFetchAgeMinutes = 0;
     std::uint64_t nextRequestId = 1;
@@ -875,6 +877,7 @@ struct BrainOwnedTextEntryDecision {
 
 struct BrainOwnedAsyncWorkerBindings {
     BrainMetarWorker* metar = nullptr;
+    BrainXPilot4Transport* xpilot4 = nullptr;
 };
 
 struct BrainOwnedPluginAdminLifecycleDecision {
@@ -1025,6 +1028,7 @@ struct BrainOwnedRuntimeState {
     BrainOwnedMetarRuntimeState metar;
     BrainOwnedAtisRuntimeState atis;
     BrainPdcRuntimeState pdc;
+    BrainXPilot4BridgeRuntimeState xpilot4Bridge;
     bool hasRoutePolygonSnapshot = false;
     std::shared_ptr<const RouteSectorSnapshot> routePolygonSnapshot;
     std::uint64_t routePolygonHash = 0;
@@ -1124,6 +1128,7 @@ struct BrainOwnedRuntimeState {
     std::uint64_t lastVnasTerminalEvidenceHash = 0;
     std::uint64_t lastTerminalRelevancePolicyHash = 0;
     std::uint64_t lastRadioTuningHash = 0;
+    std::uint64_t lastXPilot4ControllerHash = 0;
     std::string lastWakeReason;
     std::string lastIdleReason;
 
@@ -2167,7 +2172,8 @@ private:
 
 void ResetBrainOwnedRuntimeState(BrainOwnedRuntimeState* state);
 void ResetBrainOwnedRuntimeCachePreservingFlightContext(
-    BrainOwnedRuntimeState* state);
+    BrainOwnedRuntimeState* state,
+    bool preserveXPilot4BridgeSession = false);
 BrainOwnedOperationalActivationDecision DecideBrainOwnedOperationalActivation(
     const BrainOwnedOperationalActivationState& state,
     const BrainOwnedOperationalActivationInput& input);

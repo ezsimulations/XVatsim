@@ -13,6 +13,8 @@ public:
     AsyncFactWorkerHost(const AsyncFactWorkerHost&) = delete;
     AsyncFactWorkerHost& operator=(const AsyncFactWorkerHost&) = delete;
 
+    bool Start();
+    void Stop();
     brain::BrainOwnedAsyncWorkerBindings Bindings();
 
 private:

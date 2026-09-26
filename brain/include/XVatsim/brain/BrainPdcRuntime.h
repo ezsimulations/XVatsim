@@ -74,6 +74,7 @@ struct BrainPdcCapturedArtifact {
     std::string body;
     std::string acceptanceReason;
     std::string sourceTimeUtc;
+    std::string sourceKind;
     bool unread = true;
 };
 
@@ -150,6 +151,8 @@ struct BrainPdcRuntimeState {
     bool initialized = false;
     bool sourceQualified = false;
     bool sourceAvailable = false;
+    bool logSourceAvailable = false;
+    bool xpilot4SourceAvailable = false;
     bool pluginAdminSuspended = false;
     bool acquisitionArmed = false;
     bool acquisitionClosed = false;
@@ -175,6 +178,12 @@ struct BrainPdcRuntimeState {
     BrainPdcLogMonitorState logMonitor;
     std::size_t retainedBytes = 0;
     BrainPdcRuntimeCounters counters;
+};
+
+enum class BrainPdcEvidenceSource {
+    All,
+    XPilot3NetworkLog,
+    XPilot4PluginSdk,
 };
 
 struct BrainPdcAcquisitionDecision {
@@ -215,6 +224,10 @@ void StopBrainOwnedPdcRuntime(BrainOwnedRuntimeState* state);
 void SuspendBrainOwnedPdcRuntime(BrainOwnedRuntimeState* state);
 void ResumeBrainOwnedPdcRuntime(BrainOwnedRuntimeState* state);
 void MarkBrainOwnedPdcSourceUnavailable(BrainOwnedRuntimeState* state);
+void SetBrainOwnedPdcSourceAvailability(
+    BrainOwnedRuntimeState* state,
+    BrainPdcEvidenceSource source,
+    bool available);
 void RecordBrainOwnedPdcTransportCapacityLoss(
     BrainOwnedRuntimeState* state,
     std::uint64_t lostObservationCount);
@@ -249,7 +262,8 @@ bool AdmitBrainOwnedPdcMessage(
     std::string revisionIdentity,
     std::int64_t sourceSequence,
     std::string sourceTimeUtc,
-    std::uint64_t nowMicroseconds);
+    std::uint64_t nowMicroseconds,
+    std::string sourceKind = "xpilot3_network_log");
 std::string BrainOwnedPdcDiagnosticSummary(const BrainPdcRuntimeState& state);
 const char* ToString(BrainPdcAvailability availability);
 const char* ToString(BrainPdcClassification classification);

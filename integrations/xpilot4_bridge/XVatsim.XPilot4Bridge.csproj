@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>XVatsim.XPilot4Bridge</AssemblyName>
+    <RootNamespace>XVatsim.XPilot4Bridge</RootNamespace>
+    <Version>0.1.0</Version>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DebugType>embedded</DebugType>
+    <XPilotPluginSdkProject Condition="'$(XPilotPluginSdkProject)' == ''">$(MSBuildThisFileDirectory)..\..\build\_deps\xpilot-plugin-sdk\xPilot.PluginSdk.csproj</XPilotPluginSdkProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(XPilotPluginSdkProject)" Private="false" />
+  </ItemGroup>
+
+  <Target Name="RequireXPilotPluginSdk" BeforeTargets="PrepareForBuild"
+          Condition="!Exists('$(XPilotPluginSdkProject)')">
+    <Error Text="The pinned xPilot Plugin SDK project was not found. Run scripts/build_xpilot4_bridge.ps1." />
+  </Target>
+</Project>

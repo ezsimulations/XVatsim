@@ -11,6 +11,8 @@ namespace xvatsim::brain {
 namespace {
 
 constexpr std::size_t kVisibleLimit = 16;
+constexpr std::uint64_t kCrossSourceCorrelationWindowMicroseconds =
+    30ULL * 1'000'000ULL;
 
 std::string Trim(std::string value) {
     const auto space = [](unsigned char ch) {
@@ -96,7 +98,8 @@ std::size_t ArtifactBytes(const BrainPdcCapturedArtifact& value) {
         value.departureIcao.size() + value.destinationIcao.size() +
         value.revisionIdentity.size() + value.sender.size() +
         value.normalizedSender.size() + value.body.size() +
-        value.acceptanceReason.size() + value.sourceTimeUtc.size();
+        value.acceptanceReason.size() + value.sourceTimeUtc.size() +
+        value.sourceKind.size();
 }
 
 void BindFlight(
@@ -139,6 +142,8 @@ void ResetBrainOwnedPdcProductState(
     if (preserveConnectedReplayEvidence) {
         state->pdc.sourceQualified = old.sourceQualified;
         state->pdc.sourceAvailable = old.sourceAvailable;
+        state->pdc.logSourceAvailable = old.logSourceAvailable;
+        state->pdc.xpilot4SourceAvailable = old.xpilot4SourceAvailable;
         state->pdc.pluginInstanceIdentity = old.pluginInstanceIdentity;
         state->pdc.capabilityGeneration = old.capabilityGeneration;
         state->pdc.hasConnectedDisposition = old.hasConnectedDisposition;
@@ -178,20 +183,53 @@ void ResumeBrainOwnedPdcRuntime(BrainOwnedRuntimeState* state) {
 }
 
 void MarkBrainOwnedPdcSourceUnavailable(BrainOwnedRuntimeState* state) {
+    SetBrainOwnedPdcSourceAvailability(
+        state, BrainPdcEvidenceSource::All, false);
+}
+
+void SetBrainOwnedPdcSourceAvailability(
+    BrainOwnedRuntimeState* state,
+    BrainPdcEvidenceSource source,
+    bool available) {
     if (state == nullptr || !state->pdc.initialized) return;
-    if (!state->pdc.sourceAvailable && !state->pdc.sourceQualified &&
-        state->pdc.availability == BrainPdcAvailability::SourceUnavailable) return;
-    BrainOwnedAccessoryVisibleInvalidationBatch batch(state);
-    if (state->pdc.sourceAvailable || state->pdc.sourceQualified) {
-        state->pdc.sourceEpoch = NextEpoch(state->pdc.sourceEpoch);
-        state->pdc.hasConnectedDisposition = false;
-        state->pdc.connectedDispositionedSequence = 0;
-        ++state->pdc.counters.sourceEpochChanges;
+    auto& pdc = state->pdc;
+    const auto oldLog = pdc.logSourceAvailable;
+    const auto oldXPilot4 = pdc.xpilot4SourceAvailable;
+    const auto oldAggregate = pdc.sourceAvailable;
+    const auto oldAvailability = pdc.availability;
+    if (source == BrainPdcEvidenceSource::All ||
+        source == BrainPdcEvidenceSource::XPilot3NetworkLog) {
+        pdc.logSourceAvailable = available;
     }
-    state->pdc.sourceQualified = false;
-    state->pdc.sourceAvailable = false;
-    state->pdc.preCaptureUncertain |= state->pdc.hasObservedPositiveSequence;
-    state->pdc.availability = BrainPdcAvailability::SourceUnavailable;
+    if (source == BrainPdcEvidenceSource::All ||
+        source == BrainPdcEvidenceSource::XPilot4PluginSdk) {
+        pdc.xpilot4SourceAvailable = available;
+    }
+    const bool aggregate =
+        pdc.logSourceAvailable || pdc.xpilot4SourceAvailable;
+    const auto nextAvailability = aggregate
+        ? (BrainOwnedPdcMessageCount(pdc) == 0
+               ? BrainPdcAvailability::QualifiedIdle
+               : BrainPdcAvailability::Available)
+        : BrainPdcAvailability::SourceUnavailable;
+    if (oldLog == pdc.logSourceAvailable &&
+        oldXPilot4 == pdc.xpilot4SourceAvailable &&
+        oldAggregate == aggregate && oldAvailability == nextAvailability) {
+        return;
+    }
+    BrainOwnedAccessoryVisibleInvalidationBatch batch(state);
+    if (oldAggregate && !aggregate) {
+        pdc.sourceEpoch = NextEpoch(pdc.sourceEpoch);
+        pdc.hasConnectedDisposition = false;
+        pdc.connectedDispositionedSequence = 0;
+        ++pdc.counters.sourceEpochChanges;
+    }
+    pdc.sourceQualified = aggregate;
+    pdc.sourceAvailable = aggregate;
+    if (!aggregate) {
+        pdc.preCaptureUncertain |= pdc.hasObservedPositiveSequence;
+    }
+    pdc.availability = nextAvailability;
     Mutate(state);
 }
 
@@ -507,7 +545,8 @@ bool AdmitBrainOwnedPdcMessage(
     std::string revisionIdentity,
     std::int64_t sourceSequence,
     std::string sourceTimeUtc,
-    std::uint64_t nowMicroseconds) {
+    std::uint64_t nowMicroseconds,
+    std::string sourceKind) {
     if (state == nullptr || !state->pdc.initialized ||
         state->pdc.pluginAdminSuspended || revisionIdentity.empty() ||
         Trim(body).empty() || body.size() > 4096 || sender.size() > 64) {
@@ -518,6 +557,12 @@ bool AdmitBrainOwnedPdcMessage(
     }
 
     auto& pdc = state->pdc;
+    auto normalizedSender = SenderKey(sender);
+    std::uint64_t contentDigest = 1469598103934665603ULL;
+    for (const auto character : normalizedSender + "\xff" + body) {
+        contentDigest ^= static_cast<unsigned char>(character);
+        contentDigest *= 1099511628211ULL;
+    }
     const auto alreadyRetained = [&](const BrainPdcCapturedArtifact& artifact) {
         return artifact.revisionIdentity == revisionIdentity;
     };
@@ -527,6 +572,29 @@ bool AdmitBrainOwnedPdcMessage(
             pdc.olderArtifacts.begin(),
             pdc.olderArtifacts.end(),
             alreadyRetained)) {
+        ++pdc.counters.connectedDuplicates;
+        return false;
+    }
+
+    const auto correlatedCrossSource = [&](const BrainPdcCapturedArtifact& artifact) {
+        const auto retainedSource = artifact.sourceKind.empty()
+            ? std::string("xpilot3_network_log")
+            : artifact.sourceKind;
+        const auto acceptedDelta = artifact.acceptedMonotonicMicroseconds > nowMicroseconds
+            ? artifact.acceptedMonotonicMicroseconds - nowMicroseconds
+            : nowMicroseconds - artifact.acceptedMonotonicMicroseconds;
+        return retainedSource != sourceKind &&
+            artifact.contentDigest == contentDigest &&
+            artifact.normalizedSender == normalizedSender &&
+            artifact.body == body &&
+            acceptedDelta <= kCrossSourceCorrelationWindowMicroseconds;
+    };
+    if ((pdc.capturedArtifact.has_value() &&
+         correlatedCrossSource(*pdc.capturedArtifact)) ||
+        std::any_of(
+            pdc.olderArtifacts.begin(),
+            pdc.olderArtifacts.end(),
+            correlatedCrossSource)) {
         ++pdc.counters.connectedDuplicates;
         return false;
     }
@@ -542,17 +610,12 @@ bool AdmitBrainOwnedPdcMessage(
     artifact.destinationIcao = pdc.boundDestinationIcao;
     artifact.revisionIdentity = std::move(revisionIdentity);
     artifact.sender = Trim(std::move(sender));
-    artifact.normalizedSender = SenderKey(artifact.sender);
+    artifact.normalizedSender = std::move(normalizedSender);
     artifact.body = std::move(body);
     artifact.sourceTimeUtc = std::move(sourceTimeUtc);
+    artifact.sourceKind = std::move(sourceKind);
     artifact.acceptanceReason = "brain-admitted-incoming-direct-message";
-
-    std::uint64_t digest = 1469598103934665603ULL;
-    for (const auto character : artifact.normalizedSender + "\xff" + artifact.body) {
-        digest ^= static_cast<unsigned char>(character);
-        digest *= 1099511628211ULL;
-    }
-    artifact.contentDigest = digest;
+    artifact.contentDigest = contentDigest;
 
     const auto newBytes = ArtifactBytes(artifact);
     if (newBytes > 256U * 1024U) {
@@ -582,11 +645,18 @@ bool AdmitBrainOwnedPdcMessage(
     if (pdc.capturedArtifact.has_value()) {
         pdc.olderArtifacts.push_back(std::move(*pdc.capturedArtifact));
     }
+    const bool admittedFromXPilot4 =
+        artifact.sourceKind == "xpilot4_plugin_sdk";
     pdc.capturedArtifact = std::move(artifact);
     pdc.retainedBytes += newBytes;
     pdc.captureComplete = true;
     pdc.acquisitionArmed = true;
     pdc.acquisitionClosed = false;
+    if (admittedFromXPilot4) {
+        pdc.xpilot4SourceAvailable = true;
+    } else {
+        pdc.logSourceAvailable = true;
+    }
     pdc.sourceQualified = true;
     pdc.sourceAvailable = true;
     pdc.availability = BrainPdcAvailability::Available;
@@ -614,6 +684,8 @@ std::string BrainOwnedPdcDiagnosticSummary(const BrainPdcRuntimeState& state) {
         << " unread=" << BrainOwnedPdcUnreadCount(state)
         << " uncertainty=" << (state.preCaptureUncertain ? 1 : 0)
         << " retainedBytes=" << state.retainedBytes
+        << " sourceLog=" << (state.logSourceAvailable ? 1 : 0)
+        << " sourceXPilot4=" << (state.xpilot4SourceAvailable ? 1 : 0)
         << " logReason=" << state.logMonitor.reason
         << " logRequests=" << state.counters.logRequestsSubmitted
         << " logFacts=" << state.counters.logFactsConsumed

@@ -1,0 +1,13 @@
+name=v2_step6_pdc_drawer_word_wrap_no_clip
+step3.action=wrap:pdc:pdc
+expect.step3=pdc.status=available
+expect.step3=pdc.fits=true
+expect.step3=pdc.measurement_available=true
+expect.step3=pdc.word_wrapped=true
+expect.step3=pdc.character_fallback=false
+expect.step3=pdc.measured_within_width=true
+expect.step3=pdc.clip_margin_reserved=true
+expect.step3=pdc.reconstructed_exact=true
+expect.step3=pdc.reconstructed_matches_lines=true
+expect.step3=pdc.word_boundaries_preserved=true
+expect.step3=pdc.route_token_preserved=true
