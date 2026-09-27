@@ -6,21 +6,47 @@ flight-plan operations.
 
 ## Current Release
 
-XVatsim V2.0.2 is the current public freeware maintenance release for Windows,
-X-Plane 12, and xPilot.
+XVatsim V2.1.0 is the current public freeware release for Windows, X-Plane 12,
+xPilot 3, and xPilot 4.
 
 - Freeware package:
-  `releases/XVatsim_2.0.2_Freeware_Windows_XP12.zip`
-- Package size: `2042321` bytes
+  [XVatsim_2.1.0_Freeware_Windows_XP12.zip](https://github.com/ezsimulations/XVatsim/releases/download/v2.1.0/XVatsim_2.1.0_Freeware_Windows_XP12.zip)
+- Package size: `64417929` bytes
 - Package SHA-256:
-  `8BD0BE5137D2844AC64CA1FE444E05D12C43A3C6BEBCFC4CF6370B5B1A8596E9`
+  `85603D6369938DCE471A0954D1C4A659CE14A26E547B29FE893A5ABB22D8E115`
+- Packaged Manager SHA-256:
+  `8AA67D8039742435B44F695E2C8B5DCB2751DE21C36612AE6C44A7629D3D52E0`
 - Packaged plugin SHA-256:
-  `31F0D5EC3766C662A474A4E113464F956AC312FB61F002130FFAE258B71FA726`
+  `0D4ACC2A99309EE3ACC640798C286144044E57595E93AD8F7364485A65CBAEEF`
 - User guide:
   `docs/user_guide/XVatsim_User_Guide.pdf`
 - Download pages:
   [X-Plane.org](https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/)
-  and [GitHub Releases](https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.2)
+  and [GitHub Releases](https://github.com/ezsimulations/XVatsim/releases/tag/v2.1.0)
+
+## Version 2.1.0 Manager And xPilot 4 Changes
+
+- Adds the standalone XVatsim Manager for guided first installation, update,
+  repair, SHA-256 verification, transaction backup, and automatic rollback.
+- Automatically installs the read-only companion required for complete xPilot
+  4 support while leaving xPilot 3 on the proven legacy integration.
+- Consumes xPilot 4 SDK observations without independently connecting to the
+  VATSIM network. The bridge reports facts; the XVatsim Brain remains the only
+  controller and message decision maker.
+- Accepts the approved xPilot 4 SDK 0.1.x family and refuses an incompatible
+  future SDK before subscribing to events, so ordinary xPilot 4 beta updates
+  do not require a new Manager solely because the beta number changed.
+- Recovers retained xPilot 4 PDC/ACARS information at startup and wraps long
+  message text in the XVatsim Drawer.
+- Derives useful flight rules from METAR ceiling and visibility evidence when
+  the source classification is stale or unknown, and advances the received-age
+  display after download.
+- Keeps the Brain-owned Australia coverage, controller-distance, polygon,
+  diagnostic, and PDC behavior established in V2.0.2.
+
+The Manager is distributed as unsigned freeware. Windows SmartScreen may show
+an unknown-publisher warning. The package includes plain `More info` and
+`Run anyway` instructions plus `SHA256SUMS.txt` for file verification.
 
 ## Version 2.0.2 Controller And PDC Changes
 
@@ -74,24 +100,26 @@ X-Plane 12, and xPilot.
 - Includes IFR/VFR mode selection, diversion handling, current-flight recovery,
   update notifications, CTAF/UNICOM fallback, and exact route-polygon crossing.
 
-The PDC feature monitors xPilot's network log at a low five-second cadence after
-complete flight identity and a stable xPilot connection are available. The
-Brain admits incoming direct messages addressed to the active callsign and
-keeps a bounded newest-first history. xPilot remains the authoritative VATSIM
-client.
+For xPilot 3, the PDC feature monitors xPilot's network log at a low five-second
+cadence after complete flight identity and a stable connection are available.
+For xPilot 4, the companion reports SDK message observations and can recover
+retained PDC/ACARS information at startup. In both paths, the Brain admits
+incoming direct messages addressed to the active callsign and keeps a bounded
+newest-first history. xPilot remains the authoritative VATSIM client.
 
 ## Current Scope
 
 - Windows
 - X-Plane 12
-- xPilot
+- xPilot 3 or xPilot 4
 - IFR flight-plan controller workflow
 - Departure, Enroute, and Arrival controller-board ownership
 - Route-aware center selection using typed route parsing and authority catalogs
 - US terminal-sector confirmation using vNAS data
 - COM1/COM2, TX/RX, Mode C, and Standby Assist status
 - VATSIM METAR and ATIS information drawers
-- PDC/ACARS and incoming private-message Drawer sourced from xPilot logs
+- PDC/ACARS and incoming private-message Drawer sourced from the xPilot 3 log
+  monitor or the read-only xPilot 4 SDK companion
 
 Not included:
 
@@ -117,13 +145,18 @@ official GitHub Release. XVatsim never downloads or installs an update.
 
 ## Release Verification
 
-The V2.0.2 source was configured and built from a fresh Release directory on
-2026-09-17. All `886 / 886` saved regression scenarios passed. The customer ZIP
-was independently extracted and contains exactly nine approved files: the
-plugin, transition audio, authority registry, user guide, README, quick start,
-freeware license, changelog, and support instructions. It contains no tests,
-logs, source files, backups, symbols, or build artifacts. The packaged plugin
-is byte-identical to the verified Release build.
+The V2.1.0 source was configured and built from a fresh Release directory on
+2026-09-26. All `887 / 887` environment-independent saved regression scenarios
+passed, along with `11 / 11` focused C++ contract probes, `21 / 21` xPilot 4
+companion probes, and `24 / 24` Manager probes. Product Owner live tests passed
+for the controller, METAR, PDC, installation, update, repair, rollback, unusual
+path, running-process refusal, and xPilot 3/4 compatibility scenarios.
+
+The final ZIP was independently extracted and contains exactly 12 approved
+files. All 11 entries in `SHA256SUMS.txt` passed, the Manager embedded-payload
+self-test passed, and the packaged Manager and plugin are byte-identical to the
+approved artifacts. The package contains no tests, logs, source files, backups,
+symbols, or build artifacts.
 
 ## Repository Layout
 
