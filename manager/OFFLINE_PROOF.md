@@ -71,9 +71,12 @@ The compatibility amendment did not change the transaction engine, managed
 file set, rollback, XPL, live-tested bridge binary, or Brain runtime. The full
 Product Owner matrix below remains evidence for those unchanged paths. A
 focused screen confirmation using the amended Manager passed: the Product
-Owner confirmed the new SDK-compatibility wording is present. A missing-bridge
-Repair and return-to-Current confirmation using the amended Manager remains
-before signing.
+Owner confirmed the new SDK-compatibility wording is present. The Product Owner
+then completed a missing-bridge Repair with the amended Manager and confirmed
+that it returned to `Current` at V2.1.0. All four installed file hashes matched
+the embedded payload, the receipt recorded V2.1.0 and four files, staging was
+empty, and the separately verified pre-test bridge recovery copy remained
+available.
 
 Windows UI Automation and a rendered-window inspection also proved that the
 startup screen displays only the verified X-Plane and xPilot folders, reports
@@ -94,6 +97,7 @@ approved for public distribution.
 | Legacy xPilot 3 with no bridge | **PASS — 2026-09-26** | Product Owner confirmed the manager reported xPilot 3.0.2 as supported through the legacy integration and XVatsim as current. The absent xPilot 4 executable and bridge remained absent. A stale Beta 7 uninstall record was ignored. All three XVatsim managed files, the receipt, and backup count remained unchanged, and staging remained empty. |
 | No xPilot installed | **PASS — 2026-09-26** | Product Owner confirmed the manager found X-Plane, reported that xPilot was missing, and kept Install disabled. Selecting a random unrelated folder was rejected and left the xPilot field empty. Both stale xPilot uninstall records were ignored. Managed files, receipt, backup count, and staging remained unchanged, and no bridge was created. |
 | Supported xPilot 4 with missing bridge | **PASS — 2026-09-26** | Product Owner confirmed the manager offered Repair, displayed the staged progress panel, installed the missing bridge, and returned to Current. The bridge location and SHA-256 matched the payload. Existing XVatsim file hashes and timestamps were unchanged, the new receipt contained all four managed files, and staging was empty. The default window height was increased to match the size needed to display the progress panel without scrolling. |
+| Amended xPilot 4 beta-range Manager | **PASS — 2026-09-26** | Product Owner confirmed the SDK-compatibility wording, then completed a focused missing-bridge Repair with the amended executable and confirmed `XVatsim is current` at V2.1.0. Post-test verification found the exact XPL, audio, registry, and live-tested bridge hashes, a four-file V2.1.0 receipt, and an empty staging area. |
 | Manually selected xPilot 4 at an unusual path | **PASS — 2026-09-26** | Product Owner selected `C:\XVatsim Manager Test\xPilot Beta 7`, confirmed the full progress display, and completed Repair. The bridge was installed beneath that selected xPilot root with the exact payload hash. The normal-location bridge and all three XVatsim files retained their hashes and timestamps. The receipt records the unusual xPilot executable and bridge destination, the backup count was unchanged, and staging remained empty. |
 | xPilot running blocks Repair | **PASS — 2026-09-26** | With xPilot Beta 7 running and the bridge intentionally held outside the plugin folder, Product Owner pressed Repair and received `Close xPilot, then choose Repair again.` No progress transaction began. XVatsim files, the held bridge, receipt, backup count, and staging remained unchanged, and no bridge was written into the active xPilot plugin folder. |
 | Unmanaged user data survives Repair | **PASS — 2026-09-26** | A managed registry was safely altered with valid trailing whitespace while 69 unmanaged files were inventoried. Product Owner completed Repair. The registry returned to the approved payload hash, the altered version was preserved in a new transaction backup, and the XPL, audio, and bridge retained their hashes and timestamps. All 69 unmanaged files remained byte-for-byte unchanged, the receipt recorded the standard xPilot path and all four managed files, staging remained empty, and the UI returned to Current. |
