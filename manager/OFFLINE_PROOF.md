@@ -86,8 +86,10 @@ inside Advanced details. Hashes, timestamps, the receipt, backup count, and the
 empty staging area remained unchanged after opening the manager.
 
 No installed simulator or xPilot file was changed during this current-state
-proof. The development executable is intentionally unsigned and is not
-approved for public distribution.
+proof. The executable is intentionally unsigned. On 2026-09-26 the Product
+Owner approved distribution of this exact tested artifact without an
+Authenticode signature, with package checksums and plain Windows SmartScreen
+instructions required at release.
 
 ## Product Owner Scenario Tests
 
@@ -112,6 +114,14 @@ approved for public distribution.
 - `XVatsim.XPilot4Bridge.dll`: `33DF8B96B62356C01E3DAD09E38198D3E7118F688421E83D6C797BAF6EA7CFA0`
 
 The public update manifest intentionally remains at V2.0.2 during release
-preparation. The candidate Manager is unsigned and remains blocked from public
-distribution until Authenticode signing and a clean standard-account Windows
-verification are complete.
+preparation. The candidate Manager is unsigned and approved for freeware
+distribution under the 2026-09-26 release amendment. The final ZIP must retain
+the exact Manager and payload hashes recorded above and include SmartScreen and
+SHA-256 verification instructions.
+
+The final package `XVatsim_2.1.0_Freeware_Windows_XP12.zip` was built with 12
+approved files at 64,417,929 bytes and SHA-256
+`85603D6369938DCE471A0954D1C4A659CE14A26E547B29FE893A5ABB22D8E115`.
+A separate extraction verified all 11 entries in `SHA256SUMS.txt`, the approved
+Manager and XPL hashes, intentional unsigned status, and a passing Manager
+embedded-payload self-test.

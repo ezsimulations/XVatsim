@@ -33,12 +33,20 @@ implementation baseline.
 - xPilot 4 bridge SHA-256: `33DF8B96B62356C01E3DAD09E38198D3E7118F688421E83D6C797BAF6EA7CFA0`
 - Manager payload SHA-256: `0CC61E580C11F1566B9D03544E108400C5B29F3ED08DA336698ACB906FA54367`
 - Unsigned Manager SHA-256: `8AA67D8039742435B44F695E2C8B5DCB2751DE21C36612AE6C44A7629D3D52E0`
+- Unsigned distribution ZIP SHA-256: `85603D6369938DCE471A0954D1C4A659CE14A26E547B29FE893A5ABB22D8E115`
 
 The Manager embeds exactly the XPL above, the bridge above,
 `ui_transition.mp3` at
 `C7BBE97DAD356C68FDFE40F9E8C1CF4EADEBCCD125463214F963F66356F8D9F1`,
 and `authority_source_registry.json` at
 `3676CA43E5AFB8A5E443FDE6D04616918029E004E17EFAA022695D91E23DB60B`.
+
+The final unsigned package is
+`XVatsim_2.1.0_Freeware_Windows_XP12.zip`, contains 12 approved files, and is
+64,417,929 bytes. Its `SHA256SUMS.txt` covers the 11 payload files other than
+the checksum list itself. A separate clean extraction verified all 11 entries,
+the exact Manager and XPL hashes above, intentional `NotSigned` status, and a
+passing Manager embedded-payload self-test.
 
 ## Verification
 
@@ -68,8 +76,10 @@ and `authority_source_registry.json` at
 The two Product Owner final installation scenarios used the same transaction
 engine and the exact four managed file hashes listed above. The compatibility
 amendment changed Manager eligibility and wording, then passed all 24 isolated
-checks again. The required focused amended-Manager confirmation and signed-build
-standard-account test remain the final executable-level distribution proofs.
+checks again. The required focused amended-Manager confirmation is complete.
+The Product Owner subsequently approved distribution of the exact tested
+Manager without an Authenticode signature. Package-level checksums and
+SmartScreen instructions replace the former signed-build requirement.
 
 The later xPilot beta amendment changed only Manager discovery, planning,
 manifest metadata, compatibility wording, and focused probes. It did not change
@@ -94,12 +104,13 @@ environment-specific release check when the legacy binary occupies that path.
 
 This file records a release candidate. It does not authorize publication. The
 public `docs/xvatsim_update.json` remains at V2.0.2 so users are not notified
-before a signed Manager and the approved V2.1.0 download are available.
+before the approved V2.1.0 download is available.
 
 Before public distribution:
 
-1. Authenticode-sign and timestamp the exact Manager candidate.
-2. Verify the signed file hash and embedded payload identity.
-3. Run a clean standard-account Windows installation test with the signed file.
+1. Package the exact Product Owner-tested unsigned Manager candidate.
+2. Verify the Manager hash and embedded payload identity after extraction from
+   the final ZIP.
+3. Include plain SmartScreen instructions and SHA-256 checksums in the package.
 4. Obtain Product Owner approval of the final downloadable package.
 5. Publish the package and GitHub release before updating the public manifest.

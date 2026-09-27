@@ -3,7 +3,8 @@
 **Gate ID:** `XVATSIM-MANAGER-01`
 
 **Status:** Approved by Product Owner on 2026-09-26; xPilot 4 beta
-compatibility amendment approved on 2026-09-26
+compatibility amendment and unsigned freeware distribution amendment approved
+on 2026-09-26
 
 **Baseline:** `627fbb96d9234bb05ba1ce10c6acc2e6827e02b6`
 **Scope:** A separate Windows installer, updater, repair, and rollback manager
@@ -125,10 +126,17 @@ is shown immediately.
 
 ## Release Boundary
 
-The development executable may be unsigned for Product Owner testing. Public
-distribution requires Authenticode signing, SHA-256 verification, a timestamp,
-and a separately approved online update manifest. This gate does not authorize
-publishing, pushing, changing the public update JSON, or redistributing xPilot.
+The Product Owner explicitly approved public freeware distribution of the
+Manager without an Authenticode signature on 2026-09-26 after declining the
+paid Microsoft signing service. The release package must identify the Manager
+as unsigned, explain the Windows SmartScreen `More info` and `Run anyway`
+steps, publish the exact Manager and package SHA-256 values, and preserve the
+verified embedded payload. Code signing remains an optional future hardening
+step and is not a release blocker.
+
+The public update manifest remains separately gated. This amendment does not
+authorize publishing, pushing, changing the public update JSON, or
+redistributing xPilot.
 
 ## Required Offline Proof
 

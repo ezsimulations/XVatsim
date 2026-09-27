@@ -1,6 +1,6 @@
 # XVatsim Freeware User Guide
 
-Version 2.0.2
+Version 2.1.0
 
 Updated: September 2026
 
@@ -10,26 +10,31 @@ XVatsim is intended for home flight simulation only. It is not approved for real
 
 ![Clean XVatsim overlay](assets/01_clean_ui.jpg)
 
-## What's New In Version 2.0.2
+## What's New In Version 2.1.0
 
-Version 2.0.2 restores and strengthens the Brain-owned controller decision
-path. Controller evidence now reaches the Brain as simple yes, no, or neutral
-votes instead of allowing a worker to hide a controller. The evidence includes
-VATSIM and VATSpy identity, airport-frequency distance, route geometry,
-declared VATSIM coverage extensions, and US vNAS facts when available. This
-also recognizes Melbourne controller callsign variations such as `ML_TWR` and
-extended Australian Center coverage.
+Version 2.1.0 adds the standalone XVatsim Manager. It finds and validates the
+pilot's X-Plane 12 and xPilot installations, installs or repairs only the
+approved XVatsim files, verifies each file by SHA-256, and restores the prior
+files if a transaction fails. xPilot 3 continues to use the established legacy
+integration. A validated xPilot 4 installation also receives the read-only
+XVatsim companion bridge.
 
-The PDC drawer now monitors xPilot's network log at a low five-second cadence
-for incoming direct private and PDC/ACARS messages. Messages are cached newest
-first, public radio chat is excluded, and the PDC ORB shows amber `NEW` until
-the pilot opens and leaves the drawer. It then returns to cyan `IDLE` while
-waiting for another message.
+The xPilot 4 bridge consumes facts and events exposed by the official beta SDK.
+It does not connect to VATSIM independently and does not decide which
+controllers or messages XVatsim displays. The bridge passes observations to
+XVatsim, where the Brain remains the only decision maker. The companion accepts
+the approved xPilot 4 SDK 0.1.x family and refuses an incompatible future SDK
+before subscribing to events.
 
-Diagnostic logging now summarizes routine flight-loop timing once per minute
-and retains rate-limited detail for performance outliers, controller decisions,
-worker failures, and state changes. This preserves useful bug evidence without
-writing one record for every normal simulator callback.
+METAR information now continues to show useful flight rules when the source
+classification is stale or unknown and the report contains enough ceiling and
+visibility evidence. Drawer age text advances after receipt instead of staying
+at zero minutes. PDC/ACARS startup recovery and message wrapping were also
+strengthened so retained messages can be recovered without clipping.
+
+Version 2.1.0 retains the Version 2.0.2 Brain-owned controller evidence,
+Australian coverage extensions, xPilot 3 private and PDC message monitoring,
+and bounded diagnostic logging.
 
 ## Version 2.0.0 Feature Foundation
 
@@ -67,28 +72,40 @@ XVatsim can sleep when there is nothing useful to show and wake when controller 
 
 - Windows
 - X-Plane 12
-- xPilot
+- xPilot 3 or xPilot 4
 - VATSIM account and active xPilot connection
 - IFR flight plan filed on VATSIM
 
-XVatsim Version 2.0.2 does not include Mac support, Linux support, X-Plane 11 support, SimBrief import, Navigraph AIRAC import, public radio-chat display, or a dedicated VFR controller-evidence workflow.
+XVatsim Version 2.1.0 does not include Mac support, Linux support, X-Plane 11 support, SimBrief import, Navigraph AIRAC import, public radio-chat display, or a dedicated VFR controller-evidence workflow.
 
 ## Installation
 
-1. Close X-Plane 12.
+1. Close X-Plane 12 and xPilot.
 2. Download and extract the XVatsim zip from the X-Plane.org file page or the
    official GitHub Releases page at `github.com/ezsimulations/XVatsim/releases`.
-3. Open the extracted folder.
-4. Copy the included `Resources` folder into your X-Plane 12 root folder.
-5. Confirm this file exists:
+3. Open the extracted folder and run `XVatsimManager.exe`.
+4. The Manager is distributed as unsigned freeware. If Windows SmartScreen
+   appears, select `More info`, confirm the file name is
+   `XVatsimManager.exe`, and select `Run anyway`.
+5. Review the X-Plane and xPilot folders found by the Manager. If a folder was
+   not found, choose it manually. The Manager will accept only a validated
+   installation folder.
+6. Select `Install`, `Update`, or `Repair`, whichever the Manager offers.
+7. Wait for the successful completion message, then close the Manager.
+8. Start X-Plane 12 and xPilot, then connect to VATSIM.
+
+The Manager automatically installs the xPilot 4 companion when a validated
+xPilot 4 installation is present. It does not install a companion for xPilot 3.
+If the plugin is installed correctly, the `XVatsim` menu appears under
+X-Plane's `Plugins` menu.
+
+For a manual X-Plane-only installation, copy the included `Resources` folder
+into the X-Plane 12 root folder and confirm this file exists:
 
 `X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl`
 
-6. Start X-Plane 12.
-7. Start xPilot.
-8. Connect to VATSIM.
-
-If the plugin is installed correctly, the `XVatsim` menu appears under X-Plane's `Plugins` menu.
+The manual fallback does not install the xPilot 4 companion; xPilot 4 pilots
+should use the Manager for complete Version 2.1.0 support.
 
 ## First Flight Workflow
 
@@ -120,7 +137,7 @@ Color and labels matter:
 
 Tuning a frequency does not make a row green by itself. XVatsim colors controller rows from route and authority context, not from radio tuning alone.
 
-In Version 2.0.2, the brain owns the final radio-board order, controller relevance decisions, information ORBs and drawers, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
+In Version 2.1.0, the Brain owns the final radio-board order, controller relevance decisions, information ORBs and drawers, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
 
 When an update is available, XVatsim shows a dismissible update notice panel
 with the installed version, latest version, and an X-Plane.org or GitHub
@@ -161,11 +178,13 @@ automatic primary airport.
 ### PDC And Private Messages
 
 After a stable xPilot connection and complete flight identity are available,
-XVatsim checks xPilot's network log every five seconds for new incoming direct
-messages addressed to the active callsign. Both ordinary controller private
-messages and PDC/ACARS messages appear newest first in the PDC drawer. Public
-radio chat, broadcasts, server traffic, outgoing messages, and messages for
-another callsign are excluded by the Brain.
+XVatsim receives incoming message observations through the supported path for
+the installed xPilot generation. xPilot 3 uses the proven low-frequency network
+log monitor. xPilot 4 uses the installed read-only SDK companion and can recover
+retained PDC/ACARS information already present when XVatsim starts. Both
+ordinary controller private messages and PDC/ACARS messages appear newest first
+in the PDC drawer. Public radio chat, broadcasts, server traffic, outgoing
+messages, and messages for another callsign are excluded by the Brain.
 
 The PDC ORB shows amber `NEW` while any retained message is unread. Open the
 drawer to read the messages, then close it or switch to another drawer. The ORB
@@ -369,7 +388,8 @@ Do not use Reset Session just to recover after a reconnect. Use `Recover Current
 - Confirm xPilot is connected and the flight callsign matches the filed plan.
 - METAR and ATIS availability depends on the current VATSIM sources.
 - For a different airport, use `Select METAR Airport...` or `Select ATIS Airport...` from the XVatsim plugin menu.
-- The PDC drawer checks xPilot's current network log every five seconds. Confirm xPilot is connected with the active callsign.
+- Confirm xPilot is connected with the active callsign. For xPilot 4, run the
+  Manager and choose Repair if the companion is missing or damaged.
 - Unchanged ATIS content stays read when VATSIM republishes it.
 
 ### Update check is unavailable
@@ -406,4 +426,4 @@ Support contact:
 
 ## Freeware Notes
 
-XVatsim is being provided as freeware. Please keep the package intact when sharing it so pilots receive the plugin, transition audio, authority registry, README, quick start, and this user guide together. XVatsim 2.0.2 is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.
+XVatsim is being provided as freeware. Please keep the package intact when sharing it so pilots receive the Manager, plugin, transition audio, authority registry, README, quick start, checksum file, and this user guide together. XVatsim 2.1.0 is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.
