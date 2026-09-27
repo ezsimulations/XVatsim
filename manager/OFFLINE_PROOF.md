@@ -8,9 +8,13 @@
 
 **Candidate version:** `2.1.0`
 
-**Artifact SHA-256:** `F197731DEDFC8BDBDFAD1412FDCC7EF1C5CE73B5B8897EC674F26890EDBCA067`
+**Committed-source artifact SHA-256:** `12A4ED26E0A202F2D1BFF091689B5D9A9C9497A3D3289B394B1B813376DF1329`
 
-**Embedded payload SHA-256:** `3AEC1AFE3D9674E36399A35BCEEA15A6DAE1950235FBB5001E5C878D32C356D3`
+**Source commit:** `a7718ec7d05e22a7c9b2674d63cbf782afeb4144`
+
+**Embedded payload SHA-256:** `4DB34E47F02D4395E2D7B173C50CC463ED7ECB78FB369C6201C7ED2BFA75F6CE`
+
+**Product Owner-tested precursor SHA-256:** `F197731DEDFC8BDBDFAD1412FDCC7EF1C5CE73B5B8897EC674F26890EDBCA067`
 
 The isolated manager probe passed 24 checks:
 
@@ -38,6 +42,11 @@ for at least five seconds after a fast successful transaction. The transaction
 engine remains authoritative and immediately interrupts the visual sequence
 when an actual failure occurs. The Product Owner confirmed the completed
 progress presentation during live manager scenario testing.
+After the source commit, the Manager was rebuilt from that commit with the same
+four managed payload files. The 24-check isolated probe passed again. The
+executable and ZIP hashes changed because the committed-source revision and
+payload creation timestamp changed; the XPL, audio, registry, and bridge hashes
+did not change.
 Read-only discovery on the Product Owner's machine found:
 
 - `C:\X-Plane 12` as a valid X-Plane 12 installation;

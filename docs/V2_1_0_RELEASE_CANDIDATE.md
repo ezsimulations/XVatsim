@@ -6,6 +6,8 @@ Baseline: V2.0.2 tag `b1f968f`
 
 Implementation baseline: `627fbb96d9234bb05ba1ce10c6acc2e6827e02b6`
 
+Candidate source commit: `a7718ec7d05e22a7c9b2674d63cbf782afeb4144`
+
 ## Candidate purpose
 
 V2.1.0 adds the read-only xPilot 4 companion bridge and the standalone XVatsim
@@ -29,8 +31,8 @@ implementation baseline.
 
 - XPL SHA-256: `0D4ACC2A99309EE3ACC640798C286144044E57595E93AD8F7364485A65CBAEEF`
 - xPilot 4 bridge SHA-256: `33DF8B96B62356C01E3DAD09E38198D3E7118F688421E83D6C797BAF6EA7CFA0`
-- Manager payload SHA-256: `3AEC1AFE3D9674E36399A35BCEEA15A6DAE1950235FBB5001E5C878D32C356D3`
-- Unsigned Manager SHA-256: `F197731DEDFC8BDBDFAD1412FDCC7EF1C5CE73B5B8897EC674F26890EDBCA067`
+- Manager payload SHA-256: `4DB34E47F02D4395E2D7B173C50CC463ED7ECB78FB369C6201C7ED2BFA75F6CE`
+- Unsigned Manager SHA-256: `12A4ED26E0A202F2D1BFF091689B5D9A9C9497A3D3289B394B1B813376DF1329`
 
 The Manager embeds exactly the XPL above, the bridge above,
 `ui_transition.mp3` at
@@ -53,6 +55,13 @@ and `authority_source_registry.json` at
 - Restoration of all unmanaged diagnostics and legacy backups without changing
   managed files: PASS.
 - Public V2.0.2 manifest against installed V2.1.0 remains silent/current: PASS.
+
+The two Product Owner final installation scenarios used the same manager source
+and the exact four managed file hashes listed above immediately before the
+source commit. The committed-source rebuild changed only build identification
+and payload archive metadata and passed all 24 isolated checks again. The
+required signed-build standard-account test remains the final executable-level
+distribution proof.
 
 The one saved scenario excluded from the environment-independent total checks
 the exact legacy xPilot 3.0.2 simulator-plugin fingerprint at its real X-Plane
