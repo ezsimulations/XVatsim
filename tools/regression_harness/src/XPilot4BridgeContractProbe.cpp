@@ -477,6 +477,7 @@ bool CheckRealPipe(
         return Require(false, "snapshot command or raw controller failed", failure);
     }
 
+    const auto beforeBurst = client.XPilot4TransportSnapshot();
     server.allowBurst.store(true);
     if (!WaitFor([&]() { return server.burstSent.load(); }, std::chrono::seconds(5))) {
         client.Stop();
@@ -486,30 +487,45 @@ bool CheckRealPipe(
     BrainXPilot4Observation observation;
     bool sawLoss = false;
     std::uint64_t observedLoss = 0;
-    const bool lossReady = WaitFor(
+    const bool burstReceived = WaitFor(
         [&]() {
-            bool any = false;
-            for (;;) {
-                const auto started = std::chrono::steady_clock::now();
-                if (!client.TryHarvestXPilot4Observation(&observation)) break;
-                harvestTimes.push_back(static_cast<std::uint64_t>(
-                    std::chrono::duration_cast<std::chrono::microseconds>(
-                        std::chrono::steady_clock::now() - started).count()));
-                any = true;
-                if (observation.kind == BrainXPilot4EventKind::LocalCapacityLoss) {
-                    sawLoss = true;
-                    observedLoss += observation.lostCount;
-                }
-            }
-            return sawLoss && !any;
+            return client.XPilot4TransportSnapshot().framesReceived >=
+                beforeBurst.framesReceived + 1100U;
         },
         std::chrono::seconds(5));
+    // framesReceived advances immediately after a full frame read. Give the
+    // same worker time to publish that final frame before examining the
+    // bounded queue, then drain once while the probe server is intentionally
+    // idle and waiting for the corrupt-frame phase.
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    for (;;) {
+        const auto started = std::chrono::steady_clock::now();
+        if (!client.TryHarvestXPilot4Observation(&observation)) break;
+        harvestTimes.push_back(static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - started).count()));
+        if (observation.kind == BrainXPilot4EventKind::LocalCapacityLoss) {
+            sawLoss = true;
+            observedLoss += observation.lostCount;
+        }
+    }
+    const bool lossReady = burstReceived && sawLoss;
     const auto bounded = client.XPilot4TransportSnapshot();
     if (!lossReady || observedLoss == 0 ||
         bounded.maximumIncomingDepth > 1024 ||
         bounded.localCapacityLoss != observedLoss) {
         client.Stop();
-        return Require(false, "bounded incoming loss accounting failed", failure);
+        return Require(false,
+            "bounded incoming loss accounting failed lossReady=" +
+                std::to_string(lossReady ? 1 : 0) +
+                " observedLoss=" + std::to_string(observedLoss) +
+                " localCapacityLoss=" +
+                std::to_string(bounded.localCapacityLoss) +
+                " framesReceived=" + std::to_string(bounded.framesReceived) +
+                " beforeFrames=" + std::to_string(beforeBurst.framesReceived) +
+                " maximumIncomingDepth=" +
+                std::to_string(bounded.maximumIncomingDepth),
+            failure);
     }
     std::sort(harvestTimes.begin(), harvestTimes.end());
     *harvestP99Us = harvestTimes.empty()
@@ -519,15 +535,16 @@ bool CheckRealPipe(
     *lossCount = observedLoss;
 
     server.allowCorrupt.store(true);
+    bool sawCorruptFact = false;
     const bool corruptReported = WaitFor(
         [&]() {
             BrainXPilot4Observation item;
-            bool explicitFact = false;
             while (client.TryHarvestXPilot4Observation(&item)) {
-                explicitFact |= item.kind == BrainXPilot4EventKind::CorruptEnvelope;
+                sawCorruptFact |=
+                    item.kind == BrainXPilot4EventKind::CorruptEnvelope;
             }
             const auto health = client.XPilot4TransportSnapshot();
-            return explicitFact && health.corruptFrames == 1 &&
+            return sawCorruptFact && health.corruptFrames == 1 &&
                 health.disconnects >= 1;
         },
         std::chrono::seconds(5));

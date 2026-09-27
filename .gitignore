@@ -1,4 +1,5 @@
 build/
+/build-*/
 .vs/
 *.VC.db
 *.VC.opendb
@@ -29,3 +30,7 @@ integrations/xpilot4_bridge/bin/
 integrations/xpilot4_bridge/obj/
 tools/xpilot4_bridge_probe/bin/
 tools/xpilot4_bridge_probe/obj/
+manager/**/bin/
+manager/**/obj/
+manager/generated/
+manager/artifacts/

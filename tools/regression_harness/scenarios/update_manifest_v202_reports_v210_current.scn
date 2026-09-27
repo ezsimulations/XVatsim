@@ -1,0 +1,15 @@
+name=V2.0.2 public manifest keeps an installed V2.1.0 release candidate current
+
+update.installed_version=2.1.0
+update.manifest_payload={"schema":1,"product":"XVatsim","channel":"stable","latest_version":"2.0.2","minimum_supported_version":"1.0.0","published_date":"2026-09-17","download_filename":"XVatsim_2.0.2_Freeware_Windows_XP12.zip","package_sha256":"8BD0BE5137D2844AC64CA1FE444E05D12C43A3C6BEBCFC4CF6370B5B1A8596E9","package_size_bytes":2042321,"plugin_sha256":"31F0D5EC3766C662A474A4E113464F956AC312FB61F002130FFAE258B71FA726","download_page_url":"https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/","github_release_url":"https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.2","update_policy":"notify_only","critical":false,"message":"XVatsim 2.0.2 is available. Download the freeware Windows XP12 package from X-Plane.org or GitHub Releases.","release_notes":["Public manifest remains on V2.0.2 during the V2.1.0 release freeze."]}
+
+expect.update_status=current
+expect.update_latest_version=2.0.2
+expect.update_critical=false
+expect.update_download_page_url=https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/
+expect.update_error_class=none
+expect.overlay_version_text=V2.1.0
+expect.overlay_version_alternate_text=
+expect.overlay_version_tone=Current
+expect.overlay_version_rotates=false
+expect.overlay_notice_visible=false

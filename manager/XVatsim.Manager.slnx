@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/XVatsim.Manager.Core/XVatsim.Manager.Core.csproj" />
+  <Project Path="src/XVatsim.Manager/XVatsim.Manager.csproj" />
+  <Project Path="tests/XVatsim.Manager.Probe/XVatsim.Manager.Probe.csproj" />
+</Solution>
