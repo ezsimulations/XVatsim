@@ -6,7 +6,7 @@ Baseline: V2.0.2 tag `b1f968f`
 
 Implementation baseline: `627fbb96d9234bb05ba1ce10c6acc2e6827e02b6`
 
-Candidate source commit: `a7718ec7d05e22a7c9b2674d63cbf782afeb4144`
+Candidate source commit: `d99f365d619f3a5e01d1fde9e1f9cafba3ce7fb2`
 
 ## Candidate purpose
 
@@ -31,8 +31,8 @@ implementation baseline.
 
 - XPL SHA-256: `0D4ACC2A99309EE3ACC640798C286144044E57595E93AD8F7364485A65CBAEEF`
 - xPilot 4 bridge SHA-256: `33DF8B96B62356C01E3DAD09E38198D3E7118F688421E83D6C797BAF6EA7CFA0`
-- Manager payload SHA-256: `4DB34E47F02D4395E2D7B173C50CC463ED7ECB78FB369C6201C7ED2BFA75F6CE`
-- Unsigned Manager SHA-256: `12A4ED26E0A202F2D1BFF091689B5D9A9C9497A3D3289B394B1B813376DF1329`
+- Manager payload SHA-256: `87133A3AC24D3CBCA722E4AC358E7AC61F196B86B6E42A20D6EB755552A1543E`
+- Unsigned Manager SHA-256: `5911F012772B45FC8DFF5B648734581EDE9B3F676397F7E39F9863BF9E33021A`
 
 The Manager embeds exactly the XPL above, the bridge above,
 `ui_transition.mp3` at
@@ -49,6 +49,8 @@ and `authority_source_registry.json` at
   consecutive PASS.
 - xPilot 4 SDK companion probe: `21 / 21` PASS.
 - Manager isolated probe: `24 / 24` PASS.
+- EZ Simulations executable icon embedded at Windows sizes from 16 through 256
+  pixels and extracted from the final PE: PASS.
 - Product Owner manager scenario matrix: PASS.
 - V2.0.2 to V2.1.0 update using the frozen payload: PASS.
 - Clean V2.1.0 first installation using the frozen payload: PASS.

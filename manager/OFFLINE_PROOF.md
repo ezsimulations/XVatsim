@@ -8,11 +8,11 @@
 
 **Candidate version:** `2.1.0`
 
-**Committed-source artifact SHA-256:** `12A4ED26E0A202F2D1BFF091689B5D9A9C9497A3D3289B394B1B813376DF1329`
+**Committed-source artifact SHA-256:** `5911F012772B45FC8DFF5B648734581EDE9B3F676397F7E39F9863BF9E33021A`
 
-**Source commit:** `a7718ec7d05e22a7c9b2674d63cbf782afeb4144`
+**Source commit:** `d99f365d619f3a5e01d1fde9e1f9cafba3ce7fb2`
 
-**Embedded payload SHA-256:** `4DB34E47F02D4395E2D7B173C50CC463ED7ECB78FB369C6201C7ED2BFA75F6CE`
+**Embedded payload SHA-256:** `87133A3AC24D3CBCA722E4AC358E7AC61F196B86B6E42A20D6EB755552A1543E`
 
 **Product Owner-tested precursor SHA-256:** `F197731DEDFC8BDBDFAD1412FDCC7EF1C5CE73B5B8897EC674F26890EDBCA067`
 
@@ -37,6 +37,9 @@ The isolated manager probe passed 24 checks:
 - running X-Plane/xPilot refusal.
 
 The packaged executable also passed its embedded-payload startup self-test.
+The EZ Simulations logo is embedded as the executable icon at 16, 20, 24, 32,
+40, 48, 64, 96, 128, and 256 pixels. Windows icon extraction from the final
+executable succeeded.
 The manager now includes a boxed installation sequence that remains visible
 for at least five seconds after a fast successful transaction. The transaction
 engine remains authoritative and immediately interrupts the visual sequence
