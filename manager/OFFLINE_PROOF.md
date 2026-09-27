@@ -70,8 +70,10 @@ blocks.
 The compatibility amendment did not change the transaction engine, managed
 file set, rollback, XPL, live-tested bridge binary, or Brain runtime. The full
 Product Owner matrix below remains evidence for those unchanged paths. A
-focused screen and repair/current confirmation using the amended Manager is
-still pending before signing.
+focused screen confirmation using the amended Manager passed: the Product
+Owner confirmed the new SDK-compatibility wording is present. A missing-bridge
+Repair and return-to-Current confirmation using the amended Manager remains
+before signing.
 
 Windows UI Automation and a rendered-window inspection also proved that the
 startup screen displays only the verified X-Plane and xPilot folders, reports
