@@ -8,11 +8,11 @@
 
 **Candidate version:** `2.1.0`
 
-**Committed-source artifact SHA-256:** `5911F012772B45FC8DFF5B648734581EDE9B3F676397F7E39F9863BF9E33021A`
+**Committed-source artifact SHA-256:** `8AA67D8039742435B44F695E2C8B5DCB2751DE21C36612AE6C44A7629D3D52E0`
 
-**Source commit:** `d99f365d619f3a5e01d1fde9e1f9cafba3ce7fb2`
+**Source commit:** `bd6bbe1150579922a53545a60b15be02bcbf0cf2`
 
-**Embedded payload SHA-256:** `87133A3AC24D3CBCA722E4AC358E7AC61F196B86B6E42A20D6EB755552A1543E`
+**Embedded payload SHA-256:** `0CC61E580C11F1566B9D03544E108400C5B29F3ED08DA336698ACB906FA54367`
 
 **Product Owner-tested precursor SHA-256:** `F197731DEDFC8BDBDFAD1412FDCC7EF1C5CE73B5B8897EC674F26890EDBCA067`
 
@@ -27,11 +27,12 @@ The isolated manager probe passed 24 checks:
 - rollback after a real Windows destination-file lock, including preservation
   of the prior receipt, removal of staging and temporary files, and retention
   of backup evidence;
-- no-xPilot blocking, verified xPilot 3, supported xPilot 4, unsupported
-  xPilot 4, and dual-version planning;
+- no-xPilot blocking, verified xPilot 3, current and later xPilot 4 beta product
+  versions, dual-version planning, missing simulator plugin, and a future xPilot
+  major generation;
 - transaction-level refusal when the required folder and pairing gate is not
   satisfied;
-- refusal to install the bridge for a mismatched xPilot simulator plugin;
+- refusal to install the bridge when the xPilot simulator plugin is absent;
 - ZIP path-traversal rejection;
 - corrupt-payload rejection before destination writes; and
 - running X-Plane/xPilot refusal.
@@ -54,9 +55,23 @@ Read-only discovery on the Product Owner's machine found:
 
 - `C:\X-Plane 12` as a valid X-Plane 12 installation;
 - xPilot `4.0.0-beta.7` as a supported desktop client;
-- the approved Beta 7 X-Plane plugin hash;
+- the xPilot simulator plugin as present without using its beta-specific hash
+  as a compatibility decision;
 - all four managed XVatsim and bridge files matching the embedded payload; and
-- a final recommendation of `Current`, with bridge compatibility true and no warnings.
+- a final recommendation of `Current`, with the bridge included and no warnings.
+
+The xPilot companion probe passed `21 / 21` checks after exercising the upper
+end of the supported SDK family with API `0.1.99`. API `0.2.0` still produced
+an explicit unavailable observation with zero event subscriptions. The Manager
+probe passed `24 / 24`, including a later xPilot 4 beta product version without
+a Manager rebuild, while retaining the missing-plugin and future-major safety
+blocks.
+
+The compatibility amendment did not change the transaction engine, managed
+file set, rollback, XPL, live-tested bridge binary, or Brain runtime. The full
+Product Owner matrix below remains evidence for those unchanged paths. A
+focused screen and repair/current confirmation using the amended Manager is
+still pending before signing.
 
 Windows UI Automation and a rendered-window inspection also proved that the
 startup screen displays only the verified X-Plane and xPilot folders, reports

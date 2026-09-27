@@ -6,7 +6,7 @@ Baseline: V2.0.2 tag `b1f968f`
 
 Implementation baseline: `627fbb96d9234bb05ba1ce10c6acc2e6827e02b6`
 
-Candidate source commit: `d99f365d619f3a5e01d1fde9e1f9cafba3ce7fb2`
+Candidate source commit: `bd6bbe1150579922a53545a60b15be02bcbf0cf2`
 
 ## Candidate purpose
 
@@ -31,8 +31,8 @@ implementation baseline.
 
 - XPL SHA-256: `0D4ACC2A99309EE3ACC640798C286144044E57595E93AD8F7364485A65CBAEEF`
 - xPilot 4 bridge SHA-256: `33DF8B96B62356C01E3DAD09E38198D3E7118F688421E83D6C797BAF6EA7CFA0`
-- Manager payload SHA-256: `87133A3AC24D3CBCA722E4AC358E7AC61F196B86B6E42A20D6EB755552A1543E`
-- Unsigned Manager SHA-256: `5911F012772B45FC8DFF5B648734581EDE9B3F676397F7E39F9863BF9E33021A`
+- Manager payload SHA-256: `0CC61E580C11F1566B9D03544E108400C5B29F3ED08DA336698ACB906FA54367`
+- Unsigned Manager SHA-256: `8AA67D8039742435B44F695E2C8B5DCB2751DE21C36612AE6C44A7629D3D52E0`
 
 The Manager embeds exactly the XPL above, the bridge above,
 `ui_transition.mp3` at
@@ -49,21 +49,34 @@ and `authority_source_registry.json` at
   consecutive PASS.
 - xPilot 4 SDK companion probe: `21 / 21` PASS.
 - Manager isolated probe: `24 / 24` PASS.
+- Manager later-beta compatibility without a rebuild, missing-simulator-plugin
+  refusal, and future-major refusal: PASS.
+- Companion SDK API `0.1.99` acceptance and `0.2.0` refusal before event
+  subscription: PASS.
 - EZ Simulations executable icon embedded at Windows sizes from 16 through 256
   pixels and extracted from the final PE: PASS.
-- Product Owner manager scenario matrix: PASS.
+- Product Owner transaction scenario matrix before the compatibility amendment:
+  PASS.
 - V2.0.2 to V2.1.0 update using the frozen payload: PASS.
 - Clean V2.1.0 first installation using the frozen payload: PASS.
 - Restoration of all unmanaged diagnostics and legacy backups without changing
   managed files: PASS.
 - Public V2.0.2 manifest against installed V2.1.0 remains silent/current: PASS.
 
-The two Product Owner final installation scenarios used the same manager source
-and the exact four managed file hashes listed above immediately before the
-source commit. The committed-source rebuild changed only build identification
-and payload archive metadata and passed all 24 isolated checks again. The
-required signed-build standard-account test remains the final executable-level
-distribution proof.
+The two Product Owner final installation scenarios used the same transaction
+engine and the exact four managed file hashes listed above. The compatibility
+amendment changed Manager eligibility and wording, then passed all 24 isolated
+checks again. The required focused amended-Manager confirmation and signed-build
+standard-account test remain the final executable-level distribution proofs.
+
+The later xPilot beta amendment changed only Manager discovery, planning,
+manifest metadata, compatibility wording, and focused probes. It did not change
+the XPL, the live-tested bridge binary, the transaction engine, rollback, file
+ownership, or runtime Brain behavior. The packaged amended Manager reports the
+installed Beta 7 environment as `Current`, includes the bridge, and produces no
+warning. One focused Product Owner screen and repair/current confirmation with
+this amended executable remains before signing; the earlier full transaction
+scenario matrix remains evidence for the unchanged transaction paths.
 
 The one saved scenario excluded from the environment-independent total checks
 the exact legacy xPilot 3.0.2 simulator-plugin fingerprint at its real X-Plane
@@ -80,8 +93,10 @@ before a signed Manager and the approved V2.1.0 download are available.
 
 Before public distribution:
 
-1. Authenticode-sign and timestamp the exact Manager candidate.
-2. Verify the signed file hash and embedded payload identity.
-3. Run a clean standard-account Windows installation test with the signed file.
-4. Obtain Product Owner approval of the final downloadable package.
-5. Publish the package and GitHub release before updating the public manifest.
+1. Complete the focused Product Owner amended-compatibility screen and
+   repair/current confirmation.
+2. Authenticode-sign and timestamp the exact Manager candidate.
+3. Verify the signed file hash and embedded payload identity.
+4. Run a clean standard-account Windows installation test with the signed file.
+5. Obtain Product Owner approval of the final downloadable package.
+6. Publish the package and GitHub release before updating the public manifest.
