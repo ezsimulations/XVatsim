@@ -14,7 +14,7 @@ public partial class App : Application
             try
             {
                 var payload = ZipPayloadProvider.FromAssembly(Assembly.GetExecutingAssembly(), "XVatsim.Manager.payload.zip");
-                var snapshot = Task.Run(() => new DiscoveryService(payload.Manifest).DiscoverFastAsync())
+                var snapshot = Task.Run(() => new DiscoveryService().DiscoverFastAsync())
                     .GetAwaiter().GetResult();
                 if (payload.Manifest.Files.Count < 4 || snapshot.XPlaneInstallations.Count == 0)
                     throw new InvalidOperationException("Payload or local discovery self-test did not produce the expected facts.");

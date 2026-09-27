@@ -72,7 +72,7 @@ public sealed class ZipPayloadProvider : IPayloadProvider
 
     private void ValidateInventory()
     {
-        if (Manifest.SchemaVersion != "1")
+        if (Manifest.SchemaVersion != "2")
             throw new InvalidDataException($"Unsupported payload schema {Manifest.SchemaVersion}.");
         if (string.IsNullOrWhiteSpace(Manifest.ProductVersion) || Manifest.Files.Count == 0)
             throw new InvalidDataException("The payload manifest has no product version or files.");

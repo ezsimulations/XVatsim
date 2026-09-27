@@ -34,7 +34,7 @@ public partial class MainWindow : Window
         try
         {
             _payload = ZipPayloadProvider.FromAssembly(Assembly.GetExecutingAssembly(), "XVatsim.Manager.payload.zip");
-            _discovery = new DiscoveryService(_payload.Manifest);
+            _discovery = new DiscoveryService();
         }
         catch (Exception error)
         {
@@ -403,8 +403,7 @@ public partial class MainWindow : Window
         var version = _selectedXPilot.ProductVersion.Split('+', 2)[0];
         XPilotStatus.Text = _selectedXPilot.Generation switch
         {
-            XPilotGeneration.Version4 when _selectedXPilot.IsSupportedByPayload => $"xPilot {version} found and supported.",
-            XPilotGeneration.Version4 => $"xPilot {version} was found but is not supported by this manager.",
+            XPilotGeneration.Version4 => $"xPilot {version} found. The companion will verify SDK compatibility when xPilot starts.",
             XPilotGeneration.Version3 => $"xPilot {version} found and supported through the legacy integration.",
             _ => "The selected xPilot version could not be verified."
         };

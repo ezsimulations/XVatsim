@@ -6,12 +6,12 @@ using XVatsim.Manager.Core;
 if (args is ["--live-scan", var payloadPath])
 {
     var provider = new ZipPayloadProvider(await File.ReadAllBytesAsync(payloadPath));
-    var snapshot = await new DiscoveryService(provider.Manifest).DiscoverFastAsync();
+    var snapshot = await new DiscoveryService().DiscoverFastAsync();
     Console.WriteLine($"XVATSIM_MANAGER_LIVE_SCAN xplane={snapshot.XPlaneInstallations.Count} xpilot={snapshot.XPilotInstallations.Count}");
     foreach (var item in snapshot.XPlaneInstallations)
-        Console.WriteLine($"XPLANE root={item.RootPath} xvatsim={item.HasXVatsim} xpilotPlugin={item.HasXPilotPlugin} xpilotHash={item.XPilotPluginSha256 ?? "none"} source={item.Source}");
+        Console.WriteLine($"XPLANE root={item.RootPath} xvatsim={item.HasXVatsim} xpilotPlugin={item.HasXPilotPlugin} source={item.Source}");
     foreach (var item in snapshot.XPilotInstallations)
-        Console.WriteLine($"XPILOT version={item.ProductVersion} generation={item.Generation} supported={item.IsSupportedByPayload} path={item.ExecutablePath}");
+        Console.WriteLine($"XPILOT version={item.ProductVersion} generation={item.Generation} path={item.ExecutablePath}");
     var planner = new InstallPlanner(provider, new ReceiptStore());
     foreach (var item in snapshot.XPlaneInstallations)
     {
@@ -54,7 +54,7 @@ internal sealed class ManagerProbe
     {
         var fixture = CreateFixture("2.0.2", "plugin-v202", "audio-v1", "registry-v1");
         var xplane = CreateXPlane("xp-main", hasPlugin: false, hasXPilotPlugin: true);
-        var v3 = XPilot("3.2.0", XPilotGeneration.Version3, false);
+        var v3 = XPilot("3.2.0", XPilotGeneration.Version3);
         var unrelated = Path.Combine(xplane.PluginDirectory, "XVatsim", "settings.json");
         Directory.CreateDirectory(Path.GetDirectoryName(unrelated)!);
         await File.WriteAllTextAsync(unrelated, "keep-me");
@@ -83,7 +83,7 @@ internal sealed class ManagerProbe
     private async Task UpdateAndRollbackAsync()
     {
         var xplane = CreateXPlane("xp-main", hasPlugin: true, hasXPilotPlugin: true);
-        var v3 = XPilot("3.2.0", XPilotGeneration.Version3, false);
+        var v3 = XPilot("3.2.0", XPilotGeneration.Version3);
         var receipts = new ReceiptStore(Path.Combine(_root, "state"));
         var next = CreateFixture("2.0.3", "plugin-v203", "audio-v2", "registry-v2");
         var plan = await new InstallPlanner(next, receipts).BuildAsync(xplane, [v3]);
@@ -104,14 +104,12 @@ internal sealed class ManagerProbe
     private async Task CompatibilityMatrixAsync()
     {
         var payload = CreateFixture("2.0.2", "plugin", "audio", "registry", includeBridge: true);
-        var xplane = CreateXPlane("xp-compat", hasPlugin: false, hasXPilotPlugin: true) with
-        {
-            XPilotPluginSha256 = "92DF45CA308377D1A8309C843DDAA7653B11CA232C78616D1D5A765CDC409455"
-        };
+        var xplane = CreateXPlane("xp-compat", hasPlugin: false, hasXPilotPlugin: true);
         var planner = new InstallPlanner(payload, new ReceiptStore(Path.Combine(_root, "compat-state")));
-        var v3 = XPilot("3.2.0", XPilotGeneration.Version3, false);
-        var v4 = XPilot("4.0.0-beta.7+probe", XPilotGeneration.Version4, true);
-        var unsupported = XPilot("4.0.0-beta.99", XPilotGeneration.Version4, false);
+        var v3 = XPilot("3.2.0", XPilotGeneration.Version3);
+        var v4 = XPilot("4.0.0-beta.7+probe", XPilotGeneration.Version4);
+        var futureV4 = XPilot("4.0.0-beta.99", XPilotGeneration.Version4);
+        var unknown = XPilot("5.0.0", XPilotGeneration.Unknown);
 
         var noXPilot = await planner.BuildAsync(xplane, []);
         Require(!noXPilot.CanInstallBridge && !noXPilot.CanInstallSafely, "no xPilot blocks installation");
@@ -124,21 +122,23 @@ internal sealed class ManagerProbe
         Require(!v3Plan.CanInstallBridge && v3Plan.CanInstallSafely, "xPilot 3 uses verified legacy installation");
         var v4Plan = await planner.BuildAsync(xplane, [v4]);
         Require(v4Plan.CanInstallBridge && v4Plan.CanInstallSafely, "supported xPilot 4 includes bridge");
-        var unsupportedPlan = await planner.BuildAsync(xplane, [unsupported]);
-        Require(!unsupportedPlan.CanInstallBridge && !unsupportedPlan.CanInstallSafely, "unsupported xPilot 4 blocks installation");
+        var futurePlan = await planner.BuildAsync(xplane, [futureV4]);
+        Require(futurePlan.CanInstallBridge && futurePlan.CanInstallSafely,
+            "new xPilot 4 beta does not require manager rebuild");
         Require((await planner.BuildAsync(xplane, [v3, v4])).CanInstallBridge, "xPilot 3 and 4 prefers compatible bridge path");
-        Require((await planner.BuildAsync(xplane, [unsupported, v4])).CanInstallBridge,
-            "supported xPilot 4 is preferred over an older unsupported beta");
-        var mismatchedPlugin = xplane with { XPilotPluginSha256 = new string('A', 64) };
-        var mismatchedPlan = await planner.BuildAsync(mismatchedPlugin, [v4]);
-        Require(!mismatchedPlan.CanInstallBridge && !mismatchedPlan.CanInstallSafely,
-            "mismatched xPilot simulator plugin blocks bridge");
+        var missingSimulatorPlugin = CreateXPlane("xp-compat-missing", hasPlugin: false, hasXPilotPlugin: false);
+        var missingPluginPlan = await planner.BuildAsync(missingSimulatorPlugin, [futureV4]);
+        Require(!missingPluginPlan.CanInstallBridge && !missingPluginPlan.CanInstallSafely,
+            "missing xPilot simulator plugin blocks installation");
+        var unknownPlan = await planner.BuildAsync(xplane, [unknown]);
+        Require(!unknownPlan.CanInstallBridge && !unknownPlan.CanInstallSafely,
+            "future xPilot generation blocks installation");
     }
 
     private async Task LockedDestinationRollbackAsync()
     {
         var xplane = CreateXPlane("xp-locked", hasPlugin: false, hasXPilotPlugin: true);
-        var v3 = XPilot("3.2.0", XPilotGeneration.Version3, false);
+        var v3 = XPilot("3.2.0", XPilotGeneration.Version3);
         var receipts = new ReceiptStore(Path.Combine(_root, "locked-state"));
         var managerRoot = Path.Combine(_root, "locked-manager");
         var baseline = CreateFixture("2.0.2", "plugin-before-lock", "audio-before-lock", "registry-before-lock");
@@ -185,7 +185,7 @@ internal sealed class ManagerProbe
 
         var corrupt = CreateFixture("2.0.2", "plugin", "audio", "registry", corruptHash: true);
         var xplane = CreateXPlane("xp-corrupt", hasPlugin: false, hasXPilotPlugin: true);
-        var v3 = XPilot("3.2.0", XPilotGeneration.Version3, false);
+        var v3 = XPilot("3.2.0", XPilotGeneration.Version3);
         var receipts = new ReceiptStore(Path.Combine(_root, "corrupt-state"));
         var plan = await new InstallPlanner(corrupt, receipts).BuildAsync(xplane, [v3]);
         var result = await new TransactionalInstaller(corrupt, receipts, Path.Combine(_root, "corrupt-manager"))
@@ -198,7 +198,7 @@ internal sealed class ManagerProbe
     {
         var payload = CreateFixture("2.0.2", "plugin", "audio", "registry");
         var xplane = CreateXPlane("xp-running", hasPlugin: false, hasXPilotPlugin: true);
-        var v3 = XPilot("3.2.0", XPilotGeneration.Version3, false);
+        var v3 = XPilot("3.2.0", XPilotGeneration.Version3);
         var receipts = new ReceiptStore(Path.Combine(_root, "running-state"));
         var plan = await new InstallPlanner(payload, receipts).BuildAsync(xplane, [v3]);
         var installer = new TransactionalInstaller(payload, receipts, Path.Combine(_root, "running-manager"),
@@ -221,11 +221,11 @@ internal sealed class ManagerProbe
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, "xpilot fixture");
         }
-        return new XPlaneInstallation(root, executable, plugins, "12", hasPlugin, hasXPilotPlugin, null, "probe");
+        return new XPlaneInstallation(root, executable, plugins, "12", hasPlugin, hasXPilotPlugin, "probe");
     }
 
-    private static XPilotInstallation XPilot(string version, XPilotGeneration generation, bool supported) =>
-        new(Path.Combine(Path.GetTempPath(), "xPilot.exe"), version, generation, supported, "probe");
+    private static XPilotInstallation XPilot(string version, XPilotGeneration generation) =>
+        new(Path.Combine(Path.GetTempPath(), "xPilot.exe"), version, generation, "probe");
 
     private static ZipPayloadProvider CreateFixture(string version, string plugin, string audio, string registry,
         bool includeBridge = false, bool corruptHash = false)
@@ -240,8 +240,7 @@ internal sealed class ManagerProbe
             files[("xpilot4/XVatsim.XPilot4Bridge.dll", PayloadTarget.XPilot4)] = System.Text.Encoding.UTF8.GetBytes("bridge");
         var manifestFiles = files.Select((item, index) => new PayloadFile(item.Key.Path, item.Key.Target,
             item.Value.LongLength, corruptHash && index == 0 ? new string('0', 64) : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(item.Value)))).ToArray();
-        var manifest = new ManagerManifest("1", version, DateTimeOffset.UtcNow.ToString("O"),
-            ["4.0.0-beta.7"], ["92DF45CA308377D1A8309C843DDAA7653B11CA232C78616D1D5A765CDC409455"], manifestFiles);
+        var manifest = new ManagerManifest("2", version, DateTimeOffset.UtcNow.ToString("O"), manifestFiles);
         using var memory = new MemoryStream();
         using (var archive = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
         {

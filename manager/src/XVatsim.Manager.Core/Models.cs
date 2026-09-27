@@ -34,8 +34,6 @@ public sealed record ManagerManifest(
     string SchemaVersion,
     string ProductVersion,
     string CreatedUtc,
-    IReadOnlyList<string> SupportedXPilot4ProductVersionPrefixes,
-    IReadOnlyList<string> SupportedXPilot4SimulatorPluginSha256,
     IReadOnlyList<PayloadFile> Files);
 
 public sealed record XPlaneInstallation(
@@ -45,14 +43,12 @@ public sealed record XPlaneInstallation(
     string? ProductVersion,
     bool HasXVatsim,
     bool HasXPilotPlugin,
-    string? XPilotPluginSha256,
     string Source);
 
 public sealed record XPilotInstallation(
     string ExecutablePath,
     string ProductVersion,
     XPilotGeneration Generation,
-    bool IsSupportedByPayload,
     string Source);
 
 public sealed record DiscoverySnapshot(

@@ -17,7 +17,7 @@ public static class SupportReport
             text.AppendLine($"- {xplane.RootPath} | X-Plane={xplane.ProductVersion ?? "unknown"} | XVatsim={xplane.HasXVatsim} | xPilot plugin={xplane.HasXPilotPlugin} | source={xplane.Source}");
         text.AppendLine("Detected xPilot clients:");
         foreach (var xpilot in snapshot.XPilotInstallations)
-            text.AppendLine($"- {xpilot.ExecutablePath} | version={xpilot.ProductVersion} | generation={xpilot.Generation} | bridgeCompatible={xpilot.IsSupportedByPayload} | source={xpilot.Source}");
+            text.AppendLine($"- {xpilot.ExecutablePath} | version={xpilot.ProductVersion} | generation={xpilot.Generation} | source={xpilot.Source}");
         if (plan is not null)
         {
             text.AppendLine($"Recommended action: {plan.Action}");

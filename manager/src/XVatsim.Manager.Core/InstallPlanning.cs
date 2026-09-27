@@ -7,7 +7,7 @@ public static class XPilotSelection
 {
     public static XPilotInstallation? Preferred(IEnumerable<XPilotInstallation> installations) =>
         installations
-            .OrderByDescending(item => item.Generation == XPilotGeneration.Version4 && item.IsSupportedByPayload)
+            .OrderByDescending(item => item.Generation == XPilotGeneration.Version4)
             .ThenByDescending(item => item.Source.Equals("xPilot standard location", StringComparison.OrdinalIgnoreCase))
             .ThenByDescending(item => item.Generation)
             .ThenByDescending(item => item.ProductVersion, StringComparer.OrdinalIgnoreCase)
@@ -79,15 +79,8 @@ public sealed class InstallPlanner
     {
         var warnings = new List<string>();
         var selectedXPilot = XPilotSelection.Preferred(xpilots);
-        var desktopSupportsBridge = selectedXPilot is
-        {
-            Generation: XPilotGeneration.Version4,
-            IsSupportedByPayload: true
-        };
-        var simulatorPluginSupportsBridge = xplane.XPilotPluginSha256 is not null &&
-            _payload.Manifest.SupportedXPilot4SimulatorPluginSha256.Any(hash =>
-                Hashing.EqualsHash(hash, xplane.XPilotPluginSha256));
-        var canInstallBridge = desktopSupportsBridge && simulatorPluginSupportsBridge;
+        var desktopSupportsBridge = selectedXPilot is { Generation: XPilotGeneration.Version4 };
+        var canInstallBridge = desktopSupportsBridge && xplane.HasXPilotPlugin;
         var canInstallSafely = selectedXPilot switch
         {
             { Generation: XPilotGeneration.Version3 } => xplane.HasXPilotPlugin,
@@ -99,15 +92,11 @@ public sealed class InstallPlanner
             warnings.Add("xPilot was not found. Select its installation folder before installing XVatsim.");
         else if (selectedXPilot.Generation == XPilotGeneration.Version3)
             warnings.Add("xPilot 3 detected. XVatsim will use its existing legacy integration; no xPilot 4 companion will be installed.");
-        else if (selectedXPilot.Generation == XPilotGeneration.Version4 && !selectedXPilot.IsSupportedByPayload)
-            warnings.Add($"xPilot {selectedXPilot.ProductVersion} is not on this manager's compatibility list. XVatsim will be installed without the companion.");
         else if (selectedXPilot.Generation == XPilotGeneration.Unknown)
             warnings.Add("The detected xPilot version could not be classified. The companion will not be installed.");
 
         if (selectedXPilot?.Generation == XPilotGeneration.Version4 && !xplane.HasXPilotPlugin)
             warnings.Add("The xPilot desktop client is version 4, but its X-Plane plugin was not found in this X-Plane installation. Reinstall xPilot before live use.");
-        else if (desktopSupportsBridge && !simulatorPluginSupportsBridge)
-            warnings.Add("The xPilot desktop client and its X-Plane plugin are not a verified pair for this bridge. Reinstall the matching xPilot beta; the companion will not be installed yet.");
         else if (selectedXPilot?.Generation == XPilotGeneration.Version3 && !xplane.HasXPilotPlugin)
             warnings.Add("xPilot was found, but its X-Plane plugin was not found in the selected X-Plane installation.");
 

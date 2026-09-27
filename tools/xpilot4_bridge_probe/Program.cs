@@ -32,7 +32,7 @@ static class Probe
     private static async Task VerifySupportedReadOnlyFlow()
     {
         var pipeName = UniquePipeName("flow");
-        var broker = new FakeBroker(new Version(0, 1, 0));
+        var broker = new FakeBroker(new Version(0, 1, 99));
         broker.Controllers.Add(new ControllerInfo("ML_TWR", 120_500_000, -37.6733, 144.8433));
         var plugin = new XVatsimXPilot4Bridge(
             new XPilot4BridgeOptions(pipeName, 512));

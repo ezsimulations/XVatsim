@@ -2,7 +2,8 @@
 
 **Gate ID:** `XVATSIM-MANAGER-01`
 
-**Status:** Approved by Product Owner on 2026-09-26
+**Status:** Approved by Product Owner on 2026-09-26; xPilot 4 beta
+compatibility amendment approved on 2026-09-26
 
 **Baseline:** `627fbb96d9234bb05ba1ce10c6acc2e6827e02b6`
 **Scope:** A separate Windows installer, updater, repair, and rollback manager
@@ -49,7 +50,7 @@ The first manager payload owns exactly these XVatsim runtime files:
 - `Resources/plugins/XVatsim/win_x64/ui_transition.mp3`
 - `Resources/plugins/XVatsim/win_x64/authority_source_registry.json`
 
-For a supported xPilot 4 build it may also own exactly:
+For a validated xPilot 4 installation it may also own exactly:
 
 - `%LOCALAPPDATA%/org.vatsim.xpilot/Plugins/XVatsim.XPilot4Bridge/XVatsim.XPilot4Bridge.dll`
 
@@ -69,9 +70,21 @@ file are outside manager ownership and must be preserved.
    selection.
 5. xPilot 3 remains supported through XVatsim's existing legacy integration and
    receives no companion DLL.
-6. A manifest allow-list controls which xPilot 4 builds receive the companion.
-   Unknown or incompatible beta builds do not receive it.
-7. XVatsim installation remains disabled until valid X-Plane and xPilot
+6. The manager recognizes xPilot generation 4 without binding installation to
+   an individual beta product version or simulator-plugin file hash. A new
+   xPilot 4 beta does not require a manager rebuild merely because its product
+   version or binary fingerprint changed.
+7. The companion is the SDK compatibility boundary. At xPilot startup it reads
+   the broker's machine-readable SDK API version. The approved companion
+   accepts API versions greater than or equal to `0.1.0` and lower than
+   `0.2.0`. Outside that range it subscribes to no events and reports an
+   explicit unavailable fact to the Brain-owned runtime.
+8. A future xPilot major generation is not assumed compatible with xPilot 4.
+   It remains blocked until separately designed and approved.
+9. Presence of the xPilot simulator plugin remains required, but its exact
+   file hash is not a bridge-compatibility decision. xPilot owns validation of
+   its desktop/client simulator pairing.
+10. XVatsim installation remains disabled until valid X-Plane and xPilot
    installations are both selected and their required pairing is verified.
 
 ## Transaction Contract
@@ -97,8 +110,11 @@ or performs a recursive cleanup of a simulator tree.
 The normal screen presents validated installations, plain compatibility text,
 and one recommended action: `Install`, `Update`, `Repair`, or `Current`.
 Advanced details remain available without being required. Ambiguous paths,
-running programs, unsupported xPilot builds, and failed verification are shown
-before any change is made.
+running programs, unrecognized xPilot generations, missing simulator plugins,
+and failed verification are shown before any change is made. For xPilot 4 the
+screen states that SDK compatibility is checked by the companion when xPilot
+starts; it does not claim that a product-version string proves SDK
+compatibility.
 
 An installation, update, or repair presents a visible progress panel with
 plain-language stages. A successful fast transaction remains visible for at
@@ -124,7 +140,10 @@ The manager cannot be called complete until isolated tests prove:
 - rollback after an injected mid-install failure;
 - rejection of a corrupt payload and path traversal;
 - running-process refusal;
-- xPilot 3, supported xPilot 4, both, none, and unsupported xPilot 4 plans;
+- xPilot 3, current and later xPilot 4 beta product versions, both, none,
+  missing simulator plugin, and an unrecognized future xPilot generation;
+- companion acceptance throughout API `0.1.x` and refusal at API `0.2.0`
+  before any event subscription;
 - multiple X-Plane selection behavior; and
 - detection of an unreceipted or modified XVatsim binary.
 

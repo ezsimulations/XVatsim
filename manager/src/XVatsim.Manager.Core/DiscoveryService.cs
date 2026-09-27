@@ -6,10 +6,6 @@ namespace XVatsim.Manager.Core;
 
 public sealed class DiscoveryService
 {
-    private readonly ManagerManifest _manifest;
-
-    public DiscoveryService(ManagerManifest manifest) => _manifest = manifest;
-
     public async Task<DiscoverySnapshot> DiscoverFastAsync(CancellationToken cancellationToken = default)
     {
         var candidatePaths = new List<(string Path, string Source)>();
@@ -77,11 +73,8 @@ public sealed class DiscoveryService
 
         var xvatsim = Path.Combine(plugins, "XVatsim", "win_x64", "XVatsim.xpl");
         var xpilotPlugin = Path.Combine(plugins, "xPilot", "win_x64", "xPilot.xpl");
-        string? xpilotHash = null;
-        if (File.Exists(xpilotPlugin))
-            xpilotHash = await Hashing.FileSha256Async(xpilotPlugin, cancellationToken);
         return new XPlaneInstallation(normalized, executable, plugins, info.ProductVersion,
-            File.Exists(xvatsim), File.Exists(xpilotPlugin), xpilotHash, source);
+            File.Exists(xvatsim), File.Exists(xpilotPlugin), source);
     }
 
     private IReadOnlyList<XPilotInstallation> DiscoverXPilot()
@@ -116,13 +109,10 @@ public sealed class DiscoveryService
         var generation = ParseMajor(version) switch
         {
             3 => XPilotGeneration.Version3,
-            >= 4 => XPilotGeneration.Version4,
+            4 => XPilotGeneration.Version4,
             _ => XPilotGeneration.Unknown
         };
-        var supported = generation == XPilotGeneration.Version4 &&
-            _manifest.SupportedXPilot4ProductVersionPrefixes.Any(prefix =>
-                version.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
-        return new XPilotInstallation(NormalizePath(executable), version, generation, supported, source);
+        return new XPilotInstallation(NormalizePath(executable), version, generation, source);
     }
 
     private static int ParseMajor(string version)

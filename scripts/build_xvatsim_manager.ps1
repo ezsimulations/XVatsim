@@ -18,8 +18,6 @@ $payloadArchive = Join-Path $generatedRoot 'payload.zip'
 $artifactRoot = Join-Path $repoRoot 'manager\artifacts'
 $managerProject = Join-Path $repoRoot 'manager\src\XVatsim.Manager\XVatsim.Manager.csproj'
 $probeProject = Join-Path $repoRoot 'manager\tests\XVatsim.Manager.Probe\XVatsim.Manager.Probe.csproj'
-$supportedXPilot4PluginHash = '92DF45CA308377D1A8309C843DDAA7653B11CA232C78616D1D5A765CDC409455'
-
 if ([string]::IsNullOrWhiteSpace($PluginPath)) {
     $PluginPath = Join-Path $repoRoot 'build-release\dist\XVatsim\win_x64\XVatsim.xpl'
 }
@@ -81,11 +79,9 @@ foreach ($item in $payloadSources) {
 }
 
 $manifest = [ordered]@{
-    schemaVersion = '1'
+    schemaVersion = '2'
     productVersion = $ProductVersion
     createdUtc = [DateTimeOffset]::UtcNow.ToString('O')
-    supportedXPilot4ProductVersionPrefixes = @('4.0.0-beta.7')
-    supportedXPilot4SimulatorPluginSha256 = @($supportedXPilot4PluginHash)
     files = $manifestFiles
 }
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $payloadRoot 'manifest.json') -Encoding utf8NoBOM
