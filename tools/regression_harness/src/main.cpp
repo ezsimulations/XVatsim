@@ -73,6 +73,7 @@
 #include "ProductCalm1Probe.h"
 #include "RuntimeActivationGateProbe.h"
 #include "AustraliaBrainEvidenceProbe.h"
+#include "CandidateDecisionDiagnosticsProbe.h"
 #include "XPilot4BridgeContractProbe.h"
 
 namespace {
@@ -23780,6 +23781,11 @@ int main(int argc, char** argv) {
     if (std::string(argv[1]) == "--australia-brain-evidence") {
         return xvatsim::tools::australia_brain_evidence::
             RunAustraliaBrainEvidenceProbe();
+    }
+
+    if (std::string(argv[1]) == "--candidate-decision-diagnostics") {
+        return xvatsim::tools::candidate_decision_diagnostics::
+            RunCandidateDecisionDiagnosticsProbe();
     }
 
     if (std::string(argv[1]) == "--pdc-log-monitor-contract") {

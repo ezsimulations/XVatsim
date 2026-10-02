@@ -1,6 +1,7 @@
 add_library(XVatsimRuntimeWorkers STATIC
     src/AsyncDiagnosticsWriter.cpp
     src/AsyncFactWorkerHost.cpp
+    src/CandidateDecisionDiagnosticsReducer.cpp
     src/FlightLoopDiagnosticsReducer.cpp
     src/PdcLogReader.cpp
     src/XPilot4BridgeClient.cpp

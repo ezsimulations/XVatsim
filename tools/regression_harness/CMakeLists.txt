@@ -1,5 +1,6 @@
 add_executable(XVatsimRegressionHarness
     src/AustraliaBrainEvidenceProbe.cpp
+    src/CandidateDecisionDiagnosticsProbe.cpp
     src/main.cpp
     src/PerformanceContractGateACalm1Probe.cpp
     src/PerformanceContractGateACalm2Probe.cpp

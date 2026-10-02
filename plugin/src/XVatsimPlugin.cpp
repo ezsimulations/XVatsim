@@ -38,6 +38,7 @@
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
 #include "XVatsim/modules/runtime_workers/AsyncDiagnosticsWriter.h"
 #include "XVatsim/modules/runtime_workers/AsyncFactWorkerHost.h"
+#include "XVatsim/modules/runtime_workers/CandidateDecisionDiagnosticsReducer.h"
 #include "XVatsim/modules/runtime_workers/FlightLoopDiagnosticsReducer.h"
 #include "XVatsim/modules/settings_store/SettingsStore.h"
 #include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
@@ -242,8 +243,6 @@ struct PluginDiagnosticsState {
     std::size_t lastAuthorityHash = 0;
     bool hasLastRadioBoardTraceHash = false;
     std::size_t lastRadioBoardTraceHash = 0;
-    bool hasLastCompletionTraceHash = false;
-    std::size_t lastCompletionTraceHash = 0;
     RefreshDiagnosticsFrame frame;
 };
 
@@ -290,6 +289,8 @@ xvatsim::modules::route_sector::RouteSectorResolver gRouteSectorResolver;
 xvatsim::modules::route_sector::AuthorityRelevanceWorker gAuthorityRelevanceWorker;
 xvatsim::modules::route_sector::RoutePreparationWorker gRoutePreparationWorker;
 xvatsim::modules::runtime_workers::AsyncDiagnosticsWriter gDiagnosticsWriter;
+xvatsim::modules::runtime_workers::CandidateDecisionDiagnosticsReducer
+    gCandidateDecisionDiagnosticsReducer;
 xvatsim::modules::runtime_workers::FlightLoopDiagnosticsReducer
     gFlightLoopDiagnosticsReducer{
         xvatsim::modules::runtime_workers::FlightLoopDiagnosticsPolicy{
@@ -3746,8 +3747,7 @@ void LogOperationalActivationSummary() {
 void ResetDiagnosticsTraceState() {
     gDiagnosticsState.hasLastRadioBoardTraceHash = false;
     gDiagnosticsState.lastRadioBoardTraceHash = 0;
-    gDiagnosticsState.hasLastCompletionTraceHash = false;
-    gDiagnosticsState.lastCompletionTraceHash = 0;
+    gCandidateDecisionDiagnosticsReducer.Reset();
 }
 
 std::string SanitizeLogToken(
@@ -3836,81 +3836,6 @@ std::string FormatRadioCandidateTraceList(
     }
     if (snapshot.candidates.size() > countToLog) {
         stream << ";+" << (snapshot.candidates.size() - countToLog);
-    }
-    return stream.str();
-}
-
-std::string FormatCompletionTrace(
-    const xvatsim::brain::BrainOwnedCandidateCompletion& completion) {
-    const auto completed =
-        completion.decision !=
-        xvatsim::brain::BrainOwnedCandidateDecision::Pending;
-    std::ostringstream stream;
-    stream << SanitizeLogToken(completion.callsign, 32)
-           << "@"
-           << SanitizeLogToken(completion.frequency, 16)
-           << ":facility=" << xvatsim::brain::ToString(completion.facilityGroup)
-           << ":decision="
-           << SanitizeLogToken(xvatsim::brain::ToString(completion.decision), 24)
-           << ":complete=" << (completed ? 1 : 0)
-           << ":display=" << (completion.displayed ? "displayed" : "hidden")
-           << ":relation="
-           << SanitizeLogToken(
-                  xvatsim::brain::ToString(completion.displayRelation),
-                  32)
-           << ":current="
-           << SanitizeLogToken(completion.currentPolygonKey, 64)
-           << ":matched="
-           << SanitizeLogToken(completion.matchedPolygonKey, 64)
-           << ":currentIndex=" << completion.currentPolygonIndex
-           << ":inputHash=" << completion.radioBoardHash
-           << "/" << completion.routePolygonHash
-           << ":entryNm="
-           << FormatTraceDistance(
-                  completion.hasRouteEntryDistance,
-                  completion.routeEntryDistanceNm)
-           << ":scoreTotals=" << completion.positiveVotes << "/"
-           << completion.negativeVotes << "/" << completion.neutralVotes
-           << ":votes=";
-    if (completion.evidenceVotes.empty()) {
-        stream << "none";
-    } else {
-        for (std::size_t index = 0;
-             index < completion.evidenceVotes.size();
-             ++index) {
-            if (index > 0) stream << ",";
-            const auto& vote = completion.evidenceVotes[index];
-            stream << SanitizeLogToken(vote.source, 40) << "="
-                   << (vote.score > 0 ? "+1" : vote.score < 0 ? "-1" : "0")
-                   << "(" << SanitizeLogToken(vote.reason, 120);
-            if (!vote.provenance.empty()) {
-                stream << "@" << SanitizeLogToken(vote.provenance, 160);
-            }
-            stream << ")";
-        }
-    }
-    stream << ":reason=" << SanitizeLogToken(completion.reason, 768)
-           << ":stable=" << SanitizeLogToken(completion.stableKey, 128);
-    return stream.str();
-}
-
-std::string FormatCompletionTraceList(
-    const std::vector<xvatsim::brain::BrainOwnedCandidateCompletion>&
-        completions) {
-    if (completions.empty()) {
-        return "none";
-    }
-
-    std::ostringstream stream;
-    const auto countToLog = completions.size();
-    for (std::size_t index = 0; index < countToLog; ++index) {
-        if (index > 0) {
-            stream << ";";
-        }
-        stream << FormatCompletionTrace(completions[index]);
-    }
-    if (completions.size() > countToLog) {
-        stream << ";+" << (completions.size() - countToLog);
     }
     return stream.str();
 }
@@ -4032,87 +3957,61 @@ void LogCandidateCompletionTrace(
     xvatsim::brain::WorkflowStage workflowStage,
     const std::string& planKey) {
     const auto& state = gBrainOwnedRuntimeState;
-    std::size_t traceHash = 0;
-    HashCombine(&traceHash, static_cast<std::size_t>(workflowStage));
-    HashCombineString(&traceHash, planKey);
-    HashCombine(&traceHash, state.gatedRadioSnapshot.stableHash);
-    HashCombine(&traceHash, state.radioSnapshot.stableHash);
-    HashCombine(&traceHash, state.routePolygonHash);
-    HashCombineBool(&traceHash, state.candidatesComplete);
-    HashCombine(&traceHash, state.candidateCompletions.size());
-    for (const auto& completion : state.candidateCompletions) {
-        HashCombineString(&traceHash, completion.stableKey);
-        HashCombine(
-            &traceHash, static_cast<std::size_t>(completion.decision));
-        HashCombineBool(&traceHash, completion.displayed);
-        HashCombineString(&traceHash, completion.currentPolygonKey);
-        HashCombineString(&traceHash, completion.matchedPolygonKey);
-        HashCombine(&traceHash, static_cast<std::size_t>(completion.positiveVotes));
-        HashCombine(&traceHash, static_cast<std::size_t>(completion.negativeVotes));
-        HashCombine(&traceHash, static_cast<std::size_t>(completion.neutralVotes));
-        for (const auto& vote : completion.evidenceVotes) {
-            HashCombineString(&traceHash, vote.source);
-            HashCombine(
-                &traceHash,
-                static_cast<std::size_t>(vote.score + 1));
-            HashCombineString(&traceHash, vote.reason);
-            HashCombineString(&traceHash, vote.provenance);
-        }
-        HashCombineString(&traceHash, completion.reason);
-    }
-    if (!ShouldEmitTraceHash(
-            traceHash,
-            &gDiagnosticsState.hasLastCompletionTraceHash,
-            &gDiagnosticsState.lastCompletionTraceHash)) {
-        return;
-    }
+    xvatsim::modules::runtime_workers::CandidateDecisionDiagnosticsContext
+        context;
+    context.phase = WorkflowStageToken(workflowStage);
+    context.planKey = planKey;
+    context.route = gDiagnosticsState.frame.route;
+    context.currentPolygon = state.currentPolygonKey;
+    context.nextPolygon = state.nextPolygonKey;
+    context.arrivalPolygon = state.arrivalPolygonKey;
+    context.currentPolygonIndex = state.currentPolygonIndex;
+    context.rawRadioHash = state.radioSnapshot.stableHash;
+    context.gatedRadioHash = state.gatedRadioSnapshot.stableHash;
+    context.routePolygonHash = state.routePolygonHash;
+    context.candidatesComplete = state.candidatesComplete;
 
-    const auto phase = std::string{WorkflowStageToken(workflowStage)};
-    const auto route = gDiagnosticsState.frame.route;
-    const auto currentPolygon = state.currentPolygonKey;
-    const auto nextPolygon = state.nextPolygonKey;
-    const auto arrivalPolygon = state.arrivalPolygonKey;
-    const auto currentPolygonIndex = state.currentPolygonIndex;
-    const auto gatedRadioHash = state.gatedRadioSnapshot.stableHash;
-    const auto rawRadioHash = state.radioSnapshot.stableHash;
-    const auto routePolygonHash = state.routePolygonHash;
-    const auto candidatesComplete = state.candidatesComplete;
-    const auto completions = state.candidateCompletions;
-    AppendDeferredDiagnosticsLogLine(
-        [phase,
-         planKey,
-         route,
-         currentPolygon,
-         nextPolygon,
-         arrivalPolygon,
-         currentPolygonIndex,
-         gatedRadioHash,
-         rawRadioHash,
-         routePolygonHash,
-         candidatesComplete,
-         completions]() {
-            std::ostringstream stream;
-            stream << "event=candidate-completion-trace"
-                   << " phase=" << phase
-                   << " plan=" << SanitizeLogToken(planKey, 128)
-                   << " route=" << SanitizeLogToken(route, 32)
-                   << " currentPolygon="
-                   << SanitizeLogToken(currentPolygon, 64)
-                   << " nextPolygon=" << SanitizeLogToken(nextPolygon, 64)
-                   << " arrivalPolygon="
-                   << SanitizeLogToken(arrivalPolygon, 64)
-                   << " currentIndex=" << currentPolygonIndex
-                   << " inputHash=" << gatedRadioHash
-                   << "/" << routePolygonHash
-                   << " rawRadioHash=" << rawRadioHash
-                   << " gatedRadioHash=" << gatedRadioHash
-                   << " routeHash=" << routePolygonHash
-                   << " candidatesComplete="
-                   << (candidatesComplete ? 1 : 0)
-                   << " completions=" << completions.size()
-                   << " results=" << FormatCompletionTraceList(completions);
-            return stream.str();
+    auto batch = gCandidateDecisionDiagnosticsReducer.Observe(
+        context,
+        state.candidateCompletions);
+    if (!batch.emit) return;
+
+    auto auditBatch = std::make_shared<
+        xvatsim::modules::runtime_workers::
+            CandidateDecisionDiagnosticsBatch>(std::move(batch));
+    AppendDeferredDiagnosticsLogLine([auditBatch]() {
+        return xvatsim::modules::runtime_workers::
+            FormatCandidateDecisionDiagnosticsSummary(*auditBatch);
+    });
+    for (std::size_t index = 0;
+         index < auditBatch->changedCompletions.size();
+         ++index) {
+        const auto recordCount = xvatsim::modules::runtime_workers::
+            CandidateDecisionDiagnosticReceiptRecordCount(
+                auditBatch->changedCompletions[index]);
+        for (std::size_t recordIndex = 0;
+             recordIndex < recordCount;
+             ++recordIndex) {
+            AppendDeferredDiagnosticsLogLine(
+                [auditBatch, index, recordIndex]() {
+                    return xvatsim::modules::runtime_workers::
+                        FormatCandidateDecisionDiagnosticReceiptRecord(
+                            auditBatch->context,
+                            auditBatch->changedCompletions[index],
+                            auditBatch->baseline,
+                            recordIndex);
+                });
+        }
+    }
+    for (std::size_t index = 0; index < auditBatch->removals.size(); ++index) {
+        AppendDeferredDiagnosticsLogLine([auditBatch, index]() {
+            return xvatsim::modules::runtime_workers::
+                FormatCandidateDecisionDiagnosticRemoval(
+                    auditBatch->context,
+                    auditBatch->removals[index],
+                    auditBatch->baseline);
         });
+    }
 }
 
 long long SumTrackedRefreshMicroseconds(const RefreshDiagnosticsFrame& frame) {
