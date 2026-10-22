@@ -6,23 +6,51 @@ flight-plan operations.
 
 ## Current Release
 
-XVatsim V2.1.0 is the current public freeware release for Windows, X-Plane 12,
+XVatsim V2.2.0 is the current public freeware release for Windows, X-Plane 12,
 xPilot 3, and xPilot 4.
 
 - Freeware package:
-  [XVatsim_2.1.0_Freeware_Windows_XP12.zip](https://github.com/ezsimulations/XVatsim/releases/download/v2.1.0/XVatsim_2.1.0_Freeware_Windows_XP12.zip)
-- Package size: `64417929` bytes
+  [XVatsim_2.2.0_Freeware_Windows_XP12.zip](https://github.com/ezsimulations/XVatsim/releases/download/v2.2.0/XVatsim_2.2.0_Freeware_Windows_XP12.zip)
+- Package size: `64532182` bytes
 - Package SHA-256:
-  `85603D6369938DCE471A0954D1C4A659CE14A26E547B29FE893A5ABB22D8E115`
+  `74B09EA9851118889F6617CEE5C6D28E1C3F8AEC8379E68B34E56A396E6B055D`
 - Packaged Manager SHA-256:
-  `8AA67D8039742435B44F695E2C8B5DCB2751DE21C36612AE6C44A7629D3D52E0`
+  `D955B125A3D2015A74393CC5ECF17B2AF1D586D71CC68679914A79736A967A89`
 - Packaged plugin SHA-256:
-  `0D4ACC2A99309EE3ACC640798C286144044E57595E93AD8F7364485A65CBAEEF`
+  `ADFF5F898F1930651C90B5108CF145D84162770C0BEF79965341ABD44B1EC23E`
+- Manager update payload SHA-256:
+  `259D3A3A4F2AC84531FDCD7D851D5FA6606C9F6B9ED1D60B5DB62BF2375C0D1E`
 - User guide:
   `docs/user_guide/XVatsim_User_Guide.pdf`
 - Download pages:
   [X-Plane.org](https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/)
-  and [GitHub Releases](https://github.com/ezsimulations/XVatsim/releases/tag/v2.1.0)
+  and [GitHub Releases](https://github.com/ezsimulations/XVatsim/releases/tag/v2.2.0)
+
+## Version 2.2.0 Controller, Assist, Electrical, And Manager Changes
+
+- Strengthens the Brain-owned controller vote so several independent hard
+  facts can outweigh a weak callsign spelling difference without allowing one
+  fact or worker to decide the result.
+- Builds route-relevant departure and arrival terminal polygon stacks,
+  including specific inner Approach/Departure areas and their larger parent
+  sectors, without processing unrelated terminal polygons worldwide.
+- Preserves established Australian callsign abbreviations and fail-safe
+  display behavior when valid evidence remains tied or incomplete.
+- Adds regional Standby Assist ordering for CTAF and non-CTAF arrivals and
+  loads UNICOM `122.800` during Enroute when no eligible controller is online.
+- Broadens aircraft electrical-state evidence so custom aircraft can keep
+  XVatsim active through battery, GPU, APU, and generator power changes.
+- Bounds diagnostic-file growth and route-scopes detailed controller evidence
+  while retaining the proof needed to diagnose Brain decisions.
+- Adds verified online payload retrieval to the standalone Manager. The
+  Manager validates HTTPS, size, SHA-256, version, safe inventory, and every
+  managed file before offering a user-selected update with rollback.
+
+Pilots upgrading from V2.1.0 must download the complete V2.2.0 package once
+and run the new `XVatsimManager.exe` included in it. The V2.2.0 Manager can
+install future compatible XVatsim payloads directly after verifying them, so a
+new Manager download is only needed if a future release explicitly requires
+one.
 
 ## Version 2.1.0 Manager And xPilot 4 Changes
 
@@ -141,22 +169,28 @@ the controller model can fail safe instead of relying on one guessed source.
 XVatsim performs notify-only update checks against the public JSON manifest at
 `https://ezsimulations.github.io/XVatsim/xvatsim_update.json`. When a newer
 version is available, the plugin directs the pilot to X-Plane.org or the
-official GitHub Release. XVatsim never downloads or installs an update.
+official GitHub Release. The in-sim plugin never downloads or installs an
+update while X-Plane is running. The standalone V2.2.0 Manager can download a
+compatible payload only after verifying its public release facts and every
+managed file, and installation remains a user-selected action.
 
 ## Release Verification
 
-The V2.1.0 source was configured and built from a fresh Release directory on
-2026-09-26. All `887 / 887` environment-independent saved regression scenarios
-passed, along with `11 / 11` focused C++ contract probes, `21 / 21` xPilot 4
-companion probes, and `24 / 24` Manager probes. Product Owner live tests passed
-for the controller, METAR, PDC, installation, update, repair, rollback, unusual
-path, running-process refusal, and xPilot 3/4 compatibility scenarios.
+The V2.2.0 source was configured and built from a fresh Release directory on
+2026-10-22. All `911` environment-independent saved regression scenarios
+passed; one absolute-path fixture tied to a different local xPilot installation
+was classified as host-specific and excluded. The xPilot 4 companion passed
+`21 / 21` probes and the Manager passed `40 / 40` probes. Product Owner live
+tests passed for nested UK terminal controllers, regional Standby Assist,
+route-scoped controller processing, bounded diagnostics, Manager update, and
+battery-to-GPU-to-APU electrical transitions.
 
 The final ZIP was independently extracted and contains exactly 12 approved
 files. All 11 entries in `SHA256SUMS.txt` passed, the Manager embedded-payload
 self-test passed, and the packaged Manager and plugin are byte-identical to the
 approved artifacts. The package contains no tests, logs, source files, backups,
-symbols, or build artifacts.
+symbols, or build artifacts. The ten-page V2.2.0 user guide was rendered and
+visually reviewed.
 
 ## Repository Layout
 

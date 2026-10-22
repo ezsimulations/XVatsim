@@ -15,4 +15,4 @@ expect.overlay_version_rotates=true
 expect.overlay_notice_visible=true
 expect.overlay_notice_severity=Warning
 expect.overlay_notice_title=XVatsim update available
-expect.overlay_notice_body_lines=Installed: V1.2.3|Latest: V2.0.0|Download: X-Plane.org or GitHub
+expect.overlay_notice_body_lines=Installed: V1.2.3|Latest: V2.0.0|Download: X-Plane.org or GitHub Releases|Use the new Manager included in the package.

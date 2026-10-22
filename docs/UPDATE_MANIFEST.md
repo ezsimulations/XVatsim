@@ -35,18 +35,22 @@ without replacing its own executable.
 
 ## Current Publication
 
-V2.1.0 was published on 2026-09-26.
+V2.2.0 was published on 2026-10-22.
 
-- Download filename: `XVatsim_2.1.0_Freeware_Windows_XP12.zip`
-- Package size: `64417929` bytes
+- Download filename: `XVatsim_2.2.0_Freeware_Windows_XP12.zip`
+- Package size: `64532182` bytes
 - Package SHA-256:
-  `85603D6369938DCE471A0954D1C4A659CE14A26E547B29FE893A5ABB22D8E115`
+  `74B09EA9851118889F6617CEE5C6D28E1C3F8AEC8379E68B34E56A396E6B055D`
 - Packaged plugin SHA-256:
-  `0D4ACC2A99309EE3ACC640798C286144044E57595E93AD8F7364485A65CBAEEF`
+  `ADFF5F898F1930651C90B5108CF145D84162770C0BEF79965341ABD44B1EC23E`
+- Manager payload filename: `XVatsim_2.2.0_Manager_Payload.zip`
+- Manager payload size: `1543201` bytes
+- Manager payload SHA-256:
+  `259D3A3A4F2AC84531FDCD7D851D5FA6606C9F6B9ED1D60B5DB62BF2375C0D1E`
 - X-Plane.org:
   `https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/`
 - GitHub Release:
-  `https://github.com/ezsimulations/XVatsim/releases/tag/v2.1.0`
+  `https://github.com/ezsimulations/XVatsim/releases/tag/v2.2.0`
 
 `download_page_url` remains the primary X-Plane.org page for compatibility.
 `github_release_url` is an informational field for clients and documentation

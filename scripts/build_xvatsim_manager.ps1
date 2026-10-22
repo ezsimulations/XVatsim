@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ProductVersion = '2.1.0',
+    [string]$ProductVersion = '2.2.0',
     [string]$PluginPath,
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[A-Fa-f0-9]{64}$')]
@@ -21,7 +21,7 @@ $payloadAssetPath = Join-Path $artifactRoot $payloadAssetName
 $managerProject = Join-Path $repoRoot 'manager\src\XVatsim.Manager\XVatsim.Manager.csproj'
 $probeProject = Join-Path $repoRoot 'manager\tests\XVatsim.Manager.Probe\XVatsim.Manager.Probe.csproj'
 if ([string]::IsNullOrWhiteSpace($PluginPath)) {
-    $PluginPath = Join-Path $repoRoot 'build-release\dist\XVatsim\win_x64\XVatsim.xpl'
+    $PluginPath = Join-Path $repoRoot 'build\v2.2.0-release\dist\XVatsim\win_x64\XVatsim.xpl'
 }
 $audioPath = Join-Path $repoRoot 'assets\audio\ui_transition.mp3'
 $registryPath = Join-Path $repoRoot 'assets\source_data\authority_source_registry.json'

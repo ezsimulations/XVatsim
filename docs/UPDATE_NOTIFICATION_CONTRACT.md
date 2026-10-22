@@ -94,7 +94,8 @@ official GitHub Releases page.
   still must not block flight controls, radio state, xPilot, or route logic.
 - Suggested text:
   - `Critical XVatsim update available`
-  - `Download: X-Plane.org or GitHub`
+  - `Download: X-Plane.org or GitHub Releases`
+  - `Use the new Manager included in the package.`
 
 ## Manual Menu Behavior
 

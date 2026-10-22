@@ -1,11 +1,11 @@
 param(
-    [string]$Version = "2.1.0",
+    [string]$Version = "2.2.0",
     [string]$PlatformName = "Windows_XP12",
-    [string]$BuildRoot = "build\v2.1.0-release",
+    [string]$BuildRoot = "build\v2.2.0-release",
     [string]$ReleaseOutputRoot = "releases",
     [string]$ManagerPath = "manager\artifacts\XVatsimManager.exe",
-    [string]$ExpectedManagerSHA256 = "8AA67D8039742435B44F695E2C8B5DCB2751DE21C36612AE6C44A7629D3D52E0",
-    [string]$ExpectedPluginSHA256 = "0D4ACC2A99309EE3ACC640798C286144044E57595E93AD8F7364485A65CBAEEF"
+    [string]$ExpectedManagerSHA256 = "D955B125A3D2015A74393CC5ECF17B2AF1D586D71CC68679914A79736A967A89",
+    [string]$ExpectedPluginSHA256 = "ADFF5F898F1930651C90B5108CF145D84162770C0BEF79965341ABD44B1EC23E"
 )
 
 $ErrorActionPreference = "Stop"
@@ -163,6 +163,11 @@ update, repair, verification, and automatic rollback. The Manager also installs
 the read-only companion required for complete xPilot 4 support. xPilot 3 keeps
 using XVatsim's established legacy integration.
 
+The Version 2.2.0 Manager can retrieve a future compatible XVatsim payload only
+after verifying its HTTPS location, size, SHA-256 hash, version, safe inventory,
+and every managed file. Pilots using the Version 2.1.0 Manager must download
+this Version 2.2.0 package once and run the new Manager included here.
+
 What XVatsim does:
 - Shows relevant VATSIM frequencies for the current flight phase.
 - Supports departure, enroute, and arrival frequency awareness.
@@ -260,6 +265,28 @@ ezsimulations@gmail.com
 $changelog = @"
 XVatsim Freeware Changelog
 Version: $Version
+
+Version 2.2.0 controller, Assist, diagnostics, and Manager update:
+- Strengthens the Brain-owned controller vote so independent hard facts can
+  outweigh weak callsign spelling differences without allowing a single fact
+  or worker to decide the result.
+- Builds departure and arrival terminal polygon stacks, including specific
+  inner Approach/Departure areas and their larger parent sectors, without
+  processing unrelated terminal polygons around the world.
+- Preserves established Australian callsign abbreviations and fail-safe display
+  behavior when valid evidence is tied or incomplete.
+- Adds regional Standby Assist sequencing for CTAF and non-CTAF arrivals and
+  loads UNICOM 122.800 during Enroute when no eligible controller is online.
+- Broadens electrical-state evidence for custom aircraft while keeping X-Plane
+  and xPilot connection requirements intact.
+- Limits diagnostic files and route-scopes detailed controller evidence to
+  preserve useful proof without unbounded disk use or worldwide processing.
+- Adds verified online payload retrieval to the standalone Manager. The Manager
+  validates HTTPS, size, SHA-256, version, safe inventory, and every managed
+  file before offering a user-selected update through the existing rollback
+  transaction.
+- Updates the in-plugin notice to direct pilots to X-Plane.org or GitHub
+  Releases and the new Manager included in the package.
 
 Version 2.1.0 Manager and xPilot 4 update:
 - Adds the standalone XVatsim Manager for guided first installation, update,

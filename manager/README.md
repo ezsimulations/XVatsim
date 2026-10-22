@@ -17,10 +17,10 @@ be used to overwrite an installation whose receipt records a newer version.
 Build the self-contained test executable from the repository root:
 
 ```powershell
-$plugin = Resolve-Path '.\build\v2.1.0-release\dist\XVatsim\win_x64\XVatsim.xpl'
+$plugin = Resolve-Path '.\build\v2.2.0-release\dist\XVatsim\win_x64\XVatsim.xpl'
 $pluginHash = (Get-FileHash $plugin -Algorithm SHA256).Hash
 .\scripts\build_xvatsim_manager.ps1 `
-    -ProductVersion '2.1.0' `
+    -ProductVersion '2.2.0' `
     -PluginPath $plugin `
     -ExpectedPluginSha256 $pluginHash
 ```

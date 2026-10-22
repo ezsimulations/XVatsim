@@ -354,7 +354,8 @@ OverlayNoticeSnapshot BuildSystemNotice(
                 latestVersion.empty()
                     ? std::string{"Latest: available"}
                     : "Latest: " + latestVersion);
-            notice.bodyLines.push_back("Download: X-Plane.org or GitHub");
+            notice.bodyLines.push_back("Download: X-Plane.org or GitHub Releases");
+            notice.bodyLines.push_back("Use the new Manager included in the package.");
             break;
         case OverlayUpdateStatus::Current:
             notice.severity = OverlayNoticeSeverity::Success;

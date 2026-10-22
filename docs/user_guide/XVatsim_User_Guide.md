@@ -1,8 +1,8 @@
 # XVatsim Freeware User Guide
 
-Version 2.1.0
+Version 2.2.0
 
-Updated: September 2026
+Updated: October 2026
 
 XVatsim is a Windows plugin for X-Plane 12 and xPilot. It gives VATSIM pilots a clean, route-aware frequency overlay that focuses on the controllers relevant to the current IFR flight.
 
@@ -10,31 +10,39 @@ XVatsim is intended for home flight simulation only. It is not approved for real
 
 ![Clean XVatsim overlay](assets/01_clean_ui.jpg)
 
-## What's New In Version 2.1.0
+## What's New In Version 2.2.0
 
-Version 2.1.0 adds the standalone XVatsim Manager. It finds and validates the
-pilot's X-Plane 12 and xPilot installations, installs or repairs only the
-approved XVatsim files, verifies each file by SHA-256, and restores the prior
-files if a transaction fails. xPilot 3 continues to use the established legacy
-integration. A validated xPilot 4 installation also receives the read-only
-XVatsim companion bridge.
+Version 2.2.0 strengthens the Brain-owned controller decision system. Hard
+facts such as the live VATSIM roster, VATSpy mapping, valid radio service,
+transmitter distance, route sectors, and departure or arrival terminal polygons
+can now outweigh weaker callsign spelling differences. Similar callsigns such
+as the established Australian abbreviations remain useful positive evidence.
+Workers continue to report facts only; the Brain remains the only module that
+decides which controllers appear.
 
-The xPilot 4 bridge consumes facts and events exposed by the official beta SDK.
-It does not connect to VATSIM independently and does not decide which
-controllers or messages XVatsim displays. The bridge passes observations to
-XVatsim, where the Brain remains the only decision maker. The companion accepts
-the approved xPilot 4 SDK 0.1.x family and refuses an incompatible future SDK
-before subscribing to events.
+Departure and arrival terminal mapping now follows the applicable polygon stack
+for those two airports. It can recognize a specific inner Approach/Departure
+area, such as THAMES at Heathrow, while retaining the larger parent sector when
+the inner area is not active. This improves nested terminal coverage without
+processing unrelated terminal polygons around the world.
 
-METAR information now continues to show useful flight rules when the source
-classification is stale or unknown and the report contains enough ceiling and
-visibility evidence. Drawer age text advances after receipt instead of staying
-at zero minutes. PDC/ACARS startup recovery and message wrapping were also
-strengthened so retained messages can be recovered without clipping.
+Standby Assist now uses regional arrival sequencing. Airports with CTAF use
+Center, Approach/Departure, Tower, CTAF, then Ground. Airports without CTAF use
+Center, Approach/Departure, UNICOM `122.800`, Tower, then Ground. During Enroute,
+Assist can place UNICOM `122.800` in COM1 standby when no eligible controller is
+online. Aircraft electrical-state handling and diagnostic log limits were also
+strengthened for more custom-aircraft compatibility and bounded disk use.
 
-Version 2.1.0 retains the Version 2.0.2 Brain-owned controller evidence,
-Australian coverage extensions, xPilot 3 private and PDC message monitoring,
-and bounded diagnostic logging.
+The new Manager can retrieve a future XVatsim payload only after validating its
+HTTPS location, exact size, SHA-256 hash, safe contents, version, and every
+managed file. Installation still requires the pilot to select Install, Update,
+or Repair and uses the existing backup and rollback transaction. Pilots using
+the Version 2.1.0 Manager must download the Version 2.2.0 package once from
+X-Plane.org or GitHub Releases and run the new Manager included in the package.
+
+Version 2.2.0 retains the read-only xPilot 4 companion, proven xPilot 3 path,
+Brain-owned METAR, ATIS, PDC, controller selection, and radio decisions from
+Version 2.1.0.
 
 ## Version 2.0.0 Feature Foundation
 
@@ -76,7 +84,7 @@ XVatsim can sleep when there is nothing useful to show and wake when controller 
 - VATSIM account and active xPilot connection
 - IFR flight plan filed on VATSIM
 
-XVatsim Version 2.1.0 does not include Mac support, Linux support, X-Plane 11 support, SimBrief import, Navigraph AIRAC import, public radio-chat display, or a dedicated VFR controller-evidence workflow.
+XVatsim Version 2.2.0 does not include Mac support, Linux support, X-Plane 11 support, SimBrief import, Navigraph AIRAC import, public radio-chat display, or a dedicated VFR controller-evidence workflow.
 
 ## Installation
 
@@ -105,7 +113,7 @@ into the X-Plane 12 root folder and confirm this file exists:
 `X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl`
 
 The manual fallback does not install the xPilot 4 companion; xPilot 4 pilots
-should use the Manager for complete Version 2.1.0 support.
+should use the Manager for complete Version 2.2.0 support.
 
 ## First Flight Workflow
 
@@ -137,11 +145,12 @@ Color and labels matter:
 
 Tuning a frequency does not make a row green by itself. XVatsim colors controller rows from route and authority context, not from radio tuning alone.
 
-In Version 2.1.0, the Brain owns the final radio-board order, controller relevance decisions, information ORBs and drawers, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
+In Version 2.2.0, the Brain owns the final radio-board order, controller relevance decisions, information ORBs and drawers, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
 
 When an update is available, XVatsim shows a dismissible update notice panel
-with the installed version, latest version, and an X-Plane.org or GitHub
-download reminder.
+with the installed version, latest version, and these instructions:
+`Download: X-Plane.org or GitHub Releases` and
+`Use the new Manager included in the package.`
 Manual update checks use the same notice panel for available, current, and
 failed results, so update status is not clipped into the bottom route/status
 line.
@@ -280,7 +289,10 @@ current-version status. If a newer version is available, XVatsim tells you to
 download it from the X-Plane.org file page or the official GitHub Releases
 page.
 
-XVatsim does not automatically download, install, replace, or launch a browser for updates.
+The in-simulator plugin does not download, install, replace, or launch a browser
+for updates. The standalone Version 2.2.0 Manager can retrieve later compatible
+payloads only after completing its full verification checks, and it waits for
+the pilot to select the offered action.
 
 ### Set Diversion Airport
 
@@ -442,4 +454,4 @@ Support contact:
 
 ## Freeware Notes
 
-XVatsim is being provided as freeware. Please keep the package intact when sharing it so pilots receive the Manager, plugin, transition audio, authority registry, README, quick start, checksum file, and this user guide together. XVatsim 2.1.0 is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.
+XVatsim is being provided as freeware. Please keep the package intact when sharing it so pilots receive the Manager, plugin, transition audio, authority registry, README, quick start, checksum file, and this user guide together. XVatsim 2.2.0 is focused on Windows, X-Plane 12, xPilot, and IFR flight-plan operations.
