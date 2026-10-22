@@ -16,6 +16,8 @@ $generatedRoot = Join-Path $repoRoot 'manager\generated'
 $payloadRoot = Join-Path $generatedRoot 'payload'
 $payloadArchive = Join-Path $generatedRoot 'payload.zip'
 $artifactRoot = Join-Path $repoRoot 'manager\artifacts'
+$payloadAssetName = "XVatsim_$($ProductVersion)_Manager_Payload.zip"
+$payloadAssetPath = Join-Path $artifactRoot $payloadAssetName
 $managerProject = Join-Path $repoRoot 'manager\src\XVatsim.Manager\XVatsim.Manager.csproj'
 $probeProject = Join-Path $repoRoot 'manager\tests\XVatsim.Manager.Probe\XVatsim.Manager.Probe.csproj'
 if ([string]::IsNullOrWhiteSpace($PluginPath)) {
@@ -109,14 +111,19 @@ if ($LASTEXITCODE -ne 0) { throw 'XVatsim Manager publish failed.' }
 
 $exePath = Join-Path $artifactRoot 'XVatsimManager.exe'
 if (-not (Test-Path -LiteralPath $exePath)) { throw 'The manager executable was not produced.' }
-$extraFiles = @(Get-ChildItem -LiteralPath $artifactRoot -File | Where-Object Name -ne 'XVatsimManager.exe')
+Copy-Item -LiteralPath $payloadArchive -Destination $payloadAssetPath
+$allowedArtifacts = @('XVatsimManager.exe', $payloadAssetName)
+$extraFiles = @(Get-ChildItem -LiteralPath $artifactRoot -File | Where-Object Name -notin $allowedArtifacts)
 if ($extraFiles.Count -gt 0) {
     throw "The self-contained output contains unexpected files: $($extraFiles.Name -join ', ')"
 }
 
 $payloadHash = (Get-FileHash -LiteralPath $payloadArchive -Algorithm SHA256).Hash
+$payloadSize = (Get-Item -LiteralPath $payloadAssetPath).Length
 $managerHash = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash
 Write-Output "XVATSIM_MANAGER_BUILD_PASSED version=$ProductVersion"
 Write-Output "PAYLOAD_SHA256=$payloadHash"
+Write-Output "PAYLOAD_SIZE_BYTES=$payloadSize"
+Write-Output "PAYLOAD_PATH=$payloadAssetPath"
 Write-Output "MANAGER_SHA256=$managerHash"
 Write-Output "MANAGER_PATH=$exePath"

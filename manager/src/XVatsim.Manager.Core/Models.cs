@@ -20,7 +20,8 @@ public enum RecommendedAction
     Install,
     Update,
     Repair,
-    Current
+    Current,
+    ManagerUpdateRequired
 }
 
 public sealed record PayloadFile(
@@ -103,4 +104,5 @@ public sealed record InstallResult(
 [JsonSerializable(typeof(ManagerManifest))]
 [JsonSerializable(typeof(InstallReceipt))]
 [JsonSerializable(typeof(DiscoverySnapshot))]
+[JsonSerializable(typeof(PublicUpdateManifest))]
 internal partial class ManagerJsonContext : JsonSerializerContext;

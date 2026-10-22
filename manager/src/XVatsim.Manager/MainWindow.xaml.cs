@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text;
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
@@ -10,9 +11,11 @@ namespace XVatsim.Manager;
 
 public partial class MainWindow : Window
 {
-    private readonly ZipPayloadProvider? _payload;
+    private readonly IPayloadProvider? _embeddedPayload;
     private readonly DiscoveryService? _discovery;
     private readonly ReceiptStore _receipts = new();
+    private IPayloadProvider? _payload;
+    private PayloadSelection? _payloadSelection;
     private DiscoverySnapshot? _snapshot;
     private InstallPlan? _plan;
     private XPilotInstallation? _selectedXPilot;
@@ -33,7 +36,8 @@ public partial class MainWindow : Window
         InitializeComponent();
         try
         {
-            _payload = ZipPayloadProvider.FromAssembly(Assembly.GetExecutingAssembly(), "XVatsim.Manager.payload.zip");
+            _embeddedPayload = ZipPayloadProvider.FromAssembly(Assembly.GetExecutingAssembly(), "XVatsim.Manager.payload.zip");
+            _payload = _embeddedPayload;
             _discovery = new DiscoveryService();
         }
         catch (Exception error)
@@ -41,7 +45,20 @@ public partial class MainWindow : Window
             Loaded += (_, _) => ShowFatal($"This manager package cannot be used: {error.Message}");
             return;
         }
-        Loaded += async (_, _) => await ScanFastAsync();
+        Loaded += async (_, _) => await InitializeAsync();
+    }
+
+    private async Task InitializeAsync()
+    {
+        if (_embeddedPayload is null) return;
+        SetBusy("Checking for XVatsim updates");
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        var managerVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
+        _payloadSelection = await new ManagerUpdateService(http,
+                new Uri("https://ezsimulations.github.io/XVatsim/xvatsim_update.json"))
+            .SelectPayloadAsync(_embeddedPayload, managerVersion);
+        _payload = _payloadSelection.Payload;
+        await ScanFastAsync();
     }
 
     private async Task ScanFastAsync(string? preferredRoot = null)
@@ -142,22 +159,67 @@ public partial class MainWindow : Window
             RecommendedAction.Install => "Ready to install XVatsim",
             RecommendedAction.Update => "XVatsim update ready",
             RecommendedAction.Repair => "XVatsim needs repair",
+            RecommendedAction.ManagerUpdateRequired => "Current Manager required",
             _ => "XVatsim is current"
         };
         ActionSummary.Text = _plan.CanInstallSafely
             ? _plan.Summary
             : "The selected X-Plane and xPilot installations could not be verified as a safe pair.";
-        PrimaryAction.Content = _plan.Action.ToString();
-        PrimaryAction.IsEnabled = _plan.CanInstallSafely && _plan.Action != RecommendedAction.Current;
+        var onlinePayloadBlocked = _payloadSelection?.Status is
+            PayloadSelectionStatus.ManualManagerRequired or
+            PayloadSelectionStatus.PublishedPayloadUnavailable;
+        PrimaryAction.Content = _plan.Action == RecommendedAction.ManagerUpdateRequired
+            ? "Unavailable"
+            : _plan.Action.ToString();
+        PrimaryAction.IsEnabled = _plan.CanInstallSafely &&
+                                  _plan.Action is not RecommendedAction.Current and
+                                  not RecommendedAction.ManagerUpdateRequired &&
+                                  !onlinePayloadBlocked;
         if (!_plan.CanInstallSafely)
             ActionTitle.Text = "Installation needs a verified xPilot setup";
         ProgressText.Text = !_plan.CanInstallSafely
             ? "Choose the matching xPilot folder, or reinstall xPilot into this X-Plane installation."
+            : _plan.Action == RecommendedAction.ManagerUpdateRequired
+            ? "This older payload is blocked from replacing a newer receipted installation."
             : _plan.Action == RecommendedAction.Current
             ? "Every managed file matches the verified payload."
             : "X-Plane and xPilot must be closed before installation.";
 
+        if (_payloadSelection is { Status: PayloadSelectionStatus.CheckFailed } &&
+            _plan.Action == RecommendedAction.Current)
+        {
+            ActionTitle.Text = "Online update check unavailable";
+            ActionSummary.Text = _payloadSelection.Message;
+            ProgressText.Text = "No files were changed. Reopen the Manager later to check again.";
+        }
+        else if (_payloadSelection is
+                 { Status: PayloadSelectionStatus.ManualManagerRequired or PayloadSelectionStatus.PublishedPayloadUnavailable })
+        {
+            ActionTitle.Text = _payloadSelection.Status == PayloadSelectionStatus.ManualManagerRequired
+                ? "New Manager required"
+                : "Online update package unavailable";
+            ActionSummary.Text = _payloadSelection.Message;
+            ProgressText.Text = "Download the current release package to continue.";
+        }
+        else if (_payloadSelection is { Status: PayloadSelectionStatus.RemotePayloadReady })
+        {
+            ProgressText.Text = _plan.Action == RecommendedAction.Current
+                ? "Every managed file matches the verified online payload."
+                : "The online payload is verified. X-Plane and xPilot must be closed before installation.";
+        }
+
         WarningsPanel.Children.Clear();
+        if (_payloadSelection is
+            { Status: PayloadSelectionStatus.CheckFailed or PayloadSelectionStatus.ManualManagerRequired or PayloadSelectionStatus.PublishedPayloadUnavailable })
+        {
+            WarningsPanel.Children.Add(new TextBlock
+            {
+                Text = $"• {_payloadSelection.Message}",
+                Foreground = System.Windows.Media.Brushes.Orange,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 2, 0, 2)
+            });
+        }
         foreach (var warning in _plan.Warnings)
         {
             WarningsPanel.Children.Add(new TextBlock
@@ -170,6 +232,10 @@ public partial class MainWindow : Window
         }
         var details = new StringBuilder();
         details.AppendLine($"Payload version: {_payload!.Manifest.ProductVersion}");
+        details.AppendLine($"Payload source: {(_payloadSelection?.UsesRemotePayload == true ? "verified online download" : "embedded Manager fallback")}");
+        details.AppendLine($"Online update status: {_payloadSelection?.Status.ToString() ?? "not checked"}");
+        if (!string.IsNullOrWhiteSpace(_payloadSelection?.Diagnostic))
+            details.AppendLine($"Online update detail: {_payloadSelection.Diagnostic}");
         details.AppendLine($"X-Plane root: {_plan.XPlane.RootPath}");
         details.AppendLine($"xPilot: {_plan.XPilot?.ProductVersion ?? "not detected"}");
         details.AppendLine($"xPilot 4 companion: {(_plan.CanInstallBridge ? "will be installed" : "not applicable")}");

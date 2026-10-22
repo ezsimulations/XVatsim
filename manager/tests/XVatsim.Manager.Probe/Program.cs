@@ -1,4 +1,8 @@
 using System.IO.Compression;
+using System.Net;
+using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using XVatsim.Manager.Core;
@@ -41,6 +45,8 @@ internal sealed class ManagerProbe
             await CompatibilityMatrixAsync();
             await PackageRejectionAsync();
             await RunningProcessRefusalAsync();
+            await OnlinePayloadSelectionAsync();
+            await DowngradeRefusalAsync();
             Console.WriteLine($"XVATSIM_MANAGER_PROBE_PASSED tests={_passed.Count}");
             foreach (var item in _passed) Console.WriteLine($"PASS {item}");
         }
@@ -183,15 +189,10 @@ internal sealed class ManagerProbe
         catch (InvalidDataException) { traversalRejected = true; }
         Require(traversalRejected, "zip traversal rejected");
 
-        var corrupt = CreateFixture("2.0.2", "plugin", "audio", "registry", corruptHash: true);
-        var xplane = CreateXPlane("xp-corrupt", hasPlugin: false, hasXPilotPlugin: true);
-        var v3 = XPilot("3.2.0", XPilotGeneration.Version3);
-        var receipts = new ReceiptStore(Path.Combine(_root, "corrupt-state"));
-        var plan = await new InstallPlanner(corrupt, receipts).BuildAsync(xplane, [v3]);
-        var result = await new TransactionalInstaller(corrupt, receipts, Path.Combine(_root, "corrupt-manager"))
-            .ExecuteAsync(plan, bypassProcessGuardForIsolatedTests: true);
-        Require(!result.Succeeded && !File.Exists(Path.Combine(xplane.PluginDirectory, "XVatsim", "win_x64", "XVatsim.xpl")),
-            "corrupt payload rejected before installation");
+        var corruptRejected = false;
+        try { _ = CreateFixture("2.0.2", "plugin", "audio", "registry", corruptHash: true); }
+        catch (InvalidDataException) { corruptRejected = true; }
+        Require(corruptRejected, "corrupt payload rejected before installation");
     }
 
     private async Task RunningProcessRefusalAsync()
@@ -207,6 +208,153 @@ internal sealed class ManagerProbe
         Require(!result.Succeeded && result.Message.Contains("Close", StringComparison.OrdinalIgnoreCase),
             "running applications block installation");
     }
+
+    private async Task OnlinePayloadSelectionAsync()
+    {
+        var embedded = CreateFixture("2.1.0", "plugin-210", "audio", "registry");
+        var remoteBytes = CreateFixtureBytes("2.2.0", "plugin-220", "audio", "registry");
+        var remoteHash = Convert.ToHexString(SHA256.HashData(remoteBytes));
+        var descriptor = new RemoteManagerPayload(
+            "https://github.com/ezsimulations/XVatsim/releases/download/v2.2.0/XVatsim_2.2.0_Manager_Payload.zip",
+            remoteBytes.LongLength, remoteHash, "2.1.0");
+
+        var selection = await SelectOnlineAsync(embedded,
+            new PublicUpdateManifest(1, "XVatsim", "stable", "2.1.0", null));
+        Require(selection.Status == PayloadSelectionStatus.EmbeddedCurrent &&
+                ReferenceEquals(selection.Payload, embedded),
+            "current publication retains embedded payload");
+
+        selection = await SelectOnlineAsync(embedded,
+            new PublicUpdateManifest(1, "XVatsim", "stable", "2.2.0", descriptor), remoteBytes);
+        Require(selection.Status == PayloadSelectionStatus.RemotePayloadReady &&
+                selection.Payload.Manifest.ProductVersion == "2.2.0",
+            "newer verified online payload selected");
+
+        selection = await SelectOnlineAsync(embedded,
+            new PublicUpdateManifest(1, "XVatsim", "stable", "2.2.0", null));
+        Require(selection.Status == PayloadSelectionStatus.ManualManagerRequired,
+            "missing online payload metadata requests current Manager");
+
+        selection = await SelectOnlineAsync(embedded,
+            new PublicUpdateManifest(1, "XVatsim", "stable", "2.2.0",
+                descriptor with { MinimumManagerVersion = "9.0.0" }), remoteBytes);
+        Require(selection.Status == PayloadSelectionStatus.ManualManagerRequired,
+            "incompatible minimum Manager version refuses online payload");
+
+        selection = await SelectOnlineAsync(embedded, null, exception: new HttpRequestException("offline"));
+        Require(selection.Status == PayloadSelectionStatus.CheckFailed && ReferenceEquals(selection.Payload, embedded),
+            "offline update check retains embedded payload");
+
+        selection = await SelectOnlineAsync(embedded, null, manifestBytes: Encoding.UTF8.GetBytes("{not-json"));
+        Require(selection.Status == PayloadSelectionStatus.CheckFailed,
+            "invalid public JSON is rejected");
+
+        selection = await SelectOnlineAsync(embedded,
+            new PublicUpdateManifest(1, "XVatsim", "stable", "2.2.0",
+                descriptor with { Url = "http://example.test/payload.zip" }), remoteBytes);
+        Require(selection.Status == PayloadSelectionStatus.PublishedPayloadUnavailable,
+            "non-HTTPS payload URL is rejected");
+
+        selection = await SelectOnlineAsync(embedded,
+            new PublicUpdateManifest(1, "XVatsim", "stable", "2.2.0",
+                descriptor with { SizeBytes = ManagerUpdateService.MaximumPayloadBytes + 1 }), remoteBytes);
+        Require(selection.Status == PayloadSelectionStatus.PublishedPayloadUnavailable,
+            "oversized advertised payload is rejected");
+
+        selection = await SelectOnlineAsync(embedded,
+            new PublicUpdateManifest(1, "XVatsim", "stable", "2.2.0",
+                descriptor with { SizeBytes = remoteBytes.LongLength + 1 }), remoteBytes);
+        Require(selection.Status == PayloadSelectionStatus.PublishedPayloadUnavailable,
+            "short payload download is rejected");
+
+        selection = await SelectOnlineAsync(embedded,
+            new PublicUpdateManifest(1, "XVatsim", "stable", "2.2.0",
+                descriptor with { SizeBytes = remoteBytes.LongLength - 1 }), remoteBytes);
+        Require(selection.Status == PayloadSelectionStatus.PublishedPayloadUnavailable,
+            "long payload download is rejected");
+
+        selection = await SelectOnlineAsync(embedded,
+            new PublicUpdateManifest(1, "XVatsim", "stable", "2.2.0",
+                descriptor with { Sha256 = new string('0', 64) }), remoteBytes);
+        Require(selection.Status == PayloadSelectionStatus.PublishedPayloadUnavailable,
+            "payload SHA-256 mismatch is rejected");
+
+        var traversalBytes = CreateTraversalZip();
+        selection = await SelectOnlineAsync(embedded,
+            new PublicUpdateManifest(1, "XVatsim", "stable", "2.2.0", descriptor with
+            {
+                SizeBytes = traversalBytes.LongLength,
+                Sha256 = Convert.ToHexString(SHA256.HashData(traversalBytes))
+            }), traversalBytes);
+        Require(selection.Status == PayloadSelectionStatus.PublishedPayloadUnavailable,
+            "unsafe online ZIP inventory is rejected");
+
+        var wrongVersionBytes = CreateFixtureBytes("2.1.5", "plugin-215", "audio", "registry");
+        selection = await SelectOnlineAsync(embedded,
+            new PublicUpdateManifest(1, "XVatsim", "stable", "2.2.0", descriptor with
+            {
+                SizeBytes = wrongVersionBytes.LongLength,
+                Sha256 = Convert.ToHexString(SHA256.HashData(wrongVersionBytes))
+            }), wrongVersionBytes);
+        Require(selection.Status == PayloadSelectionStatus.PublishedPayloadUnavailable,
+            "online payload product version mismatch is rejected");
+
+        selection = await SelectOnlineAsync(embedded, null, exception: new TaskCanceledException("timeout"));
+        Require(selection.Status == PayloadSelectionStatus.CheckFailed,
+            "online update timeout retains embedded payload");
+    }
+
+    private async Task DowngradeRefusalAsync()
+    {
+        var xplane = CreateXPlane("xp-downgrade", hasPlugin: false, hasXPilotPlugin: true);
+        var v3 = XPilot("3.2.0", XPilotGeneration.Version3);
+        var receipts = new ReceiptStore(Path.Combine(_root, "downgrade-state"));
+        var managerRoot = Path.Combine(_root, "downgrade-manager");
+        var newer = CreateFixture("2.2.0", "plugin-newer", "audio-newer", "registry-newer");
+        var install = await new InstallPlanner(newer, receipts).BuildAsync(xplane, [v3]);
+        var installed = await new TransactionalInstaller(newer, receipts, managerRoot)
+            .ExecuteAsync(install, bypassProcessGuardForIsolatedTests: true);
+        if (!installed.Succeeded) throw new InvalidOperationException("Downgrade probe setup failed.");
+
+        var before = await SnapshotManagedAsync(xplane.RootPath);
+        var older = CreateFixture("2.1.0", "plugin-older", "audio-older", "registry-older");
+        var plan = await new InstallPlanner(older, receipts).BuildAsync(xplane, [v3]);
+        Require(plan.Action == RecommendedAction.ManagerUpdateRequired,
+            "older Manager payload is identified before planning changes");
+        var result = await new TransactionalInstaller(older, receipts, managerRoot)
+            .ExecuteAsync(plan, bypassProcessGuardForIsolatedTests: true);
+        var after = await SnapshotManagedAsync(xplane.RootPath);
+        Require(!result.Succeeded && before.SequenceEqual(after),
+            "older Manager payload cannot overwrite newer receipted files");
+    }
+
+    private static async Task<PayloadSelection> SelectOnlineAsync(
+        IPayloadProvider embedded,
+        PublicUpdateManifest? manifest,
+        byte[]? payloadBytes = null,
+        byte[]? manifestBytes = null,
+        Exception? exception = null)
+    {
+        manifestBytes ??= manifest is null ? [] : JsonSerializer.SerializeToUtf8Bytes(manifest, JsonOptions());
+        using var client = new HttpClient(new StubHttpHandler(request =>
+        {
+            if (exception is not null) throw exception;
+            if (request.RequestUri?.AbsoluteUri.Contains("xvatsim_update.json", StringComparison.OrdinalIgnoreCase) == true)
+                return Response(manifestBytes, "application/json");
+            return Response(payloadBytes ?? [], "application/zip");
+        }));
+        return await new ManagerUpdateService(client,
+                new Uri("https://ezsimulations.github.io/XVatsim/xvatsim_update.json"))
+            .SelectPayloadAsync(embedded, "2.1.0");
+    }
+
+    private static HttpResponseMessage Response(byte[] bytes, string mediaType) => new(HttpStatusCode.OK)
+    {
+        Content = new ByteArrayContent(bytes)
+        {
+            Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType) }
+        }
+    };
 
     private XPlaneInstallation CreateXPlane(string name, bool hasPlugin, bool hasXPilotPlugin = false)
     {
@@ -228,6 +376,10 @@ internal sealed class ManagerProbe
         new(Path.Combine(Path.GetTempPath(), "xPilot.exe"), version, generation, "probe");
 
     private static ZipPayloadProvider CreateFixture(string version, string plugin, string audio, string registry,
+        bool includeBridge = false, bool corruptHash = false)
+        => new(CreateFixtureBytes(version, plugin, audio, registry, includeBridge, corruptHash));
+
+    private static byte[] CreateFixtureBytes(string version, string plugin, string audio, string registry,
         bool includeBridge = false, bool corruptHash = false)
     {
         var files = new Dictionary<(string Path, PayloadTarget Target), byte[]>
@@ -254,7 +406,7 @@ internal sealed class ManagerProbe
             using var manifestStream = manifestEntry.Open();
             JsonSerializer.Serialize(manifestStream, manifest, JsonOptions());
         }
-        return new ZipPayloadProvider(memory.ToArray());
+        return memory.ToArray();
     }
 
     private static byte[] CreateTraversalZip()
@@ -300,5 +452,12 @@ internal sealed class ManagerProbe
         {
             if (zeroBasedIndex == index) throw new IOException("Injected disk failure");
         }
+    }
+
+    private sealed class StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> response) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) => Task.FromResult(response(request));
     }
 }

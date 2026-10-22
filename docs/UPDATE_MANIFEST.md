@@ -11,22 +11,42 @@ https://ezsimulations.github.io/XVatsim/xvatsim_update.json
 The plugin fetches `xvatsim_update.json`, compares `latest_version` with the
 installed plugin version, and displays a notify-only update notice when a newer
 version is available. The notice directs users to X-Plane.org or GitHub
-Releases; XVatsim does not download or install updates.
+Releases; the plugin does not download or install updates.
+
+The standalone Manager also reads this file. Beginning with the first release
+after V2.1.0, a release may add this optional object without changing the
+plugin's notify-only behavior:
+
+```json
+"manager_payload": {
+  "url": "https://github.com/ezsimulations/XVatsim/releases/download/vX.Y.Z/XVatsim_X.Y.Z_Manager_Payload.zip",
+  "size_bytes": 1234567,
+  "sha256": "64_HEXADECIMAL_CHARACTERS",
+  "minimum_manager_version": "X.Y.Z"
+}
+```
+
+The URL must be a direct anonymous HTTPS download. The byte length and SHA-256
+must describe the exact Manager payload asset produced by
+`scripts/build_xvatsim_manager.ps1`. The Manager verifies these public facts,
+the payload inventory, and every managed file before presenting an Update
+action. A compatible Manager can therefore install later plugin payloads
+without replacing its own executable.
 
 ## Current Publication
 
-V2.0.2 was published on 2026-09-17.
+V2.1.0 was published on 2026-09-26.
 
-- Download filename: `XVatsim_2.0.2_Freeware_Windows_XP12.zip`
-- Package size: `2042321` bytes
+- Download filename: `XVatsim_2.1.0_Freeware_Windows_XP12.zip`
+- Package size: `64417929` bytes
 - Package SHA-256:
-  `8BD0BE5137D2844AC64CA1FE444E05D12C43A3C6BEBCFC4CF6370B5B1A8596E9`
+  `85603D6369938DCE471A0954D1C4A659CE14A26E547B29FE893A5ABB22D8E115`
 - Packaged plugin SHA-256:
-  `31F0D5EC3766C662A474A4E113464F956AC312FB61F002130FFAE258B71FA726`
+  `0D4ACC2A99309EE3ACC640798C286144044E57595E93AD8F7364485A65CBAEEF`
 - X-Plane.org:
   `https://forums.x-plane.org/files/file/100224-xvatsim_100_freeware_windows_xp12zip/`
 - GitHub Release:
-  `https://github.com/ezsimulations/XVatsim/releases/tag/v2.0.2`
+  `https://github.com/ezsimulations/XVatsim/releases/tag/v2.1.0`
 
 `download_page_url` remains the primary X-Plane.org page for compatibility.
 `github_release_url` is an informational field for clients and documentation
@@ -44,12 +64,15 @@ unknown manifest fields, so the schema remains `1`.
 5. After the X-Plane.org upload is confirmed, commit the release closeout
    locally.
 6. Create and publish the matching GitHub tag and Release, then upload the same
-   verified archive.
-7. Push the manifest to the GitHub Pages source branch last, so installed
+   verified archive and the separately verified Manager payload asset.
+7. Verify anonymous HTTPS access to the payload and repeat its exact length and
+   SHA-256 before placing those values in `manager_payload`.
+8. Push the manifest to the GitHub Pages source branch last, so installed
    plugins are not notified before both download destinations are ready.
-8. Verify anonymous access to the raw manifest, GitHub Pages manifest, GitHub
+9. Verify anonymous access to the raw manifest, GitHub Pages manifest, GitHub
    Release asset, and X-Plane.org page. Confirm an older installed version sees
-   an available-update result and V2.0.2 sees a current-version result.
+   an available-update result and the new version sees a current-version
+   result. Confirm the release-candidate Manager selects the online payload.
 
 Current-version automatic checks remain silent. Manual checks may show that the
 installed version is current. Anonymous HTTPS access to the manifest is

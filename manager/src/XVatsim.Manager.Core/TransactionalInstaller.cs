@@ -46,6 +46,9 @@ public sealed class TransactionalInstaller
         if (!plan.CanInstallSafely)
             return new InstallResult(false, false, string.Empty,
                 "Installation is unavailable until both X-Plane and xPilot are verified.", null, null);
+        if (plan.Action == RecommendedAction.ManagerUpdateRequired)
+            return new InstallResult(false, false, string.Empty,
+                "This Manager contains an older payload than the installed receipt. Download the current Manager before changing files.", null, null);
         var running = bypassProcessGuardForIsolatedTests ? [] : _runningApplications();
         if (running.Count > 0)
             return new InstallResult(false, false, string.Empty,

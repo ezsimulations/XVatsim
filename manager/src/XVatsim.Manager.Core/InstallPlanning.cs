@@ -117,7 +117,16 @@ public sealed class InstallPlanner
         var xplaneFiles = files.Where(x => x.Payload.Target == PayloadTarget.XPlane).ToArray();
         var receipt = _receipts.Read(xplane.RootPath);
         RecommendedAction action;
-        if (files.All(f => f.MatchesPayload))
+        var payloadOlderThanReceipt = receipt is not null &&
+                                      ReleaseVersion.TryCompare(_payload.Manifest.ProductVersion,
+                                          receipt.ProductVersion, out var receiptComparison) &&
+                                      receiptComparison < 0;
+        if (payloadOlderThanReceipt)
+        {
+            action = RecommendedAction.ManagerUpdateRequired;
+            warnings.Add($"This Manager contains XVatsim {_payload.Manifest.ProductVersion}, but the installation receipt is for newer XVatsim {receipt!.ProductVersion}. The older payload cannot replace it.");
+        }
+        else if (files.All(f => f.MatchesPayload))
             action = RecommendedAction.Current;
         else if (xplaneFiles.All(f => !f.Exists))
             action = RecommendedAction.Install;
@@ -136,6 +145,7 @@ public sealed class InstallPlanner
             RecommendedAction.Install => "XVatsim is ready for a verified first installation.",
             RecommendedAction.Update => $"XVatsim can be updated to {_payload.Manifest.ProductVersion}.",
             RecommendedAction.Repair => "One or more managed files are missing or differ from the verified payload.",
+            RecommendedAction.ManagerUpdateRequired => "Download and open the current XVatsim Manager before changing this installation.",
             _ => $"XVatsim {_payload.Manifest.ProductVersion} is verified and current."
         };
         return new InstallPlan(xplane, selectedXPilot, action, files, warnings, summary, canInstallBridge, canInstallSafely);

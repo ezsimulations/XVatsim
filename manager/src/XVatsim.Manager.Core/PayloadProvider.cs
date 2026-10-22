@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace XVatsim.Manager.Core;
@@ -13,6 +14,7 @@ public interface IPayloadProvider
 
 public sealed class ZipPayloadProvider : IPayloadProvider
 {
+    private const long MaximumExpandedPayloadBytes = 512L * 1024L * 1024L;
     private readonly byte[] _archiveBytes;
     private readonly Dictionary<string, string> _entries;
 
@@ -40,6 +42,7 @@ public sealed class ZipPayloadProvider : IPayloadProvider
         Manifest = JsonSerializer.Deserialize(stream, ManagerJsonContext.Default.ManagerManifest)
             ?? throw new InvalidDataException("The payload manifest is empty or invalid.");
         ValidateInventory();
+        ValidateFileBytes();
     }
 
     public static ZipPayloadProvider FromAssembly(Assembly assembly, string resourceName)
@@ -91,6 +94,36 @@ public sealed class ZipPayloadProvider : IPayloadProvider
         var missing = expected.Where(entry => !_entries.ContainsKey(entry)).ToArray();
         if (unexpected.Length > 0 || missing.Length > 0)
             throw new InvalidDataException($"Payload inventory mismatch. Unexpected=[{string.Join(',', unexpected)}] Missing=[{string.Join(',', missing)}]");
+    }
+
+    private void ValidateFileBytes()
+    {
+        long expandedBytes = 0;
+        using var archive = OpenArchive();
+        foreach (var file in Manifest.Files)
+        {
+            var normalized = NormalizeAndValidate(file.RelativePath);
+            var entry = archive.GetEntry(_entries[normalized])
+                ?? throw new InvalidDataException($"The payload is missing {normalized}.");
+            if (entry.Length != file.Length)
+                throw new InvalidDataException($"Payload length mismatch for {normalized}.");
+            if (entry.Length > MaximumExpandedPayloadBytes - expandedBytes)
+                throw new InvalidDataException("The expanded payload exceeds the permitted size.");
+            expandedBytes += entry.Length;
+
+            using var input = entry.Open();
+            using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var buffer = new byte[128 * 1024];
+            while (true)
+            {
+                var read = input.Read(buffer, 0, buffer.Length);
+                if (read == 0) break;
+                sha256.AppendData(buffer, 0, read);
+            }
+            var actualHash = Convert.ToHexString(sha256.GetHashAndReset());
+            if (!Hashing.EqualsHash(actualHash, file.Sha256))
+                throw new InvalidDataException($"Payload SHA-256 mismatch for {normalized}.");
+        }
     }
 
     internal static string NormalizeAndValidate(string path)
