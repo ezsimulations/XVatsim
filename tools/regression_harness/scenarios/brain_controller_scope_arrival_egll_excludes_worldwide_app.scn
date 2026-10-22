@@ -1,0 +1,30 @@
+name=Brain Controller Scope Arrival EGLL Excludes Worldwide APP
+now_seconds=1000
+
+state.flight_active=true
+flight.callsign=DAL41
+flight.departure_icao=KATL
+flight.destination_icao=EGLL
+
+brain_controller_relevance.stage=Arrival
+brain_controller_relevance.v2_enabled=true
+
+terminal_authority.airport_icao=EGLL
+terminal_authority.lat=51.470020
+terminal_authority.lon=-0.454295
+terminal_authority.feature=id=EGLL;name=Heathrow Director;prefixes=EGLL;polygon=51.330875,0.0348111|51.5052778,0.0552778|51.6461111,0.1516667|51.6558333,-0.3258333|51.7261111,-0.5497222|51.4775,-0.4613889|51.305,-0.4472222
+terminal_authority.feature=id=THAMES;name=Thames Director;prefixes=THAMES;polygon=51.5052778,0.0552778|51.330875,0.0348111|51.237976944444,0.37669111111111|51.236283888889,0.42060055555556|51.303888888889,0.59722222222222|51.307311388889,0.81874166666667|51.293435,0.94497583333333|51.286080555556,1.1599977777778|51.276391944444,1.4432830555556|51.454444444444,1.5047222222222|51.7475,1.6119444444444|51.735833333333,1.4266666666667|51.7214825,1.2170197222222|51.690793055556,0.76218138888889|51.666904166667,0.43210916666667|51.652222222222,0.23777777777778|51.6461111,0.1516667|51.640259166667,0.06449
+
+controller.entry=callsign=THAMES_APP;frequency=132.700;facility=5;actionable=true;atis=false
+controller.entry=callsign=EDDF_N_APP;frequency=120.800;facility=5;actionable=true;atis=false
+
+transceiver.available=true
+transceiver.stale=false
+transceiver.station=callsign=THAMES_APP;frequency=132.700;lat=51.535020;lon=-0.454295;facility=5;actionable=true
+transceiver.station=callsign=EDDF_N_APP;frequency=120.800;lat=50.033333;lon=8.570556;facility=5;actionable=true
+
+expect.terminal_authority_owners=EGLL_APP,EGLL_DEP
+expect.terminal_authority_polygons=EGLL
+expect.brain_controller_relevance_arrival_callsigns=THAMES_APP
+expect.brain_controller_relevance_completions=THAMES_APP:accepted
+expect.brain_controller_relevance_completions_contains=endpoint-polygon=+1[exact-source-nearby-endpoint-polygon@EGLL:THAMES

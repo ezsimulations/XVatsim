@@ -2,15 +2,23 @@
 
 Gate: `DIAGNOSTIC-LOG-VOLUME-02`
 
-Status: **PROPOSED — NO IMPLEMENTATION AUTHORIZED**
+Status: **IMPLEMENTED; 2026-10-22 LIVE CHURN CORRECTION AUTHORIZED; ONLINE REPROOF REQUIRED**
 
 Baseline: XVatsim V2.1.0, commit `f61c0e649b3e1376a93285342451f73014b275b7`,
 plugin SHA-256
 `0D4ACC2A99309EE3ACC640798C286144044E57595E93AD8F7364485A65CBAEEF`.
 
-This gate corrects one diagnostic serializer. It does not authorize any change
-to controller selection, scoring, workflow, UI, xPilot bridge, METAR, ATIS,
-PDC, polygon, distance, color, or Standby Assist behavior.
+The original gate corrected one diagnostic serializer. The approved 2026-10-22
+amendment also removes global roster-count churn from per-candidate semantic
+identities and adds a hard storage ceiling. Neither correction can change a
+Brain decision or display result.
+
+The first online reproof at EGLL exposed a second path: every worldwide roster
+change invalidated the last accepted asynchronous authority result. The Brain
+then saw `authority verification pending` for roughly one refresh before the
+route-scoped worker returned the same proof. Display stayed unchanged, but the
+temporary evidence transition emitted the same candidate receipts repeatedly.
+The Product Owner authorized correction during that live review.
 
 ## Confirmed defect
 
@@ -51,6 +59,15 @@ The Brain remains the only decision maker.
 
 This gate changes what is written after a decision. It does not change the
 decision or the information available to the Brain.
+
+For asynchronous authority verification, the Brain also owns the continuity
+decision. It may reuse its last completed proof during a controller-only
+refresh only while lifecycle, flight-plan identity, route digest, transceiver
+evidence digest, and authority-dataset identity are unchanged. Any change to
+one of those structural inputs immediately withdraws continuity. The current
+controller feed must also remain available, fresh, and complete. A newly
+completed worker result must still match the exact current controller digest
+before the Brain accepts it.
 
 ## Required correction
 
@@ -113,9 +130,13 @@ No Brain decision file should require a behavioral change. If a Brain file
 appears to require one, implementation stops and this gate returns to the
 Product Owner before that change is made.
 
-The existing asynchronous diagnostics writer, date-stamped files, and
-three-date retention policy remain unchanged. This correction does not add a
-new rotation system or another runtime scheduler.
+The existing asynchronous diagnostics writer and date-stamped file naming stay
+in place. The approved 2026-10-22 amendment retains three dates and hard-bounds
+each date file at 8 MiB. At the limit, the existing worker preserves the newest
+half of the file, writes a `diagnostic-history-trimmed` marker, and continues.
+This bounds production diagnostic storage to 24 MiB while retaining the newest
+evidence. It adds no runtime scheduler and performs no file work on the
+simulator thread.
 
 ## Sufficient automated proof
 
@@ -152,6 +173,31 @@ The gate requires these focused tests:
    - Run the existing flight-loop diagnostics probe.
    - Prove diagnostic work remains asynchronous and no measured callback is
      pushed above 1 ms by this change.
+
+7. **Global roster churn proof**
+   - Change only VATSIM declared, retained, and rejected global record counts
+     1,000 times while local candidate scores, reasons, and decisions stay the
+     same.
+   - Prove zero repeated local candidate receipts.
+   - Change the roster semantic state from complete to incomplete and prove
+     exactly one changed receipt is emitted.
+
+8. **Hard storage-bound proof**
+   - Exercise repeated rolling with a reduced test limit.
+   - Prove every retained date file stays within its configured limit, no more
+     than three date files remain, the newest record survives, and the trim
+     marker is present.
+
+9. **Last-proven authority continuity proof**
+   - Change only the worldwide controller digest and prove the Brain permits
+     temporary reuse of its last accepted route-scoped authority proof while
+     exact background verification is pending.
+   - Change lifecycle, plan, route, transceiver evidence, or authority dataset
+     and prove reuse is rejected immediately.
+   - Make the current controller feed unavailable, stale, or incomplete and
+     prove reuse is rejected immediately.
+   - Prove worldwide roster counters do not change the scoped controller
+     decision-evidence identity, while a scoped candidate fact does.
 
 These are accelerated automated tests. They do not wait for an hour or eight
 hours of wall-clock time.
@@ -199,6 +245,77 @@ growth and bytes per flight hour. The flight must confirm:
 - no repeated full-board records during unchanged operation;
 - expected file growth and healthy flight-loop summaries;
 - no return of large repeated candidate traces during any phase of flight.
+
+## 2026-10-22 amendment proof
+
+- 1,000 global VATSIM roster-count changes produced zero duplicate candidate
+  receipts.
+- A real roster semantic-state change produced exactly one changed candidate
+  receipt.
+- The writer completed repeated forced rolling with zero storage failures;
+  every retained test file stayed at or below its configured 4 KiB test cap,
+  no more than three files remained, the newest record survived, and a trim
+  marker was present.
+- Production defaults are 8 MiB per date and three retained dates, for a 24 MiB
+  hard ceiling.
+- The complete applicable regression set passed `911 / 911`; the only excluded
+  scenario is the documented machine-locked xPilot 3.0.2 binary fingerprint
+  fixture.
+
+## 2026-10-22 live churn correction proof
+
+- The DAL41 EGLL session processed 201 worldwide controller records but only
+  nine route/endpoint candidate records. Controller display was correct.
+- In 138 seconds, the old publication path nevertheless wrote 385 vote-receipt
+  records and alternated 29 times between the same pending and completed
+  authority digests.
+- The first correction moved last-proven continuity into an explicit Brain
+  decision. A controller-only refresh was permitted to reuse the proof.
+- Scoped controller diagnostic identity ignores worldwide roster-count churn
+  and detects a real scoped-candidate change.
+- All ten focused controller, diagnostics, endpoint polygon, aircraft power,
+  Australia, Assist, and performance probes pass. Performance gate A also
+  passes with exact-completion validation unchanged.
+- The complete applicable regression set passes `911 / 911`; the documented
+  machine-locked xPilot 3.0.2 fingerprint fixture remains the only exclusion.
+- After X-Plane and xPilot closed, the corrected uncommitted XPL was installed
+  for online reproof with SHA-256
+  `4A59099320B9C62521D824F2B2CA1F08C8E8D3948BD65DEB578D8E06ADA8919A`.
+- The next DAL41 EGLL live test showed that the scoped logger was corrected,
+  but publication continuity was incomplete. In 461 seconds it emitted 778
+  vote-receipt records and 60 decision summaries while writing only six scope
+  records. The completed and pending authority states continued to alternate
+  because xPilot controller refreshes also changed the broader transceiver
+  evidence digest. The displayed EGLL controller decisions remained correct.
+- The follow-up correction keeps the last proven route authority publication
+  while either controller or transceiver evidence is being verified, only
+  while the controller feed is available, fresh, and complete and the
+  transceiver evidence is available and fresh. Lifecycle, plan, route, and
+  authority-dataset changes still invalidate immediately. Every replacement
+  worker result must still match the exact current controller and transceiver
+  digests before the Brain publishes it.
+- Focused continuity tests cover controller-only, transceiver-only, and
+  combined refreshes, plus unusable controller and transceiver evidence. The
+  complete applicable regression set passes `911 / 911` with the documented
+  machine-locked fixture excluded. The revised Release XPL has SHA-256
+  `B55975860FD36351C6BDCD4E5199B9B3287BBC899DE54C5D95FF24EFA42B77E9`.
+  It was installed after X-Plane and xPilot were closed for the final
+  controlled online test.
+- The next DAL41 EGLL live checkpoint loaded that exact XPL. Over 171 seconds,
+  18 exact worker completions were accepted and the Brain preserved its proven
+  publication across 15 evidence-refresh windows. Only 39 vote-receipt records
+  were written: the startup decisions plus three records for a real THAMES APP
+  state transition. The previous proof/no-proof repetition did not recur.
+- THAMES APP first lost live transmitter correlation and then left the scoped
+  candidate set. The official VATSIM roster update at `2026-10-22T17:49:39Z`
+  no longer contained THAMES APP; it retained EGLL North Approach, South Tower,
+  and Ground. The removal was therefore a real source change, not diagnostic
+  churn. No bridge gaps, loss, incomplete snapshots, storage failures, writer
+  failures, or worker failures were recorded.
+- The Product Owner confirmed the displayed controller changes were correct
+  and authorized the combined source commit on 2026-10-22. Versioning,
+  packaging, updater metadata, Git publication, and release remain a separate
+  next step.
 
 The Product Owner chooses the natural flight length. No artificial eight-hour
 simulation is required before that flight, and the live result remains the final

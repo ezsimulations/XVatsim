@@ -134,13 +134,90 @@ BrainControllerEvidenceVote Vote(
     std::string source,
     int score,
     std::string reason,
-    std::string provenance = {}) {
+    std::string provenance = {},
+    std::string deduplicationKey = {},
+    bool contributesToScore = true) {
     BrainControllerEvidenceVote vote;
     vote.source = std::move(source);
     vote.score = score > 0 ? 1 : score < 0 ? -1 : 0;
     vote.reason = std::move(reason);
     vote.provenance = std::move(provenance);
+    vote.deduplicationKey = std::move(deduplicationKey);
+    vote.contributesToScore = contributesToScore;
     return vote;
+}
+
+struct OperationalEligibility {
+    bool eligible = true;
+    bool atis = false;
+    std::string reason;
+    std::vector<BrainControllerEvidenceVote> facts;
+};
+
+OperationalEligibility EvaluateOperationalEligibility(
+    const RadioReachableControllerCandidate& candidate) {
+    OperationalEligibility result;
+    std::string suffix;
+    const auto hasSuffix = SplitCallsign(candidate.callsign, nullptr, &suffix);
+    result.atis = candidate.atis || (hasSuffix && suffix == "ATIS");
+
+    const auto facilityKnown = candidate.vatsimFacilityProvided ||
+                               candidate.vatsimFacility != 0;
+    const auto facilityOperational =
+        facilityKnown && candidate.vatsimFacility != 0;
+    result.facts.push_back(Vote(
+        "operational-source-facility",
+        !facilityKnown ? 0 : facilityOperational ? 1 : -1,
+        !facilityKnown ? "numeric-facility-unknown"
+                       : facilityOperational ? "numeric-facility-operational"
+                                             : "numeric-facility-observer",
+        "facility=" + std::to_string(candidate.vatsimFacility),
+        "operational-source-facility",
+        false));
+
+    const auto sourcePrimary = candidate.sourcePrimaryFrequency.empty() &&
+            !candidate.sourcePrimaryFrequencyProvided
+        ? candidate.frequency
+        : candidate.sourcePrimaryFrequency;
+    const auto primaryDigits = NormalizeFrequency(sourcePrimary);
+    const auto primaryGuard = GuardFrequency(sourcePrimary);
+    const auto primaryKnown = primaryDigits.size() == 6;
+    result.facts.push_back(Vote(
+        "operational-source-primary",
+        primaryGuard ? -1 : primaryKnown ? 1 : 0,
+        primaryGuard ? "explicit-inactive-or-guard-primary"
+                     : primaryKnown ? "source-primary-present"
+                                    : "source-primary-unknown",
+        DisplayFrequency(sourcePrimary),
+        "operational-source-primary",
+        false));
+
+    const auto observerSuffix = hasSuffix && suffix == "OBS";
+    const auto supervisorSuffix = hasSuffix && suffix == "SUP";
+    result.facts.push_back(Vote(
+        "operational-source-role",
+        observerSuffix || supervisorSuffix ? -1 : 1,
+        observerSuffix ? "observer-callsign"
+                       : supervisorSuffix ? "supervisor-callsign"
+                                          : "controller-role-not-observer",
+        candidate.callsign,
+        "operational-source-role",
+        false));
+
+    if (facilityKnown && !facilityOperational) {
+        result.eligible = false;
+        result.reason = "brain-ineligible-source-facility-observer";
+    } else if (observerSuffix) {
+        result.eligible = false;
+        result.reason = "brain-ineligible-source-observer";
+    } else if (supervisorSuffix) {
+        result.eligible = false;
+        result.reason = "brain-ineligible-source-supervisor";
+    } else if (primaryGuard) {
+        result.eligible = false;
+        result.reason = "brain-ineligible-source-primary-guard";
+    }
+    return result;
 }
 
 std::optional<BrainControllerEvidenceVote> XPilot4CorrelationVote(
@@ -326,6 +403,9 @@ BrainControllerEvidenceVote TerminalVatsimVote(
     }
     std::string prefix;
     SplitCallsign(candidate.callsign, &prefix, nullptr);
+    // Check every canonical token before considering resemblance. For US
+    // airports, for example, SDF is an exact token for KSDF even though it is
+    // also one edit away from the four-letter token.
     for (const auto& token : AirportTokens(airport)) {
         if (prefix == token ||
             (prefix.size() > token.size() &&
@@ -335,15 +415,20 @@ BrainControllerEvidenceVote TerminalVatsimVote(
                 "vatsim-parse",
                 1,
                 "endpoint-callsign-match",
-                prefix + "=" + token);
+                prefix + "=" + token,
+                "vatsim-endpoint-identity");
         }
+    }
+    for (const auto& token : AirportTokens(airport)) {
         if (token.size() >= 2 && prefix.size() >= 2 &&
             EditDistance(prefix, token) <= 1) {
             return Vote(
                 "vatsim-parse",
-                1,
-                "endpoint-callsign-partial-match-medium-confidence",
-                prefix + "~" + token);
+                0,
+                "endpoint-callsign-fuzzy-clue-diagnostic-only",
+                prefix + "~" + token,
+                "vatsim-fuzzy-callsign-clue",
+                false);
         }
     }
     if (routeContextMatch) {
@@ -360,6 +445,94 @@ BrainControllerEvidenceVote TerminalVatsimVote(
         prefix);
 }
 
+bool CallsignHasExactEndpointPrefix(
+    const std::string& callsign,
+    const std::string& airport) {
+    std::string prefix;
+    if (!SplitCallsign(callsign, &prefix, nullptr)) return false;
+    for (const auto& token : AirportTokens(airport)) {
+        if (prefix == token ||
+            (prefix.size() > token.size() &&
+             prefix.compare(0, token.size(), token) == 0 &&
+             (prefix[token.size()] == '-' || prefix[token.size()] == '_'))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+BrainControllerEvidenceVote VatsimRosterVote(
+    const RadioReachableControllerCandidate& candidate,
+    const std::string& airport,
+    bool claimScopedNeutrality) {
+    std::ostringstream provenance;
+    provenance << "declared=" << candidate.sourceRosterDeclaredRecords
+               << ",retained=" << candidate.sourceRosterRetainedRecords
+               << ",rejected=" << candidate.sourceRosterRejectedRecords
+               << ",truncated=" << (candidate.sourceRosterTruncated ? 1 : 0);
+    if (!candidate.sourceRosterAvailable || candidate.sourceRosterStale ||
+        candidate.sourceRoster == nullptr) {
+        return Vote(
+            "vatsim-roster", 0, "controller-roster-unavailable-or-stale",
+            provenance.str());
+    }
+    if (!candidate.sourceRosterComplete || candidate.sourceRosterTruncated) {
+        return Vote(
+            "vatsim-roster", 0, "controller-roster-incomplete",
+            provenance.str());
+    }
+    if (CallsignHasExactEndpointPrefix(candidate.callsign, airport)) {
+        return Vote(
+            "vatsim-roster", 1, "candidate-exact-endpoint-present",
+            candidate.callsign + "@" + DisplayFrequency(
+                candidate.sourcePrimaryFrequency),
+            "vatsim-endpoint-identity");
+    }
+
+    bool anotherDirectEndpoint = false;
+    for (const auto& controller : *candidate.sourceRoster) {
+        std::string suffix;
+        if (controller.facility == 0 ||
+            GuardFrequency(controller.frequency) ||
+            !SplitCallsign(controller.callsign, nullptr, &suffix) ||
+            (suffix != "APP" && suffix != "DEP") ||
+            !CallsignHasExactEndpointPrefix(controller.callsign, airport)) {
+            continue;
+        }
+        anotherDirectEndpoint = true;
+        break;
+    }
+    return anotherDirectEndpoint
+        ? Vote(
+              "vatsim-roster", 0,
+              "different-direct-endpoint-controller-present",
+              provenance.str())
+        : Vote(
+              "vatsim-roster", claimScopedNeutrality ? 0 : -1,
+              "no-direct-endpoint-controller",
+              provenance.str(),
+              "vatsim-roster-endpoint-absence");
+}
+
+BrainControllerEvidenceVote VatsimFeedHealthFact(
+    const RadioReachableControllerCandidate& candidate) {
+    const auto complete = candidate.sourceRosterAvailable &&
+        !candidate.sourceRosterStale && candidate.sourceRosterComplete &&
+        !candidate.sourceRosterTruncated;
+    std::ostringstream provenance;
+    provenance << "declared=" << candidate.sourceRosterDeclaredRecords
+               << ",retained=" << candidate.sourceRosterRetainedRecords
+               << ",rejected=" << candidate.sourceRosterRejectedRecords;
+    return Vote(
+        "vatsim-feed-health",
+        complete ? 1 : 0,
+        complete ? "fresh-complete-controller-roster"
+                 : "controller-roster-health-unknown",
+        provenance.str(),
+        "vatsim-feed-health",
+        false);
+}
+
 std::size_t SharedPrefix(const std::string& left, const std::string& right) {
     const auto count = std::min(left.size(), right.size());
     std::size_t shared = 0;
@@ -367,19 +540,37 @@ std::size_t SharedPrefix(const std::string& left, const std::string& right) {
     return shared;
 }
 
+bool OneCharacterPrefixVariant(
+    const std::string& left,
+    const std::string& right) {
+    if (left.size() < 2 || right.size() < 2 ||
+        (left.size() + 1 != right.size() &&
+         right.size() + 1 != left.size())) {
+        return false;
+    }
+    const auto& shorter = left.size() < right.size() ? left : right;
+    const auto& longer = left.size() < right.size() ? right : left;
+    return longer.compare(0, shorter.size(), shorter) == 0;
+}
+
 struct VatspyResult {
     BrainControllerEvidenceVote vote;
+    std::optional<BrainControllerEvidenceVote> callsignClue;
     bool endpointPositive = false;
 };
 
 VatspyResult VatspyVote(
     const BrainControllerRelevanceWorkerInput& input,
     const RadioReachableControllerCandidate& candidate,
-    const std::string& airport) {
+    const std::string& airport,
+    bool claimScopedNeutrality) {
     VatspyResult result;
     std::string prefix;
     if (!SplitCallsign(candidate.callsign, &prefix, nullptr)) {
-        result.vote = Vote("vatspy-parse", -1, "callsign-prefix-unavailable");
+        result.vote = Vote(
+            "vatspy-parse",
+            claimScopedNeutrality ? 0 : -1,
+            "callsign-prefix-unavailable");
         return result;
     }
     if (input.route == nullptr) {
@@ -410,7 +601,8 @@ VatspyResult VatspyVote(
                 1,
                 "exact-airport-alias-match",
                 alias->source + ":" + alias->airportIcao + "=" +
-                    alias->callsignPrefix);
+                    alias->callsignPrefix,
+                "vatspy-endpoint-identity");
             return result;
         }
     }
@@ -427,18 +619,36 @@ VatspyResult VatspyVote(
     }
     if (best != nullptr && bestShared >= 2 &&
         bestShared + 2 >= std::max(prefix.size(), Upper(best->callsignPrefix).size())) {
-        result.endpointPositive = true;
+        const auto expected = Upper(best->callsignPrefix);
+        if (OneCharacterPrefixVariant(prefix, expected)) {
+            result.endpointPositive = true;
+            result.vote = Vote(
+                "vatspy-parse",
+                1,
+                "near-exact-airport-alias-prefix-match",
+                best->source + ":" + prefix + "~" + best->callsignPrefix,
+                "vatspy-endpoint-identity");
+            return result;
+        }
         result.vote = Vote(
             "vatspy-parse",
-            1,
-            "partial-airport-alias-match-medium-confidence",
-            best->source + ":" + prefix + "~" + best->callsignPrefix);
+            claimScopedNeutrality ? 0 : -1,
+            "airport-alias-mismatch",
+            best->source + ":" + prefix + "!=" + best->callsignPrefix,
+            "vatspy-endpoint-identity");
+        result.callsignClue = Vote(
+            "vatspy-callsign-clue",
+            0,
+            "airport-alias-fuzzy-clue-diagnostic-only",
+            best->source + ":" + prefix + "~" + best->callsignPrefix,
+            "vatspy-fuzzy-callsign-clue",
+            false);
         return result;
     }
 
     result.vote = Vote(
         "vatspy-parse",
-        -1,
+        claimScopedNeutrality ? 0 : -1,
         "airport-alias-mismatch",
         prefix + "!=" + endpointAliases.front()->callsignPrefix);
     return result;
@@ -482,7 +692,8 @@ int BestOnlineVnasRank(
     const std::string& airport) {
     int best = 0;
     for (const auto& candidate : input.candidates) {
-        if (!candidate.actionable || candidate.atis ||
+        const auto operational = EvaluateOperationalEligibility(candidate);
+        if (!operational.eligible || operational.atis ||
             candidate.group != RadioReachableFacilityGroup::AppDep) {
             continue;
         }
@@ -606,15 +817,28 @@ bool SourceAuthorityMatch(
     return false;
 }
 
-BrainControllerEvidenceVote TerminalSourceVote(
+BrainControllerEvidenceVote SourceAuthorityVote(
     const BrainControllerRelevanceWorkerInput& input,
-    const RadioReachableControllerCandidate& candidate,
-    const BrainTerminalAuthorityWorkerOutput& authority,
-    StationRole role) {
+    const RadioReachableControllerCandidate& candidate) {
     std::string sourceProof;
     if (SourceAuthorityMatch(input, candidate, &sourceProof)) {
-        return Vote("terminal-source", 1, "source-authority-match", sourceProof);
+        return Vote(
+            "source-authority", 1, "source-authority-match", sourceProof);
     }
+    if (!input.authorityRelevance || !input.authorityRelevance->available ||
+        input.authorityRelevance->stale) {
+        return Vote(
+            "source-authority", 0, "source-authority-unavailable");
+    }
+    return Vote(
+        "source-authority", 0, "no-source-authority-match");
+}
+
+BrainControllerEvidenceVote TerminalOwnerVote(
+    const RadioReachableControllerCandidate& candidate,
+    const BrainTerminalAuthorityWorkerOutput& authority,
+    StationRole role,
+    bool claimScopedNeutrality) {
     if (!IsAppDep(role)) {
         return Vote("terminal-source", 0, "not-appdep-authority-scope");
     }
@@ -629,7 +853,88 @@ BrainControllerEvidenceVote TerminalSourceVote(
         }
     }
     return Vote(
-        "terminal-source", -1, "terminal-owner-mismatch", owner);
+        "terminal-source",
+        claimScopedNeutrality ? 0 : -1,
+        "terminal-owner-mismatch",
+        owner);
+}
+
+BrainControllerEvidenceVote TerminalPolygonVote(
+    const RadioReachableControllerCandidate& candidate,
+    const BrainTerminalAuthorityWorkerOutput& authority,
+    StationRole role,
+    bool enabled) {
+    if (!enabled) {
+        return Vote("endpoint-polygon", 0, "endpoint-polygon-gate-disabled");
+    }
+    if (!IsAppDep(role)) {
+        return Vote("endpoint-polygon", 0, "not-appdep-polygon-scope");
+    }
+    if (!authority.available || !authority.resolved || authority.stale) {
+        return Vote("endpoint-polygon", 0, "endpoint-polygon-unavailable");
+    }
+
+    std::string callsignPrefix;
+    std::string callsignSuffix;
+    if (!SplitCallsign(candidate.callsign, &callsignPrefix, &callsignSuffix)) {
+        return Vote("endpoint-polygon", 0, "controller-position-unparseable");
+    }
+    callsignPrefix = Upper(callsignPrefix);
+    callsignSuffix = Upper(callsignSuffix);
+
+    for (const auto& polygon : authority.polygons) {
+        const auto sourceSuffix = Upper(polygon.serviceSuffix);
+        if (!sourceSuffix.empty() && sourceSuffix != callsignSuffix) {
+            continue;
+        }
+        const auto prefixMatch = std::any_of(
+            polygon.controllerPrefixes.begin(),
+            polygon.controllerPrefixes.end(),
+            [&](const auto& sourcePrefix) {
+                const auto expected = Upper(sourcePrefix);
+                return callsignPrefix == expected ||
+                       (callsignPrefix.size() > expected.size() &&
+                        callsignPrefix.compare(0, expected.size(), expected) == 0 &&
+                        (callsignPrefix[expected.size()] == '_' ||
+                         callsignPrefix[expected.size()] == '-'));
+            });
+        if (!prefixMatch) {
+            continue;
+        }
+        const auto owner = TerminalOwnerToken(candidate.callsign);
+        const auto directOwner = std::any_of(
+            authority.ownerTokens.begin(),
+            authority.ownerTokens.end(),
+            [&](const auto& expected) { return Upper(expected) == owner; });
+        if (polygon.containsAirport && directOwner) {
+            return Vote(
+                "endpoint-polygon",
+                1,
+                "exact-source-direct-endpoint-polygon",
+                authority.airportIcao + ":" + polygon.polygonKey,
+                "simaware-endpoint-polygon");
+        }
+        const auto distinctEndpointPolygon = std::none_of(
+            authority.polygonKeys.begin(),
+            authority.polygonKeys.end(),
+            [&](const auto& anchorKey) {
+                return Upper(anchorKey) == Upper(polygon.polygonKey);
+            });
+        if (polygon.intersectsEndpointAnchor && distinctEndpointPolygon) {
+            return Vote(
+                "endpoint-polygon",
+                1,
+                "exact-source-nearby-endpoint-polygon",
+                authority.airportIcao + ":" + polygon.polygonKey,
+                "simaware-endpoint-polygon");
+        }
+    }
+    return Vote(
+        "endpoint-polygon",
+        0,
+        authority.polygons.empty()
+            ? "endpoint-polygon-package-empty"
+            : "no-exact-source-position-match");
 }
 
 const std::vector<BrainAirportFrequencyRecord>& FrequencyRecords(
@@ -656,9 +961,11 @@ BrainControllerEvidenceVote PublishedFrequencyVote(
             NormalizeFrequency(candidate.frequency)) {
             return Vote(
                 "published-frequency",
-                1,
-                "role-frequency-match",
-                record.airportIcao + ":" + record.frequency);
+                0,
+                "real-world-frequency-match-diagnostic-only",
+                record.airportIcao + ":" + record.frequency,
+                "published-frequency",
+                false);
         }
     }
     return roleFacts
@@ -686,15 +993,28 @@ EndpointEvaluation EvaluateTerminal(
     evaluation.departure = departure;
     evaluation.airport = departure ? input.departureIcao : input.arrivalIcao;
 
-    const auto vatspy = VatspyVote(input, candidate, evaluation.airport);
+    auto operational = EvaluateOperationalEligibility(candidate);
+    const auto claimScopedNeutrality = input.terminalRelevanceV2Enabled;
+    const auto vatspy = VatspyVote(
+        input, candidate, evaluation.airport, claimScopedNeutrality);
+    auto roster = VatsimRosterVote(
+        candidate, evaluation.airport, claimScopedNeutrality);
+    auto feedHealth = VatsimFeedHealthFact(candidate);
     auto distance = DistanceVote(input, candidate, departure);
     auto vnas = VnasVote(input, candidate, evaluation.airport);
-    auto terminal = TerminalSourceVote(
-        input,
+    auto sourceAuthority = SourceAuthorityVote(input, candidate);
+    auto terminalOwner = TerminalOwnerVote(
         candidate,
         departure ? input.departureTerminalAuthority
                   : input.arrivalTerminalAuthority,
-        role);
+        role,
+        claimScopedNeutrality);
+    auto terminalPolygon = TerminalPolygonVote(
+        candidate,
+        departure ? input.departureTerminalAuthority
+                  : input.arrivalTerminalAuthority,
+        role,
+        input.terminalRelevanceV2Enabled);
     auto published = PublishedFrequencyVote(
         input, candidate, role, departure);
     auto vatsim = TerminalVatsimVote(
@@ -706,28 +1026,43 @@ EndpointEvaluation EvaluateTerminal(
                           : "no-current-center-root-match");
 
     BrainControllerDecisionInput decision;
-    decision.actionable = candidate.actionable;
-    decision.atis = candidate.atis;
-    decision.supportedFacility = IsTerminalRole(role);
-    decision.guardFrequency = GuardFrequency(candidate.frequency);
+    decision.actionable = true;
+    decision.atis = operational.atis;
+    const auto facilityKnown = candidate.vatsimFacilityProvided ||
+                               candidate.vatsimFacility != 0;
+    decision.supportedFacility = IsTerminalRole(role) &&
+        (!facilityKnown || candidate.vatsimFacility != 0);
+    decision.guardFrequency = false;
     decision.phaseApplicable = phaseApplicable;
+    decision.ineligibleReason = operational.reason;
     decision.relationAvailable =
         vatsim.score > 0 || vatspy.endpointPositive || distance.score > 0 ||
         vnas.vote.score > 0 ||
-        terminal.score > 0 || published.score > 0 || routeContext.score > 0;
+        sourceAuthority.score > 0 || terminalOwner.score > 0 ||
+        terminalPolygon.score > 0 ||
+        published.score > 0 || routeContext.score > 0;
     decision.ownershipApplicable =
         !input.vnasSectorPrecedenceEnabled || vnas.ownershipApplicable;
     decision.supportedTiesDisplay =
         input.terminalRelevanceV2Enabled || routeContextMatch;
-    decision.votes = {
+    decision.votes = std::move(operational.facts);
+    decision.votes.insert(
+        decision.votes.end(), {
+        std::move(feedHealth),
         std::move(vatsim),
+        std::move(roster),
         vatspy.vote,
         std::move(vnas.vote),
         std::move(distance),
-        std::move(terminal),
+        std::move(sourceAuthority),
+        std::move(terminalOwner),
+        std::move(terminalPolygon),
         std::move(published),
         std::move(routeContext),
-    };
+    });
+    if (vatspy.callsignClue.has_value()) {
+        decision.votes.push_back(std::move(*vatspy.callsignClue));
+    }
     AppendXPilot4CorrelationVote(input, candidate, &decision.votes);
     evaluation.receipt = DecideBrainControllerCandidate(decision);
     return evaluation;
@@ -932,6 +1267,7 @@ CenterEvaluation EvaluateCenter(
     const RadioReachableControllerCandidate& candidate,
     bool phaseApplicable) {
     CenterEvaluation evaluation;
+    auto operational = EvaluateOperationalEligibility(candidate);
     evaluation.frequency = candidate.frequency;
     const auto declarations = ParseExtensions(candidate.textAtis);
     bool extensionRouteMatch = false;
@@ -1015,11 +1351,15 @@ CenterEvaluation EvaluateCenter(
     const auto routeMetadata = !CurrentSectors(input).empty() ||
                                !NextSectors(input).empty();
     BrainControllerDecisionInput decision;
-    decision.actionable = candidate.actionable;
-    decision.atis = candidate.atis;
-    decision.supportedFacility = true;
-    decision.guardFrequency = GuardFrequency(evaluation.frequency);
+    decision.actionable = true;
+    decision.atis = operational.atis;
+    const auto facilityKnown = candidate.vatsimFacilityProvided ||
+                               candidate.vatsimFacility != 0;
+    decision.supportedFacility =
+        !facilityKnown || candidate.vatsimFacility != 0;
+    decision.guardFrequency = false;
     decision.phaseApplicable = phaseApplicable;
+    decision.ineligibleReason = operational.reason;
     decision.relationAvailable = evaluation.matched;
     decision.radioReachable =
         !input.terminalRelevanceV2Enabled || evaluation.radioReachable;
@@ -1061,6 +1401,10 @@ CenterEvaluation EvaluateCenter(
             "login=" + DisplayFrequency(candidate.frequency) +
                 ",selected=" + DisplayFrequency(evaluation.frequency)),
     };
+    decision.votes.insert(
+        decision.votes.begin(),
+        operational.facts.begin(),
+        operational.facts.end());
     AppendXPilot4CorrelationVote(input, candidate, &decision.votes);
     evaluation.receipt = DecideBrainControllerCandidate(decision);
     if (evaluation.context.empty()) {
@@ -1172,8 +1516,8 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerEvidencePipeline(
         station.callsign = candidate.callsign;
         station.frequency = candidate.frequency;
         station.tuned = Tuned(station.frequency, input.radios);
-        station.online = candidate.actionable;
-        station.offline = !candidate.actionable;
+        station.online = false;
+        station.offline = false;
         station.sourceEvidenceId = "radio-reachable:" + CandidateKey(candidate);
         station.sourceEvidenceType = "radio-reachable-controller";
         station.sourceEvidenceDomain = "controller-relevance";
@@ -1197,6 +1541,8 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerEvidencePipeline(
                 evaluation.receipt,
                 evaluation.context);
             if (evaluation.receipt.accepted) {
+                station.online = true;
+                station.offline = false;
                 AppendUnique(
                     station,
                     completion,
@@ -1208,15 +1554,18 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerEvidencePipeline(
         }
 
         if (!IsTerminalRole(role)) {
+            auto operational = EvaluateOperationalEligibility(candidate);
             BrainControllerDecisionInput decision;
-            decision.actionable = candidate.actionable;
-            decision.atis = candidate.atis ||
+            decision.actionable = true;
+            decision.atis = operational.atis ||
                             candidate.group == RadioReachableFacilityGroup::Atis;
             decision.supportedFacility = false;
-            decision.guardFrequency = GuardFrequency(candidate.frequency);
+            decision.guardFrequency = false;
             decision.phaseApplicable = false;
             decision.relationAvailable = false;
-            decision.votes = {VatsimVote(candidate, role)};
+            decision.ineligibleReason = operational.reason;
+            decision.votes = std::move(operational.facts);
+            decision.votes.push_back(VatsimVote(candidate, role));
             AppendXPilot4CorrelationVote(input, candidate, &decision.votes);
             const auto receipt = DecideBrainControllerCandidate(decision);
             output.completions.push_back(MakeCompletion(
@@ -1280,6 +1629,8 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerEvidencePipeline(
             std::string(selected->departure ? "departure" : "arrival") +
                 "-terminal-evidence");
         if (selected->receipt.accepted) {
+            station.online = true;
+            station.offline = false;
             if (selected->departure) {
                 AppendUnique(
                     station,

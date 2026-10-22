@@ -1,0 +1,18 @@
+name=Standby Assist regional sequence Arrival pending lookup does not guess UNICOM
+
+display_intent.stage=Arrival
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Arrival
+ctaf_unicom.departure=airport=KSEA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=10;failures=0
+ctaf_unicom.arrival=airport=EGLL;attempted=true;fetchInProgress=true;resolved=false;available=false;age=5;failures=0
+
+radio.valid=true
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.stage=Arrival
+standby_assist.plan_key=BAW9|KSEA|EGLL
+
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:arrival:EGLL,advisory=defer-pending,actualSelectedTargetSource=none,final=skip-pending-lookup
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:no-target,standbyDecision=<none>,enabled=1,latchKey=<none>,latchConsumed=0,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=none,targetFrequency=<empty>,failure=no-target,marker=0

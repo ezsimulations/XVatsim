@@ -23,21 +23,29 @@ BrainControllerDecisionReceipt DecideBrainControllerCandidate(
     const BrainControllerDecisionInput& input) {
     BrainControllerDecisionReceipt receipt;
 
-    // One source family gets one vote. Repeated facts from a family are folded
-    // together; contradictory values become neutral and remain diagnosable.
+    // Every raw fact remains countable. Only facts with the same explicit
+    // deduplication key (or the same legacy source key) are folded together.
     std::map<std::string, BrainControllerEvidenceVote> bySource;
     for (const auto& raw : input.votes) {
         auto vote = raw;
         vote.score = Ternary(vote.score);
         if (vote.source.empty()) vote.source = "unknown";
-        const auto found = bySource.find(vote.source);
+        if (vote.score > 0) ++receipt.rawPositiveFacts;
+        else if (vote.score < 0) ++receipt.rawNegativeFacts;
+        else ++receipt.rawNeutralFacts;
+        const auto key = vote.deduplicationKey.empty()
+            ? vote.source
+            : vote.deduplicationKey;
+        const auto found = bySource.find(key);
         if (found == bySource.end()) {
-            bySource.emplace(vote.source, std::move(vote));
+            bySource.emplace(key, std::move(vote));
             continue;
         }
         auto& existing = found->second;
         existing.provenance = JoinReason(existing.provenance, vote.provenance);
         existing.reason = JoinReason(existing.reason, vote.reason);
+        existing.contributesToScore =
+            existing.contributesToScore || vote.contributesToScore;
         if (existing.score != vote.score) {
             existing.score = 0;
             existing.reason = JoinReason(existing.reason, "conflicting-source-facts");
@@ -45,13 +53,16 @@ BrainControllerDecisionReceipt DecideBrainControllerCandidate(
     }
 
     for (auto& [source, vote] : bySource) {
-        if (vote.score > 0) ++receipt.positiveVotes;
-        else if (vote.score < 0) ++receipt.negativeVotes;
-        else ++receipt.neutralVotes;
+        if (vote.contributesToScore) {
+            if (vote.score > 0) ++receipt.positiveVotes;
+            else if (vote.score < 0) ++receipt.negativeVotes;
+            else ++receipt.neutralVotes;
+        }
         receipt.votes.push_back(std::move(vote));
     }
 
-    if (!input.actionable) receipt.reason = "brain-ineligible-offline";
+    if (!input.ineligibleReason.empty()) receipt.reason = input.ineligibleReason;
+    else if (!input.actionable) receipt.reason = "brain-ineligible-offline";
     else if (input.atis) receipt.reason = "brain-ineligible-atis";
     else if (!input.supportedFacility) receipt.reason = "brain-ineligible-facility";
     else if (input.guardFrequency) receipt.reason = "brain-ineligible-guard";
@@ -78,13 +89,16 @@ BrainControllerDecisionReceipt DecideBrainControllerCandidate(
 std::string FormatBrainControllerDecisionReceipt(
     const BrainControllerDecisionReceipt& receipt) {
     std::ostringstream out;
-    out << "brain-votes=" << receipt.positiveVotes << "/"
+    out << "brain-facts=" << receipt.rawPositiveFacts << "/"
+        << receipt.rawNegativeFacts << "/" << receipt.rawNeutralFacts
+        << ":brain-votes=" << receipt.positiveVotes << "/"
         << receipt.negativeVotes << "/" << receipt.neutralVotes;
     for (const auto& vote : receipt.votes) {
         out << ":" << vote.source << "="
             << (vote.score > 0 ? "+1" : vote.score < 0 ? "-1" : "0")
             << "[" << vote.reason;
         if (!vote.provenance.empty()) out << "@" << vote.provenance;
+        if (!vote.contributesToScore) out << "@fact-only";
         out << "]";
     }
     out << ":brain-final=" << (receipt.accepted ? "display" : "hide")

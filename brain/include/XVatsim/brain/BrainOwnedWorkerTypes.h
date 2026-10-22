@@ -341,6 +341,34 @@ struct BrainAuthorityCompletionDecision {
 BrainAuthorityCompletionDecision DecideBrainAuthorityCompletion(
     const BrainAuthorityCompletionValidationInput& input);
 
+// The Brain may continue using its last completed authority proof while newer
+// controller and transceiver evidence is being verified only when every
+// structural input to that proof is unchanged and both current evidence feeds
+// are healthy. The new worker completion must still match both evidence
+// digests exactly before publication. This keeps broad evidence churn from
+// erasing a proven route-scoped decision during the short verification window.
+struct BrainAuthorityPublicationContinuityDecision {
+    bool mayReuseLastAccepted = false;
+    bool evidenceRefreshPending = false;
+    bool controllerRefreshPending = false;
+    bool transceiverRefreshPending = false;
+    std::string reason;
+};
+
+struct BrainAuthorityPublicationContinuityInput {
+    BrainAuthorityCompletionIdentity accepted;
+    BrainAuthorityCompletionIdentity current;
+    bool controllerFeedAvailable = false;
+    bool controllerFeedStale = true;
+    bool controllerFeedComplete = false;
+    bool transceiverEvidenceAvailable = false;
+    bool transceiverEvidenceStale = true;
+};
+
+BrainAuthorityPublicationContinuityDecision
+DecideBrainAuthorityPublicationContinuity(
+    const BrainAuthorityPublicationContinuityInput& input);
+
 struct BrainRouteCompletionIdentity {
     std::uint64_t requestId = 0;
     std::uint64_t lifecycleEpoch = 0;

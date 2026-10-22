@@ -722,28 +722,24 @@ double GetOptionalJsonAltitudeFt(
     return 0.0;
 }
 
-bool ParseControllerCallsignFlags(
+void DecodeControllerCallsignFacts(
     const std::string& callsign,
-    bool* outActionable,
     bool* outAtis) {
+    // These are compatibility/mechanical fields. Operational eligibility is a
+    // Brain decision, so no callsign is removed here.
+    if (outAtis != nullptr) {
+        *outAtis = false;
+    }
     const auto separatorIndex = callsign.rfind('_');
     if (separatorIndex == std::string::npos || separatorIndex == 0 ||
         separatorIndex >= (callsign.size() - 1)) {
-        return false;
+        return;
     }
 
     const auto suffix = ToUpperCopy(callsign.substr(separatorIndex + 1));
-    if (suffix == "OBS" || suffix == "SUP") {
-        return false;
-    }
-
-    if (outActionable != nullptr) {
-        *outActionable = suffix != "ATIS";
-    }
     if (outAtis != nullptr) {
         *outAtis = suffix == "ATIS";
     }
-    return true;
 }
 
 VatsimDataFeedSnapshot ParseFeed(const std::string& payload) {
@@ -767,8 +763,22 @@ VatsimDataFeedSnapshot ParseFeed(const std::string& payload) {
     try {
         const auto root = JsonObject::Parse(to_hstring(payload));
 
-        const auto controllers = root.GetNamedArray(L"controllers", JsonArray{});
+        snapshot.controllerComponentPresent = root.HasKey(L"controllers");
+        bool controllerArrayValid = false;
+        if (snapshot.controllerComponentPresent) {
+            controllerArrayValid =
+                root.GetNamedValue(L"controllers").ValueType() ==
+                JsonValueType::Array;
+        }
+        const auto controllers = controllerArrayValid
+            ? root.GetNamedArray(L"controllers")
+            : JsonArray{};
         snapshot.connectedControllers = static_cast<int>(controllers.Size());
+        snapshot.controllerComponentTruncated =
+            controllers.Size() > kMaxControllers;
+        snapshot.controllerComponentComplete =
+            snapshot.controllerComponentPresent && controllerArrayValid &&
+            !snapshot.controllerComponentTruncated;
         for (uint32_t index = 0; index < controllers.Size(); ++index) {
             if (snapshot.controllers.size() >= kMaxControllers) {
                 break;
@@ -791,11 +801,21 @@ VatsimDataFeedSnapshot ParseFeed(const std::string& payload) {
                 controllerObject,
                 L"text_atis",
                 kMaxControllerTextAtisChars);
+            controller.sourceLastUpdated = GetOptionalJsonString(
+                controllerObject,
+                L"last_updated",
+                kMaxRootAtisTimestampBytes);
+            controller.sourceLogonTime = GetOptionalJsonString(
+                controllerObject,
+                L"logon_time",
+                kMaxRootAtisTimestampBytes);
             const auto facilityNumber = controllerObject.GetNamedNumber(L"facility", 0);
             const auto visualRangeNumber =
                 controllerObject.GetNamedNumber(L"visual_range", 0);
             if (!std::isfinite(facilityNumber) ||
                 !std::isfinite(visualRangeNumber)) {
+                ++snapshot.rejectedControllerRecords;
+                snapshot.controllerComponentComplete = false;
                 continue;
             }
 
@@ -805,18 +825,19 @@ VatsimDataFeedSnapshot ParseFeed(const std::string& payload) {
                 std::clamp(visualRangeNumber, 0.0, 1000.0));
 
             if (controller.callsign.empty()) {
+                ++snapshot.rejectedControllerRecords;
+                snapshot.controllerComponentComplete = false;
                 continue;
             }
 
-            if (!ParseControllerCallsignFlags(
-                    controller.callsign,
-                    &controller.actionable,
-                    &controller.atis)) {
-                continue;
-            }
+            DecodeControllerCallsignFacts(
+                controller.callsign,
+                &controller.atis);
 
             snapshot.controllers.push_back(std::move(controller));
         }
+        snapshot.retainedControllerRecords =
+            static_cast<int>(snapshot.controllers.size());
         snapshot.controllerContentDigest =
             brain::HashBrainControllerEvidenceContent(snapshot.controllers);
         auto authorityControllers =

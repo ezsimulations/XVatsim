@@ -82,13 +82,34 @@ struct XPilotSessionBoundaryDecision {
     std::string logLine;
 };
 
+enum class AircraftElectricalPowerState {
+    Unknown,
+    Powered,
+    Unpowered,
+};
+
+struct AircraftElectricalPowerBoundaryState {
+    bool initialized = false;
+    AircraftElectricalPowerState lastConfirmed =
+        AircraftElectricalPowerState::Unknown;
+    long long unpoweredSinceMs = -1;
+};
+
 struct AircraftRuntimeBoundaryInput {
     AircraftStateSnapshot aircraftState;
+    long long monotonicMs = 0;
+    AircraftElectricalPowerBoundaryState electricalPowerState;
     bool coldDarkResetApplied = false;
     bool aircraftStateInvalidBoundaryActive = false;
 };
 
 struct AircraftRuntimeBoundaryDecision {
+    AircraftElectricalPowerState observedPowerState =
+        AircraftElectricalPowerState::Unknown;
+    AircraftElectricalPowerState effectivePowerState =
+        AircraftElectricalPowerState::Unknown;
+    AircraftElectricalPowerBoundaryState nextElectricalPowerState;
+    bool electricalPowerAvailable = false;
     bool aircraftStateInvalid = false;
     bool coldDarkBoundaryActive = false;
     bool shouldResetForInvalidAircraftState = false;
@@ -96,8 +117,11 @@ struct AircraftRuntimeBoundaryDecision {
     bool shouldResetPresentationState = false;
     bool nextColdDarkResetApplied = false;
     bool nextAircraftStateInvalidBoundaryActive = false;
+    std::string electricalPowerReason;
     std::string logLine;
 };
+
+const char* ToString(AircraftElectricalPowerState state);
 
 struct RecoveryDecision {
     bool accepted = false;

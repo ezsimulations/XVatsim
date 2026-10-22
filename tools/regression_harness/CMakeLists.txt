@@ -1,6 +1,7 @@
 add_executable(XVatsimRegressionHarness
     src/AustraliaBrainEvidenceProbe.cpp
     src/CandidateDecisionDiagnosticsProbe.cpp
+    src/ControllerOperationalEligibilityProbe.cpp
     src/main.cpp
     src/PerformanceContractGateACalm1Probe.cpp
     src/PerformanceContractGateACalm2Probe.cpp
@@ -49,6 +50,7 @@ target_link_libraries(XVatsimRegressionHarness PRIVATE
 if (WIN32)
     target_link_libraries(XVatsimRegressionHarness PRIVATE
         "${XPLANE_SDK_ROOT}/Libraries/Win/XPLM_64.lib"
+        psapi
         ws2_32
     )
 endif()

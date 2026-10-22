@@ -1,0 +1,16 @@
+name=Standby Assist regional sequence Enroute COM2 UNICOM still loads COM1 standby
+
+display_intent.stage=Enroute
+
+radio.valid=true
+radio.com1_active=124.500
+radio.com2_active=122.800
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Enroute
+standby_assist.plan_key=FFT4001|KCLE|KAUS
+
+expect.standby_assist_decisions_contains=sourceDecision=standby-enroute-unicom-fallback,role=UNICOM,freq=122.800,com1Active=0,com2Active=1,featureGateRequired=standby-assist,featureGateSatisfied=1,actualSelectedTargetSource=enroute-unicom-fallback,actualSelectedTargetFrequency=122.800,final=recommend-com1-standby
+expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=122.800,source=enroute-unicom-fallback

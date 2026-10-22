@@ -8,6 +8,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -22,6 +23,15 @@ namespace {
 using namespace brain;
 using namespace modules::overlay;
 using namespace modules::xpilot_bridge;
+
+std::string ExactXPilotFixturePath() {
+    const auto* overridePath =
+        std::getenv("XVATSIM_XPILOT_TEST_PLUGIN_PATH");
+    if (overridePath != nullptr && *overridePath != '\0') {
+        return overridePath;
+    }
+    return "C:/X-Plane 12/Resources/plugins/xPilot/win_x64/xPilot.xpl";
+}
 
 class ScriptedPrimitiveReader final : public XPilotPrivatePrimitiveReader {
 public:
@@ -621,7 +631,7 @@ bool QualificationProbe(int index, std::string* reason) {
         }
         case 55: {
             const auto inspected = InspectXPilotPrivatePluginFile(
-                "C:/X-Plane 12/Resources/plugins/xPilot/win_x64/xPilot.xpl", "");
+                ExactXPilotFixturePath(), "");
             return Check(inspected.pathPresent && inspected.canonicalizationSucceeded &&
                 inspected.fileReadable && inspected.regularFile &&
                 inspected.actualSize == 4'990'976 && inspected.hashAttempts == 1 &&

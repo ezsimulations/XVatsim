@@ -175,7 +175,12 @@ AuthorityDisplayFrequencyResolution ResolveAuthorityPreviewDisplayFrequency(
     const auto stationFrequencyGuard =
         stationHasFrequency && IsPreviewGuardFrequency(stationFrequency);
 
-    if (controllerHasFrequency && !controllerFrequencyGuard) {
+    if (controllerFrequencyGuard) {
+        resolution.unavailableReason = "controller-guard";
+        return resolution;
+    }
+
+    if (controllerHasFrequency) {
         resolution.frequency = controllerFrequency;
         return resolution;
     }
@@ -511,6 +516,37 @@ const TransceiverStationEvidenceSnapshot* FindBestBrainUsableStation(
     return best;
 }
 
+bool ExplicitNonOperationalController(
+    const TransceiverControllerEvidenceSnapshot& evidence,
+    std::string* reason) {
+    auto callsign = evidence.callsign;
+    std::transform(
+        callsign.begin(), callsign.end(), callsign.begin(),
+        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    const auto separator = callsign.rfind('_');
+    const auto suffix = separator == std::string::npos
+        ? std::string{}
+        : callsign.substr(separator + 1);
+    if (evidence.atis || suffix == "ATIS") {
+        // Preserve the established preview vocabulary. The decision is now
+        // made here from the raw ATIS fact rather than copied from a worker's
+        // actionable flag.
+        if (reason != nullptr) *reason = "controller-not-actionable";
+        return true;
+    }
+    if (evidence.facility == 0) {
+        if (reason != nullptr) *reason = "source-facility-observer";
+        return true;
+    }
+    if (suffix == "OBS" || suffix == "SUP") {
+        if (reason != nullptr) {
+            *reason = suffix == "OBS" ? "source-observer" : "source-supervisor";
+        }
+        return true;
+    }
+    return false;
+}
+
 BrainRadioRangePreviewDecision BuildPreviewDecision(
     const TransceiverControllerEvidenceSnapshot& evidence,
     const std::vector<ReceivableControllerSnapshot>& oldSurvivors) {
@@ -520,9 +556,17 @@ BrainRadioRangePreviewDecision BuildPreviewDecision(
     decision.matchesOldSurvivor =
         EvidenceMatchesAnyOldSurvivor(evidence, oldSurvivors);
 
-    if (!evidence.actionable) {
+    std::string operationalReason;
+    if (ExplicitNonOperationalController(evidence, &operationalReason)) {
         decision.decision = kPreviewRejectedNonActionable;
-        decision.reason = "controller-not-actionable";
+        decision.reason = operationalReason;
+        return decision;
+    }
+
+    if (evidence.controllerFrequencyGuard ||
+        IsPreviewGuardFrequency(evidence.controllerFrequency)) {
+        decision.decision = kPreviewRejectedGuardFrequency;
+        decision.reason = "guard-frequency";
         return decision;
     }
 
@@ -718,12 +762,13 @@ BuildBrainAuthorityStationsDecisionPreview(
     }
 
     for (const auto& evidence : transceivers.controllerEvidence) {
-        if (!evidence.actionable) {
+        std::string operationalReason;
+        if (ExplicitNonOperationalController(evidence, &operationalReason)) {
             preview.decisions.push_back(
                 BuildAuthorityControllerRejection(
                     evidence,
                     kAuthorityPreviewRejectedNonActionable,
-                    "controller-not-actionable"));
+                    operationalReason.c_str()));
             continue;
         }
 
@@ -840,12 +885,13 @@ BrainAirportCoverageDecisionPreview BuildBrainAirportCoverageDecisionPreview(
     }
 
     for (const auto& evidence : transceivers.controllerEvidence) {
-        if (!evidence.actionable) {
+        std::string operationalReason;
+        if (ExplicitNonOperationalController(evidence, &operationalReason)) {
             preview.decisions.push_back(
                 BuildAirportCoverageControllerRejection(
                     evidence,
                     kAirportCoveragePreviewRejectedNonActionable,
-                    "controller-not-actionable"));
+                    operationalReason.c_str()));
             continue;
         }
 

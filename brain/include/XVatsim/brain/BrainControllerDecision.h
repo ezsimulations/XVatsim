@@ -17,6 +17,7 @@ struct BrainControllerDecisionInput {
     bool radioReachable = true;
     bool ownershipApplicable = true;
     bool supportedTiesDisplay = true;
+    std::string ineligibleReason;
     std::vector<BrainControllerEvidenceVote> votes;
 };
 
@@ -25,6 +26,9 @@ struct BrainControllerDecisionReceipt {
     int positiveVotes = 0;
     int negativeVotes = 0;
     int neutralVotes = 0;
+    int rawPositiveFacts = 0;
+    int rawNegativeFacts = 0;
+    int rawNeutralFacts = 0;
     std::string reason;
     std::vector<BrainControllerEvidenceVote> votes;
 };

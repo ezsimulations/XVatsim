@@ -1,0 +1,18 @@
+name=Standby Assist regional sequence Enroute exhausted controller does not select UNICOM
+
+display_intent.stage=Enroute
+display_intent.current_polygon=KZNY
+
+enroute.station=role=Center;callsign=NY_CTR;frequency=125.325;online=true;polygonKey=KZNY;sectorActive=true;tuned=true
+display_intent.relation=callsign=NY_CTR;frequency=125.325;relation=CurrentPolygon
+
+radio.valid=true
+radio.com1_active=125.325
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.stage=Enroute
+standby_assist.plan_key=BAW6|EGLL|KJFK
+
+expect.standby_assist_decisions_contains=callsign=NY_CTR:role=CTR:freq=125.325,final=skip-active
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:no-target,standbyDecision=<none>,enabled=1,latchKey=<none>,latchConsumed=0,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=none,targetFrequency=<empty>,failure=no-target,marker=0

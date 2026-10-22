@@ -1,0 +1,13 @@
+name=Standby Assist regional sequence Enroute master Assist disabled
+
+display_intent.stage=Enroute
+
+radio.valid=true
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=false
+standby_assist.stage=Enroute
+standby_assist.plan_key=BAW14|EGLL|KJFK
+
+expect.standby_assist_decisions_contains=sourceDecision=standby-enroute-unicom-fallback,role=UNICOM,freq=122.800,featureGateRequired=standby-assist,featureGateSatisfied=0,actualSelectedTargetSource=enroute-unicom-fallback,final=standby-assist-disabled
+expect.standby_assist_writer_result_contains=code=write-not-allowed,failureReason=standby-assist-disabled,inputFrequency=122.800,writeAttempted=0,source=enroute-unicom-fallback

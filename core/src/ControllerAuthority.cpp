@@ -2436,6 +2436,14 @@ AuthorityPolygonCatalog CompileAuthorityPolygons(
         polygon.kind = SourceDefaultKind(record.source);
         polygon.name = Trim(record.name);
         polygon.polygonKey = polygonKey;
+        polygon.controllerSuffix = NormalizeAuthorityToken(record.suffix);
+        for (const auto& prefix : record.prefixes) {
+            const auto normalizedPrefix = NormalizeAuthorityToken(prefix);
+            if (!normalizedPrefix.empty()) {
+                polygon.controllerPrefixes.push_back(normalizedPrefix);
+            }
+        }
+        SortUnique(&polygon.controllerPrefixes);
         polygon.sourceRecord = record.sourceRecord;
 
         if (record.source == AuthoritySource::SimAwareTracon) {

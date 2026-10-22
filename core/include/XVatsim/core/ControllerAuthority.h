@@ -53,6 +53,8 @@ struct AuthorityPolygon {
     std::string name;
     std::string polygonKey;
     std::vector<std::string> lookupKeys;
+    std::string controllerSuffix;
+    std::vector<std::string> controllerPrefixes;
     std::vector<AuthorityPolygonRing> rings;
     std::string sourceRecord;
 };

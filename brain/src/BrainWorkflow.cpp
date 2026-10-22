@@ -10,6 +10,9 @@ namespace brain = ::xvatsim::brain;
 
 namespace {
 
+constexpr double kMinimumUsableElectricalBusVolts = 5.0;
+constexpr long long kColdDarkConfirmationMs = 2000;
+
 double ToRadians(double degrees) {
     return degrees * 3.14159265358979323846 / 180.0;
 }
@@ -405,6 +408,18 @@ bool HasCom1TunedLiveRouteCenter(
 
 }  // namespace
 
+const char* ToString(AircraftElectricalPowerState state) {
+    switch (state) {
+        case AircraftElectricalPowerState::Powered:
+            return "powered";
+        case AircraftElectricalPowerState::Unpowered:
+            return "unpowered";
+        case AircraftElectricalPowerState::Unknown:
+        default:
+            return "unknown";
+    }
+}
+
 double DistanceToDestinationNm(
     const brain::AircraftStateSnapshot& aircraftState,
     const FlightContext& flightContext) {
@@ -625,6 +640,7 @@ XPilotSessionBoundaryDecision ResolveXPilotSessionBoundary(
 AircraftRuntimeBoundaryDecision ResolveAircraftRuntimeBoundary(
     const AircraftRuntimeBoundaryInput& input) {
     AircraftRuntimeBoundaryDecision decision;
+    decision.nextElectricalPowerState = input.electricalPowerState;
     decision.nextColdDarkResetApplied = input.coldDarkResetApplied;
     decision.nextAircraftStateInvalidBoundaryActive =
         input.aircraftStateInvalidBoundaryActive;
@@ -641,10 +657,98 @@ AircraftRuntimeBoundaryDecision ResolveAircraftRuntimeBoundary(
     }
 
     decision.nextAircraftStateInvalidBoundaryActive = false;
-    if (input.aircraftState.batteryOn) {
+    const auto hasStandardPowerFacts =
+        input.aircraftState.batterySwitchFactsAvailable ||
+        input.aircraftState.electricalBusVoltageFactsAvailable;
+    const auto anyBatteryOn =
+        input.aircraftState.batterySwitchFactsAvailable &&
+        input.aircraftState.batterySwitchOnCount > 0;
+    const auto energizedBus =
+        input.aircraftState.electricalBusVoltageFactsAvailable &&
+        std::isfinite(input.aircraftState.maximumElectricalBusVoltage) &&
+        input.aircraftState.maximumElectricalBusVoltage >=
+            kMinimumUsableElectricalBusVolts;
+
+    if (anyBatteryOn || energizedBus ||
+        (!hasStandardPowerFacts && input.aircraftState.batteryOn)) {
+        decision.observedPowerState = AircraftElectricalPowerState::Powered;
+        decision.effectivePowerState = AircraftElectricalPowerState::Powered;
+        decision.electricalPowerAvailable = true;
+        decision.electricalPowerReason = anyBatteryOn
+            ? "battery-switch-on"
+            : (energizedBus ? "electrical-bus-energized"
+                            : "legacy-battery-on");
+        decision.nextElectricalPowerState.initialized = true;
+        decision.nextElectricalPowerState.lastConfirmed =
+            AircraftElectricalPowerState::Powered;
+        decision.nextElectricalPowerState.unpoweredSinceMs = -1;
         decision.nextColdDarkResetApplied = false;
         return decision;
     }
+
+    const auto allAvailableBatteriesOff =
+        input.aircraftState.batterySwitchFactsAvailable &&
+        input.aircraftState.batterySwitchCount > 0 &&
+        input.aircraftState.batterySwitchOnCount == 0;
+    const auto availableBusDeenergized =
+        input.aircraftState.electricalBusVoltageFactsAvailable &&
+        input.aircraftState.electricalBusVoltageCount > 0 &&
+        std::isfinite(input.aircraftState.maximumElectricalBusVoltage) &&
+        input.aircraftState.maximumElectricalBusVoltage <
+            kMinimumUsableElectricalBusVolts;
+    const auto legacyUnpowered =
+        !hasStandardPowerFacts && !input.aircraftState.batteryOn;
+    const auto observedUnpowered =
+        (allAvailableBatteriesOff && availableBusDeenergized) ||
+        legacyUnpowered;
+
+    if (!observedUnpowered) {
+        decision.observedPowerState = AircraftElectricalPowerState::Unknown;
+        decision.effectivePowerState =
+            input.electricalPowerState.lastConfirmed;
+        decision.electricalPowerAvailable =
+            decision.effectivePowerState ==
+            AircraftElectricalPowerState::Powered;
+        decision.electricalPowerReason =
+            "standard-power-facts-incomplete";
+        decision.nextElectricalPowerState.unpoweredSinceMs = -1;
+        return decision;
+    }
+
+    decision.observedPowerState = AircraftElectricalPowerState::Unpowered;
+    decision.electricalPowerReason = legacyUnpowered
+        ? "legacy-battery-off"
+        : "all-batteries-off-and-bus-deenergized";
+
+    auto unpoweredConfirmed = legacyUnpowered;
+    if (!legacyUnpowered) {
+        if (decision.nextElectricalPowerState.unpoweredSinceMs < 0) {
+            decision.nextElectricalPowerState.unpoweredSinceMs =
+                input.monotonicMs;
+        }
+        unpoweredConfirmed =
+            input.monotonicMs >=
+                decision.nextElectricalPowerState.unpoweredSinceMs &&
+            input.monotonicMs -
+                    decision.nextElectricalPowerState.unpoweredSinceMs >=
+                kColdDarkConfirmationMs;
+    }
+
+    if (!unpoweredConfirmed) {
+        decision.effectivePowerState =
+            input.electricalPowerState.lastConfirmed;
+        decision.electricalPowerAvailable =
+            decision.effectivePowerState ==
+            AircraftElectricalPowerState::Powered;
+        decision.electricalPowerReason += "-confirmation-pending";
+        return decision;
+    }
+
+    decision.nextElectricalPowerState.initialized = true;
+    decision.nextElectricalPowerState.lastConfirmed =
+        AircraftElectricalPowerState::Unpowered;
+    decision.effectivePowerState = AircraftElectricalPowerState::Unpowered;
+    decision.electricalPowerAvailable = false;
 
     decision.coldDarkBoundaryActive = true;
     decision.nextColdDarkResetApplied = true;

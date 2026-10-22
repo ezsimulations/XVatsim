@@ -18,6 +18,16 @@ brain::ControllerFeedSnapshot ControllerFeedClient::BuildSnapshot(
 
     snapshot.stale = feedSnapshot.stale;
     snapshot.generation = feedSnapshot.generation;
+    snapshot.controllerComponentPresent =
+        feedSnapshot.controllerComponentPresent;
+    snapshot.controllerComponentComplete =
+        feedSnapshot.controllerComponentComplete;
+    snapshot.controllerComponentTruncated =
+        feedSnapshot.controllerComponentTruncated;
+    snapshot.retainedControllerRecords =
+        feedSnapshot.retainedControllerRecords;
+    snapshot.rejectedControllerRecords =
+        feedSnapshot.rejectedControllerRecords;
     if (feedSnapshot.stale) {
         snapshot.available = false;
         snapshot.connectedControllers = 0;

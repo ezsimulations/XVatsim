@@ -1,7 +1,9 @@
 #include "XVatsim/modules/aircraft_state/AircraftStateSampler.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
+#include <vector>
 
 #include "XPLMDataAccess.h"
 #include "XPLMUtilities.h"
@@ -101,7 +103,63 @@ brain::AircraftStateSnapshot AircraftStateSampler::Sample() {
         return {};
     }
 
-    snapshot.batteryOn = ReadBooleanLikeDataRef(batteryOnRef_);
+    if (batteryOnRef_ != nullptr) {
+        const auto typedDataRef = static_cast<XPLMDataRef>(batteryOnRef_);
+        const auto dataRefTypes = XPLMGetDataRefTypes(typedDataRef);
+        if ((dataRefTypes & xplmType_IntArray) != 0) {
+            const auto count = XPLMGetDatavi(typedDataRef, nullptr, 0, 0);
+            if (count > 0) {
+                std::vector<int> values(static_cast<std::size_t>(count));
+                const auto read = XPLMGetDatavi(
+                    typedDataRef, values.data(), 0, count);
+                snapshot.batterySwitchFactsAvailable = read > 0;
+                snapshot.batterySwitchCount = read;
+                for (int index = 0; index < read; ++index) {
+                    if (values[static_cast<std::size_t>(index)] != 0) {
+                        ++snapshot.batterySwitchOnCount;
+                    }
+                }
+            }
+        } else if ((dataRefTypes & (xplmType_Int | xplmType_Float |
+                                    xplmType_Double)) != 0) {
+            snapshot.batterySwitchFactsAvailable = true;
+            snapshot.batterySwitchCount = 1;
+            snapshot.batterySwitchOnCount =
+                ReadBooleanLikeDataRef(batteryOnRef_) ? 1 : 0;
+        }
+    }
+    snapshot.batteryOn = snapshot.batterySwitchOnCount > 0;
+
+    if (busVoltsRef_ != nullptr) {
+        const auto typedDataRef = static_cast<XPLMDataRef>(busVoltsRef_);
+        const auto dataRefTypes = XPLMGetDataRefTypes(typedDataRef);
+        if ((dataRefTypes & xplmType_FloatArray) != 0) {
+            const auto count = XPLMGetDatavf(typedDataRef, nullptr, 0, 0);
+            if (count > 0) {
+                std::vector<float> values(static_cast<std::size_t>(count));
+                const auto read = XPLMGetDatavf(
+                    typedDataRef, values.data(), 0, count);
+                snapshot.electricalBusVoltageFactsAvailable = read > 0;
+                snapshot.electricalBusVoltageCount = read;
+                for (int index = 0; index < read; ++index) {
+                    const auto value = values[static_cast<std::size_t>(index)];
+                    if (std::isfinite(value)) {
+                        snapshot.maximumElectricalBusVoltage = (std::max)(
+                            snapshot.maximumElectricalBusVoltage,
+                            static_cast<double>(value));
+                    }
+                }
+            }
+        } else if ((dataRefTypes & (xplmType_Float | xplmType_Double |
+                                    xplmType_Int)) != 0) {
+            const auto value = ReadScalarDataRef(busVoltsRef_);
+            if (std::isfinite(value)) {
+                snapshot.electricalBusVoltageFactsAvailable = true;
+                snapshot.electricalBusVoltageCount = 1;
+                snapshot.maximumElectricalBusVoltage = (std::max)(0.0, value);
+            }
+        }
+    }
     snapshot.onGround = snapshot.altitudeAglFt <= kGroundedAglThresholdFeet &&
                         snapshot.groundSpeedKt <= kGroundedSpeedThresholdKnots;
 
@@ -136,6 +194,7 @@ void AircraftStateSampler::Reset() {
     trackTrueRef_ = nullptr;
     headingTrueRef_ = nullptr;
     batteryOnRef_ = nullptr;
+    busVoltsRef_ = nullptr;
     loggedMissingDataRefs_ = false;
 }
 
@@ -163,6 +222,7 @@ void AircraftStateSampler::ResolveDataRefs() {
     if (batteryOnRef_ == nullptr) {
         resolveIfMissing(batteryOnRef_, "sim/cockpit/electrical/battery_on");
     }
+    resolveIfMissing(busVoltsRef_, "sim/cockpit2/electrical/bus_volts");
 
     if (latitudeRef_ == nullptr) {
         LogMissingDataRefOnce(&loggedMissingDataRefs_, "sim/flightmodel/position/latitude");

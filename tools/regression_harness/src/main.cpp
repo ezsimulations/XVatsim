@@ -4,6 +4,8 @@
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
+#include <psapi.h>
 #endif
 
 #include <algorithm>
@@ -24,6 +26,7 @@
 #include <thread>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -74,6 +77,7 @@
 #include "RuntimeActivationGateProbe.h"
 #include "AustraliaBrainEvidenceProbe.h"
 #include "CandidateDecisionDiagnosticsProbe.h"
+#include "ControllerOperationalEligibilityProbe.h"
 #include "XPilot4BridgeContractProbe.h"
 
 namespace {
@@ -23682,6 +23686,229 @@ int RunStep5ContractProbe(const ScenarioData& scenario) {
     return 0;
 }
 
+std::uint64_t CurrentWorkingSetBytes() {
+#if defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS counters{};
+    counters.cb = sizeof(counters);
+    if (GetProcessMemoryInfo(
+            GetCurrentProcess(), &counters, sizeof(counters)) != FALSE) {
+        return static_cast<std::uint64_t>(counters.WorkingSetSize);
+    }
+#endif
+    return 0;
+}
+
+xvatsim::brain::BrainOwnedStandbyAssistPlanInput
+BuildArrivalRegionalSequencePerformanceInput() {
+    using namespace xvatsim::brain;
+    BrainOwnedStandbyAssistPlanInput input;
+    input.workflowStage = WorkflowStage::Arrival;
+    input.planKey = "performance-arrival|KSEA|KONT";
+    input.radios.valid = true;
+    input.radios.com1ActiveFrequency = "120.600";
+    input.standbyAssistEnabled = true;
+    input.board.available = true;
+    input.board.source = BoardSource::Arrival;
+    input.board.airportIcao = "KONT";
+
+    FinalDisplayStationSnapshot tower;
+    tower.role = StationRole::Tower;
+    tower.callsign = "ONT_TWR";
+    tower.frequency = "120.600";
+    tower.online = true;
+    tower.tuned = true;
+    input.board.stations.push_back(std::move(tower));
+
+    FinalDisplayStationSnapshot ctaf;
+    ctaf.role = StationRole::Ctaf;
+    ctaf.callsign = "KONT";
+    ctaf.frequency = "123.050";
+    ctaf.online = true;
+    input.board.stations.push_back(std::move(ctaf));
+
+    FinalDisplayStationSnapshot ground;
+    ground.role = StationRole::Ground;
+    ground.callsign = "ONT_GND";
+    ground.frequency = "121.900";
+    ground.online = true;
+    input.board.stations.push_back(std::move(ground));
+
+    BrainOwnedStandbyAssistAdvisoryCandidate candidate;
+    candidate.sourceDecisionId = "performance-arrival-ctaf";
+    candidate.sourceEvidenceId = "performance-arrival-ctaf-evidence";
+    candidate.endpoint = "arrival";
+    candidate.airportIcao = "KONT";
+    candidate.advisoryDecision = "ctaf-display";
+    candidate.projectedRole = "CTAF";
+    candidate.projectedFrequency = "123.050";
+    candidate.acceptedByAdvisory = true;
+    candidate.sourceConfidence = "high";
+    candidate.confidenceLevel = "high";
+    candidate.positiveScore = 0.90;
+    candidate.negativeScore = 0.05;
+    input.ctafUnicomAdvisoryCandidates.push_back(std::move(candidate));
+    return input;
+}
+
+xvatsim::brain::BrainOwnedStandbyAssistPlanInput
+BuildEnrouteRegionalSequencePerformanceInput() {
+    xvatsim::brain::BrainOwnedStandbyAssistPlanInput input;
+    input.workflowStage = xvatsim::brain::WorkflowStage::Enroute;
+    input.planKey = "performance-enroute|EGLL|KJFK";
+    input.radios.valid = true;
+    input.standbyAssistEnabled = true;
+    input.board.available = true;
+    input.board.source = xvatsim::brain::BoardSource::Enroute;
+    return input;
+}
+
+int RunStandbyAssistRegionalSequencePerformanceProbe() {
+    constexpr int kWarmupIterations = 1000;
+    constexpr int kMeasuredIterations = 10000;
+    constexpr long long kMaximumElapsedMicroseconds = 250000;
+    constexpr std::uint64_t kMaximumWorkingSetGrowthBytes = 4ULL * 1024ULL * 1024ULL;
+
+    const auto arrivalInput = BuildArrivalRegionalSequencePerformanceInput();
+    const auto enrouteInput = BuildEnrouteRegionalSequencePerformanceInput();
+    std::uint64_t digest = 1469598103934665603ULL;
+    const auto observe = [&](const auto& output) {
+        digest ^= static_cast<std::uint64_t>(output.hasTarget);
+        digest *= 1099511628211ULL;
+        for (const auto value : output.actualSelectedTargetSource) {
+            digest ^= static_cast<unsigned char>(value);
+            digest *= 1099511628211ULL;
+        }
+        for (const auto value : output.actualSelectedTargetFrequency) {
+            digest ^= static_cast<unsigned char>(value);
+            digest *= 1099511628211ULL;
+        }
+    };
+
+    for (int iteration = 0; iteration < kWarmupIterations; ++iteration) {
+        observe(xvatsim::brain::BuildBrainOwnedStandbyAssistPlan(arrivalInput));
+        observe(xvatsim::brain::BuildBrainOwnedStandbyAssistPlan(enrouteInput));
+    }
+
+    const auto workingSetBefore = CurrentWorkingSetBytes();
+    bool deterministic = true;
+    const auto arrivalStart = std::chrono::steady_clock::now();
+    for (int iteration = 0; iteration < kMeasuredIterations; ++iteration) {
+        const auto output =
+            xvatsim::brain::BuildBrainOwnedStandbyAssistPlan(arrivalInput);
+        deterministic = deterministic && output.hasTarget &&
+            output.actualSelectedTargetSource == "arrival-ctaf-sequence" &&
+            output.actualSelectedTargetFrequency == "123.050";
+        observe(output);
+    }
+    const auto arrivalEnd = std::chrono::steady_clock::now();
+
+    const auto enrouteStart = std::chrono::steady_clock::now();
+    for (int iteration = 0; iteration < kMeasuredIterations; ++iteration) {
+        const auto output =
+            xvatsim::brain::BuildBrainOwnedStandbyAssistPlan(enrouteInput);
+        deterministic = deterministic && output.hasTarget &&
+            output.actualSelectedTargetSource == "enroute-unicom-fallback" &&
+            output.actualSelectedTargetFrequency == "122.800";
+        observe(output);
+    }
+    const auto enrouteEnd = std::chrono::steady_clock::now();
+    const auto workingSetAfter = CurrentWorkingSetBytes();
+
+    const auto arrivalUs =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            arrivalEnd - arrivalStart).count();
+    const auto enrouteUs =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            enrouteEnd - enrouteStart).count();
+    const auto workingSetGrowth = workingSetAfter > workingSetBefore
+        ? workingSetAfter - workingSetBefore
+        : 0ULL;
+    const auto passed = deterministic &&
+        arrivalUs <= kMaximumElapsedMicroseconds &&
+        enrouteUs <= kMaximumElapsedMicroseconds &&
+        workingSetGrowth <= kMaximumWorkingSetGrowthBytes;
+
+    std::cout
+        << "STANDBY_ASSIST_REGIONAL_SEQUENCE_PERFORMANCE "
+        << "arrival_iterations=" << kMeasuredIterations
+        << " arrival_us=" << arrivalUs
+        << " enroute_iterations=" << kMeasuredIterations
+        << " enroute_us=" << enrouteUs
+        << " working_set_before=" << workingSetBefore
+        << " working_set_after=" << workingSetAfter
+        << " working_set_growth=" << workingSetGrowth
+        << " deterministic=" << (deterministic ? 1 : 0)
+        << " digest=" << digest
+        << " passed=" << (passed ? 1 : 0)
+        << '\n';
+    return passed ? 0 : 1;
+}
+
+int RunStandbyAssistRegionalSequenceLatchProbe() {
+    xvatsim::brain::BrainOwnedRuntimeState state;
+    auto enrouteInput = BuildEnrouteRegionalSequencePerformanceInput();
+    const auto enroutePlan =
+        xvatsim::brain::BuildBrainOwnedStandbyAssistPlan(enrouteInput);
+    const auto first =
+        xvatsim::brain::DecideBrainOwnedStandbyAssistSideEffect(
+            &state,
+            enroutePlan,
+            true);
+    const auto repeated =
+        xvatsim::brain::DecideBrainOwnedStandbyAssistSideEffect(
+            &state,
+            enroutePlan,
+            true);
+
+    enrouteInput.planKey = "performance-enroute-2|EGLL|KJFK";
+    const auto changedPlan =
+        xvatsim::brain::BuildBrainOwnedStandbyAssistPlan(enrouteInput);
+    const auto afterPlanChange =
+        xvatsim::brain::DecideBrainOwnedStandbyAssistSideEffect(
+            &state,
+            changedPlan,
+            true);
+
+    auto arrivalInput = BuildArrivalRegionalSequencePerformanceInput();
+    const auto arrivalPlan =
+        xvatsim::brain::BuildBrainOwnedStandbyAssistPlan(arrivalInput);
+    const auto afterStageChange =
+        xvatsim::brain::DecideBrainOwnedStandbyAssistSideEffect(
+            &state,
+            arrivalPlan,
+            true);
+
+    arrivalInput.radios.com1ActiveFrequency = "118.000";
+    const auto changedRadioPlan =
+        xvatsim::brain::BuildBrainOwnedStandbyAssistPlan(arrivalInput);
+    const auto afterRadioChange =
+        xvatsim::brain::DecideBrainOwnedStandbyAssistSideEffect(
+            &state,
+            changedRadioPlan,
+            true);
+
+    const auto passed = first.shouldWriteCom1Standby &&
+        !repeated.shouldWriteCom1Standby &&
+        repeated.failureReason == "latch-already-consumed" &&
+        afterPlanChange.shouldWriteCom1Standby &&
+        afterStageChange.shouldWriteCom1Standby &&
+        afterRadioChange.shouldWriteCom1Standby;
+    std::cout
+        << "STANDBY_ASSIST_REGIONAL_SEQUENCE_LATCH "
+        << "first_write=" << (first.shouldWriteCom1Standby ? 1 : 0)
+        << " repeated_write=" << (repeated.shouldWriteCom1Standby ? 1 : 0)
+        << " repeated_reason=" << repeated.failureReason
+        << " plan_change_write="
+        << (afterPlanChange.shouldWriteCom1Standby ? 1 : 0)
+        << " stage_change_write="
+        << (afterStageChange.shouldWriteCom1Standby ? 1 : 0)
+        << " radio_change_write="
+        << (afterRadioChange.shouldWriteCom1Standby ? 1 : 0)
+        << " passed=" << (passed ? 1 : 0)
+        << '\n';
+    return passed ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -23786,6 +24013,34 @@ int main(int argc, char** argv) {
     if (std::string(argv[1]) == "--candidate-decision-diagnostics") {
         return xvatsim::tools::candidate_decision_diagnostics::
             RunCandidateDecisionDiagnosticsProbe();
+    }
+
+    if (std::string(argv[1]) == "--controller-operational-eligibility") {
+        return xvatsim::tools::controller_operational_eligibility::
+            RunControllerOperationalEligibilityProbe();
+    }
+    if (std::string(argv[1]) ==
+        "--controller-operational-eligibility-performance") {
+        return xvatsim::tools::controller_operational_eligibility::
+            RunControllerOperationalEligibilityPerformanceProbe();
+    }
+    if (std::string(argv[1]) == "--endpoint-terminal-polygon-ownership") {
+        return xvatsim::tools::controller_operational_eligibility::
+            RunEndpointTerminalPolygonOwnershipProbe();
+    }
+    if (std::string(argv[1]) == "--aircraft-electrical-power") {
+        return xvatsim::tools::controller_operational_eligibility::
+            RunAircraftElectricalPowerProbe();
+    }
+
+    if (std::string(argv[1]) ==
+        "--standby-assist-regional-sequence-performance") {
+        return RunStandbyAssistRegionalSequencePerformanceProbe();
+    }
+
+    if (std::string(argv[1]) ==
+        "--standby-assist-regional-sequence-latch") {
+        return RunStandbyAssistRegionalSequenceLatchProbe();
     }
 
     if (std::string(argv[1]) == "--pdc-log-monitor-contract") {
@@ -24581,12 +24836,44 @@ int main(int argc, char** argv) {
             scenario.transceiverResolutionSnapshot,
             controllerFeedSnapshot,
             relevanceRadioOptions);
+    xvatsim::brain::BrainTerminalAuthorityWorkerOutput
+        departureTerminalAuthorityOutput;
+    xvatsim::brain::BrainTerminalAuthorityWorkerOutput
+        arrivalTerminalAuthorityOutput;
+    if (scenario.controllerRelevanceWorkflowStage == WorkflowStage::Arrival) {
+        arrivalTerminalAuthorityOutput = terminalAuthorityOutput;
+    } else {
+        departureTerminalAuthorityOutput = terminalAuthorityOutput;
+    }
+    xvatsim::brain::BrainEndpointTerminalEvidenceScope departureScope;
+    departureScope.airportIcao =
+        scenario.workflowState.flightContext.departureIcao;
+    departureScope.hasAirportCoordinates =
+        scenario.workflowState.flightContext.hasDepartureCoordinates;
+    departureScope.airportLatitudeDeg =
+        scenario.workflowState.flightContext.departureLatDeg;
+    departureScope.airportLongitudeDeg =
+        scenario.workflowState.flightContext.departureLonDeg;
+    xvatsim::brain::BrainEndpointTerminalEvidenceScope arrivalScope;
+    arrivalScope.airportIcao =
+        scenario.workflowState.flightContext.destinationIcao;
+    arrivalScope.hasAirportCoordinates =
+        scenario.workflowState.flightContext.hasDestinationCoordinates;
+    arrivalScope.airportLatitudeDeg =
+        scenario.workflowState.flightContext.destinationLatDeg;
+    arrivalScope.airportLongitudeDeg =
+        scenario.workflowState.flightContext.destinationLonDeg;
     const auto controllerRelevanceRadioSnapshot =
         scenario.controllerRelevanceV2Enabled
-            ? xvatsim::brain::
-                  AugmentRadioReachableControllerSnapshotWithAppDepEvidence(
-                      receivableControllerRelevanceRadioSnapshot,
-                      scenario.transceiverResolutionSnapshot)
+            ? xvatsim::brain::BuildBrainEndpointScopedControllerSnapshot(
+                  receivableControllerRelevanceRadioSnapshot,
+                  scenario.transceiverResolutionSnapshot,
+                  departureTerminalAuthorityOutput,
+                  arrivalTerminalAuthorityOutput,
+                  &scenario.routeSectorSnapshot,
+                  departureScope,
+                  arrivalScope,
+                  scenario.controllerRelevanceTerminalRadiusNm)
             : receivableControllerRelevanceRadioSnapshot;
     const auto vnasControllerFeed =
         xvatsim::modules::vnas_data::DecodeVnasControllerFeedDocument(

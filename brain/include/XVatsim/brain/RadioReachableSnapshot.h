@@ -1,12 +1,15 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "XVatsim/brain/BrainTypes.h"
 
 namespace xvatsim::brain {
+
+struct BrainTerminalAuthorityWorkerOutput;
 
 enum class RadioReachableFacilityGroup {
     Delivery,
@@ -44,7 +47,15 @@ struct RadioReachableStationCoordinate {
 struct RadioReachableControllerCandidate {
     std::string callsign;
     std::string frequency;
+    // Original VATSIM primary, preserved even when AFV supplies a different
+    // contact channel. The Brain uses this fact for operational eligibility.
+    std::string sourcePrimaryFrequency;
+    // These presence flags distinguish an explicit VATSIM value of zero or
+    // blank from older tests and non-VATSIM producers that never supplied the
+    // source field. Explicit zero is observer evidence; absence is unknown.
+    bool sourcePrimaryFrequencyProvided = false;
     int vatsimFacility = 0;
+    bool vatsimFacilityProvided = false;
     RadioReachableFacilityGroup group = RadioReachableFacilityGroup::Other;
     RadioReachableSource source = RadioReachableSource::Unknown;
     bool actionable = true;
@@ -65,6 +76,15 @@ struct RadioReachableControllerCandidate {
     // radio-board channel, these retain extension and consolidation channels
     // so the Brain can choose the contact channel from source evidence.
     std::vector<TransceiverStationEvidenceSnapshot> originalTransceivers;
+    bool sourceRosterAvailable = false;
+    bool sourceRosterStale = true;
+    bool sourceRosterComplete = false;
+    bool sourceRosterTruncated = false;
+    int sourceRosterDeclaredRecords = 0;
+    int sourceRosterRetainedRecords = 0;
+    int sourceRosterRejectedRecords = 0;
+    std::uint64_t sourceRosterDigest = 0;
+    std::shared_ptr<const std::vector<ControllerSnapshot>> sourceRoster;
     double firstSeenSeconds = 0.0;
     double lastSeenSeconds = 0.0;
     std::string stableKey;
@@ -89,6 +109,15 @@ struct RadioReachableControllerSnapshot {
     std::string changeReason;
     std::string statusLine;
     RadioReachableGroupCounts counts;
+    bool sourceRosterAvailable = false;
+    bool sourceRosterStale = true;
+    bool sourceRosterComplete = false;
+    bool sourceRosterTruncated = false;
+    int sourceRosterDeclaredRecords = 0;
+    int sourceRosterRetainedRecords = 0;
+    int sourceRosterRejectedRecords = 0;
+    std::uint64_t sourceRosterDigest = 0;
+    std::shared_ptr<const std::vector<ControllerSnapshot>> sourceRoster;
     std::vector<RadioReachableControllerCandidate> candidates;
 };
 
@@ -96,6 +125,13 @@ struct RadioReachablePhaseGateOptions {
     WorkflowStage stage = WorkflowStage::None;
     bool includeAtis = false;
     std::string reason;
+};
+
+struct BrainEndpointTerminalEvidenceScope {
+    std::string airportIcao;
+    bool hasAirportCoordinates = false;
+    double airportLatitudeDeg = 0.0;
+    double airportLongitudeDeg = 0.0;
 };
 
 struct RadioReachableCandidateDiff {
@@ -155,13 +191,27 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshotFromTransc
     const ControllerFeedSnapshot& controllerFeedSnapshot,
     const RadioReachableBuildOptions& options);
 
-// Adds online APP/DEP candidates from complete transceiver evidence even when
-// the aircraft cannot currently receive them. This is used only by the V2
-// endpoint-relevance path; Center eligibility remains aircraft/range gated.
+// The Brain may add APP/DEP facts that are outside current aircraft reception
+// only when source evidence ties the position to the departure or arrival
+// terminal package. The global VATSIM/AFV roster remains source evidence; it
+// never becomes the detailed candidate list by itself.
 RadioReachableControllerSnapshot
-AugmentRadioReachableControllerSnapshotWithAppDepEvidence(
+BuildBrainEndpointScopedControllerSnapshot(
     const RadioReachableControllerSnapshot& snapshot,
-    const TransceiverResolutionSnapshot& transceiverSnapshot);
+    const TransceiverResolutionSnapshot& transceiverSnapshot,
+    const BrainTerminalAuthorityWorkerOutput& departureAuthority,
+    const BrainTerminalAuthorityWorkerOutput& arrivalAuthority,
+    const RouteSectorSnapshot* route,
+    const BrainEndpointTerminalEvidenceScope& departureScope,
+    const BrainEndpointTerminalEvidenceScope& arrivalScope,
+    double terminalTransmitterRadiusNm);
+
+// Stable identity of the controller facts that can affect a Brain decision.
+// It excludes worldwide roster counters, fetch generations, and moving
+// aircraft-to-transmitter distances so those transport details cannot make a
+// stable scoped controller set appear changed.
+std::uint64_t HashBrainRadioControllerDecisionEvidence(
+    const RadioReachableControllerSnapshot& snapshot);
 
 bool RadioReachableGroupAllowedForStage(
     RadioReachableFacilityGroup group,

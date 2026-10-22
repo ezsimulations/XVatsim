@@ -3,10 +3,15 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
+#include "XVatsim/modules/runtime_workers/AsyncDiagnosticsWriter.h"
 #include "XVatsim/modules/runtime_workers/CandidateDecisionDiagnosticsReducer.h"
 
 namespace xvatsim::tools::candidate_decision_diagnostics {
@@ -76,6 +81,16 @@ BrainOwnedCandidateCompletion Completion(std::size_t index) {
             -1,
             "airport-alias-mismatch",
             "TEST!=SJC"),
+        Vote(
+            "vatsim-feed-health",
+            1,
+            "fresh-complete-controller-roster",
+            "declared=152,retained=152,rejected=0"),
+        Vote(
+            "vatsim-roster",
+            0,
+            "no-direct-endpoint-controller",
+            "declared=152,retained=152,rejected=0,truncated=0"),
         Vote("vnas", 0, "incomplete-us-data-no-match"),
         Vote(
             "xpilot-fsd-correlation",
@@ -322,6 +337,49 @@ int RunCandidateDecisionDiagnosticsProbe() {
         return 1;
     }
 
+    CandidateDecisionDiagnosticsReducer rosterReducer;
+    std::vector<BrainOwnedCandidateCompletion> rosterCompletions = {
+        Completion(500)};
+    const auto rosterBaseline = rosterReducer.Observe(context, rosterCompletions);
+    std::size_t rosterCountChurnEmissions = 0;
+    for (std::size_t repeat = 0; repeat < 1000; ++repeat) {
+        for (auto& vote : rosterCompletions.front().evidenceVotes) {
+            if (vote.source == "vatsim-feed-health") {
+                vote.provenance =
+                    "declared=" + std::to_string(153 + repeat) +
+                    ",retained=" + std::to_string(153 + repeat) +
+                    ",rejected=0";
+            } else if (vote.source == "vatsim-roster") {
+                vote.provenance =
+                    "declared=" + std::to_string(153 + repeat) +
+                    ",retained=" + std::to_string(153 + repeat) +
+                    ",rejected=0,truncated=0";
+            }
+        }
+        if (rosterReducer.Observe(context, rosterCompletions).emit) {
+            ++rosterCountChurnEmissions;
+        }
+    }
+    for (auto& vote : rosterCompletions.front().evidenceVotes) {
+        if (vote.source == "vatsim-roster") {
+            vote.score = 0;
+            vote.reason = "controller-roster-incomplete";
+            vote.provenance =
+                "declared=1153,retained=1152,rejected=1,truncated=1";
+        }
+    }
+    const auto rosterSemanticDelta =
+        rosterReducer.Observe(context, rosterCompletions);
+    if (!rosterBaseline.emit || rosterCountChurnEmissions != 0 ||
+        !rosterSemanticDelta.emit ||
+        rosterSemanticDelta.changedCandidates != 1) {
+        std::cerr << "CANDIDATE_DIAGNOSTICS_ROSTER_CHURN_FAILED"
+                  << " emissions=" << rosterCountChurnEmissions
+                  << " semanticChanged="
+                  << rosterSemanticDelta.changedCandidates << "\n";
+        return 1;
+    }
+
     auto& changed = completions[17];
     changed.evidenceVotes.back().score = 1;
     changed.evidenceVotes.back().reason = "correlated-controller-confirmed";
@@ -368,12 +426,99 @@ int RunCandidateDecisionDiagnosticsProbe() {
         return 1;
     }
 
+    const auto storageProbeDirectory =
+        std::filesystem::temp_directory_path() /
+        ("xvatsim_diagnostic_bound_probe_" +
+         std::to_string(
+             std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(storageProbeDirectory);
+    const std::string seedLine(120, 'S');
+    for (const auto* date : {"2000_01_01", "2000_01_02"}) {
+        std::ofstream seed(
+            storageProbeDirectory /
+                (std::string{"xvatsim_diagnostics_"} + date + ".log"),
+            std::ios::binary | std::ios::trunc);
+        for (int index = 0; index < 100; ++index) {
+            seed << "tick=0 seed=" << index << " " << seedLine << '\n';
+        }
+    }
+    xvatsim::modules::runtime_workers::AsyncDiagnosticsWriter boundedWriter;
+    xvatsim::modules::runtime_workers::DiagnosticsWriterOptions writerOptions;
+    writerOptions.logDirectory = storageProbeDirectory;
+    writerOptions.maximumDateLogBytes = 4096;
+    writerOptions.retainedDateLogCount = 3;
+    if (!boundedWriter.Start(writerOptions)) {
+        std::cerr << "CANDIDATE_DIAGNOSTICS_STORAGE_START_FAILED\n";
+        return 1;
+    }
+    for (int index = 0; index < 300; ++index) {
+        const auto line =
+            "event=storage-bound-probe sequence=" + std::to_string(index) +
+            " payload=" + std::string(160, 'X');
+        while (!boundedWriter.TryEnqueueLine(line)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+    const auto writerIdle = boundedWriter.WaitUntilIdleForTesting(
+        std::chrono::seconds(10));
+    const auto writerSnapshot = boundedWriter.Snapshot();
+    boundedWriter.Stop();
+
+    std::uintmax_t totalDiagnosticBytes = 0;
+    std::size_t datedLogCount = 0;
+    bool everyFileBounded = true;
+    bool newestRecordPreserved = false;
+    bool trimMarkerPresent = false;
+    for (const auto& entry :
+         std::filesystem::directory_iterator(storageProbeDirectory)) {
+        if (!entry.is_regular_file() ||
+            entry.path().filename().string().rfind(
+                "xvatsim_diagnostics_", 0) != 0 ||
+            entry.path().extension() != ".log") {
+            continue;
+        }
+        ++datedLogCount;
+        const auto bytes = entry.file_size();
+        totalDiagnosticBytes += bytes;
+        everyFileBounded = everyFileBounded && bytes <= 4096;
+        std::ifstream input(entry.path(), std::ios::binary);
+        std::ostringstream content;
+        content << input.rdbuf();
+        const auto text = content.str();
+        newestRecordPreserved = newestRecordPreserved ||
+            text.find("sequence=299 ") != std::string::npos;
+        trimMarkerPresent = trimMarkerPresent ||
+            text.find("event=diagnostic-history-trimmed") !=
+                std::string::npos;
+    }
+    std::error_code cleanupError;
+    std::filesystem::remove_all(storageProbeDirectory, cleanupError);
+    if (!writerIdle || writerSnapshot.storageFailures != 0 ||
+        writerSnapshot.storageTrims == 0 || datedLogCount > 3 ||
+        !everyFileBounded || totalDiagnosticBytes > 3 * 4096 ||
+        !newestRecordPreserved || !trimMarkerPresent) {
+        std::cerr << "CANDIDATE_DIAGNOSTICS_STORAGE_BOUND_FAILED"
+                  << " idle=" << (writerIdle ? 1 : 0)
+                  << " failures=" << writerSnapshot.storageFailures
+                  << " trims=" << writerSnapshot.storageTrims
+                  << " files=" << datedLogCount
+                  << " bytes=" << totalDiagnosticBytes
+                  << " newest=" << (newestRecordPreserved ? 1 : 0)
+                  << " marker=" << (trimMarkerPresent ? 1 : 0) << "\n";
+        return 1;
+    }
+
     std::cout << "CANDIDATE_DECISION_DIAGNOSTICS_PASSED"
               << " candidates=49"
-              << " votesPerCandidate=8"
+              << " votesPerCandidate=10"
               << " baselineBytes=" << baselineBytes
               << " transportRepeats=1000"
               << " transportRepeatEmissions=" << duplicateEmissions
+              << " rosterCountChurnEmissions="
+              << rosterCountChurnEmissions
+              << " storageTrims=" << writerSnapshot.storageTrims
+              << " maximumDateLogBytes=4096"
+              << " retainedDateLogCount=" << datedLogCount
               << " deltaCandidates=" << delta.changedCandidates
               << " removalReceipts=" << removal.removedCandidates
               << " oversizedReceiptParts=" << splitRecordCount

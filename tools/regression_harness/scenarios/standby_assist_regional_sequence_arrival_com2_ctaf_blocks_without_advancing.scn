@@ -1,0 +1,25 @@
+name=Standby Assist regional sequence COM2 CTAF blocks without advancing Arrival
+
+display_intent.stage=Arrival
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Arrival
+ctaf_unicom.departure=airport=KSEA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=10;failures=0
+ctaf_unicom.arrival=airport=KONT;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=123.050;age=12;failures=0
+
+arrival.station=role=Tower;callsign=ONT_TWR;frequency=120.600;online=true
+arrival.station=role=Ground;callsign=ONT_GND;frequency=121.900;online=true
+arrival.station=role=Ctaf;callsign=KONT;frequency=123.050;online=true
+
+radio.valid=true
+radio.com2_active=123.050
+standby_assist.apply=true
+standby_assist.use_display_board_with_ctaf_advisories=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Arrival
+standby_assist.plan_key=UPS7|KSEA|KONT
+
+expect.standby_assist_decisions_contains=callsign=ONT_TWR:role=TWR:freq=120.600,actualSelectedTargetSource=controller-display-row,actualSelectedTargetFrequency=120.600,final=recommend-com1-standby,sourceDecision=ctaf-unicom-preview:arrival:KONT,role=CTAF,freq=123.050,com2Active=1
+expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=120.600,source=controller-display-row

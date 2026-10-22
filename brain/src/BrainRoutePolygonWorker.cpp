@@ -910,6 +910,74 @@ BrainAuthorityCompletionDecision DecideBrainAuthorityCompletion(
     return decision;
 }
 
+BrainAuthorityPublicationContinuityDecision
+DecideBrainAuthorityPublicationContinuity(
+    const BrainAuthorityPublicationContinuityInput& input) {
+    BrainAuthorityPublicationContinuityDecision decision;
+    const auto reject = [&](const char* reason) {
+        decision.mayReuseLastAccepted = false;
+        decision.evidenceRefreshPending = false;
+        decision.controllerRefreshPending = false;
+        decision.transceiverRefreshPending = false;
+        decision.reason = reason;
+        return decision;
+    };
+
+    if (!input.controllerFeedAvailable || input.controllerFeedStale ||
+        !input.controllerFeedComplete) {
+        return reject("authority-controller-feed-unusable");
+    }
+    if (!input.transceiverEvidenceAvailable ||
+        input.transceiverEvidenceStale) {
+        return reject("authority-transceiver-evidence-unusable");
+    }
+
+    const auto& accepted = input.accepted;
+    const auto& current = input.current;
+
+    if (accepted.lifecycleEpoch == 0 ||
+        accepted.lifecycleEpoch != current.lifecycleEpoch) {
+        return reject("authority-lifecycle-changed");
+    }
+    if (accepted.planKey.empty() || accepted.planKey != current.planKey) {
+        return reject("authority-plan-changed");
+    }
+    if (accepted.routeDigest == 0 ||
+        accepted.routeDigest != current.routeDigest) {
+        return reject("authority-route-changed");
+    }
+    if (accepted.transceiverDigest == 0 || current.transceiverDigest == 0) {
+        return reject("authority-transceiver-identity-unavailable");
+    }
+    if (accepted.datasetIdentity == 0 ||
+        accepted.datasetIdentity != current.datasetIdentity) {
+        return reject("authority-dataset-changed");
+    }
+
+    decision.mayReuseLastAccepted = true;
+    decision.controllerRefreshPending =
+        accepted.controllerDigest != current.controllerDigest;
+    decision.transceiverRefreshPending =
+        accepted.transceiverDigest != current.transceiverDigest;
+    decision.evidenceRefreshPending =
+        decision.controllerRefreshPending ||
+        decision.transceiverRefreshPending;
+    if (decision.controllerRefreshPending &&
+        decision.transceiverRefreshPending) {
+        decision.reason =
+            "authority-controller-transceiver-refresh-pending-last-proven-reuse";
+    } else if (decision.controllerRefreshPending) {
+        decision.reason =
+            "authority-controller-refresh-pending-last-proven-reuse";
+    } else if (decision.transceiverRefreshPending) {
+        decision.reason =
+            "authority-transceiver-refresh-pending-last-proven-reuse";
+    } else {
+        decision.reason = "authority-inputs-current-last-proven-reuse";
+    }
+    return decision;
+}
+
 BrainRouteCompletionDecision DecideBrainRouteCompletion(
     const BrainRouteCompletionValidationInput& input) {
     BrainRouteCompletionDecision decision;

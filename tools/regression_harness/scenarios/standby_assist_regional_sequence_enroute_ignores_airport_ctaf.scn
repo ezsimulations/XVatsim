@@ -1,0 +1,19 @@
+name=Standby Assist regional sequence Enroute ignores airport CTAF targets
+
+display_intent.stage=Enroute
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Arrival
+ctaf_unicom.departure=airport=KSEA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=10;failures=0
+ctaf_unicom.arrival=airport=KONT;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=123.050;age=12;failures=0
+
+radio.valid=true
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Enroute
+standby_assist.plan_key=UPS6|KSEA|KONT
+
+expect.standby_assist_decisions_contains=sourceDecision=standby-enroute-unicom-fallback,role=UNICOM,freq=122.800,actualSelectedTargetSource=enroute-unicom-fallback,actualSelectedTargetFrequency=122.800,final=recommend-com1-standby
+expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=122.800,source=enroute-unicom-fallback

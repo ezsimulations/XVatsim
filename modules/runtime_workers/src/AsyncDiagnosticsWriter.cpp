@@ -101,9 +101,104 @@ std::string ExtractDateToken(const std::filesystem::path& path) {
     return IsDateToken(token) ? token : std::string{};
 }
 
+bool TrimLogFileToNewest(
+    const std::filesystem::path& path,
+    std::uintmax_t maximumBytes,
+    std::uintmax_t retainedBytes,
+    std::uint64_t tickSeconds,
+    bool forceTrim,
+    std::uintmax_t* finalBytes) {
+    std::error_code error;
+    const auto originalBytes = std::filesystem::file_size(path, error);
+    if (error) return false;
+    if (originalBytes <= maximumBytes && !forceTrim) {
+        if (finalBytes != nullptr) *finalBytes = originalBytes;
+        return true;
+    }
+    retainedBytes = std::min(retainedBytes, maximumBytes / 2);
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return false;
+    const auto offset = originalBytes > retainedBytes
+        ? originalBytes - retainedBytes
+        : 0;
+    input.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+    std::string tail(
+        static_cast<std::size_t>(originalBytes - offset), '\0');
+    input.read(tail.data(), static_cast<std::streamsize>(tail.size()));
+    tail.resize(static_cast<std::size_t>(input.gcount()));
+    input.close();
+    if (offset > 0) {
+        const auto newline = tail.find('\n');
+        if (newline == std::string::npos) {
+            tail.clear();
+        } else {
+            tail.erase(0, newline + 1);
+        }
+    }
+
+    std::ostringstream marker;
+    marker << "tick=" << tickSeconds
+           << " event=diagnostic-history-trimmed"
+           << " previousBytes=" << originalBytes
+           << " limitBytes=" << maximumBytes
+           << " retainedNewestBytes=" << tail.size() << '\n';
+    auto markerText = marker.str();
+    if (markerText.size() + tail.size() > maximumBytes) {
+        const auto excess = markerText.size() + tail.size() - maximumBytes;
+        if (excess >= tail.size()) {
+            tail.clear();
+        } else {
+            const auto newline = tail.find('\n', static_cast<std::size_t>(excess));
+            tail.erase(0, newline == std::string::npos ? tail.size()
+                                                       : newline + 1);
+        }
+    }
+
+    auto temporary = path;
+    temporary += ".trim.tmp";
+    auto backup = path;
+    backup += ".trim.bak";
+    std::filesystem::remove(temporary, error);
+    error.clear();
+    std::filesystem::remove(backup, error);
+    error.clear();
+    {
+        std::ofstream replacement(temporary, std::ios::binary | std::ios::trunc);
+        if (!replacement) return false;
+        replacement.write(
+            markerText.data(), static_cast<std::streamsize>(markerText.size()));
+        replacement.write(tail.data(), static_cast<std::streamsize>(tail.size()));
+        replacement.flush();
+        if (!replacement) {
+            replacement.close();
+            std::filesystem::remove(temporary, error);
+            return false;
+        }
+    }
+    std::filesystem::rename(path, backup, error);
+    if (error) {
+        std::filesystem::remove(temporary, error);
+        return false;
+    }
+    std::filesystem::rename(temporary, path, error);
+    if (error) {
+        std::error_code restoreError;
+        std::filesystem::rename(backup, path, restoreError);
+        std::filesystem::remove(temporary, restoreError);
+        return false;
+    }
+    std::filesystem::remove(backup, error);
+    error.clear();
+    const auto boundedBytes = std::filesystem::file_size(path, error);
+    if (error || boundedBytes > maximumBytes) return false;
+    if (finalBytes != nullptr) *finalBytes = boundedBytes;
+    return true;
+}
+
 void EnforceRetention(
     const std::filesystem::path& logDirectory,
-    int retainedDateLogCount) {
+    int retainedDateLogCount,
+    std::uintmax_t maximumDateLogBytes) {
     std::error_code error;
     if (!std::filesystem::exists(logDirectory, error) || error) {
         return;
@@ -156,6 +251,15 @@ void EnforceRetention(
             retainedDates.end()) {
             std::filesystem::remove(path, error);
             error.clear();
+        } else if (maximumDateLogBytes > 0) {
+            std::uintmax_t ignored = 0;
+            (void)TrimLogFileToNewest(
+                path,
+                maximumDateLogBytes,
+                maximumDateLogBytes / 2,
+                0,
+                false,
+                &ignored);
         }
     }
 }
@@ -365,6 +469,8 @@ struct AsyncDiagnosticsWriter::Implementation {
 
     std::ofstream output;
     std::string openDateToken;
+    std::filesystem::path openPath;
+    std::uintmax_t openDateBytes = 0;
     std::string retentionDateToken;
     std::chrono::steady_clock::time_point nextStorageAttempt{};
     std::size_t artificiallyDelayedRecords = 0;
@@ -393,6 +499,7 @@ struct AsyncDiagnosticsWriter::Implementation {
     std::atomic<std::uint64_t> rejectedRouteEvidenceNotRunning{0};
     std::atomic<std::uint64_t> formattingFailures{0};
     std::atomic<std::uint64_t> storageFailures{0};
+    std::atomic<std::uint64_t> storageTrims{0};
     std::atomic<std::uint64_t> maximumQueueDepth{0};
     std::atomic<std::uint64_t> maximumFlightLoopTimingQueueDepth{0};
     std::atomic<std::uint64_t> maximumRouteEvidenceQueueDepth{0};
@@ -432,6 +539,7 @@ struct AsyncDiagnosticsWriter::Implementation {
         rejectedRouteEvidenceNotRunning.store(0, std::memory_order_relaxed);
         formattingFailures.store(0, std::memory_order_relaxed);
         storageFailures.store(0, std::memory_order_relaxed);
+        storageTrims.store(0, std::memory_order_relaxed);
         maximumQueueDepth.store(0, std::memory_order_relaxed);
         maximumFlightLoopTimingQueueDepth.store(0, std::memory_order_relaxed);
         maximumRouteEvidenceQueueDepth.store(0, std::memory_order_relaxed);
@@ -642,6 +750,8 @@ struct AsyncDiagnosticsWriter::Implementation {
 
         output.close();
         openDateToken.clear();
+        openPath.clear();
+        openDateBytes = 0;
         std::error_code error;
         std::filesystem::create_directories(options.logDirectory, error);
         if (error) {
@@ -650,7 +760,10 @@ struct AsyncDiagnosticsWriter::Implementation {
             return false;
         }
         if (retentionDateToken != dateToken) {
-            EnforceRetention(options.logDirectory, options.retainedDateLogCount);
+            EnforceRetention(
+                options.logDirectory,
+                options.retainedDateLogCount,
+                options.maximumDateLogBytes);
             retentionDateToken = dateToken;
         }
         const auto path =
@@ -665,8 +778,53 @@ struct AsyncDiagnosticsWriter::Implementation {
             return false;
         }
         openDateToken = dateToken;
+        openPath = path;
+        openDateBytes = std::filesystem::file_size(path, error);
+        if (error) openDateBytes = 0;
         nextStorageAttempt = {};
         return true;
+    }
+
+    bool EnsureCapacityFor(std::size_t recordBytes, std::uint64_t tickSeconds) {
+        if (options.maximumDateLogBytes == 0) return true;
+        if (recordBytes > options.maximumDateLogBytes || openPath.empty()) {
+            storageFailures.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        if (openDateBytes + recordBytes <= options.maximumDateLogBytes) {
+            return true;
+        }
+        output.close();
+        std::uintmax_t boundedBytes = 0;
+        if (!TrimLogFileToNewest(
+                openPath,
+                options.maximumDateLogBytes,
+                options.maximumDateLogBytes / 2,
+                tickSeconds,
+                true,
+                &boundedBytes)) {
+            storageFailures.fetch_add(1, std::memory_order_relaxed);
+            openDateToken.clear();
+            openPath.clear();
+            openDateBytes = 0;
+            nextStorageAttempt =
+                std::chrono::steady_clock::now() + std::chrono::seconds(1);
+            return false;
+        }
+        output.open(openPath, std::ios::app);
+        if (!output) {
+            storageFailures.fetch_add(1, std::memory_order_relaxed);
+            output.close();
+            openDateToken.clear();
+            openPath.clear();
+            openDateBytes = 0;
+            nextStorageAttempt =
+                std::chrono::steady_clock::now() + std::chrono::seconds(1);
+            return false;
+        }
+        openDateBytes = boundedBytes;
+        storageTrims.fetch_add(1, std::memory_order_relaxed);
+        return openDateBytes + recordBytes <= options.maximumDateLogBytes;
     }
 
     std::string FormatRecord(Record* record) {
@@ -811,16 +969,27 @@ struct AsyncDiagnosticsWriter::Implementation {
         if (!EnsureOutput(record)) {
             return;
         }
-        output << "tick=" << record.tickSeconds << " " << line << '\n';
+        std::ostringstream serialized;
+        serialized << "tick=" << record.tickSeconds << " " << line << '\n';
+        const auto serializedLine = serialized.str();
+        if (!EnsureCapacityFor(serializedLine.size(), record.tickSeconds)) {
+            return;
+        }
+        output.write(
+            serializedLine.data(),
+            static_cast<std::streamsize>(serializedLine.size()));
         output.flush();
         if (!output) {
             storageFailures.fetch_add(1, std::memory_order_relaxed);
             output.close();
             openDateToken.clear();
+            openPath.clear();
+            openDateBytes = 0;
             nextStorageAttempt =
                 std::chrono::steady_clock::now() + std::chrono::seconds(1);
             return;
         }
+        openDateBytes += serializedLine.size();
         written.fetch_add(1, std::memory_order_relaxed);
         if (flightLoopTiming) {
             writtenFlightLoopTiming.fetch_add(1, std::memory_order_relaxed);
@@ -956,6 +1125,8 @@ bool AsyncDiagnosticsWriter::Start(DiagnosticsWriterOptions options) {
         options.routeEvidenceQueueCapacity == 0 ||
         options.routeEvidenceQueueCapacity ==
             std::numeric_limits<std::size_t>::max() ||
+        (options.maximumDateLogBytes > 0 &&
+         options.maximumDateLogBytes < 1024) ||
         options.logDirectory.empty()) {
         return false;
     }
@@ -975,6 +1146,8 @@ bool AsyncDiagnosticsWriter::Start(DiagnosticsWriterOptions options) {
     state.pdcLogReader = PdcLogReader(
         state.options.pdcLogDirectoryForTesting);
     state.openDateToken.clear();
+    state.openPath.clear();
+    state.openDateBytes = 0;
     state.retentionDateToken.clear();
     state.nextStorageAttempt = {};
     state.artificiallyDelayedRecords = 0;
@@ -1106,6 +1279,8 @@ DiagnosticsWriterSnapshot AsyncDiagnosticsWriter::Snapshot() const {
         state.formattingFailures.load(std::memory_order_relaxed);
     snapshot.storageFailures =
         state.storageFailures.load(std::memory_order_relaxed);
+    snapshot.storageTrims =
+        state.storageTrims.load(std::memory_order_relaxed);
     snapshot.maximumQueueDepth =
         state.maximumQueueDepth.load(std::memory_order_relaxed);
     snapshot.maximumFlightLoopTimingQueueDepth =

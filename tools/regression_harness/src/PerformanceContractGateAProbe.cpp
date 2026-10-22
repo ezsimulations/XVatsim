@@ -227,6 +227,96 @@ int RunPerformanceContractGateAProbe() {
     requireIdentityReject(
         [](auto* value) { ++value->datasetIdentity; },
         "authority-dataset-identity-mismatch");
+
+    auto continuityCurrent = validation.expected;
+    ++continuityCurrent.requestId;
+    const auto stableContinuity =
+        brain::DecideBrainAuthorityPublicationContinuity(
+            {validation.expected, continuityCurrent, true, false, true,
+             true, false});
+    require(
+        stableContinuity.mayReuseLastAccepted &&
+            !stableContinuity.evidenceRefreshPending,
+        "stable authority proof continuity was rejected");
+    ++continuityCurrent.controllerDigest;
+    const auto controllerRefreshContinuity =
+        brain::DecideBrainAuthorityPublicationContinuity(
+            {validation.expected, continuityCurrent, true, false, true,
+             true, false});
+    require(
+        controllerRefreshContinuity.mayReuseLastAccepted &&
+            controllerRefreshContinuity.evidenceRefreshPending &&
+            controllerRefreshContinuity.controllerRefreshPending &&
+            !controllerRefreshContinuity.transceiverRefreshPending,
+        "controller-only refresh erased the last proven authority result");
+    continuityCurrent = validation.expected;
+    ++continuityCurrent.transceiverDigest;
+    const auto transceiverRefreshContinuity =
+        brain::DecideBrainAuthorityPublicationContinuity(
+            {validation.expected, continuityCurrent, true, false, true,
+             true, false});
+    require(
+        transceiverRefreshContinuity.mayReuseLastAccepted &&
+            transceiverRefreshContinuity.evidenceRefreshPending &&
+            !transceiverRefreshContinuity.controllerRefreshPending &&
+            transceiverRefreshContinuity.transceiverRefreshPending,
+        "transceiver-only refresh erased the last proven authority result");
+    ++continuityCurrent.controllerDigest;
+    const auto combinedRefreshContinuity =
+        brain::DecideBrainAuthorityPublicationContinuity(
+            {validation.expected, continuityCurrent, true, false, true,
+             true, false});
+    require(
+        combinedRefreshContinuity.mayReuseLastAccepted &&
+            combinedRefreshContinuity.evidenceRefreshPending &&
+            combinedRefreshContinuity.controllerRefreshPending &&
+            combinedRefreshContinuity.transceiverRefreshPending,
+        "combined evidence refresh erased the last proven authority result");
+    const auto requireContinuityReject =
+        [&](auto mutate, const char* expectedReason) {
+            auto changed = validation.expected;
+            mutate(&changed);
+            const auto decision =
+                brain::DecideBrainAuthorityPublicationContinuity(
+                    {validation.expected, changed, true, false, true,
+                     true, false});
+            require(
+                !decision.mayReuseLastAccepted &&
+                    decision.reason == expectedReason,
+                std::string("authority continuity did not reject ") +
+                    expectedReason);
+        };
+    requireContinuityReject(
+        [](auto* value) { ++value->lifecycleEpoch; },
+        "authority-lifecycle-changed");
+    requireContinuityReject(
+        [](auto* value) { value->planKey += "-changed"; },
+        "authority-plan-changed");
+    requireContinuityReject(
+        [](auto* value) { ++value->routeDigest; },
+        "authority-route-changed");
+    requireContinuityReject(
+        [](auto* value) { ++value->datasetIdentity; },
+        "authority-dataset-changed");
+    const auto unavailableFeedContinuity =
+        brain::DecideBrainAuthorityPublicationContinuity(
+            {validation.expected, continuityCurrent, false, true, false,
+             true, false});
+    require(
+        !unavailableFeedContinuity.mayReuseLastAccepted &&
+            unavailableFeedContinuity.reason ==
+                "authority-controller-feed-unusable",
+        "unusable controller feed retained old authority proof");
+    const auto unavailableTransceiverContinuity =
+        brain::DecideBrainAuthorityPublicationContinuity(
+            {validation.expected, continuityCurrent, true, false, true,
+             false, true});
+    require(
+        !unavailableTransceiverContinuity.mayReuseLastAccepted &&
+            unavailableTransceiverContinuity.reason ==
+                "authority-transceiver-evidence-unusable",
+        "unusable transceiver evidence retained old authority proof");
+
     auto oldCompletion = validation;
     oldCompletion.nowMonotonicMs = 8000;
     require(

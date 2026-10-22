@@ -26,6 +26,10 @@ struct DiagnosticsWriterOptions {
     std::size_t flightLoopTimingQueueCapacity = 4096;
     std::size_t routeEvidenceQueueCapacity = 1024;
     int retainedDateLogCount = 3;
+    // Each retained date file is hard-bounded. When it reaches this size the
+    // worker preserves the newest half and continues writing. Three retained
+    // dates therefore use at most 24 MiB with the production default.
+    std::uintmax_t maximumDateLogBytes = 8ULL * 1024ULL * 1024ULL;
     std::chrono::milliseconds artificialWorkerDelayForTesting{0};
     std::size_t artificialWorkerDelayRecordCountForTesting =
         std::numeric_limits<std::size_t>::max();
@@ -133,6 +137,7 @@ struct DiagnosticsWriterSnapshot {
     std::uint64_t rejectedRouteEvidenceNotRunning = 0;
     std::uint64_t formattingFailures = 0;
     std::uint64_t storageFailures = 0;
+    std::uint64_t storageTrims = 0;
     std::uint64_t maximumQueueDepth = 0;
     std::uint64_t maximumFlightLoopTimingQueueDepth = 0;
     std::uint64_t maximumRouteEvidenceQueueDepth = 0;

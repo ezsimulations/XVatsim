@@ -113,6 +113,24 @@ std::uint64_t HashTerminalAuthorityFact(
     for (const auto& polygonKey : fact.polygonKeys) {
         HashCombine(&hash, NormalizeCallsign(polygonKey));
     }
+    for (const auto& polygon : fact.polygons) {
+        HashCombine(&hash, NormalizeCallsign(polygon.polygonKey));
+        HashCombine(&hash, NormalizeCallsign(polygon.serviceSuffix));
+        HashCombine(&hash, polygon.containsAirport);
+        HashCombine(&hash, polygon.intersectsEndpointAnchor);
+        for (const auto& prefix : polygon.controllerPrefixes) {
+            HashCombine(&hash, NormalizeCallsign(prefix));
+        }
+        for (const auto& ring : polygon.rings) {
+            HashCombine(&hash, static_cast<std::uint64_t>(ring.points.size()));
+            for (const auto& point : ring.points) {
+                HashCombine(&hash, static_cast<std::uint64_t>(
+                    std::llround((point.latitudeDeg + 90.0) * 1000000.0)));
+                HashCombine(&hash, static_cast<std::uint64_t>(
+                    std::llround((point.longitudeDeg + 180.0) * 1000000.0)));
+            }
+        }
+    }
     return hash;
 }
 
@@ -707,6 +725,17 @@ bool IsCom1StandbyFrequency(
     return FrequencyMatches(frequency, radios.com1StandbyFrequency);
 }
 
+bool AdvisoryActiveFrequencyBlocksCom1Standby(
+    const BrainOwnedStandbyAssistPlanInput& input,
+    const BrainOwnedStandbyRecommendationDecision& decision) {
+    const auto enrouteUnicomFallback =
+        input.workflowStage == WorkflowStage::Enroute &&
+        decision.endpoint == "enroute" &&
+        decision.sourceDecisionId == "standby-enroute-unicom-fallback";
+    return decision.alreadyCom1Active ||
+           (decision.alreadyCom2Active && !enrouteUnicomFallback);
+}
+
 std::string StandbySubjectKey(
     const std::string& sourceDomain,
     const std::string& role,
@@ -878,7 +907,7 @@ void ApplyAdvisoryPreviewRecommendation(
     const auto hasFrequency = !NormalizeFrequency(decision->frequency).empty();
     const auto guardFrequency = IsBlockedControllerFrequency(decision->frequency);
     const auto active =
-        decision->alreadyCom1Active || decision->alreadyCom2Active;
+        AdvisoryActiveFrequencyBlocksCom1Standby(input, *decision);
 
     if (!stageSupported) {
         decision->previewRecommendation = "preview-stage-deferred";
@@ -1024,7 +1053,7 @@ void ApplyDirectCtafDryRunReadiness(
         decision->dryRunBlockedByFrequencyState = true;
         return;
     }
-    if (decision->alreadyCom1Active || decision->alreadyCom2Active) {
+    if (AdvisoryActiveFrequencyBlocksCom1Standby(input, *decision)) {
         decision->dryRunLiveRecommendation =
             "dry-run-blocked-active-frequency";
         decision->dryRunSkipReason = "skip-active";
@@ -1068,7 +1097,7 @@ void ApplyDirectCtafDryRunReadiness(
 void ApplyDirectCtafLivePromotionLedger(
     const BrainOwnedStandbyAssistPlanInput& input,
     bool existingControllerTargetSelected,
-    bool selectedDirectCtafTarget,
+    const std::string& selectedTargetSource,
     BrainOwnedStandbyRecommendationDecision* decision) {
     if (decision == nullptr) {
         return;
@@ -1090,6 +1119,75 @@ void ApplyDirectCtafLivePromotionLedger(
         decision->livePromotionBlockedReason = "not-advisory";
         return;
     }
+
+    const auto selectedRegionalSequenceTarget =
+        selectedTargetSource == "arrival-ctaf-sequence" ||
+        selectedTargetSource == "arrival-unicom-sequence" ||
+        selectedTargetSource == "enroute-unicom-fallback";
+    const auto enrouteRegionalSequenceCandidate =
+        input.workflowStage == WorkflowStage::Enroute &&
+        decision->endpoint == "enroute" &&
+        decision->sourceDecisionId == "standby-enroute-unicom-fallback";
+    if (selectedRegionalSequenceTarget ||
+        enrouteRegionalSequenceCandidate) {
+        decision->productGateEnabled = input.standbyAssistEnabled;
+        decision->featureGateRequired = "standby-assist";
+        decision->featureGateSatisfied = input.standbyAssistEnabled;
+        decision->advisoryProductGate =
+            "standby-assist-regional-sequence";
+        decision->advisoryWritePolicy =
+            "regional-sequence-brain-write";
+        decision->livePromotionReason = selectedRegionalSequenceTarget
+            ? selectedTargetSource
+            : "enroute-unicom-candidate";
+
+        if (selectedRegionalSequenceTarget) {
+            decision->actualSelectedTargetSource = selectedTargetSource;
+            decision->actualSelectedTargetFrequency = decision->frequency;
+            decision->targetCom = "COM1_STANDBY";
+            decision->eligible = true;
+        }
+
+        if (!input.standbyAssistEnabled) {
+            decision->skipReason = "standby-assist-disabled";
+            decision->finalRecommendation = "standby-assist-disabled";
+            decision->livePromotionBlockedReason =
+                "standby-assist-disabled";
+            decision->featureGateBlockedReason =
+                "standby-assist-disabled";
+            return;
+        }
+        if (AdvisoryActiveFrequencyBlocksCom1Standby(input, *decision)) {
+            decision->skipReason = "skip-active";
+            decision->finalRecommendation = "skip-active";
+            decision->livePromotionBlockedReason = "skip-active";
+            return;
+        }
+        if (decision->alreadyCom1Standby) {
+            decision->skipReason = "skip-already-standby";
+            decision->finalRecommendation = "skip-already-standby";
+            decision->livePromotionBlockedReason =
+                "skip-already-standby";
+            return;
+        }
+
+        if (!selectedRegionalSequenceTarget) {
+            decision->livePromotionBlockedReason = "not-selected";
+            return;
+        }
+
+        decision->liveWriteEligible = true;
+        decision->actualWriteEligible = true;
+        decision->skipReason.clear();
+        decision->finalRecommendation = "recommend-com1-standby";
+        decision->livePromotionBlockedReason.clear();
+        decision->featureGateBlockedReason.clear();
+        return;
+    }
+
+    const auto selectedDirectCtafTarget =
+        selectedTargetSource == "direct-ctaf-advisory" ||
+        selectedTargetSource == "unicom-fallback-advisory";
     if (selectedDirectCtafTarget) {
         decision->directCtafLivePromotionAllowed = true;
         decision->livePromotionReason =
@@ -1097,10 +1195,7 @@ void ApplyDirectCtafLivePromotionLedger(
                 ? "promoted-unicom-fallback"
                 : "promoted-direct-ctaf";
         decision->promotedFromDryRun = decision->dryRunLiveEligible;
-        decision->actualSelectedTargetSource =
-            decision->advisoryCandidateType == "unicom-fallback"
-                ? "unicom-fallback-advisory"
-                : "direct-ctaf-advisory";
+        decision->actualSelectedTargetSource = selectedTargetSource;
         decision->actualSelectedTargetFrequency = decision->frequency;
         decision->actualWriteEligible = true;
         decision->targetCom = "COM1_STANDBY";
@@ -1318,7 +1413,7 @@ BrainOwnedStandbyRecommendationDecision BuildAdvisoryStandbyDecision(
     const BrainOwnedStandbyAssistAdvisoryCandidate& candidate,
     std::size_t decisionIndex,
     bool existingControllerTargetSelected,
-    bool selectedDirectCtafTarget) {
+    const std::string& selectedTargetSource) {
     BrainOwnedStandbyRecommendationDecision decision;
     decision.sourceDomain = "ctaf-unicom-advisory";
     decision.sourceDecisionId = candidate.sourceDecisionId;
@@ -1417,7 +1512,7 @@ BrainOwnedStandbyRecommendationDecision BuildAdvisoryStandbyDecision(
     ApplyDirectCtafLivePromotionLedger(
         input,
         existingControllerTargetSelected,
-        selectedDirectCtafTarget,
+        selectedTargetSource,
         &decision);
     return decision;
 }
@@ -1452,13 +1547,63 @@ BrainOwnedStandbyRecommendationSummary BuildStandbyRecommendationSummary(
     return summary;
 }
 
+bool IsAdvisorySelectedTargetSource(const std::string& source) {
+    return source == "direct-ctaf-advisory" ||
+           source == "unicom-fallback-advisory" ||
+           source == "arrival-ctaf-sequence" ||
+           source == "arrival-unicom-sequence" ||
+           source == "enroute-unicom-fallback";
+}
+
+BrainOwnedStandbyAssistAdvisoryCandidate BuildEnrouteUnicomFallbackCandidate() {
+    BrainOwnedStandbyAssistAdvisoryCandidate candidate;
+    candidate.sourceDecisionId = "standby-enroute-unicom-fallback";
+    candidate.sourceEvidenceId = "standby-enroute-controller-absence";
+    candidate.endpoint = "enroute";
+    candidate.advisoryDecision = "enroute-unicom-fallback";
+    candidate.projectedRole = "UNICOM";
+    candidate.projectedFrequency = kUnicomFallbackFrequency;
+    candidate.acceptedByAdvisory = true;
+    candidate.fallbackUsed = true;
+    candidate.sourceConfidence = "high";
+    candidate.confidenceLevel = "high";
+    candidate.positiveScore = 0.95;
+    candidate.negativeScore = 0.05;
+    candidate.advisoryReason = "zero-eligible-enroute-controllers";
+    return candidate;
+}
+
+std::vector<BrainOwnedStandbyAssistAdvisoryCandidate>
+StandbyAdvisoryCandidatesForPlan(
+    const BrainOwnedStandbyAssistPlanInput& input,
+    const BrainOwnedStandbyAssistPlanOutput& output) {
+    auto candidates = input.ctafUnicomAdvisoryCandidates;
+    const auto hasEligibleEnrouteController =
+        std::any_of(
+            output.board.stations.begin(),
+            output.board.stations.end(),
+            [](const auto& station) {
+                return !station.offline &&
+                       IsStandbyEligibleRole(station.role) &&
+                       !station.frequency.empty() &&
+                       !IsBlockedControllerFrequency(station.frequency);
+            });
+    if (input.workflowStage == WorkflowStage::Enroute &&
+        !hasEligibleEnrouteController) {
+        candidates.push_back(BuildEnrouteUnicomFallbackCandidate());
+    }
+    return candidates;
+}
+
 std::vector<BrainOwnedStandbyRecommendationDecision> BuildStandbyDecisionLedger(
     const BrainOwnedStandbyAssistPlanInput& input,
     const BrainOwnedStandbyAssistPlanOutput& output) {
+    const auto advisoryCandidates =
+        StandbyAdvisoryCandidatesForPlan(input, output);
     std::vector<BrainOwnedStandbyRecommendationDecision> decisions;
     decisions.reserve(
         output.board.stations.size() +
-        input.ctafUnicomAdvisoryCandidates.size());
+        advisoryCandidates.size());
 
     for (std::size_t index = 0; index < output.board.stations.size(); ++index) {
         const auto selectedControllerTarget =
@@ -1475,20 +1620,21 @@ std::vector<BrainOwnedStandbyRecommendationDecision> BuildStandbyDecisionLedger(
     auto decisionIndex = decisions.size();
     const auto existingControllerTargetSelected =
         output.actualSelectedTargetSource == "controller-display-row";
-    for (const auto& advisoryCandidate :
-         input.ctafUnicomAdvisoryCandidates) {
-        const auto selectedAdvisoryTarget =
-            (output.actualSelectedTargetSource == "direct-ctaf-advisory" ||
-             output.actualSelectedTargetSource == "unicom-fallback-advisory") &&
+    for (const auto& advisoryCandidate : advisoryCandidates) {
+        const auto selectedTargetSource =
+            IsAdvisorySelectedTargetSource(
+                output.actualSelectedTargetSource) &&
             output.targetAdvisorySourceDecisionId ==
-                advisoryCandidate.sourceDecisionId;
+                    advisoryCandidate.sourceDecisionId
+                ? output.actualSelectedTargetSource
+                : std::string();
         decisions.push_back(
             BuildAdvisoryStandbyDecision(
                 input,
                 advisoryCandidate,
                 decisionIndex,
                 existingControllerTargetSelected,
-                selectedAdvisoryTarget));
+                selectedTargetSource));
         ++decisionIndex;
     }
 
@@ -1510,7 +1656,7 @@ bool TryPromoteCtafUnicomStandbyTarget(
                 candidate,
                 0,
                 false,
-                false);
+                {});
         const auto resolvedCtafOrUnicom =
             (decision.advisoryCandidateType == "direct-ctaf" &&
              decision.advisoryFrequencyResolutionState ==
@@ -1554,6 +1700,257 @@ bool TryPromoteCtafUnicomStandbyTarget(
     }
 
     return false;
+}
+
+const BrainOwnedStandbyAssistAdvisoryCandidate*
+FindAcceptedArrivalRadioCandidate(
+    const BrainOwnedStandbyAssistPlanInput& input) {
+    const BrainOwnedStandbyAssistAdvisoryCandidate* unicomCandidate = nullptr;
+    for (const auto& candidate : input.ctafUnicomAdvisoryCandidates) {
+        if (candidate.endpoint != "arrival" ||
+            !candidate.acceptedByAdvisory || candidate.hardBlock ||
+            NormalizeFrequency(candidate.projectedFrequency).empty() ||
+            IsBlockedControllerFrequency(candidate.projectedFrequency)) {
+            continue;
+        }
+
+        const auto type = StandbyAdvisoryCandidateType(candidate);
+        if (type == "direct-ctaf" && candidate.projectedRole == "CTAF") {
+            return &candidate;
+        }
+        if (type == "unicom-fallback" &&
+            candidate.projectedRole == "UNICOM" &&
+            NormalizeFrequency(candidate.projectedFrequency) == "122800") {
+            unicomCandidate = &candidate;
+        }
+    }
+    return unicomCandidate;
+}
+
+int ArrivalRegionalSequenceRank(
+    StationRole role,
+    bool unicomArrival) {
+    switch (role) {
+        case StationRole::Center:
+            return 0;
+        case StationRole::Approach:
+        case StationRole::Departure:
+            return 10;
+        case StationRole::Tower:
+            return unicomArrival ? 30 : 20;
+        case StationRole::Ctaf:
+            return 30;
+        case StationRole::Unicom:
+            return 20;
+        case StationRole::Ground:
+            return 40;
+        case StationRole::Delivery:
+            return 50;
+        case StationRole::Atis:
+        case StationRole::Other:
+        default:
+            return 100;
+    }
+}
+
+struct ArrivalStandbySequenceEntry {
+    bool advisory = false;
+    std::size_t boardIndex = 0;
+    const BrainOwnedStandbyAssistAdvisoryCandidate* advisoryCandidate = nullptr;
+    int rank = 100;
+    std::size_t stableOrder = 0;
+    bool tuned = false;
+    bool blockedActive = false;
+};
+
+void SelectControllerStandbyTarget(
+    const BrainOwnedStandbyAssistPlanInput& input,
+    std::size_t targetIndex,
+    BrainOwnedStandbyAssistPlanOutput* output) {
+    if (output == nullptr || targetIndex >= output->board.stations.size()) {
+        return;
+    }
+
+    const auto& targetStation = output->board.stations[targetIndex];
+    output->hasTarget = true;
+    output->targetStationIndex = targetIndex;
+    output->targetFrequency = targetStation.frequency;
+    output->actualSelectedTargetSource = "controller-display-row";
+    output->actualSelectedTargetFrequency = targetStation.frequency;
+    output->latchKey =
+        StandbyAssistWorkflowKey(
+            input.workflowStage,
+            input.planKey,
+            input.radios,
+            targetStation);
+    const auto normalizedTarget = NormalizeFrequency(targetStation.frequency);
+    output->targetAlreadyInCom1Standby =
+        !normalizedTarget.empty() &&
+        NormalizeFrequency(input.radios.com1StandbyFrequency) ==
+            normalizedTarget;
+}
+
+bool SelectArrivalRadioStandbyTarget(
+    const BrainOwnedStandbyAssistPlanInput& input,
+    const BrainOwnedStandbyAssistAdvisoryCandidate& candidate,
+    BrainOwnedStandbyAssistPlanOutput* output) {
+    if (output == nullptr) {
+        return false;
+    }
+
+    const auto boardIndex =
+        FindAdvisoryCandidateFinalBoardIndex(output->board, candidate);
+    if (!boardIndex.has_value()) {
+        return false;
+    }
+
+    output->hasTarget = true;
+    output->targetStationIndex = *boardIndex;
+    output->targetFrequency = candidate.projectedFrequency;
+    output->targetAdvisorySourceDecisionId = candidate.sourceDecisionId;
+    output->actualSelectedTargetSource =
+        StandbyAdvisoryCandidateType(candidate) == "unicom-fallback"
+            ? "arrival-unicom-sequence"
+            : "arrival-ctaf-sequence";
+    output->actualSelectedTargetFrequency = candidate.projectedFrequency;
+    const auto& targetStation = output->board.stations[*boardIndex];
+    output->latchKey =
+        StandbyAssistWorkflowKey(
+            input.workflowStage,
+            input.planKey,
+            input.radios,
+            targetStation);
+    const auto normalizedTarget =
+        NormalizeFrequency(candidate.projectedFrequency);
+    output->targetAlreadyInCom1Standby =
+        !normalizedTarget.empty() &&
+        NormalizeFrequency(input.radios.com1StandbyFrequency) ==
+            normalizedTarget;
+    return true;
+}
+
+bool TrySelectArrivalRegionalSequenceTarget(
+    const BrainOwnedStandbyAssistPlanInput& input,
+    BrainOwnedStandbyAssistPlanOutput* output) {
+    if (output == nullptr || output->hasTarget) {
+        return false;
+    }
+
+    const auto* arrivalRadio = FindAcceptedArrivalRadioCandidate(input);
+    if (arrivalRadio != nullptr &&
+        !FindAdvisoryCandidateFinalBoardIndex(
+             output->board,
+             *arrivalRadio).has_value()) {
+        arrivalRadio = nullptr;
+    }
+    const auto unicomArrival =
+        arrivalRadio != nullptr &&
+        StandbyAdvisoryCandidateType(*arrivalRadio) == "unicom-fallback";
+
+    std::vector<ArrivalStandbySequenceEntry> sequence;
+    sequence.reserve(
+        output->board.stations.size() + (arrivalRadio == nullptr ? 0U : 1U));
+    std::size_t stableOrder = 0;
+    for (std::size_t index = 0; index < output->board.stations.size(); ++index) {
+        const auto& station = output->board.stations[index];
+        if (station.offline || !IsStandbyEligibleRole(station.role) ||
+            station.frequency.empty() ||
+            IsBlockedControllerFrequency(station.frequency)) {
+            continue;
+        }
+        ArrivalStandbySequenceEntry entry;
+        entry.boardIndex = index;
+        entry.rank = ArrivalRegionalSequenceRank(
+            station.role,
+            unicomArrival);
+        entry.stableOrder = stableOrder++;
+        entry.tuned = station.tuned;
+        sequence.push_back(entry);
+    }
+
+    if (arrivalRadio != nullptr) {
+        ArrivalStandbySequenceEntry entry;
+        entry.advisory = true;
+        entry.advisoryCandidate = arrivalRadio;
+        entry.rank = ArrivalRegionalSequenceRank(
+            unicomArrival ? StationRole::Unicom : StationRole::Ctaf,
+            unicomArrival);
+        entry.stableOrder = stableOrder++;
+        entry.tuned = IsCom1ActiveFrequency(
+            arrivalRadio->projectedFrequency,
+            input.radios);
+        entry.blockedActive = IsCom2ActiveFrequency(
+            arrivalRadio->projectedFrequency,
+            input.radios);
+        sequence.push_back(entry);
+    }
+
+    std::stable_sort(
+        sequence.begin(),
+        sequence.end(),
+        [](const auto& left, const auto& right) {
+            if (left.rank != right.rank) {
+                return left.rank < right.rank;
+            }
+            return left.stableOrder < right.stableOrder;
+        });
+
+    std::size_t targetPosition = 0;
+    for (std::size_t position = 0; position < sequence.size(); ++position) {
+        if (sequence[position].tuned) {
+            targetPosition = position + 1;
+        }
+    }
+    while (targetPosition < sequence.size() &&
+           (sequence[targetPosition].tuned ||
+            sequence[targetPosition].blockedActive)) {
+        ++targetPosition;
+    }
+    if (targetPosition >= sequence.size()) {
+        return false;
+    }
+
+    const auto& target = sequence[targetPosition];
+    if (target.advisory && target.advisoryCandidate != nullptr) {
+        return SelectArrivalRadioStandbyTarget(
+            input,
+            *target.advisoryCandidate,
+            output);
+    }
+
+    SelectControllerStandbyTarget(input, target.boardIndex, output);
+    return output->hasTarget;
+}
+
+bool TrySelectEnrouteUnicomFallbackTarget(
+    const BrainOwnedStandbyAssistPlanInput& input,
+    BrainOwnedStandbyAssistPlanOutput* output) {
+    if (output == nullptr || output->hasTarget ||
+        IsCom1ActiveFrequency(kUnicomFallbackFrequency, input.radios)) {
+        return false;
+    }
+
+    const auto candidate = BuildEnrouteUnicomFallbackCandidate();
+    FinalDisplayStationSnapshot targetStation;
+    targetStation.callsign = "UNICOM";
+    targetStation.role = StationRole::Unicom;
+    targetStation.frequency = kUnicomFallbackFrequency;
+
+    output->hasTarget = true;
+    output->targetStationIndex = output->board.stations.size();
+    output->targetFrequency = kUnicomFallbackFrequency;
+    output->targetAdvisorySourceDecisionId = candidate.sourceDecisionId;
+    output->actualSelectedTargetSource = "enroute-unicom-fallback";
+    output->actualSelectedTargetFrequency = kUnicomFallbackFrequency;
+    output->latchKey =
+        StandbyAssistWorkflowKey(
+            input.workflowStage,
+            input.planKey,
+            input.radios,
+            targetStation);
+    output->targetAlreadyInCom1Standby =
+        IsCom1StandbyFrequency(kUnicomFallbackFrequency, input.radios);
+    return true;
 }
 
 bool WouldApplyStandbyMarker(
@@ -4727,6 +5124,7 @@ void ApplyBrainOwnedAircraftRuntimeBoundaryDecision(
     state->coldDarkResetApplied = decision.nextColdDarkResetApplied;
     state->aircraftStateInvalidBoundaryActive =
         decision.nextAircraftStateInvalidBoundaryActive;
+    state->electricalPowerBoundaryState = decision.nextElectricalPowerState;
 }
 
 void ResetBrainOwnedStandbyAssistLatch(BrainOwnedRuntimeState* state) {
@@ -5941,10 +6339,8 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
                         decision.standbyDecisionId;
                     break;
                 }
-                if ((output.actualSelectedTargetSource ==
-                         "direct-ctaf-advisory" ||
-                     output.actualSelectedTargetSource ==
-                         "unicom-fallback-advisory") &&
+                if (IsAdvisorySelectedTargetSource(
+                        output.actualSelectedTargetSource) &&
                     decision.sourceDomain == "ctaf-unicom-advisory" &&
                     decision.sourceDecisionId ==
                         output.targetAdvisorySourceDecisionId) {
@@ -5970,6 +6366,11 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
         return finalize();
     }
 
+    if (input.workflowStage == WorkflowStage::Arrival) {
+        TrySelectArrivalRegionalSequenceTarget(input, &output);
+        return finalize();
+    }
+
     std::vector<std::size_t> orderedEligibleIndices;
     orderedEligibleIndices.reserve(output.board.stations.size());
     for (std::size_t index = 0; index < output.board.stations.size(); ++index) {
@@ -5984,7 +6385,11 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     }
 
     if (orderedEligibleIndices.empty()) {
-        TryPromoteCtafUnicomStandbyTarget(input, &output);
+        if (input.workflowStage == WorkflowStage::Enroute) {
+            TrySelectEnrouteUnicomFallbackTarget(input, &output);
+        } else {
+            TryPromoteCtafUnicomStandbyTarget(input, &output);
+        }
         return finalize();
     }
 
@@ -6001,7 +6406,9 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
         ++targetPosition;
     }
     if (targetPosition >= orderedEligibleIndices.size()) {
-        TryPromoteCtafUnicomStandbyTarget(input, &output);
+        if (input.workflowStage != WorkflowStage::Enroute) {
+            TryPromoteCtafUnicomStandbyTarget(input, &output);
+        }
         return finalize();
     }
 
@@ -6012,22 +6419,7 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
         return finalize();
     }
 
-    output.hasTarget = true;
-    output.targetStationIndex = targetIndex;
-    output.targetFrequency = targetStation.frequency;
-    output.actualSelectedTargetSource = "controller-display-row";
-    output.actualSelectedTargetFrequency = targetStation.frequency;
-    output.latchKey =
-        StandbyAssistWorkflowKey(
-            input.workflowStage,
-            input.planKey,
-            input.radios,
-            targetStation);
-    const auto normalizedTarget = NormalizeFrequency(targetStation.frequency);
-    output.targetAlreadyInCom1Standby =
-        !normalizedTarget.empty() &&
-        NormalizeFrequency(input.radios.com1StandbyFrequency) ==
-            normalizedTarget;
+    SelectControllerStandbyTarget(input, targetIndex, &output);
     return finalize();
 }
 

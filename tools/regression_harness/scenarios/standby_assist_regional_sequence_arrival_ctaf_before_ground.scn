@@ -1,0 +1,23 @@
+name=Standby Assist regional sequence CTAF Arrival before Ground
+
+display_intent.stage=Arrival
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Arrival
+ctaf_unicom.departure=airport=KSEA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=10;failures=0
+ctaf_unicom.arrival=airport=KONT;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=123.050;age=12;failures=0
+
+arrival.station=role=Ground;callsign=ONT_GND;frequency=121.900;online=true
+arrival.station=role=Ctaf;callsign=KONT;frequency=123.050;online=true
+
+radio.valid=true
+standby_assist.apply=true
+standby_assist.use_display_board_with_ctaf_advisories=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Arrival
+standby_assist.plan_key=UPS1|KSEA|KONT
+
+expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:arrival:KONT,role=CTAF,freq=123.050,featureGateRequired=standby-assist,featureGateSatisfied=1,actualSelectedTargetSource=arrival-ctaf-sequence,actualSelectedTargetFrequency=123.050,final=recommend-com1-standby,callsign=ONT_GND:role=GND:freq=121.900,final=no-target
+expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=123.050,source=arrival-ctaf-sequence

@@ -1,0 +1,14 @@
+name=Standby Assist regional sequence Enroute UNICOM already active
+
+display_intent.stage=Enroute
+
+radio.valid=true
+radio.com1_active=122.800
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.stage=Enroute
+standby_assist.plan_key=BAW7|EGLL|KJFK
+
+expect.standby_assist_decisions_contains=sourceDecision=standby-enroute-unicom-fallback,role=UNICOM,freq=122.800,com1Active=1,featureGateRequired=standby-assist,actualSelectedTargetSource=none,final=skip-active
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:no-target,standbyDecision=<none>,enabled=1,latchKey=<none>,latchConsumed=0,writeAllowed=0,writeAttempted=0,writeSucceededKnown=0,writeSucceeded=0,writerTarget=none,targetFrequency=<empty>,failure=no-target,marker=0

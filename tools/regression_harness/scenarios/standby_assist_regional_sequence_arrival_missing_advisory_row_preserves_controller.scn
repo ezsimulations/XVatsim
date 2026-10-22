@@ -1,0 +1,23 @@
+name=Standby Assist regional sequence missing advisory row preserves controller target
+
+display_intent.stage=Arrival
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Arrival
+ctaf_unicom.departure=airport=KSEA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=10;failures=0
+ctaf_unicom.arrival=airport=EGLL;attempted=true;cacheHit=true;requestSucceeded=true;status=resolved-no-ctaf;resolved=true;available=false;age=12;failures=0
+
+arrival.station=role=Tower;callsign=EGLL_TWR;frequency=118.700;online=true
+arrival.station=role=Ground;callsign=EGLL_GND;frequency=121.800;online=true
+
+radio.valid=true
+standby_assist.apply=true
+standby_assist.use_display_board_with_ctaf_advisories=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Arrival
+standby_assist.plan_key=BAW13|KSEA|EGLL
+
+expect.standby_assist_decisions_contains=callsign=EGLL_TWR:role=TWR:freq=118.700,actualSelectedTargetSource=controller-display-row,actualSelectedTargetFrequency=118.700,final=recommend-com1-standby
+expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=118.700,source=controller-display-row

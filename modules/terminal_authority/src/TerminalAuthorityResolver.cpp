@@ -339,6 +339,125 @@ bool PointInPolygon(
     return true;
 }
 
+double CrossProduct(
+    const core::authority::GeoPoint& a,
+    const core::authority::GeoPoint& b,
+    const core::authority::GeoPoint& c) {
+    return (b.longitudeDeg - a.longitudeDeg) *
+               (c.latitudeDeg - a.latitudeDeg) -
+           (b.latitudeDeg - a.latitudeDeg) *
+               (c.longitudeDeg - a.longitudeDeg);
+}
+
+bool PointOnSegment(
+    const core::authority::GeoPoint& point,
+    const core::authority::GeoPoint& a,
+    const core::authority::GeoPoint& b) {
+    constexpr double kEpsilon = 1e-9;
+    return std::fabs(CrossProduct(a, b, point)) <= kEpsilon &&
+           point.longitudeDeg >= std::min(a.longitudeDeg, b.longitudeDeg) - kEpsilon &&
+           point.longitudeDeg <= std::max(a.longitudeDeg, b.longitudeDeg) + kEpsilon &&
+           point.latitudeDeg >= std::min(a.latitudeDeg, b.latitudeDeg) - kEpsilon &&
+           point.latitudeDeg <= std::max(a.latitudeDeg, b.latitudeDeg) + kEpsilon;
+}
+
+bool SegmentsIntersect(
+    const core::authority::GeoPoint& a,
+    const core::authority::GeoPoint& b,
+    const core::authority::GeoPoint& c,
+    const core::authority::GeoPoint& d) {
+    constexpr double kEpsilon = 1e-9;
+    const auto abC = CrossProduct(a, b, c);
+    const auto abD = CrossProduct(a, b, d);
+    const auto cdA = CrossProduct(c, d, a);
+    const auto cdB = CrossProduct(c, d, b);
+    if (((abC > kEpsilon && abD < -kEpsilon) ||
+         (abC < -kEpsilon && abD > kEpsilon)) &&
+        ((cdA > kEpsilon && cdB < -kEpsilon) ||
+         (cdA < -kEpsilon && cdB > kEpsilon))) {
+        return true;
+    }
+    return (std::fabs(abC) <= kEpsilon && PointOnSegment(c, a, b)) ||
+           (std::fabs(abD) <= kEpsilon && PointOnSegment(d, a, b)) ||
+           (std::fabs(cdA) <= kEpsilon && PointOnSegment(a, c, d)) ||
+           (std::fabs(cdB) <= kEpsilon && PointOnSegment(b, c, d));
+}
+
+bool RingsIntersect(
+    const core::authority::AuthorityPolygonRing& left,
+    const core::authority::AuthorityPolygonRing& right) {
+    if (left.points.size() < 2 || right.points.size() < 2) {
+        return false;
+    }
+    for (std::size_t leftIndex = 0; leftIndex < left.points.size(); ++leftIndex) {
+        const auto& leftA = left.points[leftIndex];
+        const auto& leftB =
+            left.points[(leftIndex + 1) % left.points.size()];
+        for (std::size_t rightIndex = 0; rightIndex < right.points.size();
+             ++rightIndex) {
+            const auto& rightA = right.points[rightIndex];
+            const auto& rightB =
+                right.points[(rightIndex + 1) % right.points.size()];
+            if (SegmentsIntersect(leftA, leftB, rightA, rightB)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool PolygonsIntersect(
+    const core::authority::AuthorityPolygon& left,
+    const core::authority::AuthorityPolygon& right) {
+    if (left.rings.empty() || right.rings.empty()) {
+        return false;
+    }
+    for (const auto& point : left.rings.front().points) {
+        if (PointInPolygon(point.latitudeDeg, point.longitudeDeg, right)) {
+            return true;
+        }
+    }
+    for (const auto& point : right.rings.front().points) {
+        if (PointInPolygon(point.latitudeDeg, point.longitudeDeg, left)) {
+            return true;
+        }
+    }
+    for (const auto& leftRing : left.rings) {
+        for (const auto& rightRing : right.rings) {
+            if (RingsIntersect(leftRing, rightRing)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+brain::BrainTerminalPolygonFact BuildTerminalPolygonFact(
+    const core::authority::AuthorityPolygon& polygon,
+    bool containsAirport,
+    bool intersectsEndpointAnchor) {
+    brain::BrainTerminalPolygonFact fact;
+    fact.polygonKey = polygon.polygonKey;
+    fact.name = polygon.name;
+    fact.serviceSuffix = polygon.controllerSuffix;
+    fact.controllerPrefixes = polygon.controllerPrefixes;
+    if (fact.controllerPrefixes.empty() && !polygon.polygonKey.empty()) {
+        fact.controllerPrefixes.push_back(polygon.polygonKey);
+    }
+    fact.containsAirport = containsAirport;
+    fact.intersectsEndpointAnchor = intersectsEndpointAnchor;
+    fact.source = "SIMAWARE_TRACON";
+    for (const auto& ring : polygon.rings) {
+        brain::BrainTerminalPolygonRing factRing;
+        factRing.points.reserve(ring.points.size());
+        for (const auto& point : ring.points) {
+            factRing.points.push_back({point.latitudeDeg, point.longitudeDeg});
+        }
+        fact.rings.push_back(std::move(factRing));
+    }
+    return fact;
+}
+
 std::string BuildAirportCacheKey(
     const brain::BrainTerminalAuthorityWorkerInput& input,
     std::uint64_t generation) {
@@ -775,11 +894,37 @@ TerminalAuthorityResolver::ResolveFromCatalog(
     output.cacheStatus = "terminal-authority-airport-resolved";
     const auto airportTokens = BuildAirportTokens(input.airportIcao);
 
+    std::vector<const core::authority::AuthorityPolygon*> endpointAnchors;
     for (const auto& polygon : catalog.polygons) {
-        if (!PointInPolygon(
+        if (PointInPolygon(
                 input.airportLatitudeDeg,
                 input.airportLongitudeDeg,
                 polygon)) {
+            endpointAnchors.push_back(&polygon);
+        }
+    }
+
+    for (const auto& polygon : catalog.polygons) {
+        const auto containsAirport = std::find(
+            endpointAnchors.begin(), endpointAnchors.end(), &polygon) !=
+            endpointAnchors.end();
+        auto intersectsEndpointAnchor = containsAirport;
+        if (!intersectsEndpointAnchor) {
+            intersectsEndpointAnchor = std::any_of(
+                endpointAnchors.begin(),
+                endpointAnchors.end(),
+                [&](const auto* anchor) {
+                    return anchor != nullptr &&
+                           PolygonsIntersect(polygon, *anchor);
+                });
+        }
+        if (!intersectsEndpointAnchor) {
+            continue;
+        }
+
+        output.polygons.push_back(BuildTerminalPolygonFact(
+            polygon, containsAirport, intersectsEndpointAnchor));
+        if (!containsAirport) {
             continue;
         }
 

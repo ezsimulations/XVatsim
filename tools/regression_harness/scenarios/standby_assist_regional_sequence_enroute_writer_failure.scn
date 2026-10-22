@@ -1,0 +1,15 @@
+name=Standby Assist regional sequence Enroute writer failure is reported
+
+display_intent.stage=Enroute
+
+radio.valid=true
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.write_succeeded=false
+standby_assist.writer_result_code=com1-standby-dataref-not-writable
+standby_assist.stage=Enroute
+standby_assist.plan_key=BAW12|EGLL|KJFK
+
+expect.standby_assist_writer_result_contains=known=1,code=com1-standby-dataref-not-writable,failureReason=com1-standby-dataref-not-writable,failureDomain=dataref,inputFrequency=122.800,targetCom=COM1_STANDBY,datarefAvailable=1,datarefWritable=0,writeAttempted=1,writeSucceeded=0,blockedBeforeSimWrite=1,source=enroute-unicom-fallback
+expect.standby_assist_side_effect_summary=sideEffect=standby-side-effect:standby-decision:0:ctaf-unicom-advisory|enroute|none|UNICOM|none|122800,standbyDecision=standby-decision:0:ctaf-unicom-advisory|enroute|none|UNICOM|none|122800,enabled=1,latchKey=BAW12|EGLL|KJFK|2||UNICOM|122800,latchConsumed=1,writeAllowed=1,writeAttempted=1,writeSucceededKnown=1,writeSucceeded=0,writerTarget=COM1_STANDBY,targetFrequency=122.800,failure=com1-standby-dataref-not-writable,marker=0

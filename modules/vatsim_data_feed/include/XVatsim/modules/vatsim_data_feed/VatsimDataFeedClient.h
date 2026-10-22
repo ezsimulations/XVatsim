@@ -27,8 +27,13 @@ struct VatsimDataFeedSnapshot {
     bool hasCache = false;
     bool fetchInProgress = false;
     bool stale = true;
+    bool controllerComponentPresent = false;
+    bool controllerComponentComplete = false;
+    bool controllerComponentTruncated = false;
     std::uint64_t generation = 0;
     int connectedControllers = 0;
+    int retainedControllerRecords = 0;
+    int rejectedControllerRecords = 0;
     std::vector<xvatsim::brain::ControllerSnapshot> controllers;
     std::shared_ptr<const std::vector<xvatsim::brain::ControllerSnapshot>>
         immutableControllers;

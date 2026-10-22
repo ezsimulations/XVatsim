@@ -75,6 +75,19 @@ std::string SemanticVoteProvenance(
         // unchanged. A threshold crossing changes the score/reason and emits.
         return {};
     }
+    if (vote.source == "vatsim-feed-health") {
+        // Global roster record counts can change whenever any controller in
+        // the world logs in or out. The score and reason already capture the
+        // only semantic health state used by the Brain.
+        return {};
+    }
+    if (vote.source == "vatsim-roster" &&
+        vote.reason != "candidate-exact-endpoint-present") {
+        // Keep exact endpoint identity evidence, but do not make every scoped
+        // candidate look changed when only global declared/retained/rejected
+        // counters move.
+        return {};
+    }
     if (vote.source != "xpilot-fsd-correlation") {
         return vote.provenance;
     }

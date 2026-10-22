@@ -949,6 +949,26 @@ struct BrainTerminalAuthorityWorkerInput {
     long long nowSeconds = 0;
 };
 
+struct BrainTerminalPolygonPoint {
+    double latitudeDeg = 0.0;
+    double longitudeDeg = 0.0;
+};
+
+struct BrainTerminalPolygonRing {
+    std::vector<BrainTerminalPolygonPoint> points;
+};
+
+struct BrainTerminalPolygonFact {
+    std::string polygonKey;
+    std::string name;
+    std::string serviceSuffix;
+    std::vector<std::string> controllerPrefixes;
+    std::vector<BrainTerminalPolygonRing> rings;
+    bool containsAirport = false;
+    bool intersectsEndpointAnchor = false;
+    std::string source;
+};
+
 struct BrainTerminalAuthorityWorkerOutput {
     bool available = false;
     bool pending = false;
@@ -957,6 +977,7 @@ struct BrainTerminalAuthorityWorkerOutput {
     std::string airportIcao;
     std::vector<std::string> ownerTokens;
     std::vector<std::string> polygonKeys;
+    std::vector<BrainTerminalPolygonFact> polygons;
     std::string source;
     std::string status;
     std::string cacheStatus;
@@ -1110,6 +1131,7 @@ struct BrainOwnedRuntimeState {
     bool sawXPilotConnectedThisFlight = false;
     workflow::FlightContext flightContext;
     workflow::XPilotSessionBoundaryState xPilotSessionBoundaryState;
+    workflow::AircraftElectricalPowerBoundaryState electricalPowerBoundaryState;
     bool coldDarkResetApplied = false;
     bool aircraftStateInvalidBoundaryActive = false;
     bool pendingAutomaticFlightRecovery = false;

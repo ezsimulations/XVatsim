@@ -1,0 +1,25 @@
+name=Standby Assist regional sequence Arrival Approach advances to UNICOM
+
+display_intent.stage=Arrival
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Arrival
+ctaf_unicom.departure=airport=KSEA;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=122.950;age=10;failures=0
+ctaf_unicom.arrival=airport=EGLL;attempted=true;cacheHit=true;requestSucceeded=true;status=resolved-no-ctaf;resolved=true;available=false;age=12;failures=0
+
+arrival.station=role=Approach;callsign=LON_APP;frequency=119.725;online=true
+arrival.station=role=Tower;callsign=EGLL_TWR;frequency=118.700;online=true
+arrival.station=role=Ground;callsign=EGLL_GND;frequency=121.800;online=true
+arrival.station=role=Unicom;callsign=EGLL;frequency=122.800;online=true
+
+radio.valid=true
+radio.com1_active=119.725
+standby_assist.apply=true
+standby_assist.use_display_board_with_ctaf_advisories=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Arrival
+standby_assist.plan_key=BAW2|KSEA|EGLL
+
+expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=122.800,source=arrival-unicom-sequence

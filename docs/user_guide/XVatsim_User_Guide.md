@@ -293,10 +293,24 @@ Clears the manual diversion override and returns XVatsim to the destination in t
 ### Standby Assist On / Off
 
 Enables or disables Standby Assist. When enabled, XVatsim can preload COM1
-standby with the selected live controller frequency. If no controller target
-wins, a resolved CTAF or `NO CTAF / UNICOM` advisory can also be selected when
-the separate CTAF/UNICOM advisory gate and all brain-owned safety checks allow
-it. A controller standby target always takes priority. The overlay shows
+standby with the next frequency selected by the Brain. The order depends on
+the flight stage and the destination airport's resolved radio information:
+
+- Arrival with CTAF: Center, Approach/Departure, Tower, CTAF, Ground.
+- Arrival with no CTAF: Center, Approach/Departure, UNICOM `122.800`, Tower,
+  Ground.
+- Enroute: eligible route controllers, then UNICOM `122.800` only when no
+  eligible Enroute controller is online.
+
+For the Enroute fallback, COM2 already being active on `122.800` does not
+prevent Standby Assist from loading `122.800` into COM1 standby. COM1 active
+on `122.800` still prevents a redundant standby load.
+
+For Arrival and Enroute, the normal Standby Assist switch authorizes this
+sequence. The older separate direct-CTAF compatibility setting continues to
+apply to Departure only. XVatsim does not guess UNICOM while an Arrival CTAF
+lookup is pending or after it fails. All targets use the same Brain-approved
+COM1 standby writer and existing radio safety checks. The overlay shows
 `ASST ON` or `ASST OFF`.
 
 ## Keyboard Commands In X-Plane
@@ -380,7 +394,9 @@ Do not use Reset Session just to recover after a reconnect. Use `Recover Current
 - For controller targets, confirm a relevant live controller exists.
 - For CTAF/UNICOM advisory targets, wait for the lookup to finish.
 - Confirm the recommended frequency is not already active.
-- A controller target takes priority over a CTAF/UNICOM advisory target.
+- On Arrival, check the applicable sequence above. At a no-CTAF airport,
+  UNICOM intentionally comes before Tower and Ground.
+- Enroute UNICOM is used only when no eligible Enroute controller is online.
 - The PDC information drawer is separate from Standby Assist and never tunes a frequency.
 
 ### METAR, ATIS, or PDC information is missing

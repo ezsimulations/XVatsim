@@ -30,6 +30,7 @@ private:
     void* trackTrueRef_ = nullptr;
     void* headingTrueRef_ = nullptr;
     void* batteryOnRef_ = nullptr;
+    void* busVoltsRef_ = nullptr;
 
     bool loggedMissingDataRefs_ = false;
 };

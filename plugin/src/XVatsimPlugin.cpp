@@ -167,6 +167,12 @@ struct RefreshDiagnosticsFrame {
     bool xpilotConnected = false;
     bool onGround = false;
     bool batteryOn = false;
+    int batterySwitchCount = 0;
+    int batterySwitchOnCount = 0;
+    int electricalBusVoltageCount = 0;
+    double maximumElectricalBusVoltage = 0.0;
+    std::string electricalPowerState;
+    std::string electricalPowerReason;
     std::string callsign;
     std::string route;
     std::string stage;
@@ -271,9 +277,12 @@ struct AccessoryInputRuntimeAccounting {
 struct TerminalEvidenceRadioRuntimeCache {
     bool valid = false;
     std::uint64_t baseRadioHash = 0;
+    std::size_t endpointScopeIdentity = 0;
     const xvatsim::brain::TransceiverResolutionSnapshot*
         transceiverIdentity = nullptr;
     xvatsim::brain::RadioReachableControllerSnapshot augmented;
+    bool hasLoggedDecisionEvidence = false;
+    std::size_t loggedDecisionEvidenceIdentity = 0;
 };
 
 xvatsim::modules::aircraft_state::AircraftStateSampler gAircraftStateSampler;
@@ -355,6 +364,7 @@ struct AuthorityAsyncRuntimeState {
     std::uint64_t observedTransceiverGeneration = 0;
     std::uint64_t controllerGenerationOnlyRefreshCount = 0;
     std::uint64_t transceiverUnchangedRefreshCount = 0;
+    std::uint64_t lastProvenEvidenceRefreshReuseCount = 0;
     std::uint64_t controllerDigest = 0;
 };
 
@@ -3254,11 +3264,21 @@ RefreshBrainAuthorityRelevanceSnapshot(
         !SameAuthorityCompletionInputs(
             gAuthorityAsyncRuntime.expectedIdentity,
             currentIdentity);
+    const auto acceptedContinuity =
+        gAuthorityAsyncRuntime.acceptedSnapshot != nullptr
+            ? xvatsim::brain::DecideBrainAuthorityPublicationContinuity(
+                  {gAuthorityAsyncRuntime.acceptedIdentity,
+                   currentIdentity,
+                   controllerFeedSnapshot.available,
+                   controllerFeedSnapshot.stale,
+                   controllerFeedSnapshot.controllerComponentComplete,
+                   authorityTransceiverEvidence->available,
+                   authorityTransceiverEvidence->stale})
+            : xvatsim::brain::
+                  BrainAuthorityPublicationContinuityDecision{};
     const auto acceptedInputsChanged =
         gAuthorityAsyncRuntime.acceptedSnapshot != nullptr &&
-        !SameAuthorityCompletionInputs(
-            gAuthorityAsyncRuntime.acceptedIdentity,
-            currentIdentity);
+        !acceptedContinuity.mayReuseLastAccepted;
     if (acceptedInputsChanged) {
         if (gAuthorityAsyncRuntime.acceptedSnapshotLease != nullptr) {
             gAuthorityAsyncRuntime.acceptedSnapshotLease->retired.store(
@@ -3431,6 +3451,8 @@ RefreshBrainAuthorityRelevanceSnapshot(
                 gAuthorityAsyncRuntime.controllerGenerationOnlyRefreshCount;
             const auto transceiverUnchangedRefreshes =
                 gAuthorityAsyncRuntime.transceiverUnchangedRefreshCount;
+            const auto lastProvenEvidenceRefreshReuses =
+                gAuthorityAsyncRuntime.lastProvenEvidenceRefreshReuseCount;
             AppendDeferredDiagnosticsLogLine(
                 [dispatchIdentity,
                  workerRunning = workerSnapshot.running,
@@ -3438,6 +3460,7 @@ RefreshBrainAuthorityRelevanceSnapshot(
                  maximumPendingDepth = workerSnapshot.maximumPendingDepth,
                  controllerGenerationOnlyRefreshes,
                  transceiverUnchangedRefreshes,
+                 lastProvenEvidenceRefreshReuses,
                  dispatchSimulatorThreadUs]() {
                     std::ostringstream dispatch;
                     dispatch << "event=authority-dispatch"
@@ -3458,6 +3481,8 @@ RefreshBrainAuthorityRelevanceSnapshot(
                              << controllerGenerationOnlyRefreshes
                              << " transceiverUnchangedRefreshes="
                              << transceiverUnchangedRefreshes
+                             << " lastProvenEvidenceRefreshReuses="
+                             << lastProvenEvidenceRefreshReuses
                              << " simulatorThreadUs="
                              << dispatchSimulatorThreadUs;
                     return dispatch.str();
@@ -3466,13 +3491,25 @@ RefreshBrainAuthorityRelevanceSnapshot(
     }
 
     auto snapshot = gAuthorityAsyncRuntime.acceptedSnapshot;
+    const auto publicationContinuity =
+        snapshot != nullptr
+            ? xvatsim::brain::DecideBrainAuthorityPublicationContinuity(
+                  {gAuthorityAsyncRuntime.acceptedIdentity,
+                   currentIdentity,
+                   controllerFeedSnapshot.available,
+                   controllerFeedSnapshot.stale,
+                   controllerFeedSnapshot.controllerComponentComplete,
+                   authorityTransceiverEvidence->available,
+                   authorityTransceiverEvidence->stale})
+            : xvatsim::brain::
+                  BrainAuthorityPublicationContinuityDecision{};
     if (snapshot == nullptr ||
-        !SameAuthorityCompletionInputs(
-            gAuthorityAsyncRuntime.acceptedIdentity,
-            currentIdentity)) {
+        !publicationContinuity.mayReuseLastAccepted) {
         snapshot = UnavailableAuthoritySnapshot(
             dataset == nullptr ? "immutable-dataset-unavailable"
                                : "worker-pending-fail-closed");
+    } else if (publicationContinuity.evidenceRefreshPending) {
+        ++gAuthorityAsyncRuntime.lastProvenEvidenceRefreshReuseCount;
     }
     const auto elapsedUs = ElapsedMicrosecondsSince(timingStarted);
     const auto hash =
@@ -3483,7 +3520,11 @@ RefreshBrainAuthorityRelevanceSnapshot(
     if (diagnostics != nullptr) {
         diagnostics->authorityRelevanceUs = elapsedUs;
         diagnostics->authorityRelevanceMs = elapsedUs / 1000;
-        diagnostics->authorityStatus = snapshot->statusLine;
+        diagnostics->authorityStatus =
+            publicationContinuity.evidenceRefreshPending &&
+                    snapshot == gAuthorityAsyncRuntime.acceptedSnapshot
+                ? "AUTHORITY last proven; evidence refresh pending"
+                : snapshot->statusLine;
         diagnostics->authorityCount =
             static_cast<int>(snapshot->relevantAuthorities.size());
         diagnostics->authoritySnapshotForDiagnostics = snapshot;
@@ -4116,6 +4157,14 @@ void MaybeLogRefreshDiagnostics(long long totalRefreshMs, long long totalRefresh
                    << SanitizeLogText(frame.refreshGateReason, 40)
                    << " xpilot=" << (frame.xpilotConnected ? 1 : 0)
                    << " battery=" << (frame.batteryOn ? 1 : 0)
+                   << " batterySwitches=" << frame.batterySwitchOnCount
+                   << "/" << frame.batterySwitchCount
+                   << " busCount=" << frame.electricalBusVoltageCount
+                   << " maxBusVolts=" << frame.maximumElectricalBusVoltage
+                   << " electricalPower="
+                   << SanitizeLogText(frame.electricalPowerState, 16)
+                   << " electricalReason="
+                   << SanitizeLogText(frame.electricalPowerReason, 48)
                    << " ground=" << (frame.onGround ? 1 : 0)
                    << " callsign=" << SanitizeLogText(frame.callsign, 32)
                    << " route=" << SanitizeLogText(frame.route, 32)
@@ -6410,13 +6459,21 @@ void RefreshOverlayFromBrainEngineer3() {
     RequestAutomaticUpdateCheckIfDue();
 
     auto timingStarted = std::chrono::steady_clock::now();
-    const auto aircraftState = gAircraftStateSampler.Sample();
+    auto aircraftState = gAircraftStateSampler.Sample();
     diagnostics.aircraftStateUs = ElapsedMicrosecondsSince(timingStarted);
     diagnostics.onGround = aircraftState.onGround;
-    diagnostics.batteryOn = aircraftState.batteryOn;
+    diagnostics.batterySwitchCount = aircraftState.batterySwitchCount;
+    diagnostics.batterySwitchOnCount = aircraftState.batterySwitchOnCount;
+    diagnostics.electricalBusVoltageCount =
+        aircraftState.electricalBusVoltageCount;
+    diagnostics.maximumElectricalBusVoltage =
+        aircraftState.maximumElectricalBusVoltage;
     xvatsim::brain::workflow::AircraftRuntimeBoundaryInput
         aircraftBoundaryInput;
     aircraftBoundaryInput.aircraftState = aircraftState;
+    aircraftBoundaryInput.monotonicMs = CurrentTickMilliseconds();
+    aircraftBoundaryInput.electricalPowerState =
+        gBrainOwnedRuntimeState.electricalPowerBoundaryState;
     aircraftBoundaryInput.coldDarkResetApplied =
         gBrainOwnedRuntimeState.coldDarkResetApplied;
     aircraftBoundaryInput.aircraftStateInvalidBoundaryActive =
@@ -6424,10 +6481,18 @@ void RefreshOverlayFromBrainEngineer3() {
     const auto aircraftBoundaryDecision =
         xvatsim::brain::workflow::ResolveAircraftRuntimeBoundary(
             aircraftBoundaryInput);
+    diagnostics.batteryOn = aircraftBoundaryDecision.electricalPowerAvailable;
+    diagnostics.electricalPowerState =
+        xvatsim::brain::workflow::ToString(
+            aircraftBoundaryDecision.effectivePowerState);
+    diagnostics.electricalPowerReason =
+        aircraftBoundaryDecision.electricalPowerReason;
+    aircraftState.batteryOn =
+        aircraftBoundaryDecision.electricalPowerAvailable;
     if (aircraftBoundaryDecision.aircraftStateInvalid) {
         xvatsim::brain::BrainOwnedOperationalActivationInput activationInput;
         activationInput.aircraftStateValid = false;
-        activationInput.batteryOn = aircraftState.batteryOn;
+        activationInput.batteryOn = false;
         activationInput.xPilotConnected = false;
         const auto activationDecision =
             xvatsim::brain::DecideBrainOwnedOperationalActivation(
@@ -6458,7 +6523,8 @@ void RefreshOverlayFromBrainEngineer3() {
         HandleXPilotSessionBoundary(xPilotSessionSnapshot, pilotIdentitySnapshot);
     xvatsim::brain::BrainOwnedOperationalActivationInput activationInput;
     activationInput.aircraftStateValid = aircraftState.valid;
-    activationInput.batteryOn = aircraftState.batteryOn;
+    activationInput.batteryOn =
+        aircraftBoundaryDecision.electricalPowerAvailable;
     activationInput.xPilotConnected = xPilotSessionSnapshot.connected;
     const auto activationDecision =
         xvatsim::brain::DecideBrainOwnedOperationalActivation(
@@ -6713,22 +6779,81 @@ void RefreshOverlayFromBrainEngineer3() {
             gBrainOwnedRuntimeState.radioDiff);
 
         const auto* relevanceRadioSnapshot = &radioSnapshot;
+        bool terminalEvidenceScopeApplied = false;
+        std::size_t endpointScopeIdentity = 0;
         if (gPluginSettings.terminalRelevanceV2Enabled &&
             (workflowDecision.stage ==
                  xvatsim::brain::WorkflowStage::Departure ||
              workflowDecision.stage ==
                  xvatsim::brain::WorkflowStage::Arrival)) {
+            terminalEvidenceScopeApplied = true;
+            HashCombine(
+                &endpointScopeIdentity,
+                gBrainOwnedRuntimeState.routePolygonHash);
+            HashCombine(
+                &endpointScopeIdentity,
+                gBrainOwnedRuntimeState.departureTerminalAuthorityHash);
+            HashCombine(
+                &endpointScopeIdentity,
+                gBrainOwnedRuntimeState.arrivalTerminalAuthorityHash);
+            HashCombineString(
+                &endpointScopeIdentity, flightContext.departureIcao);
+            HashCombineString(
+                &endpointScopeIdentity, flightContext.destinationIcao);
+            HashCombineBool(
+                &endpointScopeIdentity,
+                flightContext.hasDepartureCoordinates);
+            HashCombineDouble(
+                &endpointScopeIdentity, flightContext.departureLatDeg);
+            HashCombineDouble(
+                &endpointScopeIdentity, flightContext.departureLonDeg);
+            HashCombineBool(
+                &endpointScopeIdentity,
+                flightContext.hasDestinationCoordinates);
+            HashCombineDouble(
+                &endpointScopeIdentity, flightContext.destinationLatDeg);
+            HashCombineDouble(
+                &endpointScopeIdentity, flightContext.destinationLonDeg);
             if (!gTerminalEvidenceRadioCache.valid ||
                 gTerminalEvidenceRadioCache.baseRadioHash !=
                     radioSnapshot.stableHash ||
+                gTerminalEvidenceRadioCache.endpointScopeIdentity !=
+                    endpointScopeIdentity ||
                 gTerminalEvidenceRadioCache.transceiverIdentity !=
                     transceiverResolutionSnapshot) {
+                xvatsim::brain::BrainEndpointTerminalEvidenceScope
+                    departureScope;
+                departureScope.airportIcao = flightContext.departureIcao;
+                departureScope.hasAirportCoordinates =
+                    flightContext.hasDepartureCoordinates;
+                departureScope.airportLatitudeDeg =
+                    flightContext.departureLatDeg;
+                departureScope.airportLongitudeDeg =
+                    flightContext.departureLonDeg;
+                xvatsim::brain::BrainEndpointTerminalEvidenceScope
+                    arrivalScope;
+                arrivalScope.airportIcao = flightContext.destinationIcao;
+                arrivalScope.hasAirportCoordinates =
+                    flightContext.hasDestinationCoordinates;
+                arrivalScope.airportLatitudeDeg =
+                    flightContext.destinationLatDeg;
+                arrivalScope.airportLongitudeDeg =
+                    flightContext.destinationLonDeg;
                 gTerminalEvidenceRadioCache.augmented =
                     xvatsim::brain::
-                        AugmentRadioReachableControllerSnapshotWithAppDepEvidence(
-                            radioSnapshot, *transceiverResolutionSnapshot);
+                        BuildBrainEndpointScopedControllerSnapshot(
+                            radioSnapshot,
+                            *transceiverResolutionSnapshot,
+                            departureTerminalAuthority,
+                            arrivalTerminalAuthority,
+                            gBrainOwnedRuntimeState.routePolygonSnapshot.get(),
+                            departureScope,
+                            arrivalScope,
+                            kTerminalTransmitterRadiusNm);
                 gTerminalEvidenceRadioCache.baseRadioHash =
                     radioSnapshot.stableHash;
+                gTerminalEvidenceRadioCache.endpointScopeIdentity =
+                    endpointScopeIdentity;
                 gTerminalEvidenceRadioCache.transceiverIdentity =
                     transceiverResolutionSnapshot;
                 gTerminalEvidenceRadioCache.valid = true;
@@ -6741,6 +6866,24 @@ void RefreshOverlayFromBrainEngineer3() {
                 *relevanceRadioSnapshot,
                 workflowDecision.stage,
                 "engineer3-clean-runtime");
+        if (terminalEvidenceScopeApplied) {
+            auto decisionEvidenceIdentity = static_cast<std::size_t>(
+                xvatsim::brain::HashBrainRadioControllerDecisionEvidence(
+                    gatedRadioSnapshot));
+            HashCombine(
+                &decisionEvidenceIdentity,
+                endpointScopeIdentity);
+            if (!gTerminalEvidenceRadioCache.hasLoggedDecisionEvidence ||
+                gTerminalEvidenceRadioCache.loggedDecisionEvidenceIdentity !=
+                    decisionEvidenceIdentity) {
+                gTerminalEvidenceRadioCache.hasLoggedDecisionEvidence = true;
+                gTerminalEvidenceRadioCache.loggedDecisionEvidenceIdentity =
+                    decisionEvidenceIdentity;
+                AppendDiagnosticsLogLine(
+                    "event=controller-evidence-scope " +
+                    gTerminalEvidenceRadioCache.augmented.statusLine);
+            }
+        }
 
         timingStarted = std::chrono::steady_clock::now();
         // vNAS only applies to the endpoint currently being resolved. This
@@ -7434,6 +7577,7 @@ PLUGIN_API void XPluginStop() {
                << " formattingFailures="
                << writerSnapshot.formattingFailures
                << " storageFailures=" << writerSnapshot.storageFailures
+               << " storageTrims=" << writerSnapshot.storageTrims
                << " maxDepth=" << writerSnapshot.maximumQueueDepth
                << " maxTimingDepth="
                << writerSnapshot.maximumFlightLoopTimingQueueDepth

@@ -1,0 +1,18 @@
+name=Standby Assist regional sequence Enroute controller precedes UNICOM
+
+display_intent.stage=Enroute
+display_intent.current_polygon=KZNY
+
+enroute.station=role=Center;callsign=NY_CTR;frequency=125.325;online=true;polygonKey=KZNY;sectorActive=true
+display_intent.relation=callsign=NY_CTR;frequency=125.325;relation=CurrentPolygon
+
+radio.valid=true
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Enroute
+standby_assist.plan_key=BAW5|EGLL|KJFK
+
+expect.standby_assist_decisions_contains=callsign=NY_CTR:role=CTR:freq=125.325,actualSelectedTargetSource=controller-display-row,actualSelectedTargetFrequency=125.325,final=recommend-com1-standby
+expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=125.325,source=controller-display-row

@@ -48,7 +48,16 @@ enum class AirportSource {
 struct AircraftStateSnapshot {
     bool valid = false;
     bool onGround = false;
+    // Compatibility summary of the raw battery-switch facts. The aircraft
+    // worker sets this when any available battery switch is on. The Brain
+    // remains responsible for deciding whether the aircraft is powered.
     bool batteryOn = false;
+    bool batterySwitchFactsAvailable = false;
+    int batterySwitchCount = 0;
+    int batterySwitchOnCount = 0;
+    bool electricalBusVoltageFactsAvailable = false;
+    int electricalBusVoltageCount = 0;
+    double maximumElectricalBusVoltage = 0.0;
     double latitudeDeg = 0.0;
     double longitudeDeg = 0.0;
     double altitudeMslFt = 0.0;
@@ -145,6 +154,10 @@ struct ControllerSnapshot {
     std::string frequency;
     int facility = 0;
     int visualRangeNm = 0;
+    std::string sourceLastUpdated;
+    std::string sourceLogonTime;
+    // Compatibility fields. They are mechanically decoded facts only; the
+    // Brain owns operational eligibility and display decisions.
     bool actionable = true;
     bool atis = false;
     std::string textAtis;
@@ -204,6 +217,8 @@ struct BrainControllerEvidenceVote {
     int score = 0;
     std::string provenance;
     std::string reason;
+    std::string deduplicationKey;
+    bool contributesToScore = true;
 };
 
 // Canonical authority-only controller input. Radio-range presentation fields
@@ -220,8 +235,13 @@ struct AuthorityControllerSnapshot {
 struct ControllerFeedSnapshot {
     bool available = false;
     bool stale = true;
+    bool controllerComponentPresent = false;
+    bool controllerComponentComplete = false;
+    bool controllerComponentTruncated = false;
     std::uint64_t generation = 0;
     int connectedControllers = 0;
+    int retainedControllerRecords = 0;
+    int rejectedControllerRecords = 0;
     std::string statusLine;
     const std::vector<ControllerSnapshot>* controllers = nullptr;
     // When present, this is the immutable owner behind controllers and may be

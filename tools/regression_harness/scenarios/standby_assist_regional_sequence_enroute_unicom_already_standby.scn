@@ -1,0 +1,14 @@
+name=Standby Assist regional sequence Enroute UNICOM already in COM1 standby
+
+display_intent.stage=Enroute
+
+radio.valid=true
+radio.com1_standby=122.800
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.stage=Enroute
+standby_assist.plan_key=BAW8|EGLL|KJFK
+
+expect.standby_assist_decisions_contains=sourceDecision=standby-enroute-unicom-fallback,role=UNICOM,freq=122.800,actualSelectedTargetSource=enroute-unicom-fallback,final=skip-already-standby
+expect.standby_assist_writer_result_contains=code=write-not-allowed,failureReason=already-com1-standby,inputFrequency=122.800,writeAttempted=0,source=enroute-unicom-fallback
