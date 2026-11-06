@@ -21,4 +21,4 @@ standby_assist.plan_key=UPS1|KSEA|KONT
 
 expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:arrival:KONT,role=CTAF,freq=123.050,featureGateRequired=standby-assist,featureGateSatisfied=1,actualSelectedTargetSource=arrival-ctaf-sequence,actualSelectedTargetFrequency=123.050,final=recommend-com1-standby,callsign=ONT_GND:role=GND:freq=121.900,final=no-target
 expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=123.050,source=arrival-ctaf-sequence
-expect.overlay_body_lines=xPilot not loaded|CTAF KONT 123.050 *Standby*|GND ONT_GND 121.900
+expect.overlay_body_lines=xPilot not loaded|CTAF KONT 123.050 (S)|GND ONT_GND 121.900

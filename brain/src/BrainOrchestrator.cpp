@@ -277,9 +277,9 @@ OverlayTextLine FormatBoardLine(
     }
 
     if (station.tuned) {
-        text += " *Active*";
+        text += " (A)";
     } else if (station.standby) {
-        text += " *Standby*";
+        text += " (S)";
     }
 
     line.text = SanitizeDisplayText(std::move(text), kMaxDisplayLineChars);

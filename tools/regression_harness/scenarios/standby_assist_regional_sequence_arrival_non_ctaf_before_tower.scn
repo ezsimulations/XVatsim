@@ -22,4 +22,4 @@ standby_assist.plan_key=BAW1|KSEA|EGLL
 
 expect.standby_assist_decisions_contains=sourceDecision=ctaf-unicom-preview:arrival:EGLL,role=UNICOM,freq=122.800,featureGateRequired=standby-assist,featureGateSatisfied=1,actualSelectedTargetSource=arrival-unicom-sequence,actualSelectedTargetFrequency=122.800,final=recommend-com1-standby,callsign=EGLL_TWR:role=TWR:freq=118.700,final=no-target
 expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=122.800,source=arrival-unicom-sequence
-expect.overlay_body_lines=xPilot not loaded|NO CTAF / UNICOM EGLL 122.800 *Standby*|TWR EGLL_TWR 118.700|GND EGLL_GND 121.800
+expect.overlay_body_lines=xPilot not loaded|NO CTAF / UNICOM EGLL 122.800 (S)|TWR EGLL_TWR 118.700|GND EGLL_GND 121.800

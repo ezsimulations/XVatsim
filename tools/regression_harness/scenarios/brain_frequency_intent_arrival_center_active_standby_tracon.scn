@@ -28,4 +28,4 @@ standby_assist.loaded=true
 
 expect.display_source=Arrival
 expect.display_callsigns=VAN_CTR,SEA_16_CTR,YVR_APP,CYVR_TWR,CYVR,CYVR_GND
-expect.overlay_body_lines=xPilot not loaded|CTR VAN_CTR 132.300 *Active*|CTR SEA_16_CTR 135.450 95nm *Standby*|APP YVR_APP 124.600|TWR CYVR_TWR 119.550|CTAF CYVR 122.950|GND CYVR_GND 121.700
+expect.overlay_body_lines=xPilot not loaded|CTR VAN_CTR 132.300 (A)|CTR SEA_16_CTR 135.450 95nm (S)|APP YVR_APP 124.600|TWR CYVR_TWR 119.550|CTAF CYVR 122.950|GND CYVR_GND 121.700

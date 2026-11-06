@@ -24,5 +24,5 @@ standby_assist.plan_key=UPS2183|KONT|KDFW
 expect.display_source=Departure
 expect.display_callsigns=SCT_APP,LAX_25_CTR
 expect.brain_display_intent_rows=SCT_APP:CURRENT_POLYGON,LAX_25_CTR:CURRENT_POLYGON:ACTIVE
-expect.overlay_body_lines=xPilot not loaded|APP SCT_APP 128.050 *Active*|CTR LAX_25_CTR 126.525 *Standby*
+expect.overlay_body_lines=xPilot not loaded|APP SCT_APP 128.050 (A)|CTR LAX_25_CTR 126.525 (S)
 expect.overlay_body_tones=Normal,Active,Active

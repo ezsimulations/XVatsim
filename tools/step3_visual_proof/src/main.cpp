@@ -248,7 +248,7 @@ brain::OverlayViewModel BuildMainCardInput() {
     view.mode = brain::OverlayMode::Active;
     view.visible = true;
     view.title = "Enroute";
-    view.headerRightText = "N100PC";
+    view.headerRightText = "FL310";
     view.version.text = "V2 STEP 3";
     view.version.tone = brain::OverlayVersionTone::Current;
     view.radioState.valid = true;
@@ -259,12 +259,13 @@ brain::OverlayViewModel BuildMainCardInput() {
     view.radioState.com2ActiveFrequency = "134.790";
     view.radioState.com1RxAvailable = true;
     view.radioState.com1TxAvailable = true;
+    view.radioState.standbyAssistEnabled = true;
     view.bodyLines = {
-        {"CONNECTED N100PC", brain::OverlayTone::Active},
-        {"DEN_17_CTR 127.650", brain::OverlayTone::Active},
+        {"xPilot connected FFT4844", brain::OverlayTone::Active},
+        {"CTAF KRDU 127.450 (A)", brain::OverlayTone::Active},
+        {"DEN_17_CTR 127.650", brain::OverlayTone::Next},
         {"Controller output remains unchanged", brain::OverlayTone::Normal},
-        {"IFR/VFR accessory parity", brain::OverlayTone::Next},
-        {"No filed route", brain::OverlayTone::Next},
+        {"KRDU -> KPHL 292nm remaining", brain::OverlayTone::Next},
     };
     return view;
 }

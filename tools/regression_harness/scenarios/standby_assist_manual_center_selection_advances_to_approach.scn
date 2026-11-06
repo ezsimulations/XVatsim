@@ -34,5 +34,5 @@ center_frequency_selection.write_succeeded=true
 expect.display_source=Arrival
 expect.display_callsigns=LAX_25_CTR,LAX_38_CTR,SCT_APP,ONT_TWR,KONT,ONT_GND
 expect.standby_assist_decisions_contains=callsign=LAX_25_CTR:role=CTR:freq=126.525,final=no-target,callsign=LAX_38_CTR:role=CTR:freq=133.900,final=no-target,callsign=SCT_APP:role=APP:freq=128.050,actualSelectedTargetSource=controller-display-row,actualSelectedTargetFrequency=128.050,final=recommend-com1-standby
-expect.overlay_body_lines=xPilot not loaded|CTR LAX_25_CTR 126.525|CTR LAX_38_CTR 133.900 *Active*|APP SCT_APP 128.050|TWR ONT_TWR 120.600|CTAF KONT 122.950|GND ONT_GND 121.900
+expect.overlay_body_lines=xPilot not loaded|CTR LAX_25_CTR 126.525|CTR LAX_38_CTR 133.900 (A)|APP SCT_APP 128.050|TWR ONT_TWR 120.600|CTAF KONT 122.950|GND ONT_GND 121.900
 expect.overlay_selectable_center_frequencies=LAX_25_CTR@126.525,LAX_38_CTR@133.900

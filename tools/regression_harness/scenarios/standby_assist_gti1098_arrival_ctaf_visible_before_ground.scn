@@ -34,4 +34,4 @@ expect.display_source=Arrival
 expect.display_callsigns=IND_83_CTR,SDF_D_APP,KSDF,SDF_E_GND
 expect.standby_assist_decisions_contains=callsign=SDF_D_APP:role=APP:freq=132.075,final=no-target,sourceDecision=ctaf-unicom-preview:arrival:KSDF,role=CTAF,freq=124.200,actualSelectedTargetSource=arrival-ctaf-sequence,actualSelectedTargetFrequency=124.200,final=recommend-com1-standby,callsign=SDF_E_GND:role=GND:freq=121.700,final=no-target
 expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=124.200,source=arrival-ctaf-sequence
-expect.overlay_body_lines=xPilot not loaded|CTR IND_83_CTR 128.225|APP SDF_D_APP 132.075 *Active*|CTAF KSDF 124.200 *Standby*|GND SDF_E_GND 121.700
+expect.overlay_body_lines=xPilot not loaded|CTR IND_83_CTR 128.225|APP SDF_D_APP 132.075 (A)|CTAF KSDF 124.200 (S)|GND SDF_E_GND 121.700

@@ -28,5 +28,5 @@ center_frequency_selection.write_succeeded=true
 expect.display_source=Arrival
 expect.display_callsigns=NY_CL_FSS,ORF_APP
 expect.standby_assist_decisions_contains=callsign=NY_CL_FSS:role=CTR:freq=130.000,final=skip-active,callsign=ORF_APP:role=APP:freq=119.800,actualSelectedTargetSource=controller-display-row,actualSelectedTargetFrequency=119.800,final=recommend-com1-standby
-expect.overlay_body_lines=xPilot not loaded|CTR NY_CL_FSS 130.000 145nm *Active*|APP ORF_APP 119.800
+expect.overlay_body_lines=xPilot not loaded|CTR NY_CL_FSS 130.000 145nm (A)|APP ORF_APP 119.800
 expect.overlay_selectable_center_frequencies=NY_CL_FSS@130.000

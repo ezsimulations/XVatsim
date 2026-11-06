@@ -928,8 +928,14 @@ RasterImage RenderCardImage(
         VersionToneColor(sections.versionTone),
         Gdiplus::StringAlignmentFar);
 
-    DrawTextBlock(&graphics, RectF(20.0f, 48.0f, 226.0f, 22.0f), sections.callsignOrStatus, &callsignFont, cyan);
-    DrawTextBlock(&graphics, RectF(panelRect.GetRight() - 68.0f, 51.0f, 52.0f, 16.0f), sections.headerRightText, &metaFont, muted, Gdiplus::StringAlignmentFar);
+    DrawTextBlock(&graphics, RectF(20.0f, 48.0f, 226.0f, 26.0f), sections.callsignOrStatus, &callsignFont, cyan);
+    DrawTextBlock(
+        &graphics,
+        RectF(panelRect.GetRight() - 96.0f, 48.0f, 80.0f, 26.0f),
+        sections.headerRightText,
+        &callsignFont,
+        muted,
+        Gdiplus::StringAlignmentFar);
 
     const auto modeCColor = sections.radioState.modeCActive ? green : white;
     DrawTextBlock(
@@ -940,11 +946,11 @@ RasterImage RenderCardImage(
         modeCColor);
     DrawTextBlock(
         &graphics,
-        RectF(panelRect.GetRight() - 118.0f, 88.0f, 94.0f, 14.0f),
+        RectF(250.0f, 88.0f, 82.0f, 14.0f),
         sections.radioState.standbyAssistEnabled ? "ASST ON" : "ASST OFF",
         &radioLabelFont,
         sections.radioState.standbyAssistEnabled ? green : yellow,
-        Gdiplus::StringAlignmentFar);
+        Gdiplus::StringAlignmentCenter);
 
     DrawTextBlock(&graphics, RectF(46.0f, 104.0f, 48.0f, 16.0f), "COM1", &radioLabelFont, softWhite);
     DrawTextBlock(
@@ -996,6 +1002,8 @@ RasterImage RenderCardImage(
         std::max(0, static_cast<int>(sections.listLines.size()) - kVisibleListRows));
     const auto lastVisible = std::min(static_cast<int>(sections.listLines.size()), firstVisible + kVisibleListRows);
 
+    constexpr auto listTextLeft = 20.0f;
+    constexpr auto listTextRight = 355.0f;
     auto rowY = 150.0f;
     for (auto index = firstVisible; index < lastVisible; ++index) {
         const auto& line = sections.listLines[static_cast<std::size_t>(index)];
@@ -1005,7 +1013,12 @@ RasterImage RenderCardImage(
         } else if (line.tone == brain::OverlayTone::Next) {
             toneColor = yellow;
         }
-        DrawTextBlock(&graphics, RectF(46.0f, rowY, 308.0f, 20.0f), line.text, &rowFont, toneColor);
+        DrawTextBlock(
+            &graphics,
+            RectF(listTextLeft, rowY, listTextRight - listTextLeft, 20.0f),
+            line.text,
+            &rowFont,
+            toneColor);
         if (centerFrequencyTargets != nullptr &&
             line.centerFrequencySelectable &&
             !line.centerFrequency.empty()) {
@@ -1021,9 +1034,9 @@ RasterImage RenderCardImage(
                     MeasureTextWidth(&graphics, throughFrequency, &rowFont);
                 OverlayCenterFrequencyRenderTarget target;
                 target.designLeft = static_cast<int>(std::floor(
-                    46.0f + prefixWidth - 3.0f));
+                    listTextLeft + prefixWidth - 3.0f));
                 target.designRight = static_cast<int>(std::ceil(
-                    46.0f + throughFrequencyWidth + 3.0f));
+                    listTextLeft + throughFrequencyWidth + 3.0f));
                 target.designTop = static_cast<int>(std::floor(rowY - 1.0f));
                 target.designBottom =
                     static_cast<int>(std::ceil(rowY + 21.0f));

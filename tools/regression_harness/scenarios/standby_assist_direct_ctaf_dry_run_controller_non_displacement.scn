@@ -23,4 +23,4 @@ standby_assist.plan_key=UAL3936|KSFO|CYVR
 standby_assist.loaded=true
 
 expect.standby_assist_decisions_contains=callsign=NCT_APP:role=APP:freq=125.350,liveEligible=1,liveWriteEligible=1,final=recommend-com1-standby,sourceDecision=ctaf-unicom-preview:departure:KAAA,role=CTAF,freq=122.950,liveEligible=0,liveWriteEligible=0,dryRunLiveEligible=0,dryRunLiveRecommendation=dry-run-blocked-existing-controller-target,dryRunSkip=existing-controller-target,dryRunSafetyGate=existing-controller-target,dryRunWouldSelectTarget=0,dryRunWouldDisplaceControllerTarget=0,dryRunBlockedByExistingControllerTarget=1,dryRunTargetCom=COM1_STANDBY,dryRunTargetFrequency=122.950,dryRunPromotionClass=direct-ctaf-only,final=skip-role-not-eligible
-expect.overlay_body_lines=xPilot not loaded|TWR KSFO_TWR 120.500 *Active*|APP NCT_APP 125.350 *Standby*
+expect.overlay_body_lines=xPilot not loaded|TWR KSFO_TWR 120.500 (A)|APP NCT_APP 125.350 (S)
