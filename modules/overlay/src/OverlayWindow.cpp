@@ -941,7 +941,7 @@ RasterImage RenderCardImage(
     DrawTextBlock(
         &graphics,
         RectF(46.0f, 88.0f, 176.0f, 14.0f),
-        sections.radioState.modeCActive ? "MODE C (A)" : "MODE C",
+        sections.radioState.modeCActive ? "MODE C *Active*" : "MODE C",
         &radioLabelFont,
         modeCColor);
     DrawTextBlock(

@@ -145,7 +145,7 @@ Color and labels matter:
 - `Standby`: Standby Assist loaded the frequency into COM1 standby.
 - `ASST ON`: Standby Assist is enabled.
 - `ASST OFF`: Standby Assist is disabled.
-- `MODE C (A)`: transponder Mode C is active.
+- `MODE C *Active*`: transponder Mode C is active.
 - `TX` and `RX`: transmit and receive state for COM1 and COM2.
 - Top-right version text: green means the installed version is current, gray
   means update status is not known yet, and amber rotating version/UPDATE text
