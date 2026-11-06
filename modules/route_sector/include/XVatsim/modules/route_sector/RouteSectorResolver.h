@@ -14,11 +14,16 @@
 #include <vector>
 
 #include "XVatsim/brain/BrainTypes.h"
+#include "XVatsim/brain/BrainOwnedRuntime.h"
+#include "XVatsim/core/ControllerAuthority.h"
 #include "XVatsim/core/PreflightRouteCache.h"
+
+namespace xvatsim::modules::authority_map {
+class CanonicalAuthorityMapStore;
+}
 
 namespace xvatsim::modules::route_sector {
 
-struct AuthoritySourceDataset;
 class AuthorityRelevanceEngine;
 struct AuthoritySnapshotLease;
 struct RouteSourceDataset;
@@ -41,7 +46,7 @@ public:
 };
 
 struct AuthorityDatasetPublication {
-    const AuthoritySourceDataset* dataset = nullptr;
+    const core::authority::CanonicalAuthorityMapDataset* dataset = nullptr;
     std::uint64_t identity = 0;
     std::uint64_t terminalBoundaryGeneration = 0;
 };
@@ -52,7 +57,7 @@ struct AuthorityWorkerIdentity {
     std::string planKey;
     std::uint64_t routeDigest = 0;
     std::uint64_t controllerDigest = 0;
-    std::uint64_t transceiverDigest = 0;
+    std::uint64_t dynamicOwnershipDigest = 0;
     std::uint64_t datasetIdentity = 0;
 };
 
@@ -65,17 +70,17 @@ struct AuthorityWorkerRequest {
     bool hasControllerEvidence = false;
     bool controllerFeedAvailable = false;
     bool controllerFeedStale = true;
+    bool controllerFeedComplete = false;
     std::uint64_t controllerFeedGeneration = 0;
     int controllerFeedConnectedControllers = 0;
+    std::shared_ptr<const brain::VnasLiveOwnershipSnapshot>
+        dynamicOwnership;
     std::uint64_t terminalBoundaryGeneration = 0;
     std::string scheduleReason;
-    bool hasTransceiverEvidence = true;
-    std::shared_ptr<const brain::AuthorityTransceiverEvidenceSnapshot>
-        transceivers;
     // The resolver retains every published immutable dataset until teardown,
     // which is ordered after the authority worker. This raw handle keeps the
     // flight-loop read and mailbox package lock-free.
-    const AuthoritySourceDataset* dataset = nullptr;
+    const core::authority::CanonicalAuthorityMapDataset* dataset = nullptr;
     long long dispatchedMonotonicMs = 0;
     // Deterministic proof seam. Production requests leave this at zero.
     std::uint32_t cooperativeDelayForTestingMs = 0;
@@ -402,10 +407,10 @@ private:
     std::unique_ptr<Implementation> implementation_;
 };
 
-class RouteSectorResolver {
+class RouteSectorResolver final : public brain::BrainEndpointPolygonQueryWorker {
 public:
     RouteSectorResolver();
-    ~RouteSectorResolver();
+    ~RouteSectorResolver() override;
 
     brain::RouteSectorSnapshot Resolve(
         const brain::AircraftStateSnapshot& aircraftState,
@@ -420,12 +425,19 @@ public:
         const brain::ControllerFeedSnapshot& controllerFeedSnapshot,
         const brain::RouteSectorSnapshot& routeSectorSnapshot,
         const std::string& scheduleReason,
-        const brain::TransceiverResolutionSnapshot* authorityTransceiverSnapshot = nullptr) const;
+        std::shared_ptr<const brain::VnasLiveOwnershipSnapshot>
+            dynamicOwnership = {}) const;
+    // Deterministic visual proof of the already-decided canonical live map.
+    // This export never performs controller matching or ownership inference.
+    std::string BuildAuthorityDiagnosticGeoJson(
+        const brain::AuthorityRelevanceSnapshot& snapshot) const;
     brain::AirportSectorSnapshot ResolveAirportCoverage(
         const std::string& airportIcao,
         bool hasAirportCoordinates,
         double airportLatitudeDeg,
         double airportLongitudeDeg) const;
+    brain::BrainEndpointPolygonQueryOutput QueryEndpointPolygons(
+        const brain::BrainEndpointPolygonQueryInput& input) override;
     bool CanEvaluateAirportTerminalCoverage(
         const brain::AirportSectorSnapshot& airportCoverageSnapshot) const;
     bool IsInsideAirportTerminalCoverage(
@@ -460,7 +472,8 @@ public:
     void ResetSourceCaches();
     void Reset();
     void AgeAuthorityRelevanceCacheForTesting(long long ageSeconds) const;
-    const AuthoritySourceDataset* GetAuthoritySourceDataset() const;
+    const core::authority::CanonicalAuthorityMapDataset*
+        GetAuthoritySourceDataset() const;
     AuthorityDatasetPublication GetAuthoritySourceDatasetPublication() const;
     RouteDatasetPublication GetRouteSourceDatasetPublication() const;
     // Lifecycle/main-thread service points for immutable source publication.
@@ -541,20 +554,17 @@ private:
     mutable std::uint64_t centerBoundaryGeneration_ = 0;
     mutable std::uint64_t authorityCatalogGeneration_ = 0;
     mutable std::uint64_t terminalBoundaryGeneration_ = 0;
-    mutable std::atomic<const AuthoritySourceDataset*>
-        publishedAuthorityDataset_{nullptr};
     mutable std::atomic<std::uint64_t>
         publishedTerminalBoundaryGeneration_{0};
     mutable std::optional<core::preflight::PreflightRouteCache> preflightRouteCache_;
     mutable std::string preflightRouteCacheReason_;
-    mutable std::shared_ptr<AuthoritySourceDataset> authorityDataset_;
-    mutable std::shared_ptr<AuthoritySourceDataset> pendingAuthorityDataset_;
+    mutable std::shared_ptr<core::authority::CanonicalAuthorityMapDataset>
+        pendingAuthorityDataset_;
     mutable std::shared_ptr<RouteSourceDataset> routeDataset_;
     mutable std::shared_ptr<RouteSourceDataset> pendingRouteDataset_;
     mutable std::uint64_t routePublicationGeneration_ = 0;
-    // Published raw dataset handles remain valid through worker teardown.
-    mutable std::vector<std::shared_ptr<const AuthoritySourceDataset>>
-        authorityDatasetRetention_;
+    mutable std::unique_ptr<authority_map::CanonicalAuthorityMapStore>
+        authorityMapStore_;
     mutable std::shared_ptr<const RouteDatasetPublicationState>
         publishedRoutePublication_;
     mutable std::unique_ptr<AuthorityRelevanceEngine> authorityEngine_;

@@ -139,12 +139,6 @@ controller.entry=callsign=RKRR_CTR;frequency=128.370;facility=6;actionable=true;
 controller.entry=callsign=RKSM_GND;frequency=121.750;facility=3;actionable=true;atis=false
 controller.entry=callsign=RKSM_TWR;frequency=118.050;facility=4;actionable=true;atis=false
 
-expect.departure_collected_available=true
-expect.departure_collected_callsigns=HOU_TWR
-expect.enroute_available=true
-expect.enroute_callsigns=FTW_CTR
-expect.arrival_local_available=false
-expect.arrival_local_callsigns=<none>
 expect.resolved_waypoints=ACFT,FUZ,BATIK,SPS,LAA,HGO,QUAIL,FQF,OCS,PIH,DNJ,BEAMO,PDT,BRUKK,YKM,RADDY,SEA,ROSLN,DISCO,VIXOR,ARRUE,ROYST,YZT,YZP,JOWEN,LOHNE,ARCAL,59N60,OGGOE,NANDY,NATES,NIKLL,NYMPH,NUZAN,NRKEY,NIPPI,SUBEK,TOZAR,PTR,UREBI,ODERI,UBRAS,TBE,GINGA,TB30B,RUGMO,MKE,HWE,TAPPI,SKIPE,GNITS,SEPCO,KAMSA,ANDOL,SABET,TENAS,BUSKO,UGOVI,LESBU,KAE,BIKSI,TORUS,KARBU,EGOBA,RKSM
 expect.unsupported_tokens=<none>
 expect.unresolved_tokens=<none>

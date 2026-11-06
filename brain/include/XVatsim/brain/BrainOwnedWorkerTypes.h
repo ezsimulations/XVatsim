@@ -127,12 +127,11 @@ struct BrainAuthorityRelevancePreviewSummary {
     std::string authority = "preview-only";
     int sourceControllerCount = 0;
     int evidenceControllerCount = 0;
-    int compatibilityRelevantAuthorityCount = 0;
+    int relevantAuthorityCount = 0;
     int previewSurvivorCount = 0;
     int previewRejectedCount = 0;
     int oldSurvivorMismatchCount = 0;
     int droppedBeforeBrainControllers = 0;
-    bool relevantAuthoritiesCompatibilityOnly = false;
     bool liveRelevantAuthoritiesBrainOwned = false;
 };
 
@@ -145,10 +144,14 @@ BrainAuthorityRelevanceDecisionPreview
 BuildBrainAuthorityRelevanceDecisionPreview(
     const AuthorityRelevanceSnapshot& authorityRelevance);
 
-// Brain-owned live projection for route_sector authority relevance evidence.
-// route_sector compatibility survivors remain available for comparison when
-// evidence exists, but migrated live consumers must use relevantAuthorities
-// after this projection.
+// Applies the one Brain-owned global conflict policy to a complete mechanical
+// controller-to-polygon fact map. Workers may query the returned map, but may
+// not independently suppress or promote assignments.
+LiveAuthorityMapSnapshot BuildBrainOwnedLiveAuthorityMapSnapshot(
+    LiveAuthorityMapSnapshot liveMap,
+    std::vector<std::string>* decisionDiagnostics = nullptr);
+
+// Brain-owned live projection from canonical controller-to-polygon assignments.
 AuthorityRelevanceSnapshot BuildBrainOwnedAuthorityRelevanceSnapshot(
     AuthorityRelevanceSnapshot authorityRelevance,
     const BrainAuthorityRelevanceDecisionPreview& preview);
@@ -297,15 +300,6 @@ std::uint64_t HashBrainAuthorityControllerEvidenceFromContentDigest(
 std::uint64_t HashBrainTransceiverEvidence(
     const TransceiverResolutionSnapshot& snapshot);
 
-AuthorityTransceiverEvidenceSnapshot BuildBrainAuthorityTransceiverEvidence(
-    const TransceiverResolutionSnapshot& snapshot);
-
-std::uint64_t HashBrainAuthorityTransceiverEvidence(
-    const AuthorityTransceiverEvidenceSnapshot& snapshot);
-
-TransceiverResolutionSnapshot ExpandBrainAuthorityTransceiverEvidence(
-    const AuthorityTransceiverEvidenceSnapshot& snapshot);
-
 std::uint64_t HashBrainAuthorityRelevanceSnapshot(
     const AuthorityRelevanceSnapshot& snapshot);
 
@@ -315,7 +309,7 @@ struct BrainAuthorityCompletionIdentity {
     std::string planKey;
     std::uint64_t routeDigest = 0;
     std::uint64_t controllerDigest = 0;
-    std::uint64_t transceiverDigest = 0;
+    std::uint64_t dynamicOwnershipDigest = 0;
     std::uint64_t datasetIdentity = 0;
 };
 
@@ -328,6 +322,9 @@ struct BrainAuthorityCompletionValidationInput {
     long long completedMonotonicMs = 0;
     long long maximumAgeMs = 5000;
     double maximumDisplacementNm = 25.0;
+    bool controllerFeedAvailable = true;
+    bool controllerFeedStale = false;
+    bool controllerFeedComplete = true;
 };
 
 struct BrainAuthorityCompletionDecision {
@@ -342,16 +339,17 @@ BrainAuthorityCompletionDecision DecideBrainAuthorityCompletion(
     const BrainAuthorityCompletionValidationInput& input);
 
 // The Brain may continue using its last completed authority proof while newer
-// controller and transceiver evidence is being verified only when every
-// structural input to that proof is unchanged and both current evidence feeds
-// are healthy. The new worker completion must still match both evidence
-// digests exactly before publication. This keeps broad evidence churn from
-// erasing a proven route-scoped decision during the short verification window.
+// same-flight evidence is being verified when the controller feed is healthy
+// and the lifecycle, plan, and immutable authority dataset are unchanged. The
+// new worker completion must still match every evidence digest exactly before
+// publication. Route, roster, and dynamic-ownership refreshes therefore replace
+// the last proven snapshot atomically instead of publishing an unavailable gap.
 struct BrainAuthorityPublicationContinuityDecision {
     bool mayReuseLastAccepted = false;
     bool evidenceRefreshPending = false;
     bool controllerRefreshPending = false;
-    bool transceiverRefreshPending = false;
+    bool routeRefreshPending = false;
+    bool dynamicOwnershipRefreshPending = false;
     std::string reason;
 };
 
@@ -361,8 +359,6 @@ struct BrainAuthorityPublicationContinuityInput {
     bool controllerFeedAvailable = false;
     bool controllerFeedStale = true;
     bool controllerFeedComplete = false;
-    bool transceiverEvidenceAvailable = false;
-    bool transceiverEvidenceStale = true;
 };
 
 BrainAuthorityPublicationContinuityDecision
@@ -427,16 +423,12 @@ struct BrainControllerRelevanceWorkerInput {
     bool hasArrivalCoordinates = false;
     double arrivalLatitudeDeg = 0.0;
     double arrivalLongitudeDeg = 0.0;
-    bool terminalRelevanceV2Enabled = false;
-    bool vnasSectorPrecedenceEnabled = false;
     double terminalTransmitterRadiusNm = 5.0;
     std::uint64_t terminalRelevancePolicyHash = 0;
-    std::uint64_t vnasTerminalEvidenceHash = 0;
-    std::shared_ptr<const VnasTerminalEvidenceSnapshot> vnasTerminalEvidence;
-    std::uint64_t departureTerminalAuthorityHash = 0;
-    BrainTerminalAuthorityWorkerOutput departureTerminalAuthority;
-    std::uint64_t arrivalTerminalAuthorityHash = 0;
-    BrainTerminalAuthorityWorkerOutput arrivalTerminalAuthority;
+    std::uint64_t departureEndpointPolygonHash = 0;
+    BrainEndpointPolygonQueryOutput departureEndpointPolygons;
+    std::uint64_t arrivalEndpointPolygonHash = 0;
+    BrainEndpointPolygonQueryOutput arrivalEndpointPolygons;
     std::uint64_t airportFrequencyHash = 0;
     BrainAirportFrequencyWorkerOutput airportFrequencies;
     std::uint64_t authorityRelevanceHash = 0;
@@ -464,11 +456,7 @@ struct BrainOwnedControllerRelevanceInputRequest {
     bool hasArrivalCoordinates = false;
     double arrivalLatitudeDeg = 0.0;
     double arrivalLongitudeDeg = 0.0;
-    bool terminalRelevanceV2Enabled = false;
-    bool vnasSectorPrecedenceEnabled = false;
     double terminalTransmitterRadiusNm = 5.0;
-    std::uint64_t vnasTerminalEvidenceHash = 0;
-    std::shared_ptr<const VnasTerminalEvidenceSnapshot> vnasTerminalEvidence;
     std::uint64_t authorityRelevanceHash = 0;
     std::shared_ptr<const AuthorityRelevanceSnapshot> authorityRelevance;
     RadioStateSnapshot radios;

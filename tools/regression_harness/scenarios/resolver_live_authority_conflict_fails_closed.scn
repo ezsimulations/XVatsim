@@ -1,0 +1,40 @@
+name=Resolver Live Authority Conflict Fails Closed
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.0
+plan.destination_lon=5.0
+plan.has_destination_coordinates=true
+
+controller.entry=callsign=ONE_CTR;frequency=120.000;facility=6;actionable=true;atis=false
+controller.entry=callsign=TWO_CTR;frequency=121.000;facility=6;actionable=true;atis=false
+
+resolver.route_resolve=true
+resolver.center_feature=label=TEST;tokens=TEST;polygon=-1,-1|-1,6|1,6|1,-1
+resolver.authority_catalog_fir=TEST|Test Center||NO_MATCH
+resolver.ownership_json={"positions":[{"id":"ONE_CTR","polygon_key":"TEST","kind":"center","callsign_patterns":["ONE_CTR"]},{"id":"TWO_CTR","polygon_key":"TEST","kind":"center","callsign_patterns":["TWO_CTR"]}]}
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_relevant_matches=<none>
+expect.resolver_authority_diagnostics=conflict:VATSPY_BOUNDARY:TEST:controllers=2
+expect.resolver_live_authority_map_status=LIVE_AUTHORITY_MAP definitions=1 assignments=2 conflicts=1 unmapped=0
+expect.resolver_live_authority_map_generation_coherent=true
+expect.resolver_live_authority_assignments=ONE_CTR:state=conflict:position=VATGLASSES:ONE_CTR:polygon=VATSPY_BOUNDARY:TEST:key=TEST:frequency=120.000:aircraft=0:route=0:entry=0,TWO_CTR:state=conflict:position=VATGLASSES:TWO_CTR:polygon=VATSPY_BOUNDARY:TEST:key=TEST:frequency=121.000:aircraft=0:route=0:entry=0
+expect.resolver_live_authority_conflicts=VATSPY_BOUNDARY:TEST
+expect.resolver_live_authority_unmapped=<none>
+expect.resolver_authority_diagnostic_geojson_contains="state":"CONFLICT"
+expect.resolver_authority_diagnostic_geojson_contains="conflictedPolygonIds":["VATSPY_BOUNDARY:TEST"]

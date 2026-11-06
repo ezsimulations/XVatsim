@@ -38,9 +38,7 @@ expect.resolver_route_resolved=true
 expect.resolver_route_authority_gaps=current:PAZA
 expect.resolver_route_current_sectors=PAZA
 expect.resolver_authority_relevance_available=true
-expect.resolver_authority_status=AUTHORITY candidates=1 authorities=1 polygons=1 routeKeys=1 active=1 relevant=1 diagnostics=0 activationGaps=0
-expect.resolver_authority_diagnostics=<none>
-expect.resolver_authority_relevant_matches=ANC_06_CTR:TRANSCEIVER:ANC_06_CTR:VATSPY_BOUNDARY:PAZA:aircraft=1:route=1:entry=0
-expect.resolver_authority_proof_sources=ANC_06_CTR:TRANSCEIVER_GEO_ROUTE
-expect.resolver_enroute_available=true
-expect.resolver_enroute_callsigns=ANC_06_CTR
+expect.resolver_authority_status=AUTHORITY candidates=1 authorities=2 polygons=2 routeKeys=1 active=1 relevant=0 diagnostics=1 activationGaps=0
+expect.resolver_authority_diagnostics=ANC_06_CTR:active-not-relevant:VATSPY_FIR:PAZA-D:VATSPY_BOUNDARY:PAZA-D:center
+expect.resolver_authority_relevant_matches=<none>
+expect.resolver_authority_proof_sources=<none>

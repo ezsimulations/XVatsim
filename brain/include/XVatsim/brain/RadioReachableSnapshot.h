@@ -9,7 +9,7 @@
 
 namespace xvatsim::brain {
 
-struct BrainTerminalAuthorityWorkerOutput;
+struct BrainEndpointPolygonQueryOutput;
 
 enum class RadioReachableFacilityGroup {
     Delivery,
@@ -127,13 +127,6 @@ struct RadioReachablePhaseGateOptions {
     std::string reason;
 };
 
-struct BrainEndpointTerminalEvidenceScope {
-    std::string airportIcao;
-    bool hasAirportCoordinates = false;
-    double airportLatitudeDeg = 0.0;
-    double airportLongitudeDeg = 0.0;
-};
-
 struct RadioReachableCandidateDiff {
     bool available = false;
     bool stale = true;
@@ -156,6 +149,10 @@ struct RadioReachableCandidateDiff {
 struct RadioReachableVerificationFeed {
     bool available = false;
     bool stale = true;
+    // True only when controllers contains the complete current radio board.
+    // A delta feed is useful mechanical work, but it may never claim roster
+    // completeness or prove removals to the authority engine.
+    bool fullBoardSnapshot = false;
     std::uint64_t generation = 0;
     int inputCandidates = 0;
     int selectedControllers = 0;
@@ -166,8 +163,13 @@ struct RadioReachableVerificationFeed {
         ControllerFeedSnapshot snapshot;
         snapshot.available = available;
         snapshot.stale = stale;
+        snapshot.controllerComponentPresent = available;
+        snapshot.controllerComponentComplete =
+            available && !stale && fullBoardSnapshot;
+        snapshot.controllerComponentTruncated = false;
         snapshot.generation = generation;
         snapshot.connectedControllers = selectedControllers;
+        snapshot.retainedControllerRecords = selectedControllers;
         snapshot.statusLine = statusLine;
         if (snapshot.available && !snapshot.stale) {
             snapshot.controllers = &controllers;
@@ -191,21 +193,6 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshotFromTransc
     const ControllerFeedSnapshot& controllerFeedSnapshot,
     const RadioReachableBuildOptions& options);
 
-// The Brain may add APP/DEP facts that are outside current aircraft reception
-// only when source evidence ties the position to the departure or arrival
-// terminal package. The global VATSIM/AFV roster remains source evidence; it
-// never becomes the detailed candidate list by itself.
-RadioReachableControllerSnapshot
-BuildBrainEndpointScopedControllerSnapshot(
-    const RadioReachableControllerSnapshot& snapshot,
-    const TransceiverResolutionSnapshot& transceiverSnapshot,
-    const BrainTerminalAuthorityWorkerOutput& departureAuthority,
-    const BrainTerminalAuthorityWorkerOutput& arrivalAuthority,
-    const RouteSectorSnapshot* route,
-    const BrainEndpointTerminalEvidenceScope& departureScope,
-    const BrainEndpointTerminalEvidenceScope& arrivalScope,
-    double terminalTransmitterRadiusNm);
-
 // Stable identity of the controller facts that can affect a Brain decision.
 // It excludes worldwide roster counters, fetch generations, and moving
 // aircraft-to-transmitter distances so those transport details cannot make a
@@ -228,6 +215,13 @@ RadioReachableCandidateDiff DiffRadioReachableSnapshots(
 RadioReachableVerificationFeed BuildRadioReachableVerificationFeed(
     const RadioReachableControllerSnapshot& gatedSnapshot,
     const RadioReachableCandidateDiff* diff = nullptr);
+
+// Retains source-owned vNAS facts only for controllers admitted by the current
+// complete radio board. Global acquisition may continue independently, but
+// unrelated world changes cannot enter the ordinary authority identity.
+VnasLiveOwnershipSnapshot BuildRadioScopedVnasLiveOwnershipSnapshot(
+    const VnasLiveOwnershipSnapshot& source,
+    const RadioReachableControllerSnapshot& radioBoard);
 
 std::vector<std::string> RadioReachableCandidateSummaries(
     const RadioReachableControllerSnapshot& snapshot);

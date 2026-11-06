@@ -33,10 +33,8 @@ expect.resolver_route_resolved=true
 expect.resolver_route_authority_gaps=<none>
 expect.resolver_route_current_sectors=SPEC2
 expect.resolver_authority_relevance_available=true
-expect.resolver_authority_status=AUTHORITY candidates=1 authorities=2 polygons=2 routeKeys=1 active=1 relevant=1 diagnostics=0 activationGaps=0
+expect.resolver_authority_status=AUTHORITY candidates=1 authorities=3 polygons=3 routeKeys=1 active=1 relevant=1 diagnostics=0 activationGaps=0
 expect.resolver_authority_diagnostics=<none>
 expect.resolver_authority_relevant_matches=BNE_E_CTR:SPECIAL_SECTOR_DATA:BNE1:SPECIAL_SECTOR_DATA:BNE-AIRSPACE_0:aircraft=1:route=1:entry=0
 expect.resolver_authority_proof_sources=BNE_E_CTR:SPECIAL_SECTOR_DATA
 expect.resolver_authority_proof_detail_contains=BNE_E_CTR:authoritySource=SPECIAL_SECTOR_DATA,proofItems=callsign-pattern>facility-type>published-frequency>FREQUENCY_OWNED_MATCH,routeRelevance=aircraft-inside+route-intersects
-expect.resolver_enroute_available=true
-expect.resolver_enroute_callsigns=BNE_E_CTR

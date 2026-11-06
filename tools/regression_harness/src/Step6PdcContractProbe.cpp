@@ -24,7 +24,11 @@ using namespace brain;
 using namespace modules::overlay;
 using namespace modules::xpilot_bridge;
 
-std::string ExactXPilotFixturePath() {
+constexpr std::uint64_t kInstalledXPilot4Beta9PluginSize = 2'257'072;
+constexpr char kInstalledXPilot4Beta9PluginSha256[] =
+    "DEA6B12F64C0E35F9E61398B9AA659C3A8896886B4890D4EC89C50ACD6CD22A2";
+
+std::string InstalledXPilotPluginPath() {
     const auto* overridePath =
         std::getenv("XVATSIM_XPILOT_TEST_PLUGIN_PATH");
     if (overridePath != nullptr && *overridePath != '\0') {
@@ -631,13 +635,21 @@ bool QualificationProbe(int index, std::string* reason) {
         }
         case 55: {
             const auto inspected = InspectXPilotPrivatePluginFile(
-                ExactXPilotFixturePath(), "");
+                InstalledXPilotPluginPath(), "");
+            const auto qualification =
+                EvaluateXPilotPrivateQualification(primitives, inspected);
             return Check(inspected.pathPresent && inspected.canonicalizationSucceeded &&
                 inspected.fileReadable && inspected.regularFile &&
-                inspected.actualSize == 4'990'976 && inspected.hashAttempts == 1 &&
-                inspected.sha256 ==
-                    "56AEC8CADC0CB36AAF36DC122C330FB782C76FC80190391B8D4A1F717602A8AF",
-                "absolute plugin path did not qualify exact target once", reason);
+                inspected.actualSize == kInstalledXPilot4Beta9PluginSize &&
+                inspected.hashAttempts == 1 &&
+                inspected.sha256 == kInstalledXPilot4Beta9PluginSha256 &&
+                !qualification.source.binaryFingerprintQualified &&
+                (qualification.sourceFatalIssueMask & XPilotPrivateIssueBit(
+                    XPilotPrivateMechanicalIssue::BinarySizeMismatch)) != 0 &&
+                (qualification.sourceFatalIssueMask & XPilotPrivateIssueBit(
+                    XPilotPrivateMechanicalIssue::BinaryFingerprintMismatch)) != 0,
+                "installed xPilot 4 beta 9 did not remain isolated from the legacy xPilot 3 private gate",
+                reason);
         }
         case 56: {
             const auto absolute = InspectXPilotPrivatePluginFile(

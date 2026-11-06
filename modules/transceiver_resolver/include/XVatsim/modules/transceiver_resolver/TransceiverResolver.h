@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -17,6 +18,11 @@ struct CachedTransceiver {
     double latitudeDeg = 0.0;
     double longitudeDeg = 0.0;
     double heightAglFt = 0.0;
+};
+
+struct TransceiverSourceIdentity {
+    std::uint64_t generation = 0;
+    std::uint64_t contentDigest = 0;
 };
 
 class TransceiverResolver {
@@ -42,6 +48,7 @@ public:
         std::vector<CachedTransceiver> transceivers,
         long long successfulFetchAgeSeconds,
         bool lastFetchSucceeded);
+    TransceiverSourceIdentity SourceIdentity() const noexcept;
 
 private:
     bool RefreshFeedIfNeeded();
@@ -89,6 +96,8 @@ private:
     std::atomic<bool> fetchInProgress_{false};
     std::mutex fetchMutex_{};
     std::thread fetchThread_{};
+    std::uint64_t sourceGeneration_ = 0;
+    std::uint64_t sourceContentDigest_ = 0;
 };
 
 }  // namespace xvatsim::modules::transceiver_resolver

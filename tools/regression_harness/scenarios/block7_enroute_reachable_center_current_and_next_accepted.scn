@@ -28,6 +28,4 @@ authority_polygon.vatspy=key=BBB;name=Bravo Center;tokens=BBB;polygon=-1,10|-1,2
 controller.entry=callsign=AAA_CTR;frequency=125.100;facility=6;actionable=true;atis=false
 controller.entry=callsign=BBB_CTR;frequency=126.100;facility=6;actionable=true;atis=false
 
-expect.enroute_available=true
-expect.enroute_callsigns=AAA_CTR,BBB_CTR
 expect.authority_relevant_polygon_matches=AAA_CTR:VATSPY_FIR:AAA:VATSPY_BOUNDARY:AAA:aircraft=1:route=1:entry=0,BBB_CTR:VATSPY_FIR:BBB:VATSPY_BOUNDARY:BBB:aircraft=0:route=1:entry=600

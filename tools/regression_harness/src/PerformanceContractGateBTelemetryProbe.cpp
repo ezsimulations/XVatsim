@@ -7,7 +7,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -16,6 +18,9 @@
 #include <vector>
 
 #include "XVatsim/modules/runtime_workers/AsyncDiagnosticsWriter.h"
+#include "XVatsim/brain/BrainOwnedRuntime.h"
+#include "XVatsim/modules/transceiver_resolver/RadioBoardFactWorker.h"
+#include "XVatsim/modules/transceiver_resolver/TransceiverResolver.h"
 
 namespace xvatsim::tools::performance_contract_gate_b_telemetry {
 namespace {
@@ -62,6 +67,73 @@ std::string ReadAllLogs(const std::filesystem::path& root) {
         content << input.rdbuf();
     }
     return content.str();
+}
+
+std::string FieldValue(const std::string& line, std::string_view key) {
+    const auto marker = std::string{key} + "=";
+    const auto start = line.find(marker);
+    if (start == std::string::npos) {
+        return {};
+    }
+    const auto valueStart = start + marker.size();
+    const auto end = line.find(' ', valueStart);
+    return line.substr(valueStart, end - valueStart);
+}
+
+std::string DecodeBase64(std::string_view encoded) {
+    constexpr std::string_view alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string decoded;
+    decoded.reserve((encoded.size() / 4) * 3);
+    std::uint32_t accumulator = 0;
+    int bits = 0;
+    for (const auto character : encoded) {
+        if (character == '=') {
+            break;
+        }
+        const auto value = alphabet.find(character);
+        if (value == std::string_view::npos) {
+            return {};
+        }
+        accumulator = (accumulator << 6U) |
+            static_cast<std::uint32_t>(value);
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            decoded.push_back(static_cast<char>(
+                (accumulator >> static_cast<unsigned int>(bits)) & 0xffU));
+        }
+    }
+    return decoded;
+}
+
+std::uint64_t LogicalRecordDigest(std::string_view value) {
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (const auto character : value) {
+        hash ^= static_cast<std::uint64_t>(
+            static_cast<unsigned char>(character));
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+std::string HexDigest(std::uint64_t value) {
+    std::ostringstream stream;
+    stream << std::hex << std::setw(16) << std::setfill('0') << value;
+    return stream.str();
+}
+
+std::string MakeIntegrityRecord(std::size_t bytes) {
+    std::string record =
+        "event=diagnostic-integrity-" + std::to_string(bytes) +
+        " quoted=\"yes\" slash=\\ utf8=\xCF\x80\xF0\x9F\x9A\x80"
+        " embedded=event=faux newline=\nnext=";
+    if (record.size() < bytes) {
+        record.resize(bytes, 'x');
+    } else if (record.size() > bytes) {
+        record.resize(bytes);
+    }
+    return record;
 }
 
 std::vector<std::uint64_t> RouteEvidenceSequences(
@@ -158,6 +230,316 @@ int RunPerformanceContractGateBTelemetryProbe() {
     {
         AsyncDiagnosticsWriter writer;
         DiagnosticsWriterOptions options;
+        options.logDirectory = probeRoot / "physical-line-integrity";
+        options.routineQueueCapacity = 16;
+        options.criticalQueueCapacity = 4;
+        options.flightLoopTimingQueueCapacity = 4;
+        options.routeEvidenceQueueCapacity = 4;
+        require(writer.Start(options), "physical-line writer failed to start");
+
+        const std::array<std::size_t, 5> recordSizes{
+            4095, 4096, 4097, 8347, 65536};
+        std::vector<std::string> expectedRecords;
+        for (const auto size : recordSizes) {
+            expectedRecords.push_back(MakeIntegrityRecord(size));
+            require(
+                writer.TryEnqueueLine(expectedRecords.back()),
+                "physical-line test record was not accepted");
+        }
+        require(
+            writer.WaitUntilIdle(std::chrono::seconds(10)),
+            "physical-line test records did not drain");
+        const auto snapshot = writer.Snapshot();
+        require(
+            snapshot.written == expectedRecords.size() &&
+                snapshot.splitLogicalRecords == expectedRecords.size() &&
+                snapshot.maximumLogicalRecordBytes == recordSizes.back() &&
+                snapshot.maximumPhysicalLineBytes <=
+                    options.maximumPhysicalLineBytes &&
+                snapshot.formattingFailures == 0,
+            "writer physical-line accounting was not exact");
+        writer.Stop();
+
+        const auto logs = ReadAllLogs(options.logDirectory);
+        struct Reassembly {
+            std::size_t originalBytes = 0;
+            std::size_t partCount = 0;
+            std::string digest;
+            std::map<std::size_t, std::string> parts;
+        };
+        std::map<std::uint64_t, Reassembly> reassembly;
+        std::istringstream lines(logs);
+        std::string line;
+        std::size_t physicalLines = 0;
+        while (std::getline(lines, line)) {
+            ++physicalLines;
+            require(
+                line.size() + 1 <= options.maximumPhysicalLineBytes,
+                "writer emitted a physical line beyond 4096 bytes");
+            if (line.find("event=diagnostic-record-oversize ") !=
+                std::string::npos) {
+                const auto sequence = FieldValue(line, "recordSequence");
+                const auto bytes = FieldValue(line, "originalBytes");
+                const auto count = FieldValue(line, "partCount");
+                require(
+                    !sequence.empty() && !bytes.empty() && !count.empty(),
+                    "oversize header omitted reassembly identity");
+                if (!sequence.empty() && !bytes.empty() && !count.empty()) {
+                    auto& group = reassembly[std::stoull(sequence)];
+                    group.originalBytes = std::stoull(bytes);
+                    group.partCount = std::stoull(count);
+                    group.digest = FieldValue(line, "digest");
+                }
+            } else if (line.find("event=diagnostic-record-part ") !=
+                       std::string::npos) {
+                const auto sequence = FieldValue(line, "recordSequence");
+                const auto part = FieldValue(line, "part");
+                const auto payload = FieldValue(line, "payload");
+                require(
+                    !sequence.empty() && !part.empty() && !payload.empty(),
+                    "oversize part omitted reassembly data");
+                if (!sequence.empty() && !part.empty() && !payload.empty()) {
+                    reassembly[std::stoull(sequence)].parts[std::stoull(part)] =
+                        DecodeBase64(payload);
+                }
+            }
+        }
+        require(
+            reassembly.size() == expectedRecords.size(),
+            "oversize record header count differed");
+        require(
+            physicalLines == snapshot.writtenPhysicalLines,
+            "physical-line counter differed from persisted lines");
+        for (std::size_t index = 0; index < expectedRecords.size(); ++index) {
+            const auto sequence = static_cast<std::uint64_t>(index + 1);
+            const auto found = reassembly.find(sequence);
+            require(found != reassembly.end(), "oversize sequence was missing");
+            if (found == reassembly.end()) {
+                continue;
+            }
+            std::string reconstructed;
+            for (std::size_t part = 1; part <= found->second.partCount; ++part) {
+                const auto payload = found->second.parts.find(part);
+                require(
+                    payload != found->second.parts.end(),
+                    "oversize payload part was missing");
+                if (payload != found->second.parts.end()) {
+                    reconstructed += payload->second;
+                }
+            }
+            require(
+                reconstructed == expectedRecords[index] &&
+                    found->second.originalBytes == expectedRecords[index].size() &&
+                    found->second.digest ==
+                        HexDigest(LogicalRecordDigest(expectedRecords[index])),
+                "oversize record did not reconstruct byte-for-byte");
+        }
+    }
+
+    {
+        brain::BrainOwnedRadioBoardWorkerCompletionInput input;
+        input.completed = true;
+        input.resultComplete = true;
+        input.currentLifecycleEpoch = 7;
+        input.completedLifecycleEpoch = 7;
+        input.currentControllerGeneration = 11;
+        input.completedControllerGeneration = 11;
+        input.currentControllerContentDigest = 101;
+        input.completedControllerContentDigest = 101;
+        input.currentSourceGeneration = 3;
+        input.completedSourceGeneration = 3;
+        input.currentSourceContentDigest = 303;
+        input.completedSourceContentDigest = 303;
+        input.currentMonotonicMs = 10'500;
+        input.completedMonotonicMs = 10'000;
+        input.currentAircraft.valid = true;
+        input.currentAircraft.latitudeDeg = 33.0;
+        input.currentAircraft.longitudeDeg = -117.0;
+        input.currentAircraft.altitudeAglFt = 20'000.0;
+        input.completedAircraft = input.currentAircraft;
+        require(
+            brain::DecideBrainOwnedRadioBoardWorkerCompletion(input).accepted,
+            "exact radio-board worker completion was not accepted");
+
+        const auto rejectedAs = [&](auto mutate, std::string_view reason) {
+            auto changed = input;
+            mutate(&changed);
+            const auto decision =
+                brain::DecideBrainOwnedRadioBoardWorkerCompletion(changed);
+            require(
+                !decision.accepted && decision.reason == reason,
+                "radio-board worker stale identity was not rejected as " +
+                    std::string{reason});
+        };
+        rejectedAs(
+            [](auto* value) { ++value->completedLifecycleEpoch; },
+            "lifecycle-epoch-mismatch");
+        rejectedAs(
+            [](auto* value) { ++value->completedControllerGeneration; },
+            "controller-generation-mismatch");
+        rejectedAs(
+            [](auto* value) { ++value->completedControllerContentDigest; },
+            "controller-digest-mismatch");
+        rejectedAs(
+            [](auto* value) { ++value->completedSourceGeneration; },
+            "transceiver-source-generation-mismatch");
+        rejectedAs(
+            [](auto* value) { ++value->completedSourceContentDigest; },
+            "transceiver-source-digest-mismatch");
+        rejectedAs(
+            [](auto* value) { value->completedMonotonicMs = 9'000; },
+            "completion-age-exceeded");
+        rejectedAs(
+            [](auto* value) {
+                value->completedAircraft.latitudeDeg += 0.01;
+            },
+            "aircraft-displacement-exceeded");
+        rejectedAs(
+            [](auto* value) {
+                value->completedAircraft.altitudeAglFt -= 501.0;
+            },
+            "aircraft-altitude-delta-exceeded");
+    }
+
+    {
+        using modules::transceiver_resolver::CachedTransceiver;
+        std::vector<brain::ControllerSnapshot> controllers;
+        controllers.reserve(1'000);
+        std::vector<CachedTransceiver> transceivers;
+        transceivers.reserve(50'000);
+        for (std::size_t controllerIndex = 0;
+             controllerIndex < 1'000;
+             ++controllerIndex) {
+            std::ostringstream frequency;
+            frequency << 118 + (controllerIndex % 18) << "."
+                      << std::setw(3) << std::setfill('0')
+                      << ((controllerIndex * 5) % 1'000);
+            brain::ControllerSnapshot controller;
+            controller.callsign =
+                "STRESS_" + std::to_string(controllerIndex) + "_CTR";
+            controller.frequency = frequency.str();
+            controller.facility = 6;
+            controller.visualRangeNm = 300;
+            controllers.push_back(controller);
+            for (std::size_t station = 0; station < 50; ++station) {
+                CachedTransceiver transceiver;
+                transceiver.callsign = controller.callsign;
+                transceiver.frequency = controller.frequency;
+                transceiver.latitudeDeg =
+                    33.0 + static_cast<double>(station % 10) * 0.001;
+                transceiver.longitudeDeg =
+                    -117.0 + static_cast<double>(station / 10) * 0.001;
+                transceiver.heightAglFt = 100.0;
+                transceivers.push_back(std::move(transceiver));
+            }
+        }
+        auto ownedControllers =
+            std::make_shared<const std::vector<brain::ControllerSnapshot>>(
+                std::move(controllers));
+        brain::ControllerFeedSnapshot controllerFeed;
+        controllerFeed.available = true;
+        controllerFeed.stale = false;
+        controllerFeed.controllerComponentPresent = true;
+        controllerFeed.controllerComponentComplete = true;
+        controllerFeed.connectedControllers = 1'000;
+        controllerFeed.retainedControllerRecords = 1'000;
+        controllerFeed.ownedControllers = ownedControllers;
+        controllerFeed.controllers = ownedControllers.get();
+        brain::AircraftStateSnapshot aircraft;
+        aircraft.valid = true;
+        aircraft.latitudeDeg = 33.0;
+        aircraft.longitudeDeg = -117.0;
+        aircraft.altitudeAglFt = 20'000.0;
+
+        brain::TransceiverResolutionSnapshot resolved;
+        modules::transceiver_resolver::TransceiverSourceIdentity sourceIdentity;
+        std::uint64_t sourceThreadIdentity = 0;
+        const auto callerIdentity = static_cast<std::uint64_t>(
+            std::hash<std::thread::id>{}(std::this_thread::get_id()));
+        std::thread sourceWorker([
+            &resolved,
+            &sourceIdentity,
+            &sourceThreadIdentity,
+            aircraft,
+            controllerFeed,
+            transceivers = std::move(transceivers)]() mutable {
+            sourceThreadIdentity = static_cast<std::uint64_t>(
+                std::hash<std::thread::id>{}(std::this_thread::get_id()));
+            modules::transceiver_resolver::TransceiverResolver resolver;
+            resolver.SeedFeedCacheForTesting(
+                std::move(transceivers), 0, true);
+            resolved = resolver.Resolve(aircraft, controllerFeed);
+            sourceIdentity = resolver.SourceIdentity();
+        });
+        sourceWorker.join();
+        require(
+            sourceThreadIdentity != 0 && sourceThreadIdentity != callerIdentity &&
+                sourceIdentity.generation == 1 &&
+                sourceIdentity.contentDigest != 0 &&
+                resolved.sourceEvidence.cachedTransceiverCount == 50'000 &&
+                resolved.controllerEvidence.size() == 1'000,
+            "50k/1k transceiver source preparation did not execute completely "
+            "off the simulator thread");
+    }
+
+    {
+        using modules::transceiver_resolver::RadioBoardFact;
+        using modules::transceiver_resolver::RadioBoardFactRequest;
+        using modules::transceiver_resolver::RadioBoardFactWorker;
+        RadioBoardFactWorker worker;
+        require(worker.Start(), "radio-board stress worker failed to start");
+        const auto callerIdentity = static_cast<std::uint64_t>(
+            std::hash<std::thread::id>{}(std::this_thread::get_id()));
+        for (std::uint64_t requestId = 1; requestId <= 10'000; ++requestId) {
+            RadioBoardFactRequest request;
+            request.identity.requestId = requestId;
+            request.identity.lifecycleEpoch = 9;
+            request.identity.controllerGeneration = requestId;
+            request.identity.controllerContentDigest = requestId * 17;
+            request.identity.aircraftValid = true;
+            request.identity.aircraftLatitudeDeg =
+                33.0 + static_cast<double>(requestId % 100) * 0.00001;
+            request.identity.aircraftLongitudeDeg = -117.0;
+            request.identity.aircraftAltitudeAglFt = 20'000.0;
+            request.input.aircraft.valid = true;
+            request.input.aircraft.latitudeDeg =
+                request.identity.aircraftLatitudeDeg;
+            request.input.aircraft.longitudeDeg = -117.0;
+            request.input.aircraft.altitudeAglFt = 20'000.0;
+            require(
+                worker.StartLatest(std::move(request)),
+                "radio-board stress request was not accepted");
+        }
+
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (std::chrono::steady_clock::now() < deadline &&
+               worker.HasWork()) {
+            RadioBoardFact fact;
+            if (!worker.TryHarvest(&fact)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+        require(!worker.HasWork(), "radio-board stress worker did not drain");
+        worker.Stop();
+        const auto stopped = worker.Snapshot();
+        require(
+            !stopped.started && !stopped.running && !stopped.pending &&
+                !stopped.ready && stopped.submissions == 10'000 &&
+                stopped.replacements > 0 &&
+                stopped.maximumPendingDepth == 1 &&
+                stopped.completions + stopped.failures +
+                        stopped.replacements ==
+                    stopped.submissions &&
+                stopped.harvests == stopped.completions + stopped.failures &&
+                stopped.workerThreadIdentity != 0 &&
+                stopped.workerThreadIdentity != callerIdentity,
+            "radio-board one-running/one-pending stress accounting failed");
+    }
+
+    {
+        AsyncDiagnosticsWriter writer;
+        DiagnosticsWriterOptions options;
         options.logDirectory = probeRoot / "contention-delay-lifecycle";
         options.routineQueueCapacity = 32;
         options.criticalQueueCapacity = 8;
@@ -168,8 +550,6 @@ int RunPerformanceContractGateBTelemetryProbe() {
         options.routeEvidenceQueueCapacity = 99;
         options.artificialWorkerDelayForTesting = std::chrono::seconds(2);
         options.artificialWorkerDelayRecordCountForTesting = 1;
-        options.artificialQueueLockHoldForTesting =
-            std::chrono::milliseconds(100);
         require(writer.Start(options), "telemetry writer failed to start");
         require(
             writer.TryEnqueueLine("event=route-evidence-delay-anchor"),
@@ -178,18 +558,10 @@ int RunPerformanceContractGateBTelemetryProbe() {
             WaitForDequeued(writer, 1, std::chrono::seconds(2)),
             "writer did not enter its forced delay");
 
-        std::atomic<bool> contentionStarted{false};
-        std::thread contender([&]() {
-            contentionStarted.store(true, std::memory_order_release);
-            (void)writer.TryEnqueueLine(
-                "event=route-evidence-routine-contention");
-        });
-        while (!contentionStarted.load(std::memory_order_acquire)) {
-            std::this_thread::yield();
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        (void)writer.TryEnqueueLine(
-            "event=route-evidence-routine-contention-probe");
+        require(
+            writer.TryEnqueueLine(
+                "event=route-evidence-routine-spsc-proof"),
+            "single-producer routine proof record was not accepted");
 
         std::vector<RouteEvidenceRecord> records;
         records.reserve(100);
@@ -268,8 +640,6 @@ int RunPerformanceContractGateBTelemetryProbe() {
                     .count()));
             require(accepted, "route-evidence record was not accepted");
         }
-        contender.join();
-
         producerP99Us = Percentile99(producerSamples);
         producerMaxUs = producerSamples.empty()
             ? 0
@@ -294,8 +664,10 @@ int RunPerformanceContractGateBTelemetryProbe() {
                 snapshot.rejectedRouteEvidenceNotRunning == 0,
             "route-evidence lane lost a record");
         require(
-            snapshot.droppedRoutineContention > 0,
-            "forced routine-writer contention was not observed");
+            snapshot.droppedRoutineContention == 0 &&
+                snapshot.droppedCriticalContention == 0 &&
+                snapshot.droppedContention == 0,
+            "single-producer lanes reported impossible mutex contention");
         require(
             snapshot.lastSubmittedRouteEvidenceSequence == records.size() &&
                 snapshot.lastWrittenRouteEvidenceSequence == records.size(),

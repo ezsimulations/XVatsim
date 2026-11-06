@@ -113,7 +113,7 @@ internal sealed class ManagerProbe
         var xplane = CreateXPlane("xp-compat", hasPlugin: false, hasXPilotPlugin: true);
         var planner = new InstallPlanner(payload, new ReceiptStore(Path.Combine(_root, "compat-state")));
         var v3 = XPilot("3.2.0", XPilotGeneration.Version3);
-        var v4 = XPilot("4.0.0-beta.7+probe", XPilotGeneration.Version4);
+        var v4 = XPilot("4.0.0-beta.9+probe", XPilotGeneration.Version4);
         var futureV4 = XPilot("4.0.0-beta.99", XPilotGeneration.Version4);
         var unknown = XPilot("5.0.0", XPilotGeneration.Unknown);
 

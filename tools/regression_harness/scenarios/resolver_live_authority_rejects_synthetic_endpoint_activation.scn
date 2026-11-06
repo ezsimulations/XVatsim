@@ -1,0 +1,36 @@
+name=Resolver Live Authority Rejects Synthetic Endpoint Activation
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=true
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.0
+plan.destination_lon=5.0
+plan.has_destination_coordinates=true
+
+controller.entry=callsign=AAA_APP;frequency=125.000;facility=5;actionable=true;atis=false
+
+resolver.route_resolve=true
+resolver.center_feature=label=TEST;tokens=TEST;polygon=-1,-1|-1,6|1,6|1,-1
+resolver.authority_catalog_fir=TEST|Test Center|TST|TEST
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_relevant_matches=<none>
+expect.resolver_authority_diagnostics=AAA_APP:unmapped-controller
+expect.resolver_live_authority_map_status=LIVE_AUTHORITY_MAP definitions=1 assignments=0 conflicts=0 unmapped=1
+expect.resolver_live_authority_map_generation_coherent=true
+expect.resolver_live_authority_assignments=<none>
+expect.resolver_live_authority_conflicts=<none>
+expect.resolver_live_authority_unmapped=AAA_APP

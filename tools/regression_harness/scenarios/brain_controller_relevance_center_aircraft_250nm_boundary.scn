@@ -1,4 +1,4 @@
-name=Brain Controller Relevance Center Aircraft 250nm Boundary
+name=Brain Controller Relevance Center Route Relation Ignores Transmitter Distance
 now_seconds=1000
 
 state.flight_active=true
@@ -29,5 +29,5 @@ transceiver.status=RX 2 receivable
 transceiver.candidate=callsign=FTW_50_CTR;frequency=127.650;distanceNm=250;score=100
 transceiver.candidate=callsign=FTW_51_CTR;frequency=135.175;distanceNm=250.1;score=100
 
-expect.brain_controller_relevance_enroute_callsigns=FTW_50_CTR
-expect.brain_controller_relevance_completions_contains=FTW_50_CTR:accepted:center-current-polygon-match,FTW_51_CTR:rejected,brain-ineligible-radio-range
+expect.brain_controller_relevance_enroute_callsigns=FTW_50_CTR,FTW_51_CTR
+expect.brain_controller_relevance_completions_contains=FTW_50_CTR:accepted:center-current-polygon-match,FTW_51_CTR:accepted:center-current-polygon-match

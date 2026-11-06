@@ -224,7 +224,7 @@ hours of wall-clock time.
   an isolated rerun after one contention-sensitive batched run.
 - 887 applicable regression scenarios passed. One machine-locked legacy xPilot
   3.0.2 fingerprint scenario was excluded because this machine currently has
-  the xPilot 4 beta X-Plane plugin (`2,257,072` bytes, SHA-256
+  the xPilot 4.0.0 beta 9 X-Plane plugin (`2,257,072` bytes, SHA-256
   `DEA6B12F64C0E35F9E61398B9AA659C3A8896886B4890D4EC89C50ACD6CD22A2`),
   while that fixture requires the old 3.0.2 binary (`4,990,976` bytes). The
   relative-path canonicalization companion scenario passed.

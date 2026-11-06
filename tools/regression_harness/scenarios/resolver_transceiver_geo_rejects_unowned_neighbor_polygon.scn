@@ -39,8 +39,6 @@ expect.resolver_route_authority_gaps=current:LZBB
 expect.resolver_route_current_sectors=LZBB
 expect.resolver_route_next_sectors=<none>
 expect.resolver_authority_relevance_available=true
-expect.resolver_authority_status=AUTHORITY candidates=0 authorities=1 polygons=1 routeKeys=1 active=0 relevant=0 diagnostics=1 activationGaps=0
-expect.resolver_authority_diagnostics=LKAA_CTR:missing-source-ownership:TRANSCEIVER_GEO_ROUTE:LZBB:source=LKAA
+expect.resolver_authority_status=AUTHORITY candidates=1 authorities=2 polygons=2 routeKeys=1 active=0 relevant=0 diagnostics=1 activationGaps=0
+expect.resolver_authority_diagnostics=LKAA_CTR:unmapped-controller
 expect.resolver_authority_relevant_matches=<none>
-expect.resolver_enroute_available=false
-expect.resolver_enroute_callsigns=<none>

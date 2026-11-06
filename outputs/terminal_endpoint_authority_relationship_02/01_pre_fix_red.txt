@@ -1,0 +1,150 @@
+Scenario: Brain Controller Relevance Departure KNGU Rejects Adjacent PCT APP
+PreflightParseOk: false
+PreflightDeparture: 
+PreflightDestination: 
+PreflightWaypoints:
+PreflightValidationAccepted: false
+PreflightValidationReason: 
+Stage: Departure
+Reason: departure-release-hold
+DepartureLocationConfirmed: false
+RecoveryAccepted: false
+RecoveryStage: None
+RecoveryReason: not-evaluated
+RecoveryUsedPreservedContext: false
+RecoveryUsedFreshNetworkPlan: false
+RecoveryFlightContextActive: false
+DisplaySource: Departure
+DisplayCallsigns:
+BrainDisplayIntentRows:
+BrainDisplayIntentDecisionSummary: accepted=0,decisions=0,displayedFinal=0,hiddenAfterAccept=0,filteredAfterAccept=0,duplicates=0,stageSuppressed=0,missing=0
+BrainDisplayIntentFailSoftSummary: preview=0,keepDisplay=0,keepHide=0,displayWithWarning=0,stageDefer=0,lowerPriorityDisplay=0,hardBlockHide=0,needsMoreEvidence=0,currentHideButFailSoftWouldShowOrWarn=0
+BrainDisplayIntentDecisions:
+BrainDisplayOverlayCapSummary: decisions=0,capLimit=40,candidates=0,visibleAfterCap=0,cappedHidden=0,moreAtc=0,contributes=0,nonCappedHidden=0,duplicates=0,stageDeferred=0,brainOwned=1,behaviorChanged=0
+BrainDisplaySourceLinkSummary: decisions=0,displayLinked=0,displayMissing=0,capLinked=0,capMissing=0,synthetic=0,legacy=0,unknown=0,brainOwned=1,displayBehaviorChanged=0
+BrainDisplayStableKeyAuditSummary: decisions=0,present=0,missing=0,fallback=0,synthetic=0,legacy=0,duplicated=0,changedAcrossReuse=0,unsafeSameKey=0,linkedDisplay=0,linkedCap=0,linkedPhase=0,brainOwned=1,displayBehaviorChanged=0
+BrainDisplaySourceOwnedStableKeySummary: decisions=0,present=0,generatedFallback=0,matches=0,mismatch=0,planAvailable=0,planMissing=0,migrationReady=0,behaviorConsumerEnabled=0,behaviorChanged=0
+BrainDisplayStableKeyConsumerDryRunSummary: decisions=0,sourceOwnedPresent=0,migrationReady=0,dedupeGroupWouldChange=0,duplicateSuppressionWouldChange=0,completionIdentityWouldChange=0,phaseReuseWouldChange=0,rowOrderingWouldChange=0,overlayCapWouldChange=0,moreAtcWouldChange=0,drift=0,safeForOptIn=0,behaviorConsumerEnabled=0,displayBehaviorChanged=0
+BrainDisplayStableKeyConsumerDryRunDecisions:
+BrainDisplayStableKeyShadowSummary: decisions=0,gateEnabled=0,attempted=0,skipped=0,hashMismatch=0,rowOrderingMismatch=0,dedupeMismatch=0,duplicateSuppressionMismatch=0,completionIdentityMismatch=0,phaseReuseMismatch=0,overlayCapMismatch=0,moreAtcMismatch=0,missingPlanBlocked=0,drift=0,safeForFutureLiveOptIn=0,behaviorConsumerEnabled=0,behaviorChanged=0
+BrainDisplayStableKeyShadowDecisions:
+BrainDisplayStableKeyLiveConsumptionReadinessSummary: decisions=0,proposalGateArmed=0,shadowParityClean=0,planContextAvailable=0,missingPlanBlocked=0,driftBlocked=0,shadowNotAttemptedBlocked=0,readinessBlocked=0,readyForFutureLiveConsumption=0,liveBehaviorConsumerEnabled=0,shadowBehaviorConsumerEnabled=0,behaviorChanged=0
+BrainDisplayStableKeyLiveConsumptionReadinessDecisions:
+BrainDisplayStableKeyLiveConsumptionSummary: decisions=0,gateArmed=0,allowed=0,blocked=0,sourceOwnedConsumed=0,generatedFallbackConsumed=0,missingPlanBlocked=0,shadowGateOffBlocked=0,shadowParityNotAttemptedBlocked=0,shadowDriftBlocked=0,hashMismatchBlocked=0,rowOrderingMismatchBlocked=0,dedupeMismatchBlocked=0,duplicateSuppressionMismatchBlocked=0,completionIdentityMismatchBlocked=0,phaseReuseMismatchBlocked=0,overlayCapMismatchBlocked=0,moreAtcMismatchBlocked=0,missingSourceOwnedKeyBlocked=0,migrationNotReadyBlocked=0,defaultModeProtected=0,behaviorChanged=0
+BrainDisplayStableKeyLiveConsumptionDecisions:
+BrainDisplayStableKeyAuditDecisions:
+BrainDisplayUpstreamStableKeySourceAuditSummary: decisions=8,sourceOwned=1,evidenceId=2,decisionId=0,fallback=0,synthetic=1,legacy=1,missing=3,unknown=0,high=1,medium=2,low=2,dedupeRisk=3,reuseRisk=4,behaviorChangeRequired=0,brainOwned=1
+BrainDisplayUpstreamStableKeySourceAuditDecisions: id=upstream-stable-key|0:sourceClass=controller-relevance-completion:producer=BrainControllerRelevanceWorker:displayRows=1:completionRows=1:evidenceRows=1:stableKeyProvided=1:field=sourceEvidenceId:source=evidence-id:fallbackDownstream=0:missingRisk=0:duplicateRisk=0:reuseRisk=0:dedupeRisk=0:owner=BrainControllerRelevanceWorker:shape=radio-reachable:<candidate-stable-key>:priority=low:blocked=explicit-stableCompletionKey-field-not-yet-emitted:behaviorChangeRequired=0 id=upstream-stable-key|1:sourceClass=transceiver-resolver:producer=TransceiverResolutionSnapshot:displayRows=0:completionRows=0:evidenceRows=1:stableKeyProvided=0:field=<none>:source=missing:fallbackDownstream=0:missingRisk=1:duplicateRisk=1:reuseRisk=1:dedupeRisk=1:owner=TransceiverResolver:shape=transceiver:<callsign>|<facility>|<frequency>|<source-generation>:priority=medium:blocked=resolver-evidence-does-not-yet-expose-stable-row-identity:behaviorChangeRequired=0 id=upstream-stable-key|2:sourceClass=route-sector-authority-relevance:producer=RouteSectorResolver/AuthorityRelevance:displayRows=0:completionRows=1:evidenceRows=1:stableKeyProvided=0:field=<none>:source=missing:fallbackDownstream=0:missingRisk=1:duplicateRisk=0:reuseRisk=1:dedupeRisk=0:owner=RouteSectorResolver-authority-evidence:shape=route-sector:<plan-key>|<sector-id>|<callsign>|<frequency>:priority=medium:blocked=route-sector-evidence-currently-exposes-context-not-row-key:behaviorChangeRequired=0 id=upstream-stable-key|3:sourceClass=ctaf-unicom-advisory:producer=BrainOwnedRuntime CTAF/UNICOM advisory projection:displayRows=1:completionRows=1:evidenceRows=1:stableKeyProvided=1:field=sourceEvidenceId:source=evidence-id:fallbackDownstream=0:missingRisk=0:duplicateRisk=0:reuseRisk=0:dedupeRisk=0:owner=BrainOwnedRuntime CTAF/UNICOM advisory decision:shape=ctaf-unicom:<endpoint>:<airport-icao>:priority=none:blocked=<none>:behaviorChangeRequired=0 id=upstream-stable-key|4:sourceClass=duplicated-atis-frequency-proof:producer=Transceiver/route authority proof diagnostics:displayRows=0:completionRows=0:evidenceRows=1:stableKeyProvided=0:field=<none>:source=missing:fallbackDownstream=0:missingRisk=1:duplicateRisk=1:reuseRisk=0:dedupeRisk=1:owner=proof-evidence-producer:shape=proof:<domain>|<callsign>|<frequency>|<reason>:priority=low:blocked=proof-rows-are-diagnostic-only-today:behaviorChangeRequired=0 id=upstream-stable-key|5:sourceClass=fallback-polygon-geometry-inference:producer=BrainDisplayIntent fallback relation inference:displayRows=1:completionRows=1:evidenceRows=0:stableKeyProvided=1:field=sourceOwnedStableCompletionKey:source=source-owned:fallbackDownstream=1:missingRisk=0:duplicateRisk=1:reuseRisk=1:dedupeRisk=1:owner=upstream-controller-or-route-evidence:shape=source-owned:<producer>|<callsign>|<role>|<frequency>|<plan-context>:priority=high:blocked=fallback-relation-rows-lack-source-owned-stableCompletionKey:behaviorChangeRequired=0 id=upstream-stable-key|6:sourceClass=synthetic-fixture-row:producer=Regression harness display fixture:displayRows=1:completionRows=1:evidenceRows=0:stableKeyProvided=1:field=sourceEvidenceLinkStatus:source=synthetic-fixture:fallbackDownstream=1:missingRisk=0:duplicateRisk=0:reuseRisk=0:dedupeRisk=0:owner=harness-fixture:shape=fixture:<scenario>|<callsign>|<frequency>:priority=none:blocked=<none>:behaviorChangeRequired=0 id=upstream-stable-key|7:sourceClass=legacy-diagnostic-row:producer=Legacy compatibility diagnostic projection:displayRows=1:completionRows=1:evidenceRows=0:stableKeyProvided=1:field=sourceEvidenceLinkStatus:source=legacy:fallbackDownstream=1:missingRisk=0:duplicateRisk=0:reuseRisk=1:dedupeRisk=0:owner=legacy-compatibility-producer:shape=legacy:<compatibility-domain>|<callsign>|<frequency>:priority=none:blocked=diagnostic-only-compatibility-window:behaviorChangeRequired=0
+BrainDisplayOverlayCapDecisions:
+TerminalAuthorityOwners: ORF_APP ORF_DEP
+TerminalAuthorityPolygons: ORF
+AirportFrequencyDepartureRecords:
+AirportFrequencyArrivalRecords:
+BrainControllerRelevanceDepartureCallsigns: PCT_APP
+BrainControllerRelevanceArrivalCallsigns:
+BrainControllerRelevanceCompletions: PCT_APP:accepted:departure-terminal-evidence:brain-facts=4/1/9:brain-votes=1/1/8:frequency-distance=-1[outside-airport-radius@59.8nm<=5.0nm]:operational-source-facility=+1[numeric-facility-operational@facility=5@fact-only]:operational-source-primary=+1[source-primary-present@119.850@fact-only]:operational-source-role=+1[controller-role-not-observer@PCT_APP@fact-only]:published-frequency=0[airport-frequency-data-unavailable]:route-context=0[no-current-center-root-match]:endpoint-polygon=+1[exact-source-nearby-endpoint-polygon@KNGU:PCT]:source-authority=0[source-authority-unavailable]:terminal-source=0[terminal-owner-mismatch@PCT_APP]:vatsim-feed-health=0[controller-roster-health-unknown@declared=1,retained=0,rejected=0@fact-only]:vatsim-parse=0[live-role-valid-endpoint-relationship-unknown@PCT]:vatsim-roster=0[controller-roster-incomplete@declared=1,retained=0,rejected=0,truncated=0]:vatspy-parse=0[airport-alias-data-unavailable]:vnas=0[unavailable-or-stale]:brain-final=display:brain-reason=brain-supported-tie-display
+OverlayBodyLines: xPilot not loaded RX 1 controller in range
+OverlayBodyTones: Normal Normal
+OverlaySelectableCenterFrequencies:
+OverlayVersionText: V2.1.0
+OverlayVersionAlternateText: 
+OverlayVersionTone: Unknown
+OverlayVersionRotates: false
+OverlayNoticeVisible: false
+OverlayNoticeSeverity: Info
+OverlayNoticeTitle: 
+OverlayNoticeBodyLines:
+DepartureCollectedAvailable: false
+DepartureCollectedCallsigns:
+ArrivalAirspaceAvailable: false
+ArrivalAirspaceCallsigns:
+ArrivalLocalAvailable: false
+ArrivalLocalCallsigns:
+AirportCoverageAvailable: false
+AirportCoverageMatchTokens:
+AirportCoverageControllerPrefixes:
+AirportCoverageGenerations: center:0 authority:0 terminal:0
+AirportTerminalInside: unset
+EnrouteAvailable: false
+EnrouteCallsigns:
+AuthorityCatalogIds:
+AuthorityDataGaps:
+AuthorityActiveMatches:
+AuthorityUnmappedCallsigns:
+AuthorityPolygonIds:
+AuthorityPolygonLookupKeys:
+AuthorityPolygonRingCounts:
+AuthorityPolygonDataGaps:
+AuthorityActivePolygonMatches:
+AuthorityActivePolygonDataGaps:
+AuthorityRelevantPolygonMatches:
+SourceManifestValid: false
+SourceManifestValues: commit: dat: geojson: simaware: vatspy: vatglasses:
+UpdateStatus: unknown
+UpdateLatestVersion: 
+UpdateCritical: false
+UpdateDownloadPageUrl: 
+UpdateErrorClass: 
+SourceRegistryValues:
+SourceRegistryCount: 0
+SourceRegistrySourceCounts:
+ResolverRouteAvailable: false
+ResolverRouteResolved: false
+ResolverRouteStatus: 
+ResolverRouteAuthorityGaps:
+ResolverRouteCurrentSectors:
+ResolverRouteNextSectors:
+ResolverRouteCurrentControllerPatterns:
+ResolverRouteNextControllerPatterns:
+ResolverRouteCurrentControllerPrefixes:
+ResolverRouteNextControllerPrefixes:
+ResolverRouteGenerations: center:0 authority:0
+RouteAuthorityPlanSequence:
+RouteAuthorityPlanFlags:
+RouteAuthorityPlanSources:
+ResolverAuthorityRelevanceAvailable: false
+ResolverAuthorityStatus: 
+ResolverAuthorityCacheStatus: 
+ResolverAuthorityCacheReason: 
+ResolverAuthorityRepeatCacheStatus: 
+ResolverAuthorityRepeatCacheReason: 
+ResolverAuthorityRepeatRelevantMatches:
+ResolverAuthorityDiagnostics:
+ResolverAuthorityRelevantMatches:
+ResolverAuthorityProofSources:
+ResolverAuthorityProofDetails:
+ResolverEnrouteAvailable: false
+ResolverEnrouteCallsigns:
+RouteResolved: false
+RouteCurrentSectors:
+RouteNextSectors:
+RouteCurrentControllerPrefixes:
+RouteNextControllerPrefixes:
+RouteTokenKinds:
+ResolvedWaypoints:
+ResolvedTokens:
+ExpandedTokens:
+ProcedureTokens:
+ProcedureSources:
+ProcedureRecords:
+ProcedureRunways:
+ProcedureAuthorities:
+ProcedureCatalogFixes:
+ProcedureBoundaryFixes:
+ProcedureOrderedFixes:
+ProcedureSyntheticWaypoints:
+ProcedureSyntheticSources:
+ProcedureApplicationStates:
+ProcedureApplicationBlocks:
+ProcedureAppliedFixSequences:
+ProcedureCatalogTransitions:
+ProcedureSupport:
+ProcedureLinks:
+ProcedureMisses:
+ProcedureAnchorLinks:
+ProcedureContextOnly:
+IgnoredTokens:
+UnsupportedTokens:
+UnresolvedTokens:
+UnresolvedAirwayTokens:
+Mismatch: brainControllerRelevanceDepartureCallsigns expected [<none>] actual [PCT_APP]

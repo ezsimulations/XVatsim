@@ -451,8 +451,9 @@ std::uint64_t HashBrainAuthorityControllerEvidenceContent(
         HashCombineString(&hash, controller.frequency);
         HashCombine(&hash, static_cast<std::size_t>(controller.facility));
         HashCombineBool(&hash, controller.actionable);
+        // Eligibility is semantic; the changing descriptive ATIS sentence is
+        // not. A controller becoming an ATIS product must still invalidate.
         HashCombineBool(&hash, controller.atis);
-        HashCombineString(&hash, controller.textAtis);
     }
     return static_cast<std::uint64_t>(hash);
 }
@@ -566,84 +567,6 @@ std::uint64_t HashBrainTransceiverEvidence(
     return static_cast<std::uint64_t>(hash);
 }
 
-AuthorityTransceiverEvidenceSnapshot BuildBrainAuthorityTransceiverEvidence(
-    const TransceiverResolutionSnapshot& snapshot) {
-    AuthorityTransceiverEvidenceSnapshot projection;
-    projection.available = snapshot.available;
-    projection.stale = snapshot.stale;
-    projection.receivableControllers = snapshot.receivableControllers;
-    projection.candidates.reserve(snapshot.candidates.size());
-    for (const auto& candidate : snapshot.candidates) {
-        AuthorityTransceiverCandidateSnapshot projected;
-        projected.callsign = candidate.callsign;
-        projected.frequency = candidate.frequency;
-        projected.latitudeDeg = candidate.latitudeDeg;
-        projected.longitudeDeg = candidate.longitudeDeg;
-        projection.candidates.push_back(std::move(projected));
-    }
-    std::sort(
-        projection.candidates.begin(),
-        projection.candidates.end(),
-        [](const auto& left, const auto& right) {
-            if (left.callsign != right.callsign) {
-                return left.callsign < right.callsign;
-            }
-            if (left.frequency != right.frequency) {
-                return left.frequency < right.frequency;
-            }
-            if (left.latitudeDeg != right.latitudeDeg) {
-                return left.latitudeDeg < right.latitudeDeg;
-            }
-            return left.longitudeDeg < right.longitudeDeg;
-        });
-    return projection;
-}
-
-std::uint64_t HashBrainAuthorityTransceiverEvidence(
-    const AuthorityTransceiverEvidenceSnapshot& snapshot) {
-    std::vector<std::size_t> candidateHashes;
-    candidateHashes.reserve(snapshot.candidates.size());
-    for (const auto& candidate : snapshot.candidates) {
-        std::size_t candidateHash = 0;
-        HashCombineString(&candidateHash, candidate.callsign);
-        HashCombineString(&candidateHash, candidate.frequency);
-        HashCombineDouble(&candidateHash, candidate.latitudeDeg);
-        HashCombineDouble(&candidateHash, candidate.longitudeDeg);
-        candidateHashes.push_back(candidateHash);
-    }
-    std::sort(candidateHashes.begin(), candidateHashes.end());
-
-    std::size_t hash = 0;
-    HashCombineBool(&hash, snapshot.available);
-    HashCombineBool(&hash, snapshot.stale);
-    HashCombine(
-        &hash,
-        static_cast<std::size_t>(snapshot.receivableControllers));
-    HashCombine(&hash, candidateHashes.size());
-    for (const auto candidateHash : candidateHashes) {
-        HashCombine(&hash, candidateHash);
-    }
-    return static_cast<std::uint64_t>(hash);
-}
-
-TransceiverResolutionSnapshot ExpandBrainAuthorityTransceiverEvidence(
-    const AuthorityTransceiverEvidenceSnapshot& snapshot) {
-    TransceiverResolutionSnapshot expanded;
-    expanded.available = snapshot.available;
-    expanded.stale = snapshot.stale;
-    expanded.receivableControllers = snapshot.receivableControllers;
-    expanded.candidates.reserve(snapshot.candidates.size());
-    for (const auto& candidate : snapshot.candidates) {
-        ReceivableControllerSnapshot expandedCandidate;
-        expandedCandidate.callsign = candidate.callsign;
-        expandedCandidate.frequency = candidate.frequency;
-        expandedCandidate.latitudeDeg = candidate.latitudeDeg;
-        expandedCandidate.longitudeDeg = candidate.longitudeDeg;
-        expanded.candidates.push_back(std::move(expandedCandidate));
-    }
-    return expanded;
-}
-
 std::uint64_t HashBrainAuthorityRelevanceSnapshot(
     const AuthorityRelevanceSnapshot& snapshot) {
     std::size_t hash = 0;
@@ -674,8 +597,8 @@ std::uint64_t HashBrainAuthorityRelevanceSnapshot(
         HashCombineString(&hash, decision.polygonKey);
         HashCombineString(&hash, decision.matchedPattern);
         HashCombineBool(&hash, decision.accepted);
-        HashCombineBool(&hash, decision.oldRouteScopeMatched);
-        HashCombineBool(&hash, decision.oldRelevantAuthoritySurvivor);
+        HashCombineBool(&hash, decision.routeScopeMatched);
+        HashCombineBool(&hash, decision.relevant);
         hashStrings(decision.rejectionReasons);
     };
     const auto hashPolygon = [&](const AuthorityPolygonEvidenceSnapshot& polygon) {
@@ -689,8 +612,8 @@ std::uint64_t HashBrainAuthorityRelevanceSnapshot(
         HashCombineBool(&hash, polygon.routeKeyMatch);
         HashCombineBool(&hash, polygon.routeFamilyMatch);
         HashCombineBool(&hash, polygon.routeEndpointMatch);
-        HashCombineBool(&hash, polygon.inOldScopedCatalog);
-        HashCombineString(&hash, polygon.oldScopedOutReason);
+        HashCombineBool(&hash, polygon.inQueryScope);
+        HashCombineString(&hash, polygon.queryScopeOutReason);
         HashCombineBool(&hash, polygon.routeGeometryRelevant);
         HashCombineBool(&hash, polygon.aircraftInside);
         HashCombineBool(&hash, polygon.routeIntersects);
@@ -699,9 +622,8 @@ std::uint64_t HashBrainAuthorityRelevanceSnapshot(
         HashCombineString(&hash, polygon.activeProofSource);
         HashCombineString(&hash, polygon.activeProofDetail);
         HashCombineBool(&hash, polygon.routeKeyCompatible);
-        HashCombineBool(&hash, polygon.geometryCompatible);
-        HashCombineBool(&hash, polygon.oldCompatibilityRelevantSurvivor);
-        HashCombineString(&hash, polygon.compatibilityFilteredReason);
+        HashCombineBool(&hash, polygon.relevant);
+        HashCombineString(&hash, polygon.filteredReason);
     };
 
     HashCombineBool(&hash, snapshot.available);
@@ -719,11 +641,55 @@ std::uint64_t HashBrainAuthorityRelevanceSnapshot(
         static_cast<std::size_t>(snapshot.diagnosticDeferredSectorCount));
     HashCombineString(&hash, snapshot.statusLine);
     hashStrings(snapshot.diagnostics);
-    HashCombineBool(&hash, snapshot.relevantAuthoritiesCompatibilityOnly);
+    const auto& liveMap = snapshot.liveMap;
+    HashCombineBool(&hash, liveMap.available);
+    HashCombineBool(&hash, liveMap.stale);
+    HashCombineBool(&hash, liveMap.brainDecisionsApplied);
+    HashCombine(&hash, liveMap.stableHash);
+    HashCombine(&hash, liveMap.canonicalMapIdentity);
+    HashCombine(&hash, liveMap.controllerFeedGeneration);
+    HashCombine(&hash, liveMap.centerBoundaryGeneration);
+    HashCombine(&hash, liveMap.authorityCatalogGeneration);
+    HashCombine(&hash, liveMap.terminalBoundaryGeneration);
+    HashCombine(&hash, liveMap.dynamicOwnershipGeneration);
+    HashCombine(&hash, liveMap.polygonDefinitionCount);
+    HashCombine(&hash, liveMap.polygonPartCount);
+    HashCombine(&hash, liveMap.dataGapCount);
+    HashCombineString(&hash, liveMap.statusLine);
+    hashStrings(liveMap.conflictedPolygonIds);
+    hashStrings(liveMap.unmappedControllerCallsigns);
+    HashCombine(&hash, liveMap.assignments.size());
+    for (const auto& assignment : liveMap.assignments) {
+        HashCombine(&hash, static_cast<std::size_t>(assignment.state));
+        HashCombine(&hash, static_cast<std::size_t>(assignment.candidateState));
+        HashCombineBool(&hash, assignment.explicitTerminalPosition);
+        HashCombineString(&hash, assignment.canonicalPolygonId);
+        HashCombineString(&hash, assignment.polygonKey);
+        HashCombineString(&hash, assignment.positionId);
+        HashCombineString(&hash, assignment.callsign);
+        HashCombineString(&hash, assignment.frequency);
+        HashCombine(&hash, static_cast<std::size_t>(assignment.facility));
+        HashCombineString(&hash, assignment.authoritySource);
+        HashCombine(&hash, static_cast<std::size_t>(assignment.kind));
+        HashCombineString(&hash, assignment.matchedPattern);
+        HashCombineString(&hash, assignment.ownershipProof);
+        HashCombine(&hash, assignment.dynamicOwnershipGeneration);
+        HashCombineBool(&hash, assignment.aircraftInside);
+        HashCombineBool(&hash, assignment.routeIntersects);
+        HashCombineDouble(&hash, assignment.routeEntryDistanceNm);
+    }
+    HashCombine(&hash, liveMap.polygonStates.size());
+    for (const auto& polygon : liveMap.polygonStates) {
+        HashCombine(&hash, static_cast<std::size_t>(polygon.state));
+        HashCombineString(&hash, polygon.canonicalPolygonId);
+        HashCombineString(&hash, polygon.polygonKey);
+        HashCombineString(&hash, polygon.authoritySource);
+        HashCombine(&hash, static_cast<std::size_t>(polygon.kind));
+        for (const auto& callsign : polygon.controllerCallsigns) {
+            HashCombineString(&hash, callsign);
+        }
+    }
     HashCombineBool(&hash, snapshot.liveRelevantAuthoritiesBrainOwned);
-    HashCombine(
-        &hash,
-        static_cast<std::size_t>(snapshot.compatibilityRelevantAuthorityCount));
     HashCombine(
         &hash,
         static_cast<std::size_t>(snapshot.droppedBeforeBrainControllers));
@@ -744,12 +710,6 @@ std::uint64_t HashBrainAuthorityRelevanceSnapshot(
     HashCombine(&hash, static_cast<std::size_t>(source.workDeferredSectorCount));
     hashStrings(source.routeAuthorityKeys);
     hashStrings(source.routeAuthorityMatchKeys);
-    HashCombineBool(&hash, source.authorityTransceiverSnapshotPresent);
-    HashCombineBool(&hash, source.authorityTransceiverAvailable);
-    HashCombineBool(&hash, source.authorityTransceiverStale);
-    HashCombine(
-        &hash,
-        static_cast<std::size_t>(source.authorityTransceiverCandidateCount));
     HashCombineBool(&hash, source.cacheHit);
     HashCombineString(&hash, source.cacheStatus);
     HashCombineString(&hash, source.cacheReason);
@@ -783,57 +743,6 @@ std::uint64_t HashBrainAuthorityRelevanceSnapshot(
     HashCombine(&hash, snapshot.evidence.activePolygonEvidence.size());
     for (const auto& polygon : snapshot.evidence.activePolygonEvidence) {
         hashPolygon(polygon);
-    }
-    HashCombine(
-        &hash,
-        snapshot.evidence.transceiverRouteProofEvidence.size());
-    for (const auto& proof :
-         snapshot.evidence.transceiverRouteProofEvidence) {
-        HashCombineString(&hash, proof.callsign);
-        HashCombine(&hash, static_cast<std::size_t>(proof.stationCandidateCount));
-        HashCombineString(&hash, proof.stationCallsign);
-        HashCombineString(&hash, proof.stationFrequency);
-        HashCombineDouble(&hash, proof.stationLatitudeDeg);
-        HashCombineDouble(&hash, proof.stationLongitudeDeg);
-        HashCombineDouble(&hash, proof.stationScore);
-        HashCombineBool(&hash, proof.bestByModuleScore);
-        HashCombineString(&hash, proof.polygonId);
-        HashCombineString(&hash, proof.polygonKey);
-        HashCombineString(&hash, proof.authoritySource);
-        HashCombineString(&hash, proof.authorityKind);
-        HashCombineDouble(&hash, proof.stationPolygonDistanceNm);
-        HashCombineDouble(&hash, proof.toleranceNm);
-        HashCombineBool(&hash, proof.withinTolerance);
-        HashCombineBool(&hash, proof.sourceOwnershipMatch);
-        HashCombineBool(&hash, proof.unownedBorderMismatch);
-        HashCombineBool(&hash, proof.blockedByDirectActiveProof);
-        HashCombineBool(&hash, proof.noStationCandidates);
-        HashCombineBool(&hash, proof.oldProofSurvivor);
-        HashCombineString(&hash, proof.proofRejectionReason);
-    }
-    HashCombine(
-        &hash,
-        snapshot.evidence.duplicatedAtisProofEvidence.size());
-    for (const auto& proof : snapshot.evidence.duplicatedAtisProofEvidence) {
-        HashCombineString(&hash, proof.callsign);
-        HashCombineBool(&hash, proof.textAtisPresent);
-        hashStrings(proof.extractedCoveredTokens);
-        HashCombineString(&hash, proof.coveredToken);
-        hashStrings(proof.matchedRouteAuthorityAliases);
-        HashCombineString(&hash, proof.authorityId);
-        HashCombineString(&hash, proof.authoritySource);
-        HashCombineString(&hash, proof.authorityKind);
-        HashCombineString(&hash, proof.polygonKey);
-        HashCombineBool(&hash, proof.sourceKindAllowed);
-        HashCombineBool(&hash, proof.routeRelevantPolygonFound);
-        HashCombineBool(&hash, proof.facilityEligible);
-        HashCombineBool(&hash, proof.missingSourceOwnership);
-        HashCombineBool(&hash, proof.oldProofSurvivor);
-        HashCombineString(&hash, proof.proofRejectionReason);
-    }
-    HashCombine(&hash, snapshot.compatibilityRelevantAuthorities.size());
-    for (const auto& authority : snapshot.compatibilityRelevantAuthorities) {
-        hashRelevant(authority);
     }
     HashCombine(&hash, snapshot.relevantAuthorities.size());
     for (const auto& authority : snapshot.relevantAuthorities) {
@@ -871,12 +780,17 @@ BrainAuthorityCompletionDecision DecideBrainAuthorityCompletion(
     if (completed.controllerDigest != expected.controllerDigest) {
         return reject("controller-digest-mismatch");
     }
-    if (completed.transceiverDigest != expected.transceiverDigest) {
-        return reject("transceiver-digest-mismatch");
+    if (completed.dynamicOwnershipDigest !=
+        expected.dynamicOwnershipDigest) {
+        return reject("dynamic-ownership-digest-mismatch");
     }
     if (completed.datasetIdentity == 0 ||
         completed.datasetIdentity != expected.datasetIdentity) {
         return reject("authority-dataset-identity-mismatch");
+    }
+    if (!input.controllerFeedAvailable || input.controllerFeedStale ||
+        !input.controllerFeedComplete) {
+        return reject("authority-controller-feed-unusable");
     }
     if (decision.ageMs > input.maximumAgeMs) {
         return reject("completion-age-exceeded");
@@ -918,7 +832,8 @@ DecideBrainAuthorityPublicationContinuity(
         decision.mayReuseLastAccepted = false;
         decision.evidenceRefreshPending = false;
         decision.controllerRefreshPending = false;
-        decision.transceiverRefreshPending = false;
+        decision.routeRefreshPending = false;
+        decision.dynamicOwnershipRefreshPending = false;
         decision.reason = reason;
         return decision;
     };
@@ -927,11 +842,6 @@ DecideBrainAuthorityPublicationContinuity(
         !input.controllerFeedComplete) {
         return reject("authority-controller-feed-unusable");
     }
-    if (!input.transceiverEvidenceAvailable ||
-        input.transceiverEvidenceStale) {
-        return reject("authority-transceiver-evidence-unusable");
-    }
-
     const auto& accepted = input.accepted;
     const auto& current = input.current;
 
@@ -942,12 +852,8 @@ DecideBrainAuthorityPublicationContinuity(
     if (accepted.planKey.empty() || accepted.planKey != current.planKey) {
         return reject("authority-plan-changed");
     }
-    if (accepted.routeDigest == 0 ||
-        accepted.routeDigest != current.routeDigest) {
-        return reject("authority-route-changed");
-    }
-    if (accepted.transceiverDigest == 0 || current.transceiverDigest == 0) {
-        return reject("authority-transceiver-identity-unavailable");
+    if (accepted.routeDigest == 0 || current.routeDigest == 0) {
+        return reject("authority-route-identity-unavailable");
     }
     if (accepted.datasetIdentity == 0 ||
         accepted.datasetIdentity != current.datasetIdentity) {
@@ -957,21 +863,29 @@ DecideBrainAuthorityPublicationContinuity(
     decision.mayReuseLastAccepted = true;
     decision.controllerRefreshPending =
         accepted.controllerDigest != current.controllerDigest;
-    decision.transceiverRefreshPending =
-        accepted.transceiverDigest != current.transceiverDigest;
+    decision.routeRefreshPending =
+        accepted.routeDigest != current.routeDigest;
+    decision.dynamicOwnershipRefreshPending =
+        accepted.dynamicOwnershipDigest != current.dynamicOwnershipDigest;
     decision.evidenceRefreshPending =
-        decision.controllerRefreshPending ||
-        decision.transceiverRefreshPending;
-    if (decision.controllerRefreshPending &&
-        decision.transceiverRefreshPending) {
+        decision.controllerRefreshPending || decision.routeRefreshPending ||
+        decision.dynamicOwnershipRefreshPending;
+    const auto pendingKinds =
+        static_cast<int>(decision.controllerRefreshPending) +
+        static_cast<int>(decision.routeRefreshPending) +
+        static_cast<int>(decision.dynamicOwnershipRefreshPending);
+    if (pendingKinds > 1) {
         decision.reason =
-            "authority-controller-transceiver-refresh-pending-last-proven-reuse";
+            "authority-multi-input-refresh-pending-last-proven-reuse";
     } else if (decision.controllerRefreshPending) {
         decision.reason =
             "authority-controller-refresh-pending-last-proven-reuse";
-    } else if (decision.transceiverRefreshPending) {
+    } else if (decision.routeRefreshPending) {
         decision.reason =
-            "authority-transceiver-refresh-pending-last-proven-reuse";
+            "authority-route-refresh-pending-last-proven-reuse";
+    } else if (decision.dynamicOwnershipRefreshPending) {
+        decision.reason =
+            "authority-dynamic-ownership-refresh-pending-last-proven-reuse";
     } else {
         decision.reason = "authority-inputs-current-last-proven-reuse";
     }

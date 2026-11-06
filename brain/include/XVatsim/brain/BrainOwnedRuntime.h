@@ -929,6 +929,9 @@ struct BrainOwnedCandidateCompletion {
     std::string frequency;
     RadioReachableFacilityGroup facilityGroup = RadioReachableFacilityGroup::Other;
     DisplayRelation displayRelation = DisplayRelation::Unknown;
+    TerminalEndpointRelationship terminalRelationship =
+        TerminalEndpointRelationship::NotApplicable;
+    std::string terminalRelationshipProof;
     BrainOwnedCandidateDecision decision = BrainOwnedCandidateDecision::Pending;
     bool displayed = false;
     bool hasRouteEntryDistance = false;
@@ -941,7 +944,7 @@ struct BrainOwnedCandidateCompletion {
     std::string stableKey;
 };
 
-struct BrainTerminalAuthorityWorkerInput {
+struct BrainEndpointPolygonQueryInput {
     std::string airportIcao;
     bool hasAirportCoordinates = false;
     double airportLatitudeDeg = 0.0;
@@ -949,27 +952,28 @@ struct BrainTerminalAuthorityWorkerInput {
     long long nowSeconds = 0;
 };
 
-struct BrainTerminalPolygonPoint {
+struct BrainEndpointPolygonPoint {
     double latitudeDeg = 0.0;
     double longitudeDeg = 0.0;
 };
 
-struct BrainTerminalPolygonRing {
-    std::vector<BrainTerminalPolygonPoint> points;
+struct BrainEndpointPolygonRing {
+    std::vector<BrainEndpointPolygonPoint> points;
 };
 
-struct BrainTerminalPolygonFact {
+struct BrainEndpointPolygonFact {
+    std::string canonicalPolygonId;
     std::string polygonKey;
     std::string name;
-    std::string serviceSuffix;
+    std::vector<std::string> serviceSuffixes;
     std::vector<std::string> controllerPrefixes;
-    std::vector<BrainTerminalPolygonRing> rings;
+    std::vector<BrainEndpointPolygonRing> rings;
     bool containsAirport = false;
-    bool intersectsEndpointAnchor = false;
+    bool intersectsEndpointAnchorContextOnly = false;
     std::string source;
 };
 
-struct BrainTerminalAuthorityWorkerOutput {
+struct BrainEndpointPolygonQueryOutput {
     bool available = false;
     bool pending = false;
     bool resolved = false;
@@ -977,7 +981,7 @@ struct BrainTerminalAuthorityWorkerOutput {
     std::string airportIcao;
     std::vector<std::string> ownerTokens;
     std::vector<std::string> polygonKeys;
-    std::vector<BrainTerminalPolygonFact> polygons;
+    std::vector<BrainEndpointPolygonFact> polygons;
     std::string source;
     std::string status;
     std::string cacheStatus;
@@ -985,12 +989,12 @@ struct BrainTerminalAuthorityWorkerOutput {
     long long lookupUs = 0;
 };
 
-class BrainTerminalAuthorityWorker {
+class BrainEndpointPolygonQueryWorker {
 public:
-    virtual ~BrainTerminalAuthorityWorker() = default;
+    virtual ~BrainEndpointPolygonQueryWorker() = default;
 
-    virtual BrainTerminalAuthorityWorkerOutput ResolveAirportTerminalOwner(
-        const BrainTerminalAuthorityWorkerInput& input) = 0;
+    virtual BrainEndpointPolygonQueryOutput QueryEndpointPolygons(
+        const BrainEndpointPolygonQueryInput& input) = 0;
 };
 
 enum class BrainAirportFrequencyEndpoint {
@@ -1070,23 +1074,19 @@ struct BrainOwnedRuntimeState {
     long long lastRadioBoardRefreshSeconds = 0;
     std::uint64_t lastControllerGeneration = 0;
     std::shared_ptr<const TransceiverResolutionSnapshot> transceiverSnapshot;
-    std::shared_ptr<const AuthorityTransceiverEvidenceSnapshot>
-        authorityTransceiverEvidence;
-    std::uint64_t authorityTransceiverEvidenceDigest = 0;
-    std::uint64_t transceiverObservationGeneration = 0;
     RadioReachableControllerSnapshot radioSnapshot;
     RadioReachableControllerSnapshot gatedRadioSnapshot;
     RadioReachableCandidateDiff radioDiff;
-    bool hasDepartureTerminalAuthority = false;
-    BrainTerminalAuthorityWorkerOutput departureTerminalAuthority;
-    std::string departureTerminalAuthorityRequestKey;
-    std::uint64_t departureTerminalAuthorityHash = 0;
-    long long lastDepartureTerminalAuthorityLookupSeconds = 0;
-    bool hasArrivalTerminalAuthority = false;
-    BrainTerminalAuthorityWorkerOutput arrivalTerminalAuthority;
-    std::string arrivalTerminalAuthorityRequestKey;
-    std::uint64_t arrivalTerminalAuthorityHash = 0;
-    long long lastArrivalTerminalAuthorityLookupSeconds = 0;
+    bool hasDepartureEndpointPolygons = false;
+    BrainEndpointPolygonQueryOutput departureEndpointPolygons;
+    std::string departureEndpointPolygonRequestKey;
+    std::uint64_t departureEndpointPolygonHash = 0;
+    long long lastDepartureEndpointPolygonLookupSeconds = 0;
+    bool hasArrivalEndpointPolygons = false;
+    BrainEndpointPolygonQueryOutput arrivalEndpointPolygons;
+    std::string arrivalEndpointPolygonRequestKey;
+    std::uint64_t arrivalEndpointPolygonHash = 0;
+    long long lastArrivalEndpointPolygonLookupSeconds = 0;
     bool hasAirportFrequencies = false;
     BrainAirportFrequencyWorkerOutput airportFrequencies;
     std::string airportFrequencyRequestKey;
@@ -1117,6 +1117,11 @@ struct BrainOwnedRuntimeState {
     std::string cruiseTargetSourceKey;
     std::string standbyAssistLatchKey;
     bool standbyAssistWriteConsumed = false;
+    bool manualCenterTierResolved = false;
+    std::string manualCenterTierPlanKey;
+    std::string manuallySelectedCenterCallsign;
+    std::string manuallySelectedCenterFrequency;
+    std::uint64_t manualCenterSelectionGeneration = 0;
     std::string diversionOverrideSourceKey;
     std::string preflightRouteCacheAppliedPlanKey;
     BrainOwnedDisplayOverrideMode displayOverrideMode =
@@ -1143,11 +1148,10 @@ struct BrainOwnedRuntimeState {
     std::string lastPlanKey;
     std::uint64_t lastRadioBoardHash = 0;
     std::uint64_t lastRoutePolygonHash = 0;
-    std::uint64_t lastDepartureTerminalAuthorityHash = 0;
-    std::uint64_t lastArrivalTerminalAuthorityHash = 0;
+    std::uint64_t lastDepartureEndpointPolygonHash = 0;
+    std::uint64_t lastArrivalEndpointPolygonHash = 0;
     std::uint64_t lastAirportFrequencyHash = 0;
     std::uint64_t lastAuthorityRelevanceHash = 0;
-    std::uint64_t lastVnasTerminalEvidenceHash = 0;
     std::uint64_t lastTerminalRelevancePolicyHash = 0;
     std::uint64_t lastRadioTuningHash = 0;
     std::uint64_t lastXPilot4ControllerHash = 0;
@@ -1180,6 +1184,37 @@ struct BrainOwnedRadioBoardReuseOutput {
     std::string cacheStatus;
 };
 
+struct BrainOwnedRadioBoardWorkerCompletionInput {
+    bool completed = false;
+    bool failed = false;
+    bool resultComplete = false;
+    std::uint64_t currentLifecycleEpoch = 0;
+    std::uint64_t completedLifecycleEpoch = 0;
+    std::uint64_t currentControllerGeneration = 0;
+    std::uint64_t completedControllerGeneration = 0;
+    std::uint64_t currentControllerContentDigest = 0;
+    std::uint64_t completedControllerContentDigest = 0;
+    std::uint64_t currentSourceGeneration = 0;
+    std::uint64_t completedSourceGeneration = 0;
+    std::uint64_t currentSourceContentDigest = 0;
+    std::uint64_t completedSourceContentDigest = 0;
+    std::uint64_t currentMonotonicMs = 0;
+    std::uint64_t completedMonotonicMs = 0;
+    AircraftStateSnapshot currentAircraft;
+    AircraftStateSnapshot completedAircraft;
+    std::uint64_t maximumAgeMs = 1000;
+    double maximumDisplacementNm = 0.05;
+    double maximumAltitudeDeltaFt = 500.0;
+};
+
+struct BrainOwnedRadioBoardWorkerCompletionDecision {
+    bool accepted = false;
+    std::string reason;
+    std::uint64_t ageMs = 0;
+    double displacementNm = 0.0;
+    double altitudeDeltaFt = 0.0;
+};
+
 struct BrainOwnedRadioBoardCommitInput {
     long long nowSeconds = 0;
     std::uint64_t controllerGeneration = 0;
@@ -1195,7 +1230,7 @@ struct BrainOwnedRadioBoardCommitOutput {
     std::string cacheStatus;
 };
 
-struct BrainOwnedTerminalAuthorityRefreshInput {
+struct BrainEndpointPolygonRefreshInput {
     bool flightContextActive = false;
     std::string airportIcao;
     bool hasAirportCoordinates = false;
@@ -1204,10 +1239,10 @@ struct BrainOwnedTerminalAuthorityRefreshInput {
     long long nowSeconds = 0;
 };
 
-struct BrainOwnedTerminalAuthorityRefreshPlan {
+struct BrainEndpointPolygonRefreshPlan {
     bool shouldRunWorker = false;
-    BrainTerminalAuthorityWorkerInput workerInput;
-    BrainTerminalAuthorityWorkerOutput cachedFact;
+    BrainEndpointPolygonQueryInput workerInput;
+    BrainEndpointPolygonQueryOutput cachedFact;
     std::string requestKey;
     std::string reason;
     std::string cacheStatus;
@@ -1294,7 +1329,7 @@ struct BrainOwnedWorkflowSelectionInput {
     RadioReachableControllerSnapshot radioSnapshot;
     std::string departureIcao;
     std::string arrivalIcao;
-    BrainTerminalAuthorityWorkerOutput departureTerminalAuthority;
+    BrainEndpointPolygonQueryOutput departureEndpointPolygons;
     double nowSeconds = 0.0;
     workflow::WorkflowTuning tuning;
 };
@@ -1472,9 +1507,33 @@ struct BrainOwnedStandbyAssistPlanInput {
     bool standbyAssistEnabled = true;
     bool directCtafStandbyAssistEnabled = false;
     std::string directCtafGateSource = "unknown";
+    bool manualCenterTierResolved = false;
     FinalDisplaySnapshot board;
     std::vector<BrainOwnedStandbyAssistAdvisoryCandidate>
         ctafUnicomAdvisoryCandidates;
+};
+
+struct BrainOwnedCenterFrequencySelectionRequest {
+    std::uint64_t requestSequence = 0;
+    std::string planKey;
+    std::string callsign;
+    std::string frequency;
+    std::string stableKey;
+    RadioStateSnapshot radios;
+};
+
+struct BrainOwnedCenterFrequencySelectionDecision {
+    std::uint64_t requestSequence = 0;
+    bool accepted = false;
+    bool alreadyCom1Active = false;
+    bool shouldWriteCom1Active = false;
+    bool completed = false;
+    bool writeSucceeded = false;
+    std::string callsign;
+    std::string frequency;
+    std::string planKey;
+    std::string reason;
+    std::uint64_t selectionGeneration = 0;
 };
 
 struct BrainOwnedStandbyAssistSettingsDiagnostics {
@@ -2462,21 +2521,25 @@ BrainOwnedRadioBoardReuseOutput TryReuseBrainOwnedRadioBoard(
     const BrainOwnedRuntimeState& state,
     const BrainOwnedRadioBoardReuseInput& input);
 
+BrainOwnedRadioBoardWorkerCompletionDecision
+DecideBrainOwnedRadioBoardWorkerCompletion(
+    const BrainOwnedRadioBoardWorkerCompletionInput& input);
+
 BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
     BrainOwnedRuntimeState* state,
     BrainOwnedRadioBoardCommitInput input);
 
-BrainTerminalAuthorityWorkerOutput RefreshBrainOwnedDepartureTerminalAuthority(
+BrainEndpointPolygonQueryOutput RefreshBrainOwnedDepartureEndpointPolygons(
     BrainOwnedRuntimeState* state,
     const workflow::FlightContext& flightContext,
     long long nowSeconds,
-    BrainTerminalAuthorityWorker* worker);
+    BrainEndpointPolygonQueryWorker* worker);
 
-BrainTerminalAuthorityWorkerOutput RefreshBrainOwnedArrivalTerminalAuthority(
+BrainEndpointPolygonQueryOutput RefreshBrainOwnedArrivalEndpointPolygons(
     BrainOwnedRuntimeState* state,
     const workflow::FlightContext& flightContext,
     long long nowSeconds,
-    BrainTerminalAuthorityWorker* worker);
+    BrainEndpointPolygonQueryWorker* worker);
 
 BrainAirportFrequencyWorkerOutput RefreshBrainOwnedAirportFrequencies(
     BrainOwnedRuntimeState* state,
@@ -2484,23 +2547,23 @@ BrainAirportFrequencyWorkerOutput RefreshBrainOwnedAirportFrequencies(
     long long nowSeconds,
     BrainAirportFrequencyWorker* worker);
 
-BrainOwnedTerminalAuthorityRefreshPlan BeginBrainOwnedDepartureTerminalAuthorityRefresh(
+BrainEndpointPolygonRefreshPlan BeginBrainOwnedDepartureEndpointPolygonRefresh(
     const BrainOwnedRuntimeState& state,
-    const BrainOwnedTerminalAuthorityRefreshInput& input);
+    const BrainEndpointPolygonRefreshInput& input);
 
-BrainOwnedTerminalAuthorityRefreshPlan BeginBrainOwnedArrivalTerminalAuthorityRefresh(
+BrainEndpointPolygonRefreshPlan BeginBrainOwnedArrivalEndpointPolygonRefresh(
     const BrainOwnedRuntimeState& state,
-    const BrainOwnedTerminalAuthorityRefreshInput& input);
+    const BrainEndpointPolygonRefreshInput& input);
 
-void CommitBrainOwnedDepartureTerminalAuthorityRefresh(
+void CommitBrainOwnedDepartureEndpointPolygonRefresh(
     BrainOwnedRuntimeState* state,
-    const BrainOwnedTerminalAuthorityRefreshPlan& plan,
-    const BrainTerminalAuthorityWorkerOutput& workerOutput);
+    const BrainEndpointPolygonRefreshPlan& plan,
+    const BrainEndpointPolygonQueryOutput& workerOutput);
 
-void CommitBrainOwnedArrivalTerminalAuthorityRefresh(
+void CommitBrainOwnedArrivalEndpointPolygonRefresh(
     BrainOwnedRuntimeState* state,
-    const BrainOwnedTerminalAuthorityRefreshPlan& plan,
-    const BrainTerminalAuthorityWorkerOutput& workerOutput);
+    const BrainEndpointPolygonRefreshPlan& plan,
+    const BrainEndpointPolygonQueryOutput& workerOutput);
 
 BrainOwnedAirportFrequencyRefreshPlan BeginBrainOwnedAirportFrequencyRefresh(
     const BrainOwnedRuntimeState& state,
@@ -2585,6 +2648,17 @@ void MarkBrainOwnedXPilotConnectedIfConnected(
 
 BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     const BrainOwnedStandbyAssistPlanInput& input);
+
+BrainOwnedCenterFrequencySelectionDecision
+DecideBrainOwnedCenterFrequencySelection(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedCenterFrequencySelectionRequest& request);
+
+BrainOwnedCenterFrequencySelectionDecision
+CompleteBrainOwnedCenterFrequencySelection(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedCenterFrequencySelectionDecision decision,
+    bool writeSucceeded);
 
 BrainOwnedStandbyAssistSideEffectDecision
 DecideBrainOwnedStandbyAssistSideEffect(

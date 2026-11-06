@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "XVatsim/brain/BrainTypes.h"
-#include "XVatsim/brain/RadioReachableSnapshot.h"
 
 namespace xvatsim::modules::vnas_data {
 
@@ -100,17 +99,10 @@ VnasControllerFeedDocument DecodeVnasControllerFeedDocument(
 VnasArtccFacilityDocument DecodeVnasArtccFacilityDocument(
     const std::string& payload);
 
-bool IsUnitedStatesTerminalIcao(const std::string& airportIcao);
-
-xvatsim::brain::VnasTerminalEvidenceSnapshot
-BuildVnasTerminalEvidenceSnapshot(
+xvatsim::brain::VnasLiveOwnershipSnapshot BuildVnasLiveOwnershipSnapshot(
     const VnasControllerFeedDocument& controllerFeed,
     const std::vector<std::shared_ptr<const VnasArtccFacilityDocument>>&
         facilityDocuments,
-    const std::string& departureIcao,
-    const std::string& arrivalIcao,
-    const std::vector<xvatsim::brain::RadioReachableControllerCandidate>&
-        candidates,
     bool enabled);
 
 class VnasDataClient {
@@ -121,12 +113,8 @@ public:
     VnasDataClient(const VnasDataClient&) = delete;
     VnasDataClient& operator=(const VnasDataClient&) = delete;
 
-    std::shared_ptr<const xvatsim::brain::VnasTerminalEvidenceSnapshot> Poll(
-        const std::string& departureIcao,
-        const std::string& arrivalIcao,
-        const std::vector<xvatsim::brain::RadioReachableControllerCandidate>&
-            candidates,
-        bool enabled);
+    std::shared_ptr<const xvatsim::brain::VnasLiveOwnershipSnapshot>
+    PollLiveOwnership(bool enabled);
     void Reset();
 
 private:

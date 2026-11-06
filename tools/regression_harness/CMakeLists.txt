@@ -1,3 +1,35 @@
+if (WIN32)
+    add_library(XVatsimXplmTestStub SHARED
+        src/XplmTestStub.cpp
+    )
+    target_compile_features(XVatsimXplmTestStub PRIVATE cxx_std_17)
+    target_compile_definitions(XVatsimXplmTestStub PRIVATE
+        IBM=1
+        XPLM=1
+        XPLM200=1
+        XPLM210=1
+        XPLM300=1
+        XPLM301=1
+        XPLM400=1
+    )
+    target_include_directories(XVatsimXplmTestStub PRIVATE
+        ${XPLANE_SDK_ROOT}/CHeaders/XPLM
+    )
+    set_target_properties(XVatsimXplmTestStub PROPERTIES
+        OUTPUT_NAME "XPLM_64"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/tools"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/tools"
+        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/tools"
+        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}/tools"
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools"
+        ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/tools"
+        ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/tools"
+        ARCHIVE_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/tools"
+        ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}/tools"
+    )
+endif()
+
 add_executable(XVatsimRegressionHarness
     src/AustraliaBrainEvidenceProbe.cpp
     src/CandidateDecisionDiagnosticsProbe.cpp
@@ -10,6 +42,7 @@ add_executable(XVatsimRegressionHarness
     src/PerformanceContractGateBTelemetryProbe.cpp
     src/PdcLogMonitorContractProbe.cpp
     src/ProductCalm1Probe.cpp
+    src/RadioReceiveActivityProbe.cpp
     src/RuntimeActivationGateProbe.cpp
     src/Step6PdcContractProbe.cpp
     src/XPilot4BridgeContractProbe.cpp
@@ -31,14 +64,11 @@ target_link_libraries(XVatsimRegressionHarness PRIVATE
     XVatsimFlightPlan
     XVatsimMetarProof
     XVatsimAirportFrequencyCatalog
-    XVatsimHarnessLegacyArrival
-    XVatsimHarnessLegacyDeparture
-    XVatsimHarnessLegacyEnroute
     XVatsimOverlayAccessoryCore
+    XVatsimRadioState
     XVatsimRouteSector
     XVatsimRuntimeWorkers
     XVatsimSettingsStore
-    XVatsimTerminalAuthority
     XVatsimTransceiverResolver
     XVatsimUpdateChecker
     XVatsimVatsimDataFeed
@@ -49,7 +79,7 @@ target_link_libraries(XVatsimRegressionHarness PRIVATE
 
 if (WIN32)
     target_link_libraries(XVatsimRegressionHarness PRIVATE
-        "${XPLANE_SDK_ROOT}/Libraries/Win/XPLM_64.lib"
+        XVatsimXplmTestStub
         psapi
         ws2_32
     )

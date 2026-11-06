@@ -50,18 +50,13 @@
 #include "XVatsim/core/RouteResolution.h"
 #include "XVatsim/core/RouteTraversal.h"
 #include "XVatsim/core/WorkflowEngine.h"
-#include "XVatsim/modules/arrival/ArrivalAirspaceModule.h"
-#include "XVatsim/modules/arrival/ArrivalLocalModule.h"
 #include "XVatsim/modules/airport_frequency_catalog/AirportFrequencyCatalogResolver.h"
-#include "XVatsim/modules/departure/DepartureModule.h"
-#include "XVatsim/modules/enroute/EnrouteModule.h"
 #include "XVatsim/modules/overlay/OverlayAccessoryCore.h"
 #include "XVatsim/modules/metar/VatsimMetarClient.h"
 #include "XVatsim/modules/metar/VatsimMetarDecoder.h"
 #include "XVatsim/modules/vatsim_data_feed/VatsimDataFeedClient.h"
 #include "XVatsim/modules/route_sector/RouteSectorResolver.h"
 #include "XVatsim/modules/settings_store/SettingsStore.h"
-#include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
 #include "XVatsim/modules/transceiver_resolver/TransceiverResolver.h"
 #include "XVatsim/modules/update_checker/UpdateChecker.h"
 #include "XVatsim/modules/vnas_data/VnasDataClient.h"
@@ -74,6 +69,7 @@
 #include "PerformanceContractGateBTelemetryProbe.h"
 #include "PdcLogMonitorContractProbe.h"
 #include "ProductCalm1Probe.h"
+#include "RadioReceiveActivityProbe.h"
 #include "RuntimeActivationGateProbe.h"
 #include "AustraliaBrainEvidenceProbe.h"
 #include "CandidateDecisionDiagnosticsProbe.h"
@@ -112,6 +108,7 @@ struct ScenarioExpectations {
     std::vector<std::string> displayCallsigns;
     std::vector<std::string> overlayBodyLines;
     std::vector<std::string> overlayBodyTones;
+    std::vector<std::string> overlaySelectableCenterFrequencies;
     std::optional<std::string> overlayVersionText;
     std::optional<std::string> overlayVersionAlternateText;
     std::optional<std::string> overlayVersionTone;
@@ -165,12 +162,14 @@ struct ScenarioExpectations {
     std::vector<std::string> resolverAuthorityDecisionEvidence;
     std::vector<std::string> resolverAuthorityPolygonEvidenceContains;
     std::vector<std::string> resolverAuthorityActivePolygonEvidenceContains;
-    std::vector<std::string> resolverAuthorityTransceiverProofEvidenceContains;
-    std::vector<std::string> resolverAuthorityDuplicatedAtisProofEvidenceContains;
+    std::optional<std::string> resolverLiveAuthorityMapStatus;
+    std::optional<bool> resolverLiveAuthorityMapGenerationCoherent;
+    std::vector<std::string> resolverLiveAuthorityAssignments;
+    std::vector<std::string> resolverLiveAuthorityConflicts;
+    std::vector<std::string> resolverLiveAuthorityUnmapped;
+    std::vector<std::string> resolverAuthorityDiagnosticGeoJsonContains;
     std::optional<std::string> resolverAuthorityPreviewSummary;
     std::vector<std::string> resolverAuthorityPreviewDecisionsContains;
-    std::optional<bool> resolverEnrouteAvailable;
-    std::vector<std::string> resolverEnrouteCallsigns;
     std::vector<std::string> sourceRegistryValues;
     std::optional<int> sourceRegistryCount;
     std::vector<std::string> sourceRegistrySourceCounts;
@@ -299,8 +298,9 @@ struct ScenarioExpectations {
     std::vector<std::string> radioReachableVerifierEnrouteControllers;
     std::vector<std::string> radioReachableVerifierUnchangedControllers;
     std::optional<std::string> radioReachableVerifierUnchangedStatus;
-    std::vector<std::string> terminalAuthorityOwners;
-    std::vector<std::string> terminalAuthorityPolygons;
+    std::vector<std::string> endpointPolygonOwners;
+    std::vector<std::string> endpointPolygons;
+    std::vector<std::string> vnasLiveOwnershipFacts;
     std::vector<std::string> airportFrequencyDepartureRecords;
     std::vector<std::string> airportFrequencyArrivalRecords;
     std::vector<std::string> brainControllerRelevanceDepartureCallsigns;
@@ -547,6 +547,11 @@ struct ScenarioData {
     bool standbyAssistUseDisplayBoardWithCtafAdvisories = false;
     std::optional<bool> standbyAssistWriteSucceeded;
     std::optional<std::string> standbyAssistWriterResultCode;
+    bool applyCenterFrequencySelection = false;
+    std::string centerFrequencySelectionCallsign;
+    std::string centerFrequencySelectionFrequency;
+    std::string centerFrequencySelectionStableKey;
+    bool centerFrequencySelectionWriteSucceeded = true;
     xvatsim::brain::RouteSectorSnapshot routeSectorSnapshot;
     xvatsim::brain::AirportSectorSnapshot departureAirportSectorSnapshot;
     xvatsim::brain::AirportSectorSnapshot arrivalAirportSectorSnapshot;
@@ -566,11 +571,11 @@ struct ScenarioData {
     std::vector<TerminalCoverageFeatureSpec> pendingAirportCoverageTerminalFeatures;
     std::vector<std::string> pendingAirportCoverageAuthorityCatalogLines;
     bool hasPendingAirportCoveragePayloads = false;
-    std::string terminalAuthorityAirportIcao;
-    double terminalAuthorityLatitudeDeg = 0.0;
-    double terminalAuthorityLongitudeDeg = 0.0;
-    bool hasTerminalAuthorityCoordinates = false;
-    std::vector<TerminalCoverageFeatureSpec> terminalAuthorityFeatures;
+    std::string endpointPolygonAirportIcao;
+    double endpointPolygonLatitudeDeg = 0.0;
+    double endpointPolygonLongitudeDeg = 0.0;
+    bool hasEndpointPolygonCoordinates = false;
+    std::vector<TerminalCoverageFeatureSpec> endpointPolygonFeatures;
     std::vector<std::string> airportFrequencyFrqRows;
     WorkflowStage controllerRelevanceWorkflowStage = WorkflowStage::Departure;
     bool controllerRelevanceV2Enabled = false;
@@ -578,6 +583,8 @@ struct ScenarioData {
     double controllerRelevanceTerminalRadiusNm = 5.0;
     std::string vnasControllerFeedJson;
     std::vector<std::string> vnasArtccFacilityJsons;
+    std::string vnasRepeatControllerFeedJson;
+    std::vector<std::string> vnasRepeatArtccFacilityJsons;
     bool resolveRouteWithResolver = false;
     bool resolverRouteBuildsPreRefreshSnapshot = false;
     std::vector<CenterCoverageFeatureSpec> resolverRouteCenterFeatures;
@@ -931,14 +938,43 @@ std::vector<std::string> ExtractCallsigns(const ModuleBoardSnapshot& board) {
     return callsigns;
 }
 
-std::vector<std::string> ExtractTerminalAuthorityOwners(
-    const xvatsim::brain::BrainTerminalAuthorityWorkerOutput& output) {
+std::vector<std::string> ExtractEndpointPolygonOwners(
+    const xvatsim::brain::BrainEndpointPolygonQueryOutput& output) {
     return output.ownerTokens;
 }
 
-std::vector<std::string> ExtractTerminalAuthorityPolygons(
-    const xvatsim::brain::BrainTerminalAuthorityWorkerOutput& output) {
+std::vector<std::string> ExtractEndpointPolygons(
+    const xvatsim::brain::BrainEndpointPolygonQueryOutput& output) {
     return output.polygonKeys;
+}
+
+std::vector<std::string> ExtractVnasLiveOwnershipFacts(
+    const xvatsim::brain::VnasLiveOwnershipSnapshot& snapshot) {
+    std::vector<std::string> values;
+    values.reserve(snapshot.facts.size());
+    for (const auto& fact : snapshot.facts) {
+        const auto kind = [&]() -> const char* {
+            switch (fact.ownershipKind) {
+                case xvatsim::brain::VnasLiveOwnershipKind::ExactPosition:
+                    return "exact";
+                case xvatsim::brain::VnasLiveOwnershipKind::DynamicAssumption:
+                    return "dynamic";
+                case xvatsim::brain::VnasLiveOwnershipKind::ParentAssumption:
+                    return "parent";
+            }
+            return "unknown";
+        }();
+        std::ostringstream stream;
+        stream << fact.controllerCallsign << ":"
+               << fact.controllerFrequency << ":"
+               << fact.facilityId << ":"
+               << fact.sourcePositionId << ":"
+               << fact.sourcePositionCallsign << ":"
+               << kind;
+        values.push_back(stream.str());
+    }
+    std::sort(values.begin(), values.end());
+    return values;
 }
 
 std::string StationRoleToToken(StationRole role) {
@@ -1891,6 +1927,18 @@ std::vector<std::string> ExtractOverlayBodyTones(
     return tones;
 }
 
+std::vector<std::string> ExtractOverlaySelectableCenterFrequencies(
+    const xvatsim::brain::OverlayViewModel& overlayModel) {
+    std::vector<std::string> frequencies;
+    for (const auto& line : overlayModel.bodyLines) {
+        if (line.centerFrequencySelectable) {
+            frequencies.push_back(
+                line.centerCallsign + "@" + line.centerFrequency);
+        }
+    }
+    return frequencies;
+}
+
 std::string OverlayVersionToneToken(
     xvatsim::brain::OverlayVersionTone tone) {
     switch (tone) {
@@ -2128,7 +2176,11 @@ std::vector<std::string> ExtractAuthorityPolygonRingCounts(
     std::vector<std::string> values;
     values.reserve(catalog.polygons.size());
     for (const auto& polygon : catalog.polygons) {
-        values.push_back(polygon.id + ":" + std::to_string(polygon.rings.size()));
+        std::size_t ringCount = 0;
+        for (const auto& part : polygon.parts) {
+            ringCount += 1 + part.holes.size();
+        }
+        values.push_back(polygon.id + ":" + std::to_string(ringCount));
     }
     std::sort(values.begin(), values.end());
     return values;
@@ -2219,6 +2271,61 @@ std::vector<std::string> ExtractAuthorityRelevanceDiagnostics(
     return diagnostics;
 }
 
+std::vector<std::string> ExtractLiveAuthorityAssignments(
+    const xvatsim::brain::AuthorityRelevanceSnapshot& snapshot) {
+    std::vector<std::string> values;
+    values.reserve(snapshot.liveMap.assignments.size());
+    for (const auto& assignment : snapshot.liveMap.assignments) {
+        const auto state = [&]() -> const char* {
+            switch (assignment.state) {
+                case xvatsim::brain::LiveAuthorityAssignmentState::ActiveExact:
+                    return "active";
+                case xvatsim::brain::LiveAuthorityAssignmentState::ActiveDynamic:
+                    return "dynamic";
+                case xvatsim::brain::LiveAuthorityAssignmentState::ActiveParent:
+                    return "parent";
+                case xvatsim::brain::LiveAuthorityAssignmentState::Conflict:
+                    return "conflict";
+                case xvatsim::brain::LiveAuthorityAssignmentState::Unmapped:
+                    return "unmapped";
+                case xvatsim::brain::LiveAuthorityAssignmentState::Stale:
+                    return "stale";
+                case xvatsim::brain::LiveAuthorityAssignmentState::Offline:
+                    return "offline";
+            }
+            return "unknown";
+        }();
+        const auto roundedEntryNm = static_cast<int>(std::round(
+            std::max(0.0, assignment.routeEntryDistanceNm)));
+        values.push_back(
+            assignment.callsign + ":state=" +
+            state +
+            ":position=" + assignment.positionId +
+            ":polygon=" + assignment.canonicalPolygonId +
+            ":key=" + assignment.polygonKey +
+            ":frequency=" + assignment.frequency +
+            ":aircraft=" + (assignment.aircraftInside ? "1" : "0") +
+            ":route=" + (assignment.routeIntersects ? "1" : "0") +
+            ":entry=" + std::to_string(roundedEntryNm));
+    }
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
+bool LiveAuthorityMapGenerationCoherent(
+    const xvatsim::brain::AuthorityRelevanceSnapshot& snapshot) {
+    return snapshot.liveMap.available &&
+           snapshot.liveMap.canonicalMapIdentity != 0 &&
+           snapshot.liveMap.controllerFeedGeneration ==
+               snapshot.controllerFeedGeneration &&
+           snapshot.liveMap.centerBoundaryGeneration ==
+               snapshot.centerBoundaryGeneration &&
+           snapshot.liveMap.authorityCatalogGeneration ==
+               snapshot.authorityCatalogGeneration &&
+           snapshot.liveMap.terminalBoundaryGeneration ==
+               snapshot.terminalCoverageGeneration;
+}
+
 std::vector<std::string> ExtractAuthorityRelevanceProofSources(
     const xvatsim::brain::AuthorityRelevanceSnapshot& snapshot) {
     std::vector<std::string> values;
@@ -2271,10 +2378,9 @@ std::string AuthorityRelevanceEvidenceVisibilitySummary(
            << ",source=" << source.sourceControllerCount
            << ",evidence=" << snapshot.evidence.controllerEvidence.size()
            << ",dropped=" << snapshot.droppedBeforeBrainControllers
-           << ",compatOnly="
-           << (snapshot.relevantAuthoritiesCompatibilityOnly ? 1 : 0)
-           << ",compatRelevant="
-           << snapshot.compatibilityRelevantAuthorityCount
+           << ",liveMapOwned="
+           << (snapshot.liveRelevantAuthoritiesBrainOwned ? 1 : 0)
+           << ",relevant=" << snapshot.relevantAuthorities.size()
            << ",feed=" << (source.controllerFeedAvailable ? 1 : 0)
            << "/" << (source.controllerFeedStale ? 1 : 0)
            << ",route=" << (source.routeSnapshotAvailable ? 1 : 0)
@@ -2285,12 +2391,7 @@ std::string AuthorityRelevanceEvidenceVisibilitySummary(
            << static_cast<int>(std::round(std::max(0.0, source.workWindowNm)))
            << ",deferred=" << source.workDeferredSectorCount
            << ",routeKeys=" << source.routeAuthorityKeys.size()
-           << ",matchKeys=" << source.routeAuthorityMatchKeys.size()
-           << ",tx="
-           << (source.authorityTransceiverSnapshotPresent ? 1 : 0)
-           << "/" << (source.authorityTransceiverAvailable ? 1 : 0)
-           << "/" << (source.authorityTransceiverStale ? 1 : 0)
-           << "/" << source.authorityTransceiverCandidateCount;
+           << ",matchKeys=" << source.routeAuthorityMatchKeys.size();
     return stream.str();
 }
 
@@ -2335,9 +2436,9 @@ std::vector<std::string> ExtractAuthorityDecisionEvidence(
                    << ":" << decision.polygonKey
                    << ":accepted=" << (decision.accepted ? 1 : 0)
                    << ":routeScope="
-                   << (decision.oldRouteScopeMatched ? 1 : 0)
-                   << ":oldRelevant="
-                   << (decision.oldRelevantAuthoritySurvivor ? 1 : 0)
+                   << (decision.routeScopeMatched ? 1 : 0)
+                   << ":relevant="
+                   << (decision.relevant ? 1 : 0)
                    << ":pattern=" << decision.matchedPattern
                    << ":reject="
                    << JoinPipeOrNone(decision.rejectionReasons);
@@ -2361,17 +2462,17 @@ std::vector<std::string> ExtractAuthorityPolygonEvidence(
                << ":routeKey=" << (polygon.routeKeyMatch ? 1 : 0)
                << ":family=" << (polygon.routeFamilyMatch ? 1 : 0)
                << ":endpoint=" << (polygon.routeEndpointMatch ? 1 : 0)
-               << ":scoped=" << (polygon.inOldScopedCatalog ? 1 : 0)
+               << ":queryScope=" << (polygon.inQueryScope ? 1 : 0)
                << ":geom=" << (polygon.routeGeometryRelevant ? 1 : 0)
                << ":inside=" << (polygon.aircraftInside ? 1 : 0)
                << ":route=" << (polygon.routeIntersects ? 1 : 0)
                << ":entry=" << RoundedEvidenceText(polygon.routeEntryDistanceNm)
-               << ":oldRelevant="
-               << (polygon.oldCompatibilityRelevantSurvivor ? 1 : 0)
-               << ":scopedReason="
-               << (polygon.oldScopedOutReason.empty()
+               << ":relevant="
+               << (polygon.relevant ? 1 : 0)
+               << ":queryReason="
+               << (polygon.queryScopeOutReason.empty()
                        ? std::string("<none>")
-                       : polygon.oldScopedOutReason);
+                       : polygon.queryScopeOutReason);
         values.push_back(stream.str());
     }
     std::sort(values.begin(), values.end());
@@ -2394,84 +2495,15 @@ std::vector<std::string> ExtractAuthorityActivePolygonEvidence(
                << ":active=" << (polygon.activePolygon ? 1 : 0)
                << ":routeKey=" << (polygon.routeKeyMatch ? 1 : 0)
                << ":routeCompat=" << (polygon.routeKeyCompatible ? 1 : 0)
-               << ":geoCompat=" << (polygon.geometryCompatible ? 1 : 0)
-               << ":oldRelevant="
-               << (polygon.oldCompatibilityRelevantSurvivor ? 1 : 0)
+               << ":relevant="
+               << (polygon.relevant ? 1 : 0)
                << ":reason="
-               << (polygon.compatibilityFilteredReason.empty()
+               << (polygon.filteredReason.empty()
                        ? std::string("<none>")
-                       : polygon.compatibilityFilteredReason);
+                       : polygon.filteredReason);
         if (!polygon.activeProofDetail.empty()) {
             stream << ":detail=" << polygon.activeProofDetail;
         }
-        values.push_back(stream.str());
-    }
-    std::sort(values.begin(), values.end());
-    return values;
-}
-
-std::vector<std::string> ExtractAuthorityTransceiverProofEvidence(
-    const xvatsim::brain::AuthorityRelevanceSnapshot& snapshot) {
-    std::vector<std::string> values;
-    values.reserve(snapshot.evidence.transceiverRouteProofEvidence.size());
-    for (const auto& proof : snapshot.evidence.transceiverRouteProofEvidence) {
-        std::ostringstream stream;
-        stream << proof.callsign
-               << ":stationCount=" << proof.stationCandidateCount
-               << ":station=" << proof.stationCallsign << "@"
-               << proof.stationFrequency
-               << ":polygon=" << proof.polygonKey
-               << ":src=" << proof.authoritySource
-               << ":kind=" << proof.authorityKind
-               << ":dist="
-               << RoundedEvidenceText(proof.stationPolygonDistanceNm)
-               << ":tol=" << RoundedEvidenceText(proof.toleranceNm)
-               << ":within=" << (proof.withinTolerance ? 1 : 0)
-               << ":owner=" << (proof.sourceOwnershipMatch ? 1 : 0)
-               << ":unownedBorder="
-               << (proof.unownedBorderMismatch ? 1 : 0)
-               << ":blocked="
-               << (proof.blockedByDirectActiveProof ? 1 : 0)
-               << ":noStation=" << (proof.noStationCandidates ? 1 : 0)
-               << ":score=" << RoundedEvidenceText(proof.stationScore)
-               << ":bestScore=" << (proof.bestByModuleScore ? 1 : 0)
-               << ":oldProof=" << (proof.oldProofSurvivor ? 1 : 0)
-               << ":reason="
-               << (proof.proofRejectionReason.empty()
-                       ? std::string("<none>")
-                       : proof.proofRejectionReason);
-        values.push_back(stream.str());
-    }
-    std::sort(values.begin(), values.end());
-    return values;
-}
-
-std::vector<std::string> ExtractAuthorityDuplicatedAtisProofEvidence(
-    const xvatsim::brain::AuthorityRelevanceSnapshot& snapshot) {
-    std::vector<std::string> values;
-    values.reserve(snapshot.evidence.duplicatedAtisProofEvidence.size());
-    for (const auto& proof : snapshot.evidence.duplicatedAtisProofEvidence) {
-        std::ostringstream stream;
-        stream << proof.callsign
-               << ":token=" << proof.coveredToken
-               << ":text=" << (proof.textAtisPresent ? 1 : 0)
-               << ":tokens=" << JoinPipeOrNone(proof.extractedCoveredTokens)
-               << ":aliases=" << JoinPipeOrNone(proof.matchedRouteAuthorityAliases)
-               << ":auth=" << proof.authorityId
-               << ":src=" << proof.authoritySource
-               << ":kind=" << proof.authorityKind
-               << ":polygon=" << proof.polygonKey
-               << ":allowed=" << (proof.sourceKindAllowed ? 1 : 0)
-               << ":routePolygon="
-               << (proof.routeRelevantPolygonFound ? 1 : 0)
-               << ":facility=" << (proof.facilityEligible ? 1 : 0)
-               << ":missingOwner="
-               << (proof.missingSourceOwnership ? 1 : 0)
-               << ":oldProof=" << (proof.oldProofSurvivor ? 1 : 0)
-               << ":reason="
-               << (proof.proofRejectionReason.empty()
-                       ? std::string("<none>")
-                       : proof.proofRejectionReason);
         values.push_back(stream.str());
     }
     std::sort(values.begin(), values.end());
@@ -5037,6 +5069,10 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         scenario->radioStateSnapshot.com1StandbyFrequency = value;
         return true;
     }
+    if (key == "radio.standby_assist_enabled") {
+        return ParseBool(
+            value, &scenario->radioStateSnapshot.standbyAssistEnabled);
+    }
     if (key == "xpilot.connected") {
         return ParseBool(value, &scenario->xPilotSessionSnapshot.connected);
     }
@@ -5204,6 +5240,11 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "expect.overlay_body_tones") {
         scenario->expectations.overlayBodyTones = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.overlay_selectable_center_frequencies") {
+        scenario->expectations.overlaySelectableCenterFrequencies =
+            Split(value, ',');
         return true;
     }
     if (key == "expect.overlay_version_text") {
@@ -5465,14 +5506,33 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
             Split(value, ',');
         return true;
     }
-    if (key == "expect.resolver_authority_transceiver_proof_evidence_contains") {
-        scenario->expectations.resolverAuthorityTransceiverProofEvidenceContains =
-            Split(value, ',');
+    if (key == "expect.resolver_live_authority_map_status") {
+        scenario->expectations.resolverLiveAuthorityMapStatus = value;
         return true;
     }
-    if (key == "expect.resolver_authority_duplicated_atis_proof_evidence_contains") {
-        scenario->expectations.resolverAuthorityDuplicatedAtisProofEvidenceContains =
-            Split(value, ',');
+    if (key == "expect.resolver_live_authority_map_generation_coherent") {
+        bool parsed = false;
+        if (!ParseBool(value, &parsed)) {
+            return false;
+        }
+        scenario->expectations.resolverLiveAuthorityMapGenerationCoherent = parsed;
+        return true;
+    }
+    if (key == "expect.resolver_live_authority_assignments") {
+        scenario->expectations.resolverLiveAuthorityAssignments = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.resolver_live_authority_conflicts") {
+        scenario->expectations.resolverLiveAuthorityConflicts = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.resolver_live_authority_unmapped") {
+        scenario->expectations.resolverLiveAuthorityUnmapped = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.resolver_authority_diagnostic_geojson_contains") {
+        scenario->expectations.resolverAuthorityDiagnosticGeoJsonContains
+            .push_back(value);
         return true;
     }
     if (key == "expect.resolver_authority_preview_summary") {
@@ -5482,18 +5542,6 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     if (key == "expect.resolver_authority_preview_decisions_contains") {
         scenario->expectations.resolverAuthorityPreviewDecisionsContains =
             Split(value, ',');
-        return true;
-    }
-    if (key == "expect.resolver_enroute_available") {
-        bool parsed = false;
-        if (!ParseBool(value, &parsed)) {
-            return false;
-        }
-        scenario->expectations.resolverEnrouteAvailable = parsed;
-        return true;
-    }
-    if (key == "expect.resolver_enroute_callsigns") {
-        scenario->expectations.resolverEnrouteCallsigns = Split(value, ',');
         return true;
     }
     if (key == "expect.source_registry_values") {
@@ -6088,12 +6136,16 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
         scenario->expectations.radioReachableVerifierUnchangedStatus = value;
         return true;
     }
-    if (key == "expect.terminal_authority_owners") {
-        scenario->expectations.terminalAuthorityOwners = Split(value, ',');
+    if (key == "expect.endpoint_polygon_owners") {
+        scenario->expectations.endpointPolygonOwners = Split(value, ',');
         return true;
     }
-    if (key == "expect.terminal_authority_polygons") {
-        scenario->expectations.terminalAuthorityPolygons = Split(value, ',');
+    if (key == "expect.endpoint_polygons") {
+        scenario->expectations.endpointPolygons = Split(value, ',');
+        return true;
+    }
+    if (key == "expect.vnas_live_ownership_facts") {
+        scenario->expectations.vnasLiveOwnershipFacts = Split(value, ',');
         return true;
     }
     if (key == "expect.airport_frequency_departure_records") {
@@ -6501,6 +6553,25 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
     }
     if (key == "standby_assist.enabled") {
         return ParseBool(value, &scenario->standbyAssistEnabled);
+    }
+    if (key == "center_frequency_selection.apply") {
+        return ParseBool(value, &scenario->applyCenterFrequencySelection);
+    }
+    if (key == "center_frequency_selection.callsign") {
+        scenario->centerFrequencySelectionCallsign = value;
+        return true;
+    }
+    if (key == "center_frequency_selection.frequency") {
+        scenario->centerFrequencySelectionFrequency = value;
+        return true;
+    }
+    if (key == "center_frequency_selection.stable_key") {
+        scenario->centerFrequencySelectionStableKey = value;
+        return true;
+    }
+    if (key == "center_frequency_selection.write_succeeded") {
+        return ParseBool(
+            value, &scenario->centerFrequencySelectionWriteSucceeded);
     }
     if (key == "standby_assist.direct_ctaf_enabled" ||
         key == "standby_assist.direct_ctaf_standby_assist_enabled") {
@@ -8899,16 +8970,13 @@ std::string BrainAuthorityRelevancePreviewSummaryText(
     stream << "authority=" << preview.summary.authority
            << ",source=" << preview.summary.sourceControllerCount
            << ",evidence=" << preview.summary.evidenceControllerCount
-           << ",compatRelevant="
-           << preview.summary.compatibilityRelevantAuthorityCount
+           << ",relevant=" << preview.summary.relevantAuthorityCount
            << ",previewSurvivors=" << preview.summary.previewSurvivorCount
            << ",previewRejected=" << preview.summary.previewRejectedCount
            << ",oldMismatch="
            << preview.summary.oldSurvivorMismatchCount
            << ",droppedBeforeBrain="
            << preview.summary.droppedBeforeBrainControllers
-           << ",compatOnly="
-           << BoolDigit(preview.summary.relevantAuthoritiesCompatibilityOnly)
            << ",liveOwned="
            << BoolDigit(preview.summary.liveRelevantAuthoritiesBrainOwned);
     return stream.str();
@@ -9183,6 +9251,27 @@ bool AddTraversalFeature(
                 return false;
             }
             feature.polygons.push_back(std::move(polygon));
+        } else if (field == "hole") {
+            if (feature.polygons.empty()) {
+                return false;
+            }
+            std::vector<xvatsim::core::route::GeoPoint> hole;
+            for (const auto& pointToken : Split(fieldValue, '|')) {
+                const auto parts = Split(pointToken, ',');
+                if (parts.size() != 2) {
+                    return false;
+                }
+                const auto lat = ParseDouble(parts[0]);
+                const auto lon = ParseDouble(parts[1]);
+                if (!lat.has_value() || !lon.has_value()) {
+                    return false;
+                }
+                hole.push_back({*lat, *lon});
+            }
+            if (hole.size() < 3) {
+                return false;
+            }
+            feature.polygons.back().holes.push_back(std::move(hole));
         }
     }
 
@@ -9239,6 +9328,27 @@ bool AddTerminalCoverageFeature(
                 return false;
             }
             feature.polygons.push_back(std::move(polygon));
+        } else if (field == "hole") {
+            if (feature.polygons.empty()) {
+                return false;
+            }
+            std::vector<xvatsim::core::route::GeoPoint> hole;
+            for (const auto& pointToken : Split(fieldValue, '|')) {
+                const auto parts = Split(pointToken, ',');
+                if (parts.size() != 2) {
+                    return false;
+                }
+                const auto lat = ParseDouble(parts[0]);
+                const auto lon = ParseDouble(parts[1]);
+                if (!lat.has_value() || !lon.has_value()) {
+                    return false;
+                }
+                hole.push_back({*lat, *lon});
+            }
+            if (hole.size() < 3) {
+                return false;
+            }
+            feature.polygons.back().holes.push_back(std::move(hole));
         }
     }
 
@@ -9327,13 +9437,15 @@ bool AddAuthorityPolygonSourceRecord(
             record.id = fieldValue;
         } else if (field == "name") {
             record.name = fieldValue;
+        } else if (field == "polygonKey") {
+            record.polygonKey = fieldValue;
         } else if (field == "suffix") {
             record.suffix = fieldValue;
         } else if (field == "prefixes" || field == "prefix") {
             record.prefixes = Split(fieldValue, ',');
         } else if (field == "tokens" || field == "lookupTokens") {
             record.lookupTokens = Split(fieldValue, ',');
-        } else if (field == "polygon") {
+        } else if (field == "polygon" || field == "exterior") {
             xvatsim::core::authority::AuthorityPolygonRing ring;
             for (const auto& pointToken : Split(fieldValue, '|')) {
                 const auto parts = Split(pointToken, ',');
@@ -9347,7 +9459,28 @@ bool AddAuthorityPolygonSourceRecord(
                 }
                 ring.points.push_back({*lat, *lon});
             }
-            record.rings.push_back(std::move(ring));
+            xvatsim::core::authority::AuthorityPolygonPart polygonPart;
+            polygonPart.componentId = std::to_string(record.parts.size());
+            polygonPart.exterior = std::move(ring);
+            record.parts.push_back(std::move(polygonPart));
+        } else if (field == "hole") {
+            if (record.parts.empty()) {
+                return false;
+            }
+            xvatsim::core::authority::AuthorityPolygonRing hole;
+            for (const auto& pointToken : Split(fieldValue, '|')) {
+                const auto parts = Split(pointToken, ',');
+                if (parts.size() != 2) {
+                    return false;
+                }
+                const auto lat = ParseDouble(parts[0]);
+                const auto lon = ParseDouble(parts[1]);
+                if (!lat.has_value() || !lon.has_value()) {
+                    return false;
+                }
+                hole.points.push_back({*lat, *lon});
+            }
+            record.parts.back().holes.push_back(std::move(hole));
         }
     }
 
@@ -9458,23 +9591,57 @@ std::string BuildBoundaryPayload(
             }
             stream << "\"";
         }
-        stream << "},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[";
-
-        const auto& ring = feature.polygons.front().ring;
-        for (std::size_t pointIndex = 0; pointIndex < ring.size(); ++pointIndex) {
-            if (pointIndex > 0) {
-                stream << ",";
+        const auto writeRing = [&](
+            const std::vector<xvatsim::core::route::GeoPoint>& ring) {
+            stream << "[";
+            for (std::size_t pointIndex = 0;
+                 pointIndex < ring.size();
+                 ++pointIndex) {
+                if (pointIndex > 0) {
+                    stream << ",";
+                }
+                stream << "[" << ring[pointIndex].longitudeDeg << ","
+                       << ring[pointIndex].latitudeDeg << "]";
             }
-            stream << "[" << ring[pointIndex].longitudeDeg << ","
-                   << ring[pointIndex].latitudeDeg << "]";
+            if (!ring.empty() &&
+                (ring.front().latitudeDeg != ring.back().latitudeDeg ||
+                 ring.front().longitudeDeg != ring.back().longitudeDeg)) {
+                stream << ",[" << ring.front().longitudeDeg << ","
+                       << ring.front().latitudeDeg << "]";
+            }
+            stream << "]";
+        };
+        const auto writePolygon = [&](
+            const xvatsim::core::route::SectorPolygon& polygon) {
+            stream << "[";
+            writeRing(polygon.ring);
+            for (const auto& hole : polygon.holes) {
+                stream << ",";
+                writeRing(hole);
+            }
+            stream << "]";
+        };
+        const auto multiPolygon = feature.polygons.size() > 1;
+        stream << "},\"geometry\":{\"type\":\""
+               << (multiPolygon ? "MultiPolygon" : "Polygon")
+               << "\",\"coordinates\":[";
+        if (multiPolygon) {
+            for (std::size_t polygonIndex = 0;
+                 polygonIndex < feature.polygons.size();
+                 ++polygonIndex) {
+                if (polygonIndex > 0) {
+                    stream << ",";
+                }
+                writePolygon(feature.polygons[polygonIndex]);
+            }
+        } else {
+            writeRing(feature.polygons.front().ring);
+            for (const auto& hole : feature.polygons.front().holes) {
+                stream << ",";
+                writeRing(hole);
+            }
         }
-        if (!ring.empty() &&
-            (ring.front().latitudeDeg != ring.back().latitudeDeg ||
-             ring.front().longitudeDeg != ring.back().longitudeDeg)) {
-            stream << ",[" << ring.front().longitudeDeg << ","
-                   << ring.front().latitudeDeg << "]";
-        }
-        stream << "]]}}";
+        stream << "]}}";
     }
     stream << "]}";
     return wroteFeature ? stream.str() : std::string{};
@@ -9506,23 +9673,57 @@ std::string BuildTerminalBoundaryPayload(
             }
             stream << "\"" << JsonEscape(feature.prefixes[prefixIndex]) << "\"";
         }
-        stream << "]},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[";
-
-        const auto& ring = feature.polygons.front().ring;
-        for (std::size_t pointIndex = 0; pointIndex < ring.size(); ++pointIndex) {
-            if (pointIndex > 0) {
-                stream << ",";
+        const auto writeRing = [&](
+            const std::vector<xvatsim::core::route::GeoPoint>& ring) {
+            stream << "[";
+            for (std::size_t pointIndex = 0;
+                 pointIndex < ring.size();
+                 ++pointIndex) {
+                if (pointIndex > 0) {
+                    stream << ",";
+                }
+                stream << "[" << ring[pointIndex].longitudeDeg << ","
+                       << ring[pointIndex].latitudeDeg << "]";
             }
-            stream << "[" << ring[pointIndex].longitudeDeg << ","
-                   << ring[pointIndex].latitudeDeg << "]";
+            if (!ring.empty() &&
+                (ring.front().latitudeDeg != ring.back().latitudeDeg ||
+                 ring.front().longitudeDeg != ring.back().longitudeDeg)) {
+                stream << ",[" << ring.front().longitudeDeg << ","
+                       << ring.front().latitudeDeg << "]";
+            }
+            stream << "]";
+        };
+        const auto writePolygon = [&](
+            const xvatsim::core::route::SectorPolygon& polygon) {
+            stream << "[";
+            writeRing(polygon.ring);
+            for (const auto& hole : polygon.holes) {
+                stream << ",";
+                writeRing(hole);
+            }
+            stream << "]";
+        };
+        const auto multiPolygon = feature.polygons.size() > 1;
+        stream << "]},\"geometry\":{\"type\":\""
+               << (multiPolygon ? "MultiPolygon" : "Polygon")
+               << "\",\"coordinates\":[";
+        if (multiPolygon) {
+            for (std::size_t polygonIndex = 0;
+                 polygonIndex < feature.polygons.size();
+                 ++polygonIndex) {
+                if (polygonIndex > 0) {
+                    stream << ",";
+                }
+                writePolygon(feature.polygons[polygonIndex]);
+            }
+        } else {
+            writeRing(feature.polygons.front().ring);
+            for (const auto& hole : feature.polygons.front().holes) {
+                stream << ",";
+                writeRing(hole);
+            }
         }
-        if (!ring.empty() &&
-            (ring.front().latitudeDeg != ring.back().latitudeDeg ||
-             ring.front().longitudeDeg != ring.back().longitudeDeg)) {
-            stream << ",[" << ring.front().longitudeDeg << ","
-                   << ring.front().latitudeDeg << "]";
-        }
-        stream << "]]}}";
+        stream << "]}}";
     }
     stream << "]}";
     return stream.str();
@@ -9794,45 +9995,45 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
             scenario->routeSectorSnapshot.routeResolved = true;
             continue;
         }
-        if (key == "terminal_authority.airport_icao") {
-            scenario->terminalAuthorityAirportIcao = value;
+        if (key == "endpoint_polygon_query.airport_icao") {
+            scenario->endpointPolygonAirportIcao = value;
             continue;
         }
-        if (key == "terminal_authority.lat") {
+        if (key == "endpoint_polygon_query.lat") {
             const auto parsed = ParseDouble(value);
             if (!parsed.has_value()) {
                 if (outError != nullptr) {
                     *outError =
-                        "Invalid terminal_authority.lat at line " +
+                        "Invalid endpoint_polygon_query.lat at line " +
                         std::to_string(lineNumber);
                 }
                 return false;
             }
-            scenario->terminalAuthorityLatitudeDeg = *parsed;
-            scenario->hasTerminalAuthorityCoordinates = true;
+            scenario->endpointPolygonLatitudeDeg = *parsed;
+            scenario->hasEndpointPolygonCoordinates = true;
             continue;
         }
-        if (key == "terminal_authority.lon") {
+        if (key == "endpoint_polygon_query.lon") {
             const auto parsed = ParseDouble(value);
             if (!parsed.has_value()) {
                 if (outError != nullptr) {
                     *outError =
-                        "Invalid terminal_authority.lon at line " +
+                        "Invalid endpoint_polygon_query.lon at line " +
                         std::to_string(lineNumber);
                 }
                 return false;
             }
-            scenario->terminalAuthorityLongitudeDeg = *parsed;
-            scenario->hasTerminalAuthorityCoordinates = true;
+            scenario->endpointPolygonLongitudeDeg = *parsed;
+            scenario->hasEndpointPolygonCoordinates = true;
             continue;
         }
-        if (key == "terminal_authority.feature") {
+        if (key == "endpoint_polygon_query.feature") {
             if (!AddTerminalCoverageFeature(
-                    &scenario->terminalAuthorityFeatures,
+                    &scenario->endpointPolygonFeatures,
                     value)) {
                 if (outError != nullptr) {
                     *outError =
-                        "Invalid terminal_authority.feature at line " +
+                        "Invalid endpoint_polygon_query.feature at line " +
                         std::to_string(lineNumber);
                 }
                 return false;
@@ -9900,6 +10101,14 @@ bool LoadScenario(const std::filesystem::path& path, ScenarioData* scenario, std
         }
         if (key == "vnas.artcc_facility_json") {
             scenario->vnasArtccFacilityJsons.push_back(value);
+            continue;
+        }
+        if (key == "vnas.repeat_controller_feed_json") {
+            scenario->vnasRepeatControllerFeedJson = value;
+            continue;
+        }
+        if (key == "vnas.repeat_artcc_facility_json") {
+            scenario->vnasRepeatArtccFacilityJsons.push_back(value);
             continue;
         }
         if (key == "controller.entry") {
@@ -21769,10 +21978,13 @@ int RunStep4ContractProbe(const ScenarioData& scenario) {
                 "draw-time competing presentation commit remains");
     } else if (probe == "accessory_bounded_diagnostics") {
         require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
-                                  "accessoryClickTerminalFacts"),
+                                  "event=accessory-performance-integration"),
+                "bounded accessory integration record missing");
+        require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
+                                  "clickTerminalFacts"),
                 "authoritative click terminal summary missing");
         require(Step4FileContains("plugin/src/XVatsimPlugin.cpp",
-                                  "accessoryMaximumClickToTerminalUs"),
+                                  "maximumClickToTerminalUs"),
                 "authoritative click-to-terminal maximum missing");
         require(Step4FileContains(
                     "brain/include/XVatsim/brain/BrainOwnedRuntime.h",
@@ -24019,6 +24231,10 @@ int main(int argc, char** argv) {
         return xvatsim::tools::controller_operational_eligibility::
             RunControllerOperationalEligibilityProbe();
     }
+    if (std::string(argv[1]) == "--radio-receive-activity") {
+        return xvatsim::tools::radio_receive_activity::
+            RunRadioReceiveActivityProbe();
+    }
     if (std::string(argv[1]) ==
         "--controller-operational-eligibility-performance") {
         return xvatsim::tools::controller_operational_eligibility::
@@ -24298,30 +24514,12 @@ int main(int argc, char** argv) {
         }
     }
 
-    xvatsim::modules::departure::DepartureModule departureModule;
-    const auto collectedDepartureBoard = departureModule.Collect(
-        scenario.xPilotSessionSnapshot,
-        controllerFeedSnapshot,
-        scenario.radioStateSnapshot,
-        scenario.workflowState.flightContext.departureIcao,
-        scenario.departureAirportSectorSnapshot,
-        scenario.authorityEnrouteHandoff ? &authorityRelevanceSnapshot : nullptr,
-        nullptr);
-    xvatsim::modules::arrival::ArrivalAirspaceModule arrivalAirspaceModule;
-    const auto collectedArrivalAirspaceBoard = arrivalAirspaceModule.Collect(
-        scenario.xPilotSessionSnapshot,
-        controllerFeedSnapshot,
-        scenario.radioStateSnapshot,
-        scenario.workflowState.flightContext.destinationIcao,
-        scenario.arrivalAirportSectorSnapshot,
-        scenario.authorityEnrouteHandoff ? &authorityRelevanceSnapshot : nullptr);
-    xvatsim::modules::arrival::ArrivalLocalModule arrivalLocalModule;
-    const auto collectedArrivalLocalBoard = arrivalLocalModule.Collect(
-        scenario.xPilotSessionSnapshot,
-        controllerFeedSnapshot,
-        scenario.radioStateSnapshot,
-        scenario.workflowState.flightContext.destinationIcao,
-        scenario.authorityEnrouteHandoff ? &authorityRelevanceSnapshot : nullptr);
+    // Compatibility output labels below are projections of the production
+    // Brain boards.  No harness-only controller matcher is allowed to produce
+    // an independent answer.
+    xvatsim::brain::ModuleBoardSnapshot collectedDepartureBoard;
+    xvatsim::brain::ModuleBoardSnapshot collectedArrivalAirspaceBoard;
+    xvatsim::brain::ModuleBoardSnapshot collectedArrivalLocalBoard;
     xvatsim::brain::AirportSectorSnapshot builtAirportCoverageSnapshot;
     xvatsim::brain::AirportSectorSnapshot preRefreshAirportCoverageSnapshot;
     bool hasPreRefreshAirportCoverageSnapshot = false;
@@ -24330,7 +24528,7 @@ int main(int argc, char** argv) {
     xvatsim::brain::RouteAuthorityPlan resolverRouteAuthorityPlan;
     xvatsim::brain::AuthorityRelevanceSnapshot resolverAuthorityRelevanceSnapshot;
     xvatsim::brain::AuthorityRelevanceSnapshot resolverAuthorityRepeatSnapshot;
-    xvatsim::brain::ModuleBoardSnapshot resolverEnrouteBoard;
+    std::string resolverAuthorityDiagnosticGeoJson;
     if (!scenario.airportCoverageBuildIcao.empty()) {
         xvatsim::modules::route_sector::RouteSectorResolver routeSectorResolver;
         routeSectorResolver.LoadBoundaryPayloadsForTesting(
@@ -24370,13 +24568,7 @@ int main(int argc, char** argv) {
                 scenario.airportTerminalProbeLongitudeDeg);
         }
     }
-    xvatsim::modules::enroute::EnrouteModule enrouteModule;
-    const auto collectedEnrouteBoard = enrouteModule.Collect(
-        scenario.xPilotSessionSnapshot,
-        controllerFeedSnapshot,
-        scenario.radioStateSnapshot,
-        scenario.routeSectorSnapshot,
-        scenario.authorityEnrouteHandoff ? &authorityRelevanceSnapshot : nullptr);
+    xvatsim::brain::ModuleBoardSnapshot collectedEnrouteBoard;
     xvatsim::modules::update_checker::UpdateCheckResult updateCheckResult;
     if (!scenario.updateManifestPayload.empty()) {
         xvatsim::modules::update_checker::UpdateCheckRequest updateRequest;
@@ -24467,6 +24659,25 @@ int main(int argc, char** argv) {
             }
         }
     }
+    const auto vnasControllerFeed =
+        xvatsim::modules::vnas_data::DecodeVnasControllerFeedDocument(
+            scenario.vnasControllerFeedJson);
+    std::vector<std::shared_ptr<const
+        xvatsim::modules::vnas_data::VnasArtccFacilityDocument>>
+        vnasFacilityDocuments;
+    vnasFacilityDocuments.reserve(scenario.vnasArtccFacilityJsons.size());
+    for (const auto& payload : scenario.vnasArtccFacilityJsons) {
+        vnasFacilityDocuments.push_back(std::make_shared<const
+            xvatsim::modules::vnas_data::VnasArtccFacilityDocument>(
+                xvatsim::modules::vnas_data::DecodeVnasArtccFacilityDocument(
+                    payload)));
+    }
+    const auto vnasLiveOwnership = std::make_shared<
+        const xvatsim::brain::VnasLiveOwnershipSnapshot>(
+            xvatsim::modules::vnas_data::BuildVnasLiveOwnershipSnapshot(
+                vnasControllerFeed,
+                vnasFacilityDocuments,
+                scenario.controllerRelevanceV2Enabled));
     if (scenario.resolveRouteWithResolver) {
         xvatsim::modules::route_sector::RouteSectorResolver routeSectorResolver;
         routeSectorResolver.LoadBoundaryPayloadsForTesting(
@@ -24532,10 +24743,10 @@ int main(int argc, char** argv) {
                 controllerFeedSnapshot,
                 resolverRouteSectorSnapshot,
                 "regression-harness-authority-verifier",
-                (scenario.transceiverResolutionSnapshot.available ||
-                 !scenario.transceiverResolutionSnapshot.candidates.empty())
-                    ? &scenario.transceiverResolutionSnapshot
-                    : nullptr);
+                vnasLiveOwnership);
+        resolverAuthorityDiagnosticGeoJson =
+            routeSectorResolver.BuildAuthorityDiagnosticGeoJson(
+                resolverAuthorityRelevanceSnapshot);
         if (authorityWorkerParityRequested &&
             routeSectorResolver.GetAuthoritySourceDataset() != nullptr) {
             xvatsim::modules::route_sector::AuthorityWorkerRequest
@@ -24551,12 +24762,8 @@ int main(int argc, char** argv) {
                     controllerFeedSnapshot.Controllers(),
                     controllerFeedSnapshot.available,
                     controllerFeedSnapshot.stale);
-            const auto parityAuthorityTransceivers =
-                xvatsim::brain::BuildBrainAuthorityTransceiverEvidence(
-                    scenario.transceiverResolutionSnapshot);
-            parityRequest.identity.transceiverDigest =
-                xvatsim::brain::HashBrainAuthorityTransceiverEvidence(
-                    parityAuthorityTransceivers);
+            parityRequest.identity.dynamicOwnershipDigest =
+                vnasLiveOwnership->stableHash;
             parityRequest.identity.datasetIdentity =
                 routeSectorResolver.GetAuthoritySourceDatasetIdentity();
             parityRequest.aircraft = scenario.aircraftState;
@@ -24580,16 +24787,11 @@ int main(int argc, char** argv) {
                 controllerFeedSnapshot.generation;
             parityRequest.controllerFeedConnectedControllers =
                 controllerFeedSnapshot.connectedControllers;
+            parityRequest.dynamicOwnership = vnasLiveOwnership;
             parityRequest.terminalBoundaryGeneration =
                 routeSectorResolver.GetTerminalBoundaryGeneration();
             parityRequest.scheduleReason =
                 "regression-harness-authority-verifier";
-            parityRequest.hasTransceiverEvidence =
-                scenario.transceiverResolutionSnapshot.available ||
-                !scenario.transceiverResolutionSnapshot.candidates.empty();
-            parityRequest.transceivers = std::make_shared<
-                const xvatsim::brain::AuthorityTransceiverEvidenceSnapshot>(
-                    parityAuthorityTransceivers);
             parityRequest.dataset =
                 routeSectorResolver.GetAuthoritySourceDataset();
             xvatsim::modules::route_sector::AuthorityRelevanceWorker
@@ -24682,7 +24884,9 @@ int main(int argc, char** argv) {
         if (scenario.resolverAuthorityRepeatControllerFeedGeneration > 0 ||
             scenario.resolverAuthorityRepeatCacheAgeSeconds > 0 ||
             !scenario.resolverAuthorityRepeatControllers.empty() ||
-            scenario.hasResolverAuthorityRepeatAircraftState) {
+            scenario.hasResolverAuthorityRepeatAircraftState ||
+            !scenario.vnasRepeatControllerFeedJson.empty() ||
+            !scenario.vnasRepeatArtccFacilityJsons.empty()) {
             if (scenario.resolverAuthorityRepeatCacheAgeSeconds > 0) {
                 routeSectorResolver.AgeAuthorityRelevanceCacheForTesting(
                     scenario.resolverAuthorityRepeatCacheAgeSeconds);
@@ -24721,23 +24925,44 @@ int main(int argc, char** argv) {
                         repeatAircraftState,
                         routePlanSnapshot);
             }
+            auto repeatVnasLiveOwnership = vnasLiveOwnership;
+            if (!scenario.vnasRepeatControllerFeedJson.empty() ||
+                !scenario.vnasRepeatArtccFacilityJsons.empty()) {
+                const auto repeatControllerFeed =
+                    xvatsim::modules::vnas_data::DecodeVnasControllerFeedDocument(
+                        scenario.vnasRepeatControllerFeedJson.empty()
+                            ? scenario.vnasControllerFeedJson
+                            : scenario.vnasRepeatControllerFeedJson);
+                const auto& repeatFacilityPayloads =
+                    scenario.vnasRepeatArtccFacilityJsons.empty()
+                        ? scenario.vnasArtccFacilityJsons
+                        : scenario.vnasRepeatArtccFacilityJsons;
+                std::vector<std::shared_ptr<const
+                    xvatsim::modules::vnas_data::VnasArtccFacilityDocument>>
+                    repeatFacilityDocuments;
+                repeatFacilityDocuments.reserve(repeatFacilityPayloads.size());
+                for (const auto& payload : repeatFacilityPayloads) {
+                    repeatFacilityDocuments.push_back(std::make_shared<const
+                        xvatsim::modules::vnas_data::VnasArtccFacilityDocument>(
+                            xvatsim::modules::vnas_data::
+                                DecodeVnasArtccFacilityDocument(payload)));
+                }
+                repeatVnasLiveOwnership = std::make_shared<const
+                    xvatsim::brain::VnasLiveOwnershipSnapshot>(
+                        xvatsim::modules::vnas_data::
+                            BuildVnasLiveOwnershipSnapshot(
+                                repeatControllerFeed,
+                                repeatFacilityDocuments,
+                                scenario.controllerRelevanceV2Enabled));
+            }
             resolverAuthorityRepeatSnapshot =
                 routeSectorResolver.ResolveBrainScheduledAuthorityVerification(
                     repeatAircraftState,
                     repeatControllerFeedSnapshot,
                     repeatRouteSectorSnapshot,
                     "regression-harness-authority-verifier-repeat",
-                    (scenario.transceiverResolutionSnapshot.available ||
-                     !scenario.transceiverResolutionSnapshot.candidates.empty())
-                        ? &scenario.transceiverResolutionSnapshot
-                        : nullptr);
+                    repeatVnasLiveOwnership);
         }
-        resolverEnrouteBoard = enrouteModule.Collect(
-            scenario.xPilotSessionSnapshot,
-            controllerFeedSnapshot,
-            scenario.radioStateSnapshot,
-            resolverRouteSectorSnapshot,
-            &resolverAuthorityRelevanceSnapshot);
     }
     const auto grammarCatalog =
         xvatsim::core::route::BuildRouteGrammarCatalog(
@@ -24789,25 +25014,29 @@ int main(int argc, char** argv) {
             vatglassesSourcePackagePayload,
             supplementalSourcePackagePayloads);
 
-    xvatsim::brain::BrainTerminalAuthorityWorkerOutput terminalAuthorityOutput;
-    if (!scenario.terminalAuthorityAirportIcao.empty()) {
-        xvatsim::modules::terminal_authority::TerminalAuthorityResolver
-            terminalAuthorityResolver;
-        terminalAuthorityResolver.LoadPayloadForTesting(
-            BuildTerminalBoundaryPayload(scenario.terminalAuthorityFeatures));
-        xvatsim::brain::BrainTerminalAuthorityWorkerInput terminalInput;
-        terminalInput.airportIcao = scenario.terminalAuthorityAirportIcao;
-        terminalInput.hasAirportCoordinates =
-            scenario.hasTerminalAuthorityCoordinates;
-        terminalInput.airportLatitudeDeg =
-            scenario.terminalAuthorityLatitudeDeg;
-        terminalInput.airportLongitudeDeg =
-            scenario.terminalAuthorityLongitudeDeg;
-        terminalInput.nowSeconds =
+    xvatsim::brain::BrainEndpointPolygonQueryOutput endpointPolygonOutput;
+    std::unique_ptr<xvatsim::modules::route_sector::RouteSectorResolver>
+        endpointPolygonResolver;
+    if (!scenario.endpointPolygonAirportIcao.empty()) {
+        endpointPolygonResolver = std::make_unique<
+            xvatsim::modules::route_sector::RouteSectorResolver>();
+        endpointPolygonResolver->LoadBoundaryPayloadsForTesting(
+            R"json({"type":"FeatureCollection","features":[]})json",
+            BuildTerminalBoundaryPayload(scenario.endpointPolygonFeatures),
+            "[FIR]\n");
+        xvatsim::brain::BrainEndpointPolygonQueryInput endpointInput;
+        endpointInput.airportIcao = scenario.endpointPolygonAirportIcao;
+        endpointInput.hasAirportCoordinates =
+            scenario.hasEndpointPolygonCoordinates;
+        endpointInput.airportLatitudeDeg =
+            scenario.endpointPolygonLatitudeDeg;
+        endpointInput.airportLongitudeDeg =
+            scenario.endpointPolygonLongitudeDeg;
+        endpointInput.nowSeconds =
             static_cast<long long>(scenario.nowSeconds);
-        terminalAuthorityOutput =
-            terminalAuthorityResolver.ResolveAirportTerminalOwner(
-                terminalInput);
+        endpointPolygonOutput =
+            endpointPolygonResolver->QueryEndpointPolygons(
+                endpointInput);
     }
 
     xvatsim::brain::BrainOwnedRuntimeState airportFrequencyRuntimeState;
@@ -24836,72 +25065,58 @@ int main(int argc, char** argv) {
             scenario.transceiverResolutionSnapshot,
             controllerFeedSnapshot,
             relevanceRadioOptions);
-    xvatsim::brain::BrainTerminalAuthorityWorkerOutput
-        departureTerminalAuthorityOutput;
-    xvatsim::brain::BrainTerminalAuthorityWorkerOutput
-        arrivalTerminalAuthorityOutput;
+    xvatsim::brain::BrainEndpointPolygonQueryOutput
+        departureEndpointPolygonOutput;
+    xvatsim::brain::BrainEndpointPolygonQueryOutput
+        arrivalEndpointPolygonOutput;
     if (scenario.controllerRelevanceWorkflowStage == WorkflowStage::Arrival) {
-        arrivalTerminalAuthorityOutput = terminalAuthorityOutput;
+        arrivalEndpointPolygonOutput = endpointPolygonOutput;
     } else {
-        departureTerminalAuthorityOutput = terminalAuthorityOutput;
+        departureEndpointPolygonOutput = endpointPolygonOutput;
     }
-    xvatsim::brain::BrainEndpointTerminalEvidenceScope departureScope;
-    departureScope.airportIcao =
-        scenario.workflowState.flightContext.departureIcao;
-    departureScope.hasAirportCoordinates =
-        scenario.workflowState.flightContext.hasDepartureCoordinates;
-    departureScope.airportLatitudeDeg =
-        scenario.workflowState.flightContext.departureLatDeg;
-    departureScope.airportLongitudeDeg =
-        scenario.workflowState.flightContext.departureLonDeg;
-    xvatsim::brain::BrainEndpointTerminalEvidenceScope arrivalScope;
-    arrivalScope.airportIcao =
-        scenario.workflowState.flightContext.destinationIcao;
-    arrivalScope.hasAirportCoordinates =
-        scenario.workflowState.flightContext.hasDestinationCoordinates;
-    arrivalScope.airportLatitudeDeg =
-        scenario.workflowState.flightContext.destinationLatDeg;
-    arrivalScope.airportLongitudeDeg =
-        scenario.workflowState.flightContext.destinationLonDeg;
-    const auto controllerRelevanceRadioSnapshot =
-        scenario.controllerRelevanceV2Enabled
-            ? xvatsim::brain::BuildBrainEndpointScopedControllerSnapshot(
-                  receivableControllerRelevanceRadioSnapshot,
-                  scenario.transceiverResolutionSnapshot,
-                  departureTerminalAuthorityOutput,
-                  arrivalTerminalAuthorityOutput,
-                  &scenario.routeSectorSnapshot,
-                  departureScope,
-                  arrivalScope,
-                  scenario.controllerRelevanceTerminalRadiusNm)
-            : receivableControllerRelevanceRadioSnapshot;
-    const auto vnasControllerFeed =
-        xvatsim::modules::vnas_data::DecodeVnasControllerFeedDocument(
-            scenario.vnasControllerFeedJson);
-    std::vector<std::shared_ptr<const
-        xvatsim::modules::vnas_data::VnasArtccFacilityDocument>>
-        vnasFacilityDocuments;
-    vnasFacilityDocuments.reserve(scenario.vnasArtccFacilityJsons.size());
-    for (const auto& payload : scenario.vnasArtccFacilityJsons) {
-        vnasFacilityDocuments.push_back(std::make_shared<const
-            xvatsim::modules::vnas_data::VnasArtccFacilityDocument>(
-            xvatsim::modules::vnas_data::DecodeVnasArtccFacilityDocument(
-                payload)));
+    const auto& controllerRelevanceRadioSnapshot =
+        receivableControllerRelevanceRadioSnapshot;
+    std::shared_ptr<const xvatsim::brain::AuthorityRelevanceSnapshot>
+        controllerAuthorityRelevance;
+    if (resolverAuthorityRelevanceSnapshot.liveMap.available) {
+        controllerAuthorityRelevance = std::make_shared<const
+            xvatsim::brain::AuthorityRelevanceSnapshot>(
+                resolverAuthorityRelevanceSnapshot);
+    } else if (endpointPolygonResolver != nullptr) {
+        xvatsim::brain::RouteSectorSnapshot endpointRoute;
+        endpointRoute.available = true;
+        endpointRoute.stale = false;
+        endpointRoute.routeResolved = true;
+        endpointRoute.departureIcao =
+            scenario.workflowState.flightContext.departureIcao;
+        endpointRoute.destinationIcao =
+            scenario.workflowState.flightContext.destinationIcao;
+        if (scenario.workflowState.flightContext.hasDepartureCoordinates) {
+            endpointRoute.waypoints.push_back({
+                endpointRoute.departureIcao,
+                scenario.workflowState.flightContext.departureLatDeg,
+                scenario.workflowState.flightContext.departureLonDeg,
+            });
+        }
+        if (scenario.workflowState.flightContext.hasDestinationCoordinates) {
+            endpointRoute.waypoints.push_back({
+                endpointRoute.destinationIcao,
+                scenario.workflowState.flightContext.destinationLatDeg,
+                scenario.workflowState.flightContext.destinationLonDeg,
+            });
+        }
+        const auto canonicalAuthority =
+            endpointPolygonResolver->
+                ResolveBrainScheduledAuthorityVerification(
+                    scenario.aircraftState,
+                    controllerFeedSnapshot,
+                    endpointRoute,
+                    "regression-harness-controller-canonical-authority",
+                    vnasLiveOwnership);
+        controllerAuthorityRelevance = std::make_shared<const
+            xvatsim::brain::AuthorityRelevanceSnapshot>(
+                std::move(canonicalAuthority));
     }
-    const auto vnasTerminalEvidence = std::make_shared<
-        const xvatsim::brain::VnasTerminalEvidenceSnapshot>(
-        xvatsim::modules::vnas_data::BuildVnasTerminalEvidenceSnapshot(
-            vnasControllerFeed,
-            vnasFacilityDocuments,
-            scenario.controllerRelevanceWorkflowStage ==
-                    WorkflowStage::Departure
-                ? scenario.workflowState.flightContext.departureIcao
-                : std::string{},
-            scenario.controllerRelevanceWorkflowStage == WorkflowStage::Arrival
-                ? scenario.workflowState.flightContext.destinationIcao
-                : std::string{},
-            controllerRelevanceRadioSnapshot.candidates,
-            scenario.controllerRelevanceV2Enabled));
     xvatsim::brain::BrainControllerRelevanceWorkerInput
         controllerRelevanceInput;
     controllerRelevanceInput.workflowStage =
@@ -24938,30 +25153,26 @@ int main(int argc, char** argv) {
         scenario.workflowState.flightContext.destinationLatDeg;
     controllerRelevanceInput.arrivalLongitudeDeg =
         scenario.workflowState.flightContext.destinationLonDeg;
-    controllerRelevanceInput.terminalRelevanceV2Enabled =
-        scenario.controllerRelevanceV2Enabled;
-    controllerRelevanceInput.vnasSectorPrecedenceEnabled =
-        scenario.controllerRelevanceV2Enabled &&
-        scenario.controllerRelevanceVnasSectorPrecedenceEnabled;
     controllerRelevanceInput.terminalTransmitterRadiusNm =
         scenario.controllerRelevanceTerminalRadiusNm;
-    controllerRelevanceInput.vnasTerminalEvidenceHash =
-        vnasTerminalEvidence->stableHash;
-    controllerRelevanceInput.vnasTerminalEvidence = vnasTerminalEvidence;
     if (scenario.controllerRelevanceWorkflowStage == WorkflowStage::Arrival) {
-        controllerRelevanceInput.arrivalTerminalAuthorityHash = 1;
-        controllerRelevanceInput.arrivalTerminalAuthority =
-            terminalAuthorityOutput;
+        controllerRelevanceInput.arrivalEndpointPolygonHash = 1;
+        controllerRelevanceInput.arrivalEndpointPolygons =
+            endpointPolygonOutput;
     } else {
-        controllerRelevanceInput.departureTerminalAuthorityHash = 1;
-        controllerRelevanceInput.departureTerminalAuthority =
-            terminalAuthorityOutput;
+        controllerRelevanceInput.departureEndpointPolygonHash = 1;
+        controllerRelevanceInput.departureEndpointPolygons =
+            endpointPolygonOutput;
     }
     controllerRelevanceInput.airportFrequencyHash =
         airportFrequencyRuntimeState.airportFrequencyHash;
     controllerRelevanceInput.airportFrequencies =
         airportFrequencyOutput;
-    if (authorityRelevanceSnapshot.available) {
+    if (controllerAuthorityRelevance != nullptr) {
+        controllerRelevanceInput.authorityRelevanceHash = 1;
+        controllerRelevanceInput.authorityRelevance =
+            controllerAuthorityRelevance;
+    } else if (authorityRelevanceSnapshot.available) {
         controllerRelevanceInput.authorityRelevanceHash = 1;
         controllerRelevanceInput.authorityRelevance =
             std::make_shared<
@@ -24974,6 +25185,54 @@ int main(int argc, char** argv) {
     const auto controllerRelevanceOutput =
         xvatsim::brain::RunBrainControllerRelevanceWorker(
             controllerRelevanceInput);
+    if (scenario.xPilotSessionSnapshot.connected) {
+        collectedDepartureBoard = controllerRelevanceOutput.departureBoard;
+        collectedEnrouteBoard = controllerRelevanceOutput.enrouteBoard;
+        collectedArrivalAirspaceBoard.source =
+            xvatsim::brain::BoardSource::Arrival;
+        collectedArrivalAirspaceBoard.airportIcao =
+            controllerRelevanceOutput.arrivalBoard.airportIcao;
+        collectedArrivalLocalBoard.source =
+            xvatsim::brain::BoardSource::Arrival;
+        collectedArrivalLocalBoard.airportIcao =
+            controllerRelevanceOutput.arrivalBoard.airportIcao;
+        for (const auto& station :
+             controllerRelevanceOutput.arrivalBoard.stations) {
+            if (station.role == xvatsim::brain::StationRole::Approach ||
+                station.role == xvatsim::brain::StationRole::Departure) {
+                collectedArrivalAirspaceBoard.stations.push_back(station);
+            } else if (
+                station.role == xvatsim::brain::StationRole::Delivery ||
+                station.role == xvatsim::brain::StationRole::Ground ||
+                station.role == xvatsim::brain::StationRole::Tower) {
+                collectedArrivalLocalBoard.stations.push_back(station);
+            }
+        }
+        collectedArrivalAirspaceBoard.available =
+            !collectedArrivalAirspaceBoard.stations.empty();
+        collectedArrivalLocalBoard.available =
+            !collectedArrivalLocalBoard.stations.empty();
+    }
+    if (controllerAuthorityRelevance != nullptr) {
+        std::cout << "BrainControllerCanonicalAssignments:";
+        for (const auto& value :
+             ExtractLiveAuthorityAssignments(*controllerAuthorityRelevance)) {
+            std::cout << " " << value;
+        }
+        std::cout << "\n";
+        std::cout << "BrainControllerCanonicalConflicts:";
+        for (const auto& value :
+             controllerAuthorityRelevance->liveMap.conflictedPolygonIds) {
+            std::cout << " " << value;
+        }
+        std::cout << "\n";
+        std::cout << "BrainControllerCanonicalUnmapped:";
+        for (const auto& value :
+             controllerAuthorityRelevance->liveMap.unmappedControllerCallsigns) {
+            std::cout << " " << value;
+        }
+        std::cout << "\n";
+    }
 
     const auto shouldRunCtafUnicomPublisherProbe =
         scenario.ctafUnicomPublisherProbe ||
@@ -25120,6 +25379,39 @@ int main(int argc, char** argv) {
                 publisherInput);
     }
 
+    xvatsim::brain::BrainOwnedRuntimeState centerFrequencySelectionState;
+    xvatsim::brain::BrainOwnedCenterFrequencySelectionDecision
+        centerFrequencySelectionDecision;
+    if (scenario.applyCenterFrequencySelection) {
+        const auto selectionPlanKey =
+            scenario.standbyAssistPlanKey.empty()
+                ? std::string("HARNESS")
+                : scenario.standbyAssistPlanKey;
+        centerFrequencySelectionState.lastPlanKey = selectionPlanKey;
+        centerFrequencySelectionState.finalDisplaySnapshot = displayBoard;
+
+        xvatsim::brain::BrainOwnedCenterFrequencySelectionRequest request;
+        request.requestSequence = 1;
+        request.planKey = selectionPlanKey;
+        request.callsign = scenario.centerFrequencySelectionCallsign;
+        request.frequency = scenario.centerFrequencySelectionFrequency;
+        request.stableKey = scenario.centerFrequencySelectionStableKey;
+        request.radios = scenario.radioStateSnapshot;
+        centerFrequencySelectionDecision =
+            xvatsim::brain::DecideBrainOwnedCenterFrequencySelection(
+                centerFrequencySelectionState, request);
+        centerFrequencySelectionDecision =
+            xvatsim::brain::CompleteBrainOwnedCenterFrequencySelection(
+                &centerFrequencySelectionState,
+                std::move(centerFrequencySelectionDecision),
+                scenario.centerFrequencySelectionWriteSucceeded);
+        if (centerFrequencySelectionDecision.completed &&
+            centerFrequencySelectionDecision.writeSucceeded) {
+            scenario.radioStateSnapshot.com1ActiveFrequency =
+                centerFrequencySelectionDecision.frequency;
+        }
+    }
+
     if (scenario.applyStandbyAssist) {
         xvatsim::brain::BrainOwnedStandbyAssistPlanInput standbyInput;
         standbyInput.workflowStage =
@@ -25135,6 +25427,10 @@ int main(int argc, char** argv) {
             scenario.standbyAssistDirectCtafEnabled;
         standbyInput.directCtafGateSource =
             scenario.standbyAssistDirectCtafGateSource;
+        standbyInput.manualCenterTierResolved =
+            centerFrequencySelectionState.manualCenterTierResolved &&
+            centerFrequencySelectionState.manualCenterTierPlanKey ==
+                standbyInput.planKey;
         if (shouldRunCtafUnicomPublisherProbe) {
             standbyInput.board =
                 scenario.standbyAssistUseDisplayBoardWithCtafAdvisories
@@ -25198,7 +25494,10 @@ int main(int argc, char** argv) {
             scenario.transceiverResolutionSnapshot,
             displayBoard,
             xvatsim::brain::ManualQuerySnapshot{},
-            overlayUpdateSnapshot);
+            overlayUpdateSnapshot,
+            scenario.standbyAssistPlanKey.empty()
+                ? std::string("HARNESS")
+                : scenario.standbyAssistPlanKey);
 
     std::cout << "Scenario: " << scenario.name << "\n";
     std::cout << "PreflightParseOk: "
@@ -25419,6 +25718,22 @@ int main(int argc, char** argv) {
                       << "\n";
         }
     }
+    if (scenario.applyCenterFrequencySelection) {
+        std::cout << "CenterFrequencySelection: accepted="
+                  << (centerFrequencySelectionDecision.accepted ? 1 : 0)
+                  << ",write="
+                  << (centerFrequencySelectionDecision.shouldWriteCom1Active
+                          ? 1
+                          : 0)
+                  << ",completed="
+                  << (centerFrequencySelectionDecision.completed ? 1 : 0)
+                  << ",tierResolved="
+                  << (centerFrequencySelectionState.manualCenterTierResolved
+                          ? 1
+                          : 0)
+                  << ",reason="
+                  << centerFrequencySelectionDecision.reason << "\n";
+    }
     if (shouldRunCtafUnicomPublisherProbe) {
         std::cout << "CtafUnicomEvidenceSummary: "
                   << CtafUnicomEvidenceSummaryText(
@@ -25571,13 +25886,13 @@ int main(int argc, char** argv) {
         }
         std::cout << "\n";
     }
-    std::cout << "TerminalAuthorityOwners:";
-    for (const auto& owner : ExtractTerminalAuthorityOwners(terminalAuthorityOutput)) {
+    std::cout << "EndpointPolygonOwners:";
+    for (const auto& owner : ExtractEndpointPolygonOwners(endpointPolygonOutput)) {
         std::cout << " " << owner;
     }
     std::cout << "\n";
-    std::cout << "TerminalAuthorityPolygons:";
-    for (const auto& polygon : ExtractTerminalAuthorityPolygons(terminalAuthorityOutput)) {
+    std::cout << "EndpointPolygons:";
+    for (const auto& polygon : ExtractEndpointPolygons(endpointPolygonOutput)) {
         std::cout << " " << polygon;
     }
     std::cout << "\n";
@@ -25609,6 +25924,12 @@ int main(int argc, char** argv) {
         std::cout << " " << completion;
     }
     std::cout << "\n";
+    std::cout << "VnasLiveOwnershipFacts:";
+    for (const auto& fact :
+         ExtractVnasLiveOwnershipFacts(*vnasLiveOwnership)) {
+        std::cout << " " << fact;
+    }
+    std::cout << "\n";
     std::cout << "OverlayBodyLines:";
     for (const auto& line : ExtractOverlayBodyLines(overlayModel)) {
         std::cout << " " << line;
@@ -25617,6 +25938,12 @@ int main(int argc, char** argv) {
     std::cout << "OverlayBodyTones:";
     for (const auto& tone : ExtractOverlayBodyTones(overlayModel)) {
         std::cout << " " << tone;
+    }
+    std::cout << "\n";
+    std::cout << "OverlaySelectableCenterFrequencies:";
+    for (const auto& frequency :
+         ExtractOverlaySelectableCenterFrequencies(overlayModel)) {
+        std::cout << " " << frequency;
     }
     std::cout << "\n";
     std::cout << "OverlayVersionText: "
@@ -25884,6 +26211,28 @@ int main(int argc, char** argv) {
         std::cout << " " << value;
     }
     std::cout << "\n";
+    std::cout << "ResolverLiveAuthorityMapStatus: "
+              << resolverAuthorityRelevanceSnapshot.liveMap.statusLine << "\n";
+    std::cout << "ResolverLiveAuthorityAssignments:";
+    for (const auto& value :
+         ExtractLiveAuthorityAssignments(resolverAuthorityRelevanceSnapshot)) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "ResolverLiveAuthorityConflicts:";
+    for (const auto& value :
+         resolverAuthorityRelevanceSnapshot.liveMap.conflictedPolygonIds) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "ResolverLiveAuthorityUnmapped:";
+    for (const auto& value :
+         resolverAuthorityRelevanceSnapshot.liveMap.unmappedControllerCallsigns) {
+        std::cout << " " << value;
+    }
+    std::cout << "\n";
+    std::cout << "ResolverAuthorityDiagnosticGeoJson: "
+              << resolverAuthorityDiagnosticGeoJson << "\n";
     std::cout << "ResolverAuthorityProofSources:";
     for (const auto& value : ExtractAuthorityRelevanceProofSources(
              resolverAuthorityRelevanceSnapshot)) {
@@ -25894,13 +26243,6 @@ int main(int argc, char** argv) {
     for (const auto& value : ExtractAuthorityRelevanceProofDetails(
              resolverAuthorityRelevanceSnapshot)) {
         std::cout << " " << value;
-    }
-    std::cout << "\n";
-    std::cout << "ResolverEnrouteAvailable: "
-              << (resolverEnrouteBoard.available ? "true" : "false") << "\n";
-    std::cout << "ResolverEnrouteCallsigns:";
-    for (const auto& callsign : ExtractCallsigns(resolverEnrouteBoard)) {
-        std::cout << " " << callsign;
     }
     std::cout << "\n";
     std::cout << "RouteResolved: " << (traversedRouteSnapshot.routeResolved ? "true" : "false") << "\n";
@@ -26852,6 +27194,14 @@ int main(int argc, char** argv) {
         return *mismatch;
     }
 
+    if (const auto mismatch = CheckStringList(
+            "overlaySelectableCenterFrequencies",
+            scenario.expectations.overlaySelectableCenterFrequencies,
+            ExtractOverlaySelectableCenterFrequencies(overlayModel));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
     if (scenario.expectations.overlayVersionText.has_value() &&
         overlayModel.version.text != *scenario.expectations.overlayVersionText) {
         return PrintMismatch(
@@ -27489,20 +27839,60 @@ int main(int argc, char** argv) {
         return *mismatch;
     }
 
-    if (const auto mismatch = CheckStringListContains(
-            "resolverAuthorityTransceiverProofEvidenceContains",
-            scenario.expectations.resolverAuthorityTransceiverProofEvidenceContains,
-            ExtractAuthorityTransceiverProofEvidence(
-                resolverAuthorityRelevanceSnapshot));
+    if (scenario.expectations.resolverLiveAuthorityMapStatus.has_value() &&
+        resolverAuthorityRelevanceSnapshot.liveMap.statusLine !=
+            *scenario.expectations.resolverLiveAuthorityMapStatus) {
+        return PrintMismatch(
+            "resolverLiveAuthorityMapStatus",
+            *scenario.expectations.resolverLiveAuthorityMapStatus,
+            resolverAuthorityRelevanceSnapshot.liveMap.statusLine);
+    }
+
+    if (scenario.expectations.resolverLiveAuthorityMapGenerationCoherent.has_value()) {
+        const auto actual = LiveAuthorityMapGenerationCoherent(
+            resolverAuthorityRelevanceSnapshot);
+        if (actual !=
+            *scenario.expectations.resolverLiveAuthorityMapGenerationCoherent) {
+            return PrintMismatch(
+                "resolverLiveAuthorityMapGenerationCoherent",
+                *scenario.expectations.resolverLiveAuthorityMapGenerationCoherent
+                    ? "true"
+                    : "false",
+                actual ? "true" : "false");
+        }
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "resolverLiveAuthorityAssignments",
+            scenario.expectations.resolverLiveAuthorityAssignments,
+            ExtractLiveAuthorityAssignments(resolverAuthorityRelevanceSnapshot));
         mismatch.has_value()) {
         return *mismatch;
     }
 
-    if (const auto mismatch = CheckStringListContains(
-            "resolverAuthorityDuplicatedAtisProofEvidenceContains",
-            scenario.expectations.resolverAuthorityDuplicatedAtisProofEvidenceContains,
-            ExtractAuthorityDuplicatedAtisProofEvidence(
-                resolverAuthorityRelevanceSnapshot));
+    for (const auto& expected :
+         scenario.expectations.resolverAuthorityDiagnosticGeoJsonContains) {
+        if (resolverAuthorityDiagnosticGeoJson.find(expected) ==
+            std::string::npos) {
+            return PrintMismatch(
+                "resolverAuthorityDiagnosticGeoJsonContains",
+                expected,
+                resolverAuthorityDiagnosticGeoJson);
+        }
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "resolverLiveAuthorityConflicts",
+            scenario.expectations.resolverLiveAuthorityConflicts,
+            resolverAuthorityRelevanceSnapshot.liveMap.conflictedPolygonIds);
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "resolverLiveAuthorityUnmapped",
+            scenario.expectations.resolverLiveAuthorityUnmapped,
+            resolverAuthorityRelevanceSnapshot.liveMap.unmappedControllerCallsigns);
         mismatch.has_value()) {
         return *mismatch;
     }
@@ -27526,22 +27916,6 @@ int main(int argc, char** argv) {
             scenario.expectations.resolverAuthorityPreviewDecisionsContains,
             BrainAuthorityRelevancePreviewDecisionSummaries(
                 resolverAuthorityRelevancePreview));
-        mismatch.has_value()) {
-        return *mismatch;
-    }
-
-    if (scenario.expectations.resolverEnrouteAvailable.has_value() &&
-        resolverEnrouteBoard.available != *scenario.expectations.resolverEnrouteAvailable) {
-        return PrintMismatch(
-            "resolverEnrouteAvailable",
-            *scenario.expectations.resolverEnrouteAvailable ? "true" : "false",
-            resolverEnrouteBoard.available ? "true" : "false");
-    }
-
-    if (const auto mismatch = CheckStringList(
-            "resolverEnrouteCallsigns",
-            scenario.expectations.resolverEnrouteCallsigns,
-            ExtractCallsigns(resolverEnrouteBoard));
         mismatch.has_value()) {
         return *mismatch;
     }
@@ -28724,17 +29098,25 @@ int main(int argc, char** argv) {
     }
 
     if (const auto mismatch = CheckStringList(
-            "terminalAuthorityOwners",
-            scenario.expectations.terminalAuthorityOwners,
-            ExtractTerminalAuthorityOwners(terminalAuthorityOutput));
+            "endpointPolygonOwners",
+            scenario.expectations.endpointPolygonOwners,
+            ExtractEndpointPolygonOwners(endpointPolygonOutput));
         mismatch.has_value()) {
         return *mismatch;
     }
 
     if (const auto mismatch = CheckStringList(
-            "terminalAuthorityPolygons",
-            scenario.expectations.terminalAuthorityPolygons,
-            ExtractTerminalAuthorityPolygons(terminalAuthorityOutput));
+            "endpointPolygons",
+            scenario.expectations.endpointPolygons,
+            ExtractEndpointPolygons(endpointPolygonOutput));
+        mismatch.has_value()) {
+        return *mismatch;
+    }
+
+    if (const auto mismatch = CheckStringList(
+            "vnasLiveOwnershipFacts",
+            scenario.expectations.vnasLiveOwnershipFacts,
+            ExtractVnasLiveOwnershipFacts(*vnasLiveOwnership));
         mismatch.has_value()) {
         return *mismatch;
     }

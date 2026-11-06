@@ -16,10 +16,10 @@ brain_controller_relevance.stage=Arrival
 brain_controller_relevance.v2_enabled=true
 brain_controller_relevance.terminal_radius_nm=5
 
-terminal_authority.airport_icao=KBWI
-terminal_authority.lat=39.1754
-terminal_authority.lon=-76.6683
-terminal_authority.feature=id=PCT;name=Potomac Approach;prefixes=BWI;polygon=38.5,-78.0|40.0,-78.0|40.0,-75.5|38.5,-75.5
+endpoint_polygon_query.airport_icao=KBWI
+endpoint_polygon_query.lat=39.1754
+endpoint_polygon_query.lon=-76.6683
+endpoint_polygon_query.feature=id=PCT;name=Potomac Approach;prefixes=BWI;polygon=38.5,-78.0|40.0,-78.0|40.0,-75.5|38.5,-75.5
 
 controller.entry=callsign=IAD_M_APP;frequency=126.650;facility=5;actionable=true;atis=false
 
@@ -27,9 +27,10 @@ transceiver.available=true
 transceiver.stale=false
 transceiver.station=callsign=IAD_M_APP;frequency=126.650;lat=38.9445;lon=-77.4558;facility=5;actionable=true
 transceiver.station=callsign=IAD_M_APP;frequency=126.650;lat=39.1754;lon=-76.6683
+transceiver.candidate=callsign=IAD_M_APP;frequency=126.650;distanceNm=0;score=100
 
 vnas.controller_feed_json={"updatedAt":"2026-09-06T20:00:00Z","controllers":[{"artccId":"ZDC","primaryFacilityId":"PCT","primaryPositionId":"01PCTMULRRCOMBINED0000000","isActive":true,"isObserver":false,"positions":[{"facilityId":"PCT","facilityName":"Potomac TRACON","positionId":"01PCTMULRRCOMBINED0000000","positionName":"MULRR [Comb]","positionType":"Tracon","radioName":"MULRR","defaultCallsign":"IAD_M_APP","frequency":126650000,"isPrimary":true,"isActive":true,"starsData":{"areaId":"01PCTCONSOLIDATED00000000","assumedTcps":[]}}],"vatsimData":{"callsign":"IAD_M_APP","primaryFrequency":126650000}}]}
 vnas.artcc_facility_json={"id":"ZDC","lastUpdatedAt":"2026-09-06T19:00:00Z","facility":{"id":"ZDC","type":"Artcc","name":"Washington Center","positions":[],"childFacilities":[{"id":"PCT","type":"Tracon","name":"Potomac TRACON","starsConfiguration":{"internalAirports":["BWI","IAD","DCA"],"areas":[{"id":"01PCTCONSOLIDATED00000000","name":"Consolidated"}]},"positions":[{"id":"01PCTMULRRCOMBINED0000000","name":"MULRR [Comb]","callsign":"IAD_M_APP","frequency":126650000,"starsConfiguration":{"areaId":"01PCTCONSOLIDATED00000000"}}],"childFacilities":[]}]}}
 
 expect.brain_controller_relevance_arrival_callsigns=IAD_M_APP
-expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,frequency-distance=+1,vnas=+1[endpoint-ownership-match,terminal-source=0
+expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,terminal-relationship=EXPLICIT_PARENT,canonical-live-map=+1[active-explicit-parent-assignment,frequency-distance=+1,brain-terminal-explicit-parent-display

@@ -16,7 +16,6 @@ namespace xvatsim::brain {
 namespace {
 
 constexpr double kEarthRadiusNm = 3440.065;
-constexpr double kCenterRangeNm = 250.0;
 
 std::string Upper(std::string value) {
     value.erase(
@@ -392,7 +391,7 @@ std::size_t EditDistance(const std::string& left, const std::string& right) {
     return previous.back();
 }
 
-BrainControllerEvidenceVote TerminalVatsimVote(
+BrainControllerEvidenceVote TerminalVatsimIdentityFact(
     const RadioReachableControllerCandidate& candidate,
     StationRole role,
     const std::string& airport,
@@ -461,10 +460,9 @@ bool CallsignHasExactEndpointPrefix(
     return false;
 }
 
-BrainControllerEvidenceVote VatsimRosterVote(
+BrainControllerEvidenceVote VatsimRosterIdentityFact(
     const RadioReachableControllerCandidate& candidate,
-    const std::string& airport,
-    bool claimScopedNeutrality) {
+    const std::string& airport) {
     std::ostringstream provenance;
     provenance << "declared=" << candidate.sourceRosterDeclaredRecords
                << ",retained=" << candidate.sourceRosterRetainedRecords
@@ -508,7 +506,7 @@ BrainControllerEvidenceVote VatsimRosterVote(
               "different-direct-endpoint-controller-present",
               provenance.str())
         : Vote(
-              "vatsim-roster", claimScopedNeutrality ? 0 : -1,
+              "vatsim-roster", 0,
               "no-direct-endpoint-controller",
               provenance.str(),
               "vatsim-roster-endpoint-absence");
@@ -556,20 +554,18 @@ bool OneCharacterPrefixVariant(
 struct VatspyResult {
     BrainControllerEvidenceVote vote;
     std::optional<BrainControllerEvidenceVote> callsignClue;
-    bool endpointPositive = false;
 };
 
-VatspyResult VatspyVote(
+VatspyResult VatspyIdentityFact(
     const BrainControllerRelevanceWorkerInput& input,
     const RadioReachableControllerCandidate& candidate,
-    const std::string& airport,
-    bool claimScopedNeutrality) {
+    const std::string& airport) {
     VatspyResult result;
     std::string prefix;
     if (!SplitCallsign(candidate.callsign, &prefix, nullptr)) {
         result.vote = Vote(
             "vatspy-parse",
-            claimScopedNeutrality ? 0 : -1,
+            0,
             "callsign-prefix-unavailable");
         return result;
     }
@@ -595,7 +591,6 @@ VatspyResult VatspyVote(
             (prefix.size() > expected.size() &&
              prefix.compare(0, expected.size(), expected) == 0 &&
              (prefix[expected.size()] == '-' || prefix[expected.size()] == '_'))) {
-            result.endpointPositive = true;
             result.vote = Vote(
                 "vatspy-parse",
                 1,
@@ -621,10 +616,9 @@ VatspyResult VatspyVote(
         bestShared + 2 >= std::max(prefix.size(), Upper(best->callsignPrefix).size())) {
         const auto expected = Upper(best->callsignPrefix);
         if (OneCharacterPrefixVariant(prefix, expected)) {
-            result.endpointPositive = true;
             result.vote = Vote(
                 "vatspy-parse",
-                1,
+                0,
                 "near-exact-airport-alias-prefix-match",
                 best->source + ":" + prefix + "~" + best->callsignPrefix,
                 "vatspy-endpoint-identity");
@@ -632,7 +626,7 @@ VatspyResult VatspyVote(
         }
         result.vote = Vote(
             "vatspy-parse",
-            claimScopedNeutrality ? 0 : -1,
+            0,
             "airport-alias-mismatch",
             best->source + ":" + prefix + "!=" + best->callsignPrefix,
             "vatspy-endpoint-identity");
@@ -648,121 +642,13 @@ VatspyResult VatspyVote(
 
     result.vote = Vote(
         "vatspy-parse",
-        claimScopedNeutrality ? 0 : -1,
+        0,
         "airport-alias-mismatch",
         prefix + "!=" + endpointAliases.front()->callsignPrefix);
     return result;
 }
 
-int VnasOwnershipRank(const VnasTerminalEvidenceRecord& record) {
-    if (!record.ownershipFactsComplete) return 0;
-    if (!record.serviceCompatible) return 1;
-    if (record.tdlsDepartureFrequencyMatch) return 4;
-    if (!record.matchedTcpTokens.empty() ||
-        (record.areaSupportsEndpoint &&
-         !record.positionTcpHasEndpointDescendant)) {
-        return 3;
-    }
-    if (record.areaSupportsEndpoint &&
-        record.positionTcpHasEndpointDescendant) {
-        return 2;
-    }
-    return 1;
-}
-
-const VnasTerminalEvidenceRecord* FindVnasRecord(
-    const BrainControllerRelevanceWorkerInput& input,
-    const RadioReachableControllerCandidate& candidate,
-    const std::string& airport) {
-    if (!input.vnasTerminalEvidence) return nullptr;
-    for (const auto& record : input.vnasTerminalEvidence->records) {
-        if (record.supportsEndpoint &&
-            Upper(record.controllerCallsign) == Upper(candidate.callsign) &&
-            NormalizeFrequency(record.controllerFrequency) ==
-                NormalizeFrequency(candidate.frequency) &&
-            Upper(record.airportIcao) == Upper(airport)) {
-            return &record;
-        }
-    }
-    return nullptr;
-}
-
-int BestOnlineVnasRank(
-    const BrainControllerRelevanceWorkerInput& input,
-    const std::string& airport) {
-    int best = 0;
-    for (const auto& candidate : input.candidates) {
-        const auto operational = EvaluateOperationalEligibility(candidate);
-        if (!operational.eligible || operational.atis ||
-            candidate.group != RadioReachableFacilityGroup::AppDep) {
-            continue;
-        }
-        const auto* record = FindVnasRecord(input, candidate, airport);
-        if (record != nullptr && record->serviceCompatible) {
-            best = std::max(best, VnasOwnershipRank(*record));
-        }
-    }
-    return best;
-}
-
-struct VnasEvaluation {
-    BrainControllerEvidenceVote vote;
-    bool ownershipApplicable = true;
-};
-
-VnasEvaluation VnasVote(
-    const BrainControllerRelevanceWorkerInput& input,
-    const RadioReachableControllerCandidate& candidate,
-    const std::string& airport) {
-    if (!UsAirport(airport)) {
-        return {Vote("vnas", 0, "outside-us-scope", Upper(airport)), true};
-    }
-    if (!input.vnasTerminalEvidence ||
-        !input.vnasTerminalEvidence->enabled) {
-        return {Vote("vnas", 0, "disabled"), true};
-    }
-    const auto& snapshot = *input.vnasTerminalEvidence;
-    if (!snapshot.available || snapshot.stale) {
-        return {Vote("vnas", 0, "unavailable-or-stale"), true};
-    }
-    if (const auto* record = FindVnasRecord(input, candidate, airport)) {
-        if (record->ownershipFactsComplete && !record->serviceCompatible) {
-            return {
-                Vote(
-                    "vnas",
-                    -1,
-                    "operation-incompatible",
-                    record->proof),
-                false,
-            };
-        }
-        const auto rank = VnasOwnershipRank(*record);
-        const auto bestRank = BestOnlineVnasRank(input, airport);
-        if (rank > 0 && rank < bestRank) {
-            return {
-                Vote(
-                    "vnas",
-                    0,
-                    "lower-operational-owner-online",
-                    record->proof),
-                false,
-            };
-        }
-        return {
-            Vote("vnas", 1, "endpoint-ownership-match", record->proof),
-            true,
-        };
-    }
-    if (snapshot.facilityDataComplete && snapshot.ownershipDataAvailable) {
-        return {
-            Vote("vnas", -1, "complete-us-data-no-endpoint-match"),
-            true,
-        };
-    }
-    return {Vote("vnas", 0, "incomplete-us-data-no-match"), true};
-}
-
-BrainControllerEvidenceVote DistanceVote(
+BrainControllerEvidenceVote TerminalRadioServiceFact(
     const BrainControllerRelevanceWorkerInput& input,
     const RadioReachableControllerCandidate& candidate,
     bool departure) {
@@ -784,157 +670,161 @@ BrainControllerEvidenceVote DistanceVote(
         Nm(*distance) + "<=" + Nm(threshold));
 }
 
-std::string TerminalOwnerToken(const std::string& callsign) {
-    std::string prefix;
-    std::string suffix;
-    if (!SplitCallsign(callsign, &prefix, &suffix) ||
-        (suffix != "APP" && suffix != "DEP")) {
-        return {};
+struct CanonicalTerminalAssignmentEvaluation {
+    bool sourceUsable = false;
+    bool assignmentMatched = false;
+    bool containsEndpoint = false;
+    TerminalEndpointRelationship relationship =
+        TerminalEndpointRelationship::Unknown;
+    int operationalRank = 0;
+    std::string proof;
+};
+
+int CanonicalTerminalRelationshipRank(
+    TerminalEndpointRelationship relationship) {
+    switch (relationship) {
+        case TerminalEndpointRelationship::DirectEndpoint:
+            return 2;
+        case TerminalEndpointRelationship::ExplicitParent:
+            return 1;
+        default:
+            return 0;
     }
-    const auto first = prefix.find('_');
-    const auto owner = first == std::string::npos ? prefix : prefix.substr(0, first);
-    return owner.empty() ? std::string{} : owner + "_" + suffix;
 }
 
-bool SourceAuthorityMatch(
-    const BrainControllerRelevanceWorkerInput& input,
-    const RadioReachableControllerCandidate& candidate,
-    std::string* proof) {
-    if (!input.authorityRelevance || !input.authorityRelevance->available ||
-        input.authorityRelevance->stale) {
+bool TerminalPolygonServiceMatchesRole(
+    const BrainEndpointPolygonFact& polygon,
+    StationRole role) {
+    const auto expected = role == StationRole::Departure ? "DEP" : "APP";
+    return polygon.serviceSuffixes.empty() ||
+           std::any_of(
+               polygon.serviceSuffixes.begin(),
+               polygon.serviceSuffixes.end(),
+               [&](const auto& suffix) { return Upper(suffix) == expected; });
+}
+
+bool AirportCodeMatchesEndpoint(
+    const std::string& rawAirport,
+    const std::string& rawEndpointIcao) {
+    const auto airport = Upper(rawAirport);
+    const auto endpoint = Upper(rawEndpointIcao);
+    if (airport.empty() || endpoint.empty()) {
         return false;
     }
-    for (const auto& authority : input.authorityRelevance->relevantAuthorities) {
-        if (Upper(authority.callsign) != Upper(candidate.callsign)) continue;
-        if (!authority.frequency.empty() &&
-            NormalizeFrequency(authority.frequency) !=
+    return airport == endpoint ||
+           (endpoint.size() == 4 && endpoint.front() == 'K' &&
+            airport == endpoint.substr(1)) ||
+           (airport.size() == 4 && airport.front() == 'K' &&
+            airport.substr(1) == endpoint);
+}
+
+CanonicalTerminalAssignmentEvaluation EvaluateCanonicalTerminalRelationship(
+    const BrainControllerRelevanceWorkerInput& input,
+    const RadioReachableControllerCandidate& candidate,
+    const BrainEndpointPolygonQueryOutput& endpointPolygons,
+    StationRole role) {
+    CanonicalTerminalAssignmentEvaluation result;
+    if (!IsAppDep(role) || input.authorityRelevance == nullptr ||
+        !input.authorityRelevance->liveMap.available ||
+        input.authorityRelevance->liveMap.stale ||
+        !input.authorityRelevance->liveMap.brainDecisionsApplied ||
+        !endpointPolygons.available || !endpointPolygons.resolved ||
+        endpointPolygons.stale) {
+        return result;
+    }
+    result.sourceUsable = true;
+
+    for (const auto& assignment :
+         input.authorityRelevance->liveMap.assignments) {
+        if (!IsActiveLiveAuthorityState(assignment.state) ||
+            assignment.kind != AuthorityRelevanceKind::Terminal ||
+            Upper(assignment.callsign) != Upper(candidate.callsign) ||
+            NormalizeFrequency(assignment.frequency) !=
                 NormalizeFrequency(candidate.frequency)) {
             continue;
         }
-        if (proof != nullptr) *proof = authority.proofSource;
-        return true;
+        const auto polygon = std::find_if(
+            endpointPolygons.polygons.begin(),
+            endpointPolygons.polygons.end(),
+            [&](const auto& value) {
+                return value.canonicalPolygonId ==
+                           assignment.canonicalPolygonId &&
+                       TerminalPolygonServiceMatchesRole(value, role);
+            });
+        if (polygon == endpointPolygons.polygons.end()) {
+            continue;
+        }
+
+        result.assignmentMatched = true;
+        if (input.workflowStage == WorkflowStage::Arrival &&
+            role == StationRole::Departure) {
+            result.relationship = TerminalEndpointRelationship::Unrelated;
+            result.operationalRank = 0;
+            result.proof =
+                "active-source-operation-incompatible:arrival-requires-app:" +
+                assignment.canonicalPolygonId + ":" +
+                assignment.positionId;
+            return result;
+        }
+        if (!polygon->containsAirport) {
+            continue;
+        }
+        result.containsEndpoint = true;
+        const auto relationship =
+            assignment.state == LiveAuthorityAssignmentState::ActiveParent
+                ? TerminalEndpointRelationship::ExplicitParent
+                : TerminalEndpointRelationship::DirectEndpoint;
+        if (CanonicalTerminalRelationshipRank(relationship) >=
+            CanonicalTerminalRelationshipRank(result.relationship)) {
+            result.relationship = relationship;
+            result.operationalRank =
+                CanonicalTerminalRelationshipRank(relationship);
+            if (input.workflowStage == WorkflowStage::Departure &&
+                relationship ==
+                    TerminalEndpointRelationship::DirectEndpoint &&
+                std::any_of(
+                    assignment.departureAirportCodes.begin(),
+                    assignment.departureAirportCodes.end(),
+                    [&](const auto& airport) {
+                        return AirportCodeMatchesEndpoint(
+                            airport, input.departureIcao);
+                    })) {
+                result.operationalRank = 3;
+            }
+            result.proof = assignment.canonicalPolygonId + ":" +
+                assignment.positionId + ":" + assignment.authoritySource;
+        }
     }
-    return false;
+
+    if (result.assignmentMatched && !result.containsEndpoint) {
+        result.relationship = TerminalEndpointRelationship::Unrelated;
+        result.proof = "active-canonical-assignment-does-not-contain-endpoint";
+    }
+    return result;
 }
 
-BrainControllerEvidenceVote SourceAuthorityVote(
+int BestOnlineCanonicalTerminalRank(
     const BrainControllerRelevanceWorkerInput& input,
-    const RadioReachableControllerCandidate& candidate) {
-    std::string sourceProof;
-    if (SourceAuthorityMatch(input, candidate, &sourceProof)) {
-        return Vote(
-            "source-authority", 1, "source-authority-match", sourceProof);
-    }
-    if (!input.authorityRelevance || !input.authorityRelevance->available ||
-        input.authorityRelevance->stale) {
-        return Vote(
-            "source-authority", 0, "source-authority-unavailable");
-    }
-    return Vote(
-        "source-authority", 0, "no-source-authority-match");
-}
-
-BrainControllerEvidenceVote TerminalOwnerVote(
-    const RadioReachableControllerCandidate& candidate,
-    const BrainTerminalAuthorityWorkerOutput& authority,
-    StationRole role,
-    bool claimScopedNeutrality) {
-    if (!IsAppDep(role)) {
-        return Vote("terminal-source", 0, "not-appdep-authority-scope");
-    }
-    if (!authority.available || !authority.resolved || authority.stale ||
-        authority.ownerTokens.empty()) {
-        return Vote("terminal-source", 0, "terminal-authority-unavailable");
-    }
-    const auto owner = TerminalOwnerToken(candidate.callsign);
-    for (const auto& expected : authority.ownerTokens) {
-        if (Upper(expected) == owner) {
-            return Vote("terminal-source", 1, "terminal-owner-match", owner);
-        }
-    }
-    return Vote(
-        "terminal-source",
-        claimScopedNeutrality ? 0 : -1,
-        "terminal-owner-mismatch",
-        owner);
-}
-
-BrainControllerEvidenceVote TerminalPolygonVote(
-    const RadioReachableControllerCandidate& candidate,
-    const BrainTerminalAuthorityWorkerOutput& authority,
-    StationRole role,
-    bool enabled) {
-    if (!enabled) {
-        return Vote("endpoint-polygon", 0, "endpoint-polygon-gate-disabled");
-    }
-    if (!IsAppDep(role)) {
-        return Vote("endpoint-polygon", 0, "not-appdep-polygon-scope");
-    }
-    if (!authority.available || !authority.resolved || authority.stale) {
-        return Vote("endpoint-polygon", 0, "endpoint-polygon-unavailable");
-    }
-
-    std::string callsignPrefix;
-    std::string callsignSuffix;
-    if (!SplitCallsign(candidate.callsign, &callsignPrefix, &callsignSuffix)) {
-        return Vote("endpoint-polygon", 0, "controller-position-unparseable");
-    }
-    callsignPrefix = Upper(callsignPrefix);
-    callsignSuffix = Upper(callsignSuffix);
-
-    for (const auto& polygon : authority.polygons) {
-        const auto sourceSuffix = Upper(polygon.serviceSuffix);
-        if (!sourceSuffix.empty() && sourceSuffix != callsignSuffix) {
+    const BrainEndpointPolygonQueryOutput& endpointPolygons) {
+    int best = 0;
+    for (const auto& candidate : input.candidates) {
+        if (candidate.group != RadioReachableFacilityGroup::AppDep) {
             continue;
         }
-        const auto prefixMatch = std::any_of(
-            polygon.controllerPrefixes.begin(),
-            polygon.controllerPrefixes.end(),
-            [&](const auto& sourcePrefix) {
-                const auto expected = Upper(sourcePrefix);
-                return callsignPrefix == expected ||
-                       (callsignPrefix.size() > expected.size() &&
-                        callsignPrefix.compare(0, expected.size(), expected) == 0 &&
-                        (callsignPrefix[expected.size()] == '_' ||
-                         callsignPrefix[expected.size()] == '-'));
-            });
-        if (!prefixMatch) {
+        const auto operational = EvaluateOperationalEligibility(candidate);
+        if (!operational.eligible || operational.atis) {
             continue;
         }
-        const auto owner = TerminalOwnerToken(candidate.callsign);
-        const auto directOwner = std::any_of(
-            authority.ownerTokens.begin(),
-            authority.ownerTokens.end(),
-            [&](const auto& expected) { return Upper(expected) == owner; });
-        if (polygon.containsAirport && directOwner) {
-            return Vote(
-                "endpoint-polygon",
-                1,
-                "exact-source-direct-endpoint-polygon",
-                authority.airportIcao + ":" + polygon.polygonKey,
-                "simaware-endpoint-polygon");
-        }
-        const auto distinctEndpointPolygon = std::none_of(
-            authority.polygonKeys.begin(),
-            authority.polygonKeys.end(),
-            [&](const auto& anchorKey) {
-                return Upper(anchorKey) == Upper(polygon.polygonKey);
-            });
-        if (polygon.intersectsEndpointAnchor && distinctEndpointPolygon) {
-            return Vote(
-                "endpoint-polygon",
-                1,
-                "exact-source-nearby-endpoint-polygon",
-                authority.airportIcao + ":" + polygon.polygonKey,
-                "simaware-endpoint-polygon");
-        }
+        const auto evaluation = EvaluateCanonicalTerminalRelationship(
+            input,
+            candidate,
+            endpointPolygons,
+            Role(candidate));
+        best = std::max(
+            best,
+            evaluation.operationalRank);
     }
-    return Vote(
-        "endpoint-polygon",
-        0,
-        authority.polygons.empty()
-            ? "endpoint-polygon-package-empty"
-            : "no-exact-source-position-match");
+    return best;
 }
 
 const std::vector<BrainAirportFrequencyRecord>& FrequencyRecords(
@@ -944,7 +834,7 @@ const std::vector<BrainAirportFrequencyRecord>& FrequencyRecords(
                      : input.airportFrequencies.arrivalFrequencies;
 }
 
-BrainControllerEvidenceVote PublishedFrequencyVote(
+BrainControllerEvidenceVote PublishedFrequencyDiagnosticFact(
     const BrainControllerRelevanceWorkerInput& input,
     const RadioReachableControllerCandidate& candidate,
     StationRole role,
@@ -982,6 +872,25 @@ struct EndpointEvaluation {
     std::string airport;
 };
 
+int TerminalRelationshipSelectionRank(
+    TerminalEndpointRelationship relationship) {
+    switch (relationship) {
+        case TerminalEndpointRelationship::DirectEndpoint:
+            return 5;
+        case TerminalEndpointRelationship::ExplicitParent:
+            return 4;
+        case TerminalEndpointRelationship::NearbyOnly:
+            return 3;
+        case TerminalEndpointRelationship::Unrelated:
+            return 2;
+        case TerminalEndpointRelationship::Unknown:
+            return 1;
+        case TerminalEndpointRelationship::NotApplicable:
+        default:
+            return 0;
+    }
+}
+
 EndpointEvaluation EvaluateTerminal(
     const BrainControllerRelevanceWorkerInput& input,
     const RadioReachableControllerCandidate& candidate,
@@ -994,30 +903,44 @@ EndpointEvaluation EvaluateTerminal(
     evaluation.airport = departure ? input.departureIcao : input.arrivalIcao;
 
     auto operational = EvaluateOperationalEligibility(candidate);
-    const auto claimScopedNeutrality = input.terminalRelevanceV2Enabled;
-    const auto vatspy = VatspyVote(
-        input, candidate, evaluation.airport, claimScopedNeutrality);
-    auto roster = VatsimRosterVote(
-        candidate, evaluation.airport, claimScopedNeutrality);
+    // Terminal identity clues are diagnostics only. The typed relationship
+    // below is the sole source of endpoint-board authority.
+    const auto vatspy = VatspyIdentityFact(
+        input, candidate, evaluation.airport);
+    auto roster = VatsimRosterIdentityFact(
+        candidate, evaluation.airport);
     auto feedHealth = VatsimFeedHealthFact(candidate);
-    auto distance = DistanceVote(input, candidate, departure);
-    auto vnas = VnasVote(input, candidate, evaluation.airport);
-    auto sourceAuthority = SourceAuthorityVote(input, candidate);
-    auto terminalOwner = TerminalOwnerVote(
+    auto distance = TerminalRadioServiceFact(input, candidate, departure);
+    const auto canonicalTerminal = EvaluateCanonicalTerminalRelationship(
+        input,
         candidate,
-        departure ? input.departureTerminalAuthority
-                  : input.arrivalTerminalAuthority,
-        role,
-        claimScopedNeutrality);
-    auto terminalPolygon = TerminalPolygonVote(
-        candidate,
-        departure ? input.departureTerminalAuthority
-                  : input.arrivalTerminalAuthority,
-        role,
-        input.terminalRelevanceV2Enabled);
-    auto published = PublishedFrequencyVote(
+        departure ? input.departureEndpointPolygons
+                  : input.arrivalEndpointPolygons,
+        role);
+    auto canonicalTerminalFact = Vote(
+        "canonical-live-map",
+        canonicalTerminal.relationship ==
+                    TerminalEndpointRelationship::DirectEndpoint ||
+                canonicalTerminal.relationship ==
+                    TerminalEndpointRelationship::ExplicitParent
+            ? 1
+            : 0,
+        canonicalTerminal.relationship ==
+                TerminalEndpointRelationship::DirectEndpoint
+            ? "active-direct-endpoint-assignment"
+            : canonicalTerminal.relationship ==
+                      TerminalEndpointRelationship::ExplicitParent
+                ? "active-explicit-parent-assignment"
+                : canonicalTerminal.relationship ==
+                          TerminalEndpointRelationship::Unrelated
+                    ? "active-assignment-unrelated"
+                    : "canonical-assignment-unavailable",
+        canonicalTerminal.proof,
+        "canonical-live-authority-map",
+        false);
+    auto published = PublishedFrequencyDiagnosticFact(
         input, candidate, role, departure);
-    auto vatsim = TerminalVatsimVote(
+    auto vatsim = TerminalVatsimIdentityFact(
         candidate, role, evaluation.airport, routeContextMatch);
     auto routeContext = Vote(
         "route-context",
@@ -1035,16 +958,6 @@ EndpointEvaluation EvaluateTerminal(
     decision.guardFrequency = false;
     decision.phaseApplicable = phaseApplicable;
     decision.ineligibleReason = operational.reason;
-    decision.relationAvailable =
-        vatsim.score > 0 || vatspy.endpointPositive || distance.score > 0 ||
-        vnas.vote.score > 0 ||
-        sourceAuthority.score > 0 || terminalOwner.score > 0 ||
-        terminalPolygon.score > 0 ||
-        published.score > 0 || routeContext.score > 0;
-    decision.ownershipApplicable =
-        !input.vnasSectorPrecedenceEnabled || vnas.ownershipApplicable;
-    decision.supportedTiesDisplay =
-        input.terminalRelevanceV2Enabled || routeContextMatch;
     decision.votes = std::move(operational.facts);
     decision.votes.insert(
         decision.votes.end(), {
@@ -1052,11 +965,8 @@ EndpointEvaluation EvaluateTerminal(
         std::move(vatsim),
         std::move(roster),
         vatspy.vote,
-        std::move(vnas.vote),
-        std::move(distance),
-        std::move(sourceAuthority),
-        std::move(terminalOwner),
-        std::move(terminalPolygon),
+        std::move(canonicalTerminalFact),
+        distance,
         std::move(published),
         std::move(routeContext),
     });
@@ -1064,12 +974,72 @@ EndpointEvaluation EvaluateTerminal(
         decision.votes.push_back(std::move(*vatspy.callsignClue));
     }
     AppendXPilot4CorrelationVote(input, candidate, &decision.votes);
-    evaluation.receipt = DecideBrainControllerCandidate(decision);
-    return evaluation;
-}
 
-int ReceiptMargin(const BrainControllerDecisionReceipt& receipt) {
-    return receipt.positiveVotes - receipt.negativeVotes;
+    // Delivery, Ground, Tower, and other airport-local rows are outside the
+    // APP/DEP ownership contract and retain their existing relevance decision.
+    if (!IsAppDep(role)) {
+        decision.relationAvailable = std::any_of(
+            decision.votes.begin(),
+            decision.votes.end(),
+            [](const auto& fact) { return fact.score > 0; });
+        decision.ownershipApplicable = true;
+        decision.supportedTiesDisplay = routeContextMatch;
+        evaluation.receipt = DecideBrainControllerCandidate(decision);
+        return evaluation;
+    }
+
+    TerminalEndpointRelationship relationship =
+        TerminalEndpointRelationship::Unknown;
+    std::string relationshipProof = "required-source-position-or-ownership-unproven";
+    bool relationshipBoardEligible = true;
+    std::string relationshipIneligibleReason;
+
+    const auto& endpointPolygons = departure
+        ? input.departureEndpointPolygons
+        : input.arrivalEndpointPolygons;
+    if (canonicalTerminal.relationship ==
+            TerminalEndpointRelationship::DirectEndpoint ||
+        canonicalTerminal.relationship ==
+            TerminalEndpointRelationship::ExplicitParent) {
+        relationship = canonicalTerminal.relationship;
+        relationshipProof =
+            relationship == TerminalEndpointRelationship::DirectEndpoint
+                ? "canonical-direct-endpoint-owner@" +
+                      canonicalTerminal.proof
+                : "canonical-explicit-parent-owner@" +
+                      canonicalTerminal.proof;
+        const auto rank = canonicalTerminal.operationalRank;
+        const auto bestRank = BestOnlineCanonicalTerminalRank(
+            input, endpointPolygons);
+        if (rank > 0 && rank < bestRank) {
+            relationshipBoardEligible = false;
+            relationshipIneligibleReason =
+                relationship == TerminalEndpointRelationship::ExplicitParent &&
+                        bestRank >= CanonicalTerminalRelationshipRank(
+                            TerminalEndpointRelationship::DirectEndpoint)
+                    ? "brain-terminal-explicit-parent-suppressed-by-direct-endpoint"
+                    : "brain-terminal-operational-owner-suppressed-by-higher-owner";
+        }
+    } else if (canonicalTerminal.relationship ==
+               TerminalEndpointRelationship::Unrelated) {
+        relationship = TerminalEndpointRelationship::Unrelated;
+        relationshipProof = "canonical-assignment-unrelated@" +
+            canonicalTerminal.proof;
+    } else if (distance.score > 0) {
+        relationship = TerminalEndpointRelationship::NearbyOnly;
+        relationshipProof = "local-radio-service-only@" + distance.provenance;
+    } else {
+        relationship = TerminalEndpointRelationship::Unknown;
+        relationshipProof = "canonical-live-assignment-unavailable";
+    }
+
+    evaluation.receipt = DecideBrainTerminalControllerCandidate(
+        decision,
+        relationship,
+        std::move(relationshipProof),
+        relationshipBoardEligible,
+        std::move(relationshipIneligibleReason));
+    return evaluation;
 }
 
 const std::vector<RouteSectorMatchSnapshot>& CurrentSectors(
@@ -1235,9 +1205,7 @@ const TransceiverStationEvidenceSnapshot* FindExtensionChannel(
     for (const auto& station : candidate.originalTransceivers) {
         if (NormalizeFrequency(station.sourceFrequency) != target ||
             !station.withinMaxCandidateDistance ||
-            (station.hasReceivableRange && !station.withinReceivableRange) ||
-            (station.hasAircraftDistance &&
-             station.aircraftDistanceNm > kCenterRangeNm)) {
+            (station.hasReceivableRange && !station.withinReceivableRange)) {
             continue;
         }
         if (best == nullptr ||
@@ -1342,10 +1310,11 @@ CenterEvaluation EvaluateCenter(
         if (!tryDirect(CurrentSectors(input), DisplayRelation::CurrentPolygon)) {
             tryDirect(NextSectors(input), DisplayRelation::NextPolygon);
         }
-        evaluation.radioReachable =
-            evaluation.matched && candidate.hasDistanceNm &&
-            std::isfinite(candidate.distanceNm) &&
-            candidate.distanceNm <= kCenterRangeNm;
+        // Admission to this pipeline already proves that the controller is on
+        // the Brain-owned radio board. Center display eligibility is therefore
+        // a current/next route-polygon relationship, not a second transmitter
+        // distance decision.
+        evaluation.radioReachable = evaluation.matched;
     }
 
     const auto routeMetadata = !CurrentSectors(input).empty() ||
@@ -1361,8 +1330,7 @@ CenterEvaluation EvaluateCenter(
     decision.phaseApplicable = phaseApplicable;
     decision.ineligibleReason = operational.reason;
     decision.relationAvailable = evaluation.matched;
-    decision.radioReachable =
-        !input.terminalRelevanceV2Enabled || evaluation.radioReachable;
+    decision.radioReachable = evaluation.radioReachable;
     decision.votes = {
         VatsimVote(candidate, StationRole::Center),
         Vote(
@@ -1395,8 +1363,8 @@ CenterEvaluation EvaluateCenter(
             evaluation.radioReachable ? 1
                 : (evaluation.matched &&
                    (candidate.hasDistanceNm || extensionRouteMatch)) ? -1 : 0,
-            evaluation.radioReachable ? "channel-within-250nm"
-                : evaluation.matched ? "channel-outside-or-unavailable"
+            evaluation.radioReachable ? "radio-board-current-or-next-route"
+                : evaluation.matched ? "radio-board-channel-unavailable"
                                      : "route-relation-unresolved",
             "login=" + DisplayFrequency(candidate.frequency) +
                 ",selected=" + DisplayFrequency(evaluation.frequency)),
@@ -1441,6 +1409,8 @@ BrainOwnedCandidateCompletion MakeCompletion(
                                                       : station.frequency;
     completion.facilityGroup = candidate.group;
     completion.displayRelation = receipt.accepted ? relation : DisplayRelation::Hidden;
+    completion.terminalRelationship = receipt.terminalRelationship;
+    completion.terminalRelationshipProof = receipt.terminalRelationshipProof;
     completion.decision = receipt.accepted ? BrainOwnedCandidateDecision::Accepted
                                            : BrainOwnedCandidateDecision::Rejected;
     completion.displayed = false;
@@ -1466,8 +1436,15 @@ void AppendUnique(
     const BrainOwnedCandidateCompletion& completion,
     ModuleBoardSnapshot* board,
     std::unordered_set<std::string>* keys) {
+    const auto terminalRelationshipEligible =
+        !IsAppDep(station.role) ||
+        station.terminalRelationship ==
+            TerminalEndpointRelationship::DirectEndpoint ||
+        station.terminalRelationship ==
+            TerminalEndpointRelationship::ExplicitParent;
     if (board == nullptr || keys == nullptr ||
         completion.decision != BrainOwnedCandidateDecision::Accepted ||
+        !terminalRelationshipEligible ||
         station.frequency.empty()) {
         return;
     }
@@ -1596,8 +1573,10 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerEvidencePipeline(
                 currentCenterRoots.end());
         const EndpointEvaluation* selected = nullptr;
         if (departure.receipt.accepted && arrival.receipt.accepted) {
-            selected = ReceiptMargin(departure.receipt) >=
-                           ReceiptMargin(arrival.receipt)
+            selected = TerminalRelationshipSelectionRank(
+                           departure.receipt.terminalRelationship) >=
+                           TerminalRelationshipSelectionRank(
+                               arrival.receipt.terminalRelationship)
                 ? &departure
                 : &arrival;
         } else if (departure.receipt.accepted) {
@@ -1609,8 +1588,10 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerEvidencePipeline(
         } else if (arrivalPhase && !departurePhase) {
             selected = &arrival;
         } else {
-            selected = ReceiptMargin(departure.receipt) >=
-                           ReceiptMargin(arrival.receipt)
+            selected = TerminalRelationshipSelectionRank(
+                           departure.receipt.terminalRelationship) >=
+                           TerminalRelationshipSelectionRank(
+                               arrival.receipt.terminalRelationship)
                 ? &departure
                 : &arrival;
         }
@@ -1620,6 +1601,10 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerEvidencePipeline(
             : DisplayRelation::ArrivalPrep;
         station.polygonKey = selected->departure ? input.currentPolygonKey
                                                  : input.arrivalPolygonKey;
+        station.terminalRelationship =
+            selected->receipt.terminalRelationship;
+        station.terminalRelationshipProof =
+            selected->receipt.terminalRelationshipProof;
         auto completion = MakeCompletion(
             input,
             candidate,

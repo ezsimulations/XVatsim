@@ -558,6 +558,12 @@ std::size_t BuildRenderSignature(
     for (const auto& line : sections.listLines) {
         signature = HashCombine(signature, line.text);
         signature ^= static_cast<std::size_t>(static_cast<int>(line.tone) * 23);
+        signature ^= static_cast<std::size_t>(
+            line.centerFrequencySelectable ? 227 : 229);
+        signature = HashCombine(signature, line.centerCallsign);
+        signature = HashCombine(signature, line.centerFrequency);
+        signature = HashCombine(signature, line.centerStableKey);
+        signature = HashCombine(signature, line.centerPlanKey);
     }
     return signature;
 }
@@ -602,6 +608,29 @@ void DrawTextBlock(
         rect,
         &format,
         &brush);
+}
+
+float MeasureTextWidth(
+    Graphics* graphics,
+    const std::string& text,
+    Font* font) {
+    if (graphics == nullptr || font == nullptr || text.empty()) {
+        return 0.0f;
+    }
+    StringFormat format;
+    format.SetAlignment(StringAlignmentNear);
+    format.SetLineAlignment(StringAlignmentNear);
+    format.SetFormatFlags(StringFormatFlagsNoWrap);
+    const auto wideText = ToWide(text);
+    RectF measured;
+    graphics->MeasureString(
+        wideText.c_str(),
+        static_cast<INT>(wideText.size()),
+        font,
+        PointF(0.0f, 0.0f),
+        &format,
+        &measured);
+    return measured.Width;
 }
 
 void FillRoundedRect(
@@ -813,7 +842,12 @@ RasterImage RenderCaseImage(bool automaticMode) {
 
 RasterImage RenderCardImage(
     const OverlaySections& sections,
-    int scrollOffset) {
+    int scrollOffset,
+    std::vector<OverlayCenterFrequencyRenderTarget>*
+        centerFrequencyTargets = nullptr) {
+    if (centerFrequencyTargets != nullptr) {
+        centerFrequencyTargets->clear();
+    }
     Bitmap bitmap(kCardWidth, kCardHeight, PixelFormat32bppARGB);
     Graphics graphics(&bitmap);
     ConfigureGraphics(&graphics);
@@ -972,6 +1006,34 @@ RasterImage RenderCardImage(
             toneColor = yellow;
         }
         DrawTextBlock(&graphics, RectF(46.0f, rowY, 308.0f, 20.0f), line.text, &rowFont, toneColor);
+        if (centerFrequencyTargets != nullptr &&
+            line.centerFrequencySelectable &&
+            !line.centerFrequency.empty()) {
+            const auto frequencyPosition =
+                line.text.find(line.centerFrequency);
+            if (frequencyPosition != std::string::npos) {
+                const auto prefix = line.text.substr(0, frequencyPosition);
+                const auto throughFrequency = line.text.substr(
+                    0, frequencyPosition + line.centerFrequency.size());
+                const auto prefixWidth =
+                    MeasureTextWidth(&graphics, prefix, &rowFont);
+                const auto throughFrequencyWidth =
+                    MeasureTextWidth(&graphics, throughFrequency, &rowFont);
+                OverlayCenterFrequencyRenderTarget target;
+                target.designLeft = static_cast<int>(std::floor(
+                    46.0f + prefixWidth - 3.0f));
+                target.designRight = static_cast<int>(std::ceil(
+                    46.0f + throughFrequencyWidth + 3.0f));
+                target.designTop = static_cast<int>(std::floor(rowY - 1.0f));
+                target.designBottom =
+                    static_cast<int>(std::ceil(rowY + 21.0f));
+                target.callsign = line.centerCallsign;
+                target.frequency = line.centerFrequency;
+                target.stableKey = line.centerStableKey;
+                target.planKey = line.centerPlanKey;
+                centerFrequencyTargets->push_back(std::move(target));
+            }
+        }
         rowY += 22.0f;
     }
 
@@ -1434,6 +1496,14 @@ void OverlayWindow::Create() {
     accessoryIntegrationCounters_ = {};
     accessoryClickWakeRequests_ = 0;
     accessoryClickCallbackExitMarks_ = 0;
+    centerFrequencyRenderTargets_.clear();
+    centerFrequencyClickFacts_ = {};
+    centerFrequencyClickHead_ = 0;
+    centerFrequencyClickSize_ = 0;
+    nextCenterFrequencyClickSequence_ = 1;
+    centerFrequencyClickNotificationSequence_ = 0;
+    armedCenterFrequencyTarget_.reset();
+    armedCenterFrequencyMouseDownMicroseconds_ = 0;
     accessoryPerformance_ = std::make_unique<AccessoryPerformanceCollector>();
     accessoryPerformance_->ResetForNewProcess(accessoryPerformanceEpoch_++);
     animationProgress_ = 0.0f;
@@ -1516,6 +1586,8 @@ void OverlayWindow::Destroy() {
     accessoryAnchorState_ = {};
     dragMoved_ = false;
     accessoryClickQueue_ = {};
+    centerFrequencyRenderTargets_.clear();
+    (void)DiscardPendingCenterFrequencyClickFacts();
     if (!accessoryVisiblePublicationState_.HasRetainedTerminal() &&
         accessoryPublicationFacts_.PendingCount() == 0) {
         accessoryVisiblePublicationState_ = {};
@@ -2133,6 +2205,33 @@ bool OverlayWindow::BeginAccessoryInputDispatch(
     return began;
 }
 
+bool OverlayWindow::ConsumeCenterFrequencyClickFact(
+    OverlayCenterFrequencyClickFact* outFact) {
+    if (centerFrequencyClickSize_ == 0) {
+        return false;
+    }
+    if (outFact != nullptr) {
+        *outFact = centerFrequencyClickFacts_[centerFrequencyClickHead_];
+    }
+    centerFrequencyClickHead_ =
+        (centerFrequencyClickHead_ + 1) % kCenterFrequencyClickCapacity;
+    --centerFrequencyClickSize_;
+    return true;
+}
+
+bool OverlayWindow::HasPendingCenterFrequencyClickFacts() const {
+    return centerFrequencyClickSize_ != 0;
+}
+
+std::size_t OverlayWindow::DiscardPendingCenterFrequencyClickFacts() {
+    const auto discarded = centerFrequencyClickSize_;
+    centerFrequencyClickHead_ = 0;
+    centerFrequencyClickSize_ = 0;
+    armedCenterFrequencyTarget_.reset();
+    armedCenterFrequencyMouseDownMicroseconds_ = 0;
+    return discarded;
+}
+
 bool OverlayWindow::HasPendingAccessoryClickFacts() const {
     return accessoryClickQueue_.PendingCount() != 0;
 }
@@ -2539,6 +2638,7 @@ void OverlayWindow::Hide() {
     HandleAccessoryVisibilityLoss(
         "visible-eligibility-lost-before-first-frame");
     DiscardPendingAccessoryClickFacts();
+    (void)DiscardPendingCenterFrequencyClickFacts();
     StopAccessoryPreparation();
     ResetOverlayUpdateTiming();
     const auto totalStarted = OverlayClock::now();
@@ -2559,6 +2659,7 @@ void OverlayWindow::Hide() {
     animationTarget_ = 0.0f;
     lastWakeState_ = false;
     scrollOffset_ = 0;
+    centerFrequencyRenderTargets_.clear();
     cardTextureDirty_ = true;
     gLastOverlayUpdateTiming.bodyUs += ElapsedOverlayUsSince(bodyStarted);
     if (window_ != nullptr) {
@@ -2626,6 +2727,13 @@ int OverlayWindow::HandleMouseClickCallback(
             self->hasPendingRecallRequest_ = true;
             return 1;
         }
+        const auto centerFrequencyHit = self->HitTestCenterFrequency(x, y);
+        if (centerFrequencyHit.has_value()) {
+            self->armedCenterFrequencyTarget_ = *centerFrequencyHit;
+            self->armedCenterFrequencyMouseDownMicroseconds_ =
+                mouseCallbackEnteredMicroseconds;
+            return 1;
+        }
         const auto resizeCorner = self->ResolveResizeCorner(x, y);
         if (resizeCorner != ResizeCorner::None) {
             self->StartResizing(x, y, resizeCorner);
@@ -2636,6 +2744,19 @@ int OverlayWindow::HandleMouseClickCallback(
     }
 
     if (mouse == xplm_MouseDrag) {
+        if (self->armedCenterFrequencyTarget_.has_value()) {
+            const auto hit = self->HitTestCenterFrequency(x, y);
+            const auto& armed = *self->armedCenterFrequencyTarget_;
+            if (!hit.has_value() ||
+                hit->callsign != armed.callsign ||
+                hit->frequency != armed.frequency ||
+                hit->stableKey != armed.stableKey ||
+                hit->planKey != armed.planKey) {
+                self->armedCenterFrequencyTarget_.reset();
+                self->armedCenterFrequencyMouseDownMicroseconds_ = 0;
+            }
+            return 1;
+        }
         if (self->resizing_) {
             self->ContinueResizing(x, y);
         } else {
@@ -2645,6 +2766,23 @@ int OverlayWindow::HandleMouseClickCallback(
     }
 
     if (mouse == xplm_MouseUp) {
+        if (self->armedCenterFrequencyTarget_.has_value()) {
+            const auto armed = *self->armedCenterFrequencyTarget_;
+            const auto hit = self->HitTestCenterFrequency(x, y);
+            if (hit.has_value() &&
+                hit->callsign == armed.callsign &&
+                hit->frequency == armed.frequency &&
+                hit->stableKey == armed.stableKey &&
+                hit->planKey == armed.planKey) {
+                self->QueueCenterFrequencyClick(
+                    armed,
+                    self->armedCenterFrequencyMouseDownMicroseconds_,
+                    AccessoryWallClockMicroseconds());
+            }
+            self->armedCenterFrequencyTarget_.reset();
+            self->armedCenterFrequencyMouseDownMicroseconds_ = 0;
+            return 1;
+        }
         self->StopDragging();
         self->StopResizing();
         return 1;
@@ -2669,6 +2807,8 @@ int OverlayWindow::HandleRightClickCallback(
     }
     self->StopDragging();
     self->StopResizing();
+    self->armedCenterFrequencyTarget_.reset();
+    self->armedCenterFrequencyMouseDownMicroseconds_ = 0;
     return 1;
 }
 
@@ -2680,6 +2820,8 @@ int OverlayWindow::HandleMouseWheelCallback(XPLMWindowID windowId, int x, int y,
     if (self == nullptr) {
         return 0;
     }
+    self->armedCenterFrequencyTarget_.reset();
+    self->armedCenterFrequencyMouseDownMicroseconds_ = 0;
 
     if (self->accessoryDrawerOpen_) {
         AccessoryPresentationScrollInput input;
@@ -2748,8 +2890,11 @@ XPLMCursorStatus OverlayWindow::HandleCursorCallback(XPLMWindowID windowId, int 
     const auto accessoryHit = self == nullptr
         ? AccessoryHitTestResult{}
         : HitTestAccessoryOrb(self->accessoryLayout_, x, y);
+    const auto centerFrequencyHit = self == nullptr
+        ? std::optional<OverlayCenterFrequencyRenderTarget>{}
+        : self->HitTestCenterFrequency(x, y);
     if (self != nullptr &&
-        (accessoryHit.handled ||
+        (accessoryHit.handled || centerFrequencyHit.has_value() ||
          self->ResolveResizeCorner(x, y) != ResizeCorner::None ||
          self->IsInDragRegion(x, y) ||
          self->IsInAcknowledgeAction(x, y) ||
@@ -2879,7 +3024,11 @@ void OverlayWindow::Draw() {
 
     const auto signature = BuildRenderSignature(sections, scrollOffset_, textEntryActive_, animationTarget_);
     if (cardTextureDirty_ || signature != lastCardSignature_) {
-        UploadTexture(&cardTextureId_, RenderCardImage(sections, scrollOffset_));
+        std::vector<OverlayCenterFrequencyRenderTarget> frequencyTargets;
+        UploadTexture(
+            &cardTextureId_,
+            RenderCardImage(sections, scrollOffset_, &frequencyTargets));
+        centerFrequencyRenderTargets_ = std::move(frequencyTargets);
         cardTextureDirty_ = false;
         lastCardSignature_ = signature;
         mainCardProductionSignature_ = std::to_string(signature);
@@ -3452,6 +3601,67 @@ void OverlayWindow::QueueAccessoryClick(
             ++accessoryClickCallbackExitMarks_;
         }
     }
+}
+
+std::optional<OverlayCenterFrequencyRenderTarget>
+OverlayWindow::HitTestCenterFrequency(int x, int y) const {
+    if (window_ == nullptr || !windowVisible_ ||
+        animationProgress_ < 0.98f || textEntryActive_ ||
+        viewModel_.systemNotice.visible || dragging_ || resizing_) {
+        return std::nullopt;
+    }
+
+    int left = 0;
+    int top = 0;
+    int right = 0;
+    int bottom = 0;
+    XPLMGetWindowGeometry(window_, &left, &top, &right, &bottom);
+    const auto layout = ResolveLayout(left, top, animationProgress_, scale_);
+    for (const auto& target : centerFrequencyRenderTargets_) {
+        ScreenRect rect;
+        rect.left = layout.cardLeft + ScaleValue(target.designLeft, scale_);
+        rect.right = layout.cardLeft + ScaleValue(target.designRight, scale_);
+        rect.top = layout.cardTop - ScaleValue(target.designTop, scale_);
+        rect.bottom =
+            layout.cardTop - ScaleValue(target.designBottom, scale_);
+        if (rect.Contains(x, y)) {
+            return target;
+        }
+    }
+    return std::nullopt;
+}
+
+void OverlayWindow::QueueCenterFrequencyClick(
+    const OverlayCenterFrequencyRenderTarget& target,
+    std::uint64_t mouseDownMicroseconds,
+    std::uint64_t mouseUpMicroseconds) {
+    if (target.callsign.empty() || target.frequency.empty() ||
+        centerFrequencyClickSize_ >= kCenterFrequencyClickCapacity) {
+        return;
+    }
+
+    OverlayCenterFrequencyClickFact fact;
+    fact.requestSequence = nextCenterFrequencyClickSequence_++;
+    fact.notificationSequence =
+        ++centerFrequencyClickNotificationSequence_;
+    fact.mouseDownMicroseconds = mouseDownMicroseconds;
+    fact.mouseUpMicroseconds = mouseUpMicroseconds;
+    fact.callsign = target.callsign;
+    fact.frequency = target.frequency;
+    fact.stableKey = target.stableKey;
+    fact.planKey = target.planKey;
+    const auto tail =
+        (centerFrequencyClickHead_ + centerFrequencyClickSize_) %
+        kCenterFrequencyClickCapacity;
+    centerFrequencyClickFacts_[tail] = fact;
+    ++centerFrequencyClickSize_;
+
+    if (accessoryInputWakeCallback_ != nullptr) {
+        accessoryInputWakeCallback_(
+            fact.notificationSequence, accessoryInputWakeRefcon_);
+    }
+    centerFrequencyClickFacts_[tail].mouseCallbackExitedMicroseconds =
+        AccessoryWallClockMicroseconds();
 }
 
 std::uint64_t OverlayWindow::AccessoryWallClockMicroseconds() {

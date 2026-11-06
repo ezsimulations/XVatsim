@@ -1,0 +1,44 @@
+name=Resolver vNAS Ownership Change Invalidates Authority Cache
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.0
+plan.destination_lon=5.0
+plan.has_destination_coordinates=true
+
+brain_controller_relevance.stage=Departure
+brain_controller_relevance.v2_enabled=true
+
+controller.feed_generation=100
+controller.entry=callsign=PCT_APP;frequency=119.850;facility=5;actionable=true;atis=false
+
+resolver.route_resolve=true
+resolver.center_feature=label=TEST;tokens=TEST;polygon=-1,-1|-1,6|1,6|1,-1
+resolver.authority_catalog_fir=TEST|Test Center||NO_MATCH
+resolver.terminal_feature=id=DCA;name=Potomac DCA;prefixes=DCA;suffix=APP;polygon=-1,-1|-1,1|1,1|1,-1
+
+vnas.controller_feed_json={"updatedAt":"2026-10-25T20:00:00Z","controllers":[{"artccId":"ZDC","primaryFacilityId":"PCT","primaryPositionId":"PCT-PARENT","isActive":true,"isObserver":false,"positions":[{"facilityId":"PCT","facilityName":"Potomac Consolidated TRACON","positionId":"PCT-PARENT","positionName":"Potomac Parent","positionType":"Tracon","radioName":"Potomac Approach","defaultCallsign":"PCT_APP","frequency":119850000,"isPrimary":true,"isActive":true,"starsData":{"areaId":"PCT-AREA","assumedTcps":["1DCA"]}}],"vatsimData":{"callsign":"PCT_APP","primaryFrequency":119850000}}]}
+vnas.repeat_controller_feed_json={"updatedAt":"2026-10-25T20:00:05Z","controllers":[{"artccId":"ZDC","primaryFacilityId":"PCT","primaryPositionId":"PCT-PARENT","isActive":true,"isObserver":false,"positions":[{"facilityId":"PCT","facilityName":"Potomac Consolidated TRACON","positionId":"PCT-PARENT","positionName":"Potomac Parent","positionType":"Tracon","radioName":"Potomac Approach","defaultCallsign":"PCT_APP","frequency":119850000,"isPrimary":true,"isActive":true,"starsData":{"areaId":"PCT-AREA","assumedTcps":[]}}],"vatsimData":{"callsign":"PCT_APP","primaryFrequency":119850000}}]}
+vnas.artcc_facility_json={"id":"ZDC","facility":{"id":"ZDC","type":"Artcc","name":"Washington Center","positions":[],"childFacilities":[{"id":"PCT","type":"Tracon","name":"Potomac Consolidated TRACON","starsConfiguration":{"internalAirports":["DCA"],"areas":[{"id":"PCT-AREA","name":"Potomac","airports":["DCA"]}],"tcps":[{"id":"TCP-PCT","subset":1,"sectorId":"PCT"},{"id":"TCP-DCA","subset":1,"sectorId":"DCA","parentTcpId":"TCP-PCT"}]},"positions":[{"id":"PCT-PARENT","name":"Potomac Parent","callsign":"PCT_APP","frequency":119850000,"starsConfiguration":{"areaId":"PCT-AREA","tcpId":"TCP-PCT"}},{"id":"DCA-CHILD","name":"DCA Radar","callsign":"DCA_APP","frequency":119850000,"starsConfiguration":{"areaId":"PCT-AREA","tcpId":"TCP-DCA"}}],"childFacilities":[]}]}}
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_cache_status=authority-proof-build
+expect.resolver_authority_cache_reason=no-authority-cache
+expect.resolver_authority_relevant_matches=PCT_APP:SIMAWARE_TRACON:DCA_APP:SIMAWARE_TRACON:DCA_APP:aircraft=1:route=1:entry=0
+expect.resolver_authority_repeat_cache_status=authority-proof-build
+expect.resolver_authority_repeat_cache_reason=signature-or-source-dirty
+expect.resolver_authority_repeat_relevant_matches=<none>

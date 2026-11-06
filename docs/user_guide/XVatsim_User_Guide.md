@@ -33,6 +33,13 @@ Assist can place UNICOM `122.800` in COM1 standby when no eligible controller is
 online. Aircraft electrical-state handling and diagnostic log limits were also
 strengthened for more custom-aircraft compatibility and bounded disk use.
 
+When Standby Assist is on and two or more live Center controllers are shown,
+the numeric Center frequencies can be selected directly on the overlay. This
+loads the selected Center into COM1 active. During Arrival, Assist then keeps
+moving through the normal terminal sequence instead of loading another Center.
+Approach/Departure, Tower, CTAF, UNICOM, Ground, and Delivery rows are display
+only and cannot be selected this way.
+
 The new Manager can retrieve a future XVatsim payload only after validating its
 HTTPS location, exact size, SHA-256 hash, safe contents, version, and every
 managed file. Installation still requires the pilot to select Install, Update,
@@ -80,7 +87,8 @@ XVatsim can sleep when there is nothing useful to show and wake when controller 
 
 - Windows
 - X-Plane 12
-- xPilot 3 or xPilot 4
+- xPilot 3.2 or xPilot 4.0.0 beta 9; both generations remain supported through
+  separate integrations
 - VATSIM account and active xPilot connection
 - IFR flight plan filed on VATSIM
 
@@ -144,6 +152,13 @@ Color and labels matter:
   means a newer XVatsim package is available.
 
 Tuning a frequency does not make a row green by itself. XVatsim colors controller rows from route and authority context, not from radio tuning alone.
+
+If `ASST ON` is shown, you can select the numeric frequency on any live Center
+row to tune it directly into COM1 active. This is intended for a Center handoff
+when Assist guessed the wrong Center for standby, including Center service
+published with an `_FSS` callsign. Only the frequency number is selectable, and
+a press must start and finish on that same number. Other controller roles
+remain read-only.
 
 In Version 2.2.0, the Brain owns the final radio-board order, controller relevance decisions, information ORBs and drawers, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
 
@@ -324,6 +339,11 @@ apply to Departure only. XVatsim does not guess UNICOM while an Arrival CTAF
 lookup is pending or after it fails. All targets use the same Brain-approved
 COM1 standby writer and existing radio safety checks. The overlay shows
 `ASST ON` or `ASST OFF`.
+
+After a displayed Center frequency is selected during Arrival, Standby Assist
+treats the Center tier as resolved for that flight plan and chooses from the
+remaining regional sequence. Selecting another displayed Center later changes
+COM1 active again without moving standby back to a different Center.
 
 ## Keyboard Commands In X-Plane
 

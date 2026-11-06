@@ -11,6 +11,8 @@ the overlay renders only the selected brain-approved snapshot.
 Overlay responsibilities are presentation-only:
 
 - produce bounded ORB-click facts for the plugin to consume exactly once;
+- expose precise numeric-frequency hit targets only for Brain-approved Center
+  rows and produce bounded Center-selection facts without tuning a radio;
 - resolve shared card, rail, drawer, drag, resize, clamp, and hit-test geometry;
 - keep mouse-wheel drawer scrolling separate from main-card scrolling;
 - retain only the selected drawer's presentation offset and render plan;
@@ -122,4 +124,10 @@ Production accounting follows the real brain-cycle path. It correlates every
 consumed click with its captured drawer, brain decision, immutable command, and
 terminal publication fact. The older render-bound dispatcher is isolated test
 support only and has no production behavioral or reporting authority.
+
+Center-frequency input follows the same capture-only boundary. Mouse-down arms
+one exact rendered numeric frequency, mouse-up must hit the same current target,
+and the overlay queues only the callsign, frequency, and stable row identity.
+The Brain revalidates the current plan, Assist state, live board, Center role,
+and multi-Center condition before the plugin may write COM1 active.
 

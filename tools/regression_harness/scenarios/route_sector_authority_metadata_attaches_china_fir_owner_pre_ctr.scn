@@ -42,5 +42,3 @@ expect.resolver_route_current_controller_prefixes=ZWUQ:
 expect.resolver_route_current_controller_patterns=ZWUQ:ZWUQ_*_CTR>ZWUQ_CTR
 expect.resolver_route_next_controller_prefixes=ZGGG:,ZGNN:,ZGZU:,ZLHW:,ZLLL:,ZPKM:,ZUGY:,ZUUU:,ZWWW:
 expect.resolver_route_next_controller_patterns=ZGGG:ZGGG_*_CTR>ZGGG_CTR,ZGNN:ZGNN_*_CTR>ZGNN_CTR,ZGZU:ZGZU_*_CTR>ZGZU_CTR,ZLHW:ZLHW_*_CTR>ZLHW_CTR,ZLLL:ZLLL_*_CTR>ZLLL_CTR,ZPKM:ZPKM_*_CTR>ZPKM_CTR,ZUGY:ZUGY_*_CTR>ZUGY_CTR,ZUUU:ZUUU_*_CTR>ZUUU_CTR,ZWWW:ZWWW_*_CTR>ZWWW_CTR
-expect.resolver_enroute_available=false
-expect.resolver_enroute_callsigns=<none>

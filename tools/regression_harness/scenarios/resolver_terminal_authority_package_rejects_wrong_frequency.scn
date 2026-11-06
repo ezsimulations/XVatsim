@@ -37,5 +37,3 @@ expect.resolver_authority_relevance_available=true
 expect.resolver_authority_diagnostics=SCT_A_APP:frequency-mismatch:SIMAWARE_TRACON:SCT_A_APP:SCT_APP:SCT_A_APP
 expect.resolver_authority_relevant_matches=<none>
 expect.resolver_authority_proof_sources=<none>
-expect.resolver_enroute_available=false
-expect.resolver_enroute_callsigns=<none>

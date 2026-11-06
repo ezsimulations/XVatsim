@@ -1,4 +1,4 @@
-name=Authority cache reuses proof for route scope source churn
+name=Authority cache rebuilds radio-scoped map for source roster churn
 now_seconds=1000
 
 xpilot.connected=true
@@ -36,6 +36,6 @@ expect.resolver_route_available=true
 expect.resolver_route_resolved=true
 expect.resolver_authority_cache_status=authority-proof-build
 expect.resolver_authority_cache_reason=no-authority-cache
-expect.resolver_authority_repeat_cache_status=authority-cache-stable-proof-reuse
-expect.resolver_authority_repeat_cache_reason=stable-proof-ownership-unchanged
+expect.resolver_authority_repeat_cache_status=authority-proof-build
+expect.resolver_authority_repeat_cache_reason=signature-or-source-dirty
 expect.resolver_authority_repeat_relevant_matches=MMZT_CTR:VATGLASSES:MMZT_CTR:VATSPY_BOUNDARY:MMZT:aircraft=1:route=1:entry=0

@@ -2582,8 +2582,6 @@ expect.resolver_route_authority_gaps=current:WMFC,next:WSJC,next:VVHM,next:ZJSA,
 expect.resolver_route_current_sectors=WMFC
 expect.resolver_route_next_sectors=WSJC,VVHM,XVCL,ZJSA,ZJSY,VHHK
 expect.resolver_authority_relevance_available=true
-expect.resolver_authority_status=AUTHORITY candidates=23 authorities=2 polygons=2 routeKeys=2 active=1 relevant=1 diagnostics=54 activationGaps=0 stage=NEAR_ROUTE_WINDOW window=200nm deferred=5
-expect.resolver_authority_relevant_matches=WSJC_CTR:TRANSCEIVER:WSJC_CTR:VATSPY_BOUNDARY:WSJC:aircraft=0:route=1:entry=47
-expect.resolver_authority_proof_sources=WSJC_CTR:TRANSCEIVER_GEO_ROUTE
-expect.resolver_enroute_available=true
-expect.resolver_enroute_callsigns=WSJC_CTR
+expect.resolver_authority_status=AUTHORITY candidates=62 authorities=1385 polygons=89 routeKeys=2 active=3 relevant=0 diagnostics=84 activationGaps=22 stage=NEAR_ROUTE_WINDOW window=200nm deferred=5
+expect.resolver_authority_relevant_matches=<none>
+expect.resolver_authority_proof_sources=<none>

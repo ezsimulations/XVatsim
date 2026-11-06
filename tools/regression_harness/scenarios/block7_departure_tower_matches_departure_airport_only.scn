@@ -24,6 +24,4 @@ authority_polygon.local=id=KBBB;name=Bravo Local;polygon=10,10|10,11|11,11|11,10
 controller.entry=callsign=AAA_TWR;frequency=118.100;facility=4;actionable=true;atis=false
 controller.entry=callsign=BBB_TWR;frequency=119.100;facility=4;actionable=true;atis=false
 
-expect.departure_collected_available=true
-expect.departure_collected_callsigns=AAA_TWR
 expect.authority_relevant_polygon_matches=AAA_TWR:AIRPORT_LOCAL:KAAA_TWR:AIRPORT_LOCAL:KAAA:aircraft=1:route=0:entry=0

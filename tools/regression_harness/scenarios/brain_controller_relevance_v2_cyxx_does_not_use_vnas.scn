@@ -12,10 +12,10 @@ flight.has_destination_coordinates=true
 brain_controller_relevance.stage=Arrival
 brain_controller_relevance.v2_enabled=true
 
-terminal_authority.airport_icao=CYXX
-terminal_authority.lat=49.0253
-terminal_authority.lon=-122.3600
-terminal_authority.feature=id=YVR;name=Vancouver Terminal;prefixes=YVR;polygon=48.0,-124.0|50.0,-124.0|50.0,-121.0|48.0,-121.0
+endpoint_polygon_query.airport_icao=CYXX
+endpoint_polygon_query.lat=49.0253
+endpoint_polygon_query.lon=-122.3600
+endpoint_polygon_query.feature=id=YVR;name=Vancouver Terminal;prefixes=YVR;polygon=48.0,-124.0|50.0,-124.0|50.0,-121.0|48.0,-121.0
 
 controller.entry=callsign=YVR_APP;frequency=132.300;facility=5;actionable=true;atis=false
 transceiver.available=true
@@ -26,4 +26,4 @@ transceiver.station=callsign=YVR_APP;frequency=132.300;lat=49.0253;lon=-122.3600
 vnas.controller_feed_json={"updatedAt":"2026-09-06T20:00:00Z","controllers":[{"artccId":"ZVR","primaryFacilityId":"YVR","primaryPositionId":"01CANADASHOULDNOTBEUSED000","isActive":true,"isObserver":false,"positions":[{"facilityId":"YVR","facilityName":"Vancouver","positionId":"01CANADASHOULDNOTBEUSED000","positionName":"Vancouver","positionType":"Tracon","defaultCallsign":"YVR_APP","frequency":132300000,"isPrimary":true,"isActive":true}],"vatsimData":{"callsign":"YVR_APP","frequency":"132.300"}}]}
 
 expect.brain_controller_relevance_arrival_callsigns=YVR_APP
-expect.brain_controller_relevance_completions_contains=YVR_APP:accepted,vnas=0[outside-us-scope,frequency-distance=+1,brain-final=display
+expect.brain_controller_relevance_completions_contains=YVR_APP:accepted,terminal-relationship=DIRECT_ENDPOINT,canonical-live-map=+1[active-direct-endpoint-assignment,frequency-distance=+1,brain-final=display

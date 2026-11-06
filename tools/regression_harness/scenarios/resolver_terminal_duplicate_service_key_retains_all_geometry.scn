@@ -1,0 +1,40 @@
+name=Resolver Terminal Duplicate Service Key Retains All Geometry
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=20.0
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=20.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.0
+plan.destination_lon=25.0
+plan.has_destination_coordinates=true
+
+radio.com1_active=118.000
+radio.com2_active=122.800
+
+controller.entry=callsign=DUP_APP;frequency=120.000;facility=5;actionable=true;atis=false
+
+resolver.route_resolve=true
+resolver.center_feature=label=TEST;tokens=TEST;polygon=-1,19|-1,26|1,26|1,19
+resolver.authority_catalog_fir=TEST|Test Center|TST|TEST
+
+# Both source features legitimately publish the same service position. Their
+# disjoint geometries must both survive; deduplication by DUP_APP loses one.
+resolver.terminal_feature=id=FIRST;name=First Area;prefixes=DUP;suffix=APP;polygon=-1,-1|-1,1|1,1|1,-1
+resolver.terminal_feature=id=SECOND;name=Second Area;prefixes=DUP;suffix=APP;polygon=-1,19|-1,21|1,21|1,19
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_route_current_sectors=TEST
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_relevant_matches=DUP_APP:SIMAWARE_TRACON:DUP_APP:SIMAWARE_TRACON:SECOND_APP:aircraft=1:route=1:entry=0
+expect.resolver_authority_proof_sources=DUP_APP:SIMAWARE_TRACON

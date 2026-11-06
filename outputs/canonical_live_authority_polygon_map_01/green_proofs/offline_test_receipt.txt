@@ -1,0 +1,78 @@
+CANONICAL-LIVE-AUTHORITY-POLYGON-MAP-01
+Offline verification receipt
+Date: 2026-10-25
+Baseline HEAD: 6b39f7b2351abc2b4c635b4d13650b62e9563d9f
+
+Release build
+  XVatsimRegressionHarness: PASS
+  XVatsimPlugin: PASS
+  Artifact: build/dist/XVatsim/win_x64/XVatsim.xpl
+  Size: 3,171,328 bytes
+  SHA-256: FBBFF4BFF4E23932A773F4884608C5F145261E5D2DA6B34D66C72ADEFFF575EE
+
+Environment-independent scenario suite
+  RESULT total=925 pass=925 fail=0 excluded=1 seconds=50.0
+  Excluded: v2_step6_pdc_private_messages_55_absolute_plugin_path_canonicalization.scn
+  Reason: the scenario fingerprints a machine-installed xPilot binary path and
+  is not environment-independent. No production behavior was changed to make
+  that machine-specific assertion pass.
+
+Focused authority proofs
+  controller-operational-eligibility: PASS
+  endpoint-terminal-polygon-ownership: PASS
+    packageCorrect=1
+    thamesNearby=1
+    liveMapCorrect=1
+    brainRejected=1
+    terminalRelationship=UNRELATED
+    finalReason=brain-terminal-unrelated-hidden
+  resolver_live_authority_conflict_fails_closed.scn: PASS
+    definitions=1 assignments=2 conflicts=1 unmapped=0
+  resolver_authority_reports_unmapped_controller_gap.scn: PASS
+    definitions=1 assignments=0 conflicts=0 unmapped=1
+  resolver_live_authority_stale_feed_fails_closed.scn: PASS
+    definitions=2 assignments=0 conflicts=0 unmapped=0
+    available=false stale=true polygonState=STALE
+  resolver_global_activation_precedes_route_relevance.scn: PASS
+    definitions=3 assignments=2 relevant=1 active-not-relevant=1
+  resolver_vnas_parent_assignment_lights_canonical_polygon.scn: PASS
+    PCT_APP -> SIMAWARE_TRACON:DCA_APP
+    state=ACTIVE_PARENT frequency=119.850
+  brain_controller_relevance_departure_kngu_rejects_adjacent_pct_app.scn: PASS
+    PCT_APP rejected
+    terminalRelationship=UNRELATED
+    proof=active-canonical-assignment-does-not-contain-endpoint
+  authority_polygon_topology_hole_excludes_aircraft.scn: PASS
+  resolver_terminal_duplicate_service_key_retains_all_geometry.scn: PASS
+  vnas_active_position_independent_of_radio_candidates.scn: PASS
+
+Center selection and Standby Assist non-regression
+  standby_assist_manual_center_selection_advances_to_approach.scn: PASS
+  standby_assist_rejects_non_center_frequency_selection.scn: PASS
+  standby_assist_single_fss_center_selection_advances_to_approach.scn: PASS
+  Result: Center rows remain the only selectable controller rows; manual Center
+  selection tunes COM1 active and leaves the next hierarchy tier eligible for
+  Standby Assist.
+
+Performance and lifecycle gates
+  PERFORMANCE_CONTRACT_GATE_A_PASSED
+    dispatchP99Us=5 packageAndSubmitP99Us=4 harvestP99Us=5
+    worstCaseControllers=5000 maxPendingDepth=1 stalePublications=0
+  PERFORMANCE_CONTRACT_GATE_A_CALM_2_PASSED
+    unchangedFiveSecondRequests=0
+    controllerGenerationOnlyStable=1
+    membershipInvalidates=1 geometryInvalidates=1 frequencyInvalidates=1
+    authorityTransceiverProjectionAbsent=1
+  PERFORMANCE_CONTRACT_RUNTIME_ACTIVATION_GATE_PASSED
+    dormantCallbacks=50000 dormantP99Us=0 dormantOperationalAttempts=0
+    lifecycleStressCycles=1000 lifecycleStressRecoveries=1000
+    lifecycleStressInvalidations=1000 stageAccountingExact=1
+  CONTROLLER_OPERATIONAL_ELIGIBILITY_PERFORMANCE passed=1
+    batchControllers=512 batchEvaluated=512 batchUs=3773
+    decisions=10000 decisionsUs=7037 cacheHit=1
+    workingSetGrowthBytes=8192 threadsAdded=0 timersAdded=0 callbacksAdded=0
+
+Authorization state
+  Live install: NOT AUTHORIZED and not performed
+  Commit: NOT AUTHORIZED and not performed
+

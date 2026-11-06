@@ -17,10 +17,14 @@ From the XVatsim repository root:
 .\scripts\build_xpilot4_bridge.ps1
 ```
 
-The build script obtains the exact official xPilot Plugin SDK commit shipped by
-xPilot `4.0.0-beta.7`, builds the companion and offline probe, verifies that the
-SDK assembly is not present in the companion output, verifies the companion
-avoids APIs removed from beta 7's trimmed host, and runs the probe.
+The current development and live-test machine runs xPilot `4.0.0-beta.9`.
+The build remains pinned to official Plugin SDK commit `3f3472f`, originally
+qualified with `4.0.0-beta.7`, and accepts only the approved SDK `0.1.x`
+contract. It builds the companion and offline probe, verifies that the SDK
+assembly is not present in the companion output, verifies the companion avoids
+APIs removed from the trimmed xPilot 4 host, and runs the probe. Beta 9 is a
+runtime compatibility target; it does not replace the separate xPilot 3.2
+legacy integration.
 
 ## Experimental installation
 

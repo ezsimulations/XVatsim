@@ -436,6 +436,9 @@ FinalDisplayStationSnapshot ToFinalDisplayStation(
     displayStation.hasRouteEntryDistance = station.hasRouteEntryDistance;
     displayStation.routeEntryDistanceNm = station.routeEntryDistanceNm;
     displayStation.polygonKey = station.polygonKey;
+    displayStation.terminalRelationship = station.terminalRelationship;
+    displayStation.terminalRelationshipProof =
+        station.terminalRelationshipProof;
     return displayStation;
 }
 
@@ -2718,37 +2721,23 @@ int DepartureFrequencyRank(const FinalDisplayStationSnapshot& station) {
     }
 }
 
-int ArrivalFrequencyRank(const FinalDisplayStationSnapshot& station) {
-    switch (station.role) {
-        case StationRole::Center:
-            // Arrival handoff boards keep every displayed center ahead of terminal rows;
-            // relation rank preserves current center before next/arrival center.
-            return CenterRelationRank(station.displayRelation);
-        case StationRole::Approach:
-        case StationRole::Departure:
-            return 3;
-        case StationRole::Tower:
-            return 4;
-        case StationRole::Ground:
-            return 5;
-        case StationRole::Delivery:
-            return 6;
-        case StationRole::Ctaf:
-        case StationRole::Unicom:
-            return 7;
-        case StationRole::Atis:
-            return 8;
-        case StationRole::Other:
-        default:
-            return 9;
+int ArrivalFrequencyRank(
+    const FinalDisplayStationSnapshot& station,
+    bool unicomArrival) {
+    if (station.role == StationRole::Center) {
+        // Arrival handoff boards keep every displayed center ahead of terminal
+        // rows; relation rank preserves current center before next/arrival center.
+        return CenterRelationRank(station.displayRelation);
     }
+    return ArrivalFrequencyHierarchyRank(station.role, unicomArrival);
 }
 
 int FrequencyIntentRank(
     WorkflowStage stage,
-    const FinalDisplayStationSnapshot& station) {
+    const FinalDisplayStationSnapshot& station,
+    bool unicomArrival) {
     if (stage == WorkflowStage::Arrival) {
-        return ArrivalFrequencyRank(station);
+        return ArrivalFrequencyRank(station, unicomArrival);
     }
     return DepartureFrequencyRank(station);
 }
@@ -2758,12 +2747,23 @@ void SortFrequencyIntent(WorkflowStage stage, FinalDisplaySnapshot* board) {
         return;
     }
 
+    const auto hasCtaf = std::any_of(
+        board->stations.begin(),
+        board->stations.end(),
+        [](const auto& station) { return station.role == StationRole::Ctaf; });
+    const auto unicomArrival = !hasCtaf && std::any_of(
+        board->stations.begin(),
+        board->stations.end(),
+        [](const auto& station) { return station.role == StationRole::Unicom; });
+
     std::stable_sort(
         board->stations.begin(),
         board->stations.end(),
-        [stage](const auto& left, const auto& right) {
-            const auto leftRank = FrequencyIntentRank(stage, left);
-            const auto rightRank = FrequencyIntentRank(stage, right);
+        [stage, unicomArrival](const auto& left, const auto& right) {
+            const auto leftRank =
+                FrequencyIntentRank(stage, left, unicomArrival);
+            const auto rightRank =
+                FrequencyIntentRank(stage, right, unicomArrival);
             if (leftRank != rightRank) {
                 return leftRank < rightRank;
             }
@@ -3106,6 +3106,10 @@ void HashStation(std::uint64_t* hash, const FinalDisplayStationSnapshot& station
     HashCombine(hash, station.annotation);
     HashCombine(hash, station.polygonKey);
     HashCombine(hash, static_cast<std::uint64_t>(station.displayRelation));
+    HashCombine(
+        hash,
+        static_cast<std::uint64_t>(station.terminalRelationship));
+    HashCombine(hash, station.terminalRelationshipProof);
     HashCombine(hash, static_cast<std::uint64_t>(station.tuned ? 1u : 0u));
     HashCombine(hash, static_cast<std::uint64_t>(station.next ? 1u : 0u));
     HashCombine(hash, static_cast<std::uint64_t>(station.standby ? 1u : 0u));

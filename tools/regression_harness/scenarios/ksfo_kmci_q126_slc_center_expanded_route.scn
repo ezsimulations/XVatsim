@@ -72,5 +72,3 @@ expect.resolver_route_current_sectors=<none>
 expect.resolver_route_next_sectors=KZLC
 expect.resolver_route_authority_gaps=<none>
 expect.resolver_authority_relevance_available=true
-expect.resolver_enroute_available=true
-expect.resolver_enroute_callsigns=SLC_44_CTR

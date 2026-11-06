@@ -146,17 +146,17 @@ bool CrossesAntiMeridian(double longitudeDegA, double longitudeDegB) {
                NormalizeLongitudeDeg(longitudeDegA)) > 180.0;
 }
 
-bool RingCrossesAntiMeridian(const SectorPolygon& polygon) {
+bool RingCrossesAntiMeridian(const std::vector<GeoPoint>& ring) {
     double minLongitudeDeg = std::numeric_limits<double>::max();
     double maxLongitudeDeg = std::numeric_limits<double>::lowest();
-    for (std::size_t index = 0; index < polygon.ring.size(); ++index) {
-        const auto longitudeDeg = NormalizeLongitudeDeg(polygon.ring[index].longitudeDeg);
+    for (std::size_t index = 0; index < ring.size(); ++index) {
+        const auto longitudeDeg = NormalizeLongitudeDeg(ring[index].longitudeDeg);
         minLongitudeDeg = std::min(minLongitudeDeg, longitudeDeg);
         maxLongitudeDeg = std::max(maxLongitudeDeg, longitudeDeg);
         if (index > 0 &&
             CrossesAntiMeridian(
-                polygon.ring[index - 1].longitudeDeg,
-                polygon.ring[index].longitudeDeg)) {
+                ring[index - 1].longitudeDeg,
+                ring[index].longitudeDeg)) {
             return true;
         }
     }
@@ -182,19 +182,19 @@ GeoPoint InterpolatePoint(const GeoPoint& start, const GeoPoint& end, double fra
         ScaleVector(endVector, endScale)));
 }
 
-bool PointInRing(const GeoPoint& point, const SectorPolygon& polygon) {
+bool PointInRing(const GeoPoint& point, const std::vector<GeoPoint>& ring) {
     bool inside = false;
-    const auto count = polygon.ring.size();
+    const auto count = ring.size();
     if (count < 3) {
         return false;
     }
 
-    const auto crossesAntiMeridian = RingCrossesAntiMeridian(polygon);
+    const auto crossesAntiMeridian = RingCrossesAntiMeridian(ring);
     const auto pointLongitudeDeg = NormalizeLongitudeDeg(point.longitudeDeg);
 
     for (std::size_t i = 0, j = count - 1; i < count; j = i++) {
-        const auto& pi = polygon.ring[i];
-        const auto& pj = polygon.ring[j];
+        const auto& pi = ring[i];
+        const auto& pj = ring[j];
         const auto piLongitudeDeg =
             crossesAntiMeridian
                 ? UnwrapLongitudeRelativeDeg(pointLongitudeDeg, pi.longitudeDeg)
@@ -219,7 +219,14 @@ bool PointInRing(const GeoPoint& point, const SectorPolygon& polygon) {
 
 bool PointInFeature(const GeoPoint& point, const SectorFeature& feature) {
     for (const auto& polygon : feature.polygons) {
-        if (PointInRing(point, polygon)) {
+        if (!PointInRing(point, polygon.ring)) {
+            continue;
+        }
+        const auto insideHole = std::any_of(
+            polygon.holes.begin(),
+            polygon.holes.end(),
+            [&](const auto& hole) { return PointInRing(point, hole); });
+        if (!insideHole) {
             return true;
         }
     }
@@ -343,15 +350,15 @@ std::vector<double> CollectSegmentBoundaryFractions(
     const auto projectedEnd =
         ProjectPointForSegment(end, referenceLatitudeDeg, referenceLongitudeDeg);
 
-    for (const auto& polygon : feature.polygons) {
-        const auto count = polygon.ring.size();
+    const auto collectRing = [&](const std::vector<GeoPoint>& ring) {
+        const auto count = ring.size();
         if (count < 2) {
-            continue;
+            return;
         }
 
         for (std::size_t index = 0; index < count; ++index) {
-            const auto& edgeStartPoint = polygon.ring[index];
-            const auto& edgeEndPoint = polygon.ring[(index + 1) % count];
+            const auto& edgeStartPoint = ring[index];
+            const auto& edgeEndPoint = ring[(index + 1) % count];
             const auto projectedEdgeStart =
                 ProjectPointForSegment(
                     edgeStartPoint,
@@ -370,6 +377,12 @@ std::vector<double> CollectSegmentBoundaryFractions(
             if (fraction.has_value()) {
                 fractions.push_back(*fraction);
             }
+        }
+    };
+    for (const auto& polygon : feature.polygons) {
+        collectRing(polygon.ring);
+        for (const auto& hole : polygon.holes) {
+            collectRing(hole);
         }
     }
 

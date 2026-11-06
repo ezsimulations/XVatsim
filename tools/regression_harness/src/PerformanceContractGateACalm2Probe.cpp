@@ -66,12 +66,6 @@ brain::TransceiverResolutionSnapshot TransceiverFixture() {
     return snapshot;
 }
 
-std::uint64_t AuthorityTransceiverDigest(
-    const brain::TransceiverResolutionSnapshot& snapshot) {
-    return brain::HashBrainAuthorityTransceiverEvidence(
-        brain::BuildBrainAuthorityTransceiverEvidence(snapshot));
-}
-
 std::string RelevantAuthoritySignature(
     const brain::AuthorityRelevanceSnapshot& snapshot) {
     std::ostringstream stream;
@@ -109,7 +103,7 @@ std::string ControllerDisplaySignature(
         const brain::AuthorityRelevanceSnapshot>(authority);
 
     brain::RadioReachableControllerCandidate center;
-    center.callsign = "DOG_POOP_CTR";
+    center.callsign = "CZVR_CTR";
     center.frequency = "133.700";
     center.vatsimFacility = 6;
     center.group = brain::RadioReachableFacilityGroup::Center;
@@ -118,7 +112,7 @@ std::string ControllerDisplaySignature(
     center.hasStationCoordinates = true;
     center.stationLatitudeDeg = 49.0;
     center.stationLongitudeDeg = -123.0;
-    center.stableKey = "DOG_POOP_CTR|133700";
+    center.stableKey = "CZVR_CTR|133700";
     input.candidates.push_back(center);
 
     const auto output = brain::RunBrainControllerRelevanceWorker(input);
@@ -175,7 +169,7 @@ ColdStartDeterminismResult RunColdStartDeterminismVariant(
     resolver.LoadBoundaryPayloadsForTesting(
         kBoundary,
         kEmptyGeoJson,
-        "[FIR]\nCZVR|Vancouver|CZVR|CZVR\n",
+        "[FIRs]\nCZVR|Vancouver|CZVR|CZVR\n",
         "{}");
 
     brain::ControllerFeedSnapshot feed;
@@ -189,8 +183,7 @@ ColdStartDeterminismResult RunColdStartDeterminismVariant(
             aircraft,
             feed,
             route,
-            "controller-relevance-evidence-ledger",
-            &transceivers);
+            "controller-relevance-evidence-ledger");
     result.synchronousDigest =
         brain::HashBrainAuthorityRelevanceSnapshot(synchronous);
     result.synchronousRelevant = RelevantAuthoritySignature(synchronous);
@@ -208,11 +201,7 @@ ColdStartDeterminismResult RunColdStartDeterminismVariant(
             controllers,
             true,
             false);
-    const auto authorityTransceivers =
-        brain::BuildBrainAuthorityTransceiverEvidence(transceivers);
-    request.identity.transceiverDigest =
-        brain::HashBrainAuthorityTransceiverEvidence(
-            authorityTransceivers);
+    (void)transceivers;
     request.identity.datasetIdentity =
         resolver.GetAuthoritySourceDatasetIdentity();
     request.aircraft = aircraft;
@@ -230,10 +219,6 @@ ColdStartDeterminismResult RunColdStartDeterminismVariant(
     request.terminalBoundaryGeneration =
         resolver.GetTerminalBoundaryGeneration();
     request.scheduleReason = "controller-relevance-evidence-ledger";
-    request.hasTransceiverEvidence = true;
-    request.transceivers = std::make_shared<
-        const brain::AuthorityTransceiverEvidenceSnapshot>(
-            authorityTransceivers);
     request.dataset = resolver.GetAuthoritySourceDataset();
 
     modules::route_sector::AuthorityRelevanceWorker worker;
@@ -336,10 +321,13 @@ int RunPerformanceContractGateACalm2Probe() {
         "actionable state");
     requireControllerChange(
         [](auto* value) { value->atis = true; },
-        "ATIS state");
-    requireControllerChange(
-        [](auto* value) { value->textAtis += " OWNERSHIP"; },
-        "controller text");
+        "ATIS eligibility state");
+    auto atisOnly = controllers;
+    atisOnly.front().textAtis += " OWNERSHIP";
+    require(
+        brain::HashBrainAuthorityControllerEvidenceContent(atisOnly) ==
+            controllerContentDigest,
+        "ATIS-only state changed controller authority identity");
     require(
         brain::HashBrainAuthorityControllerEvidenceFromContentDigest(
             controllerContentDigest,
@@ -348,7 +336,6 @@ int RunPerformanceContractGateACalm2Probe() {
         "controller availability/stale state did not invalidate");
 
     const auto transceivers = TransceiverFixture();
-    const auto transceiverDigest = AuthorityTransceiverDigest(transceivers);
     auto volatileRefresh = transceivers;
     volatileRefresh.candidates.front().distanceNm += 25.0;
     volatileRefresh.candidates.front().score -= 25.0;
@@ -364,63 +351,6 @@ int RunPerformanceContractGateACalm2Probe() {
         brain::HashBrainTransceiverEvidence(volatileRefresh) !=
             brain::HashBrainTransceiverEvidence(transceivers),
         "fixture did not exercise volatile legacy transceiver fields");
-    require(
-        AuthorityTransceiverDigest(volatileRefresh) == transceiverDigest,
-        "volatile radio diagnostics changed authority identity");
-
-    auto reorderedTransceivers = transceivers;
-    auto secondCandidate = reorderedTransceivers.candidates.front();
-    secondCandidate.callsign = "KPDX_APP";
-    secondCandidate.frequency = "118.100";
-    secondCandidate.latitudeDeg = 45.6;
-    secondCandidate.longitudeDeg = -122.6;
-    reorderedTransceivers.candidates.push_back(secondCandidate);
-    reorderedTransceivers.receivableControllers = 2;
-    const auto twoCandidateDigest =
-        AuthorityTransceiverDigest(reorderedTransceivers);
-    std::reverse(
-        reorderedTransceivers.candidates.begin(),
-        reorderedTransceivers.candidates.end());
-    require(
-        AuthorityTransceiverDigest(reorderedTransceivers) ==
-            twoCandidateDigest,
-        "transceiver candidate input order changed semantic identity");
-
-    const auto requireTransceiverChange =
-        [&](auto mutation, const char* field) {
-            auto changed = transceivers;
-            mutation(&changed);
-            require(
-                AuthorityTransceiverDigest(changed) != transceiverDigest,
-                std::string("transceiver semantic identity ignored ") +
-                    field);
-        };
-    requireTransceiverChange(
-        [](auto* value) {
-            value->candidates.push_back(value->candidates.front());
-            value->candidates.back().callsign = "KPDX_APP";
-            value->receivableControllers = 2;
-        },
-        "membership");
-    requireTransceiverChange(
-        [](auto* value) { value->candidates.front().callsign = "KZLC_CTR"; },
-        "callsign");
-    requireTransceiverChange(
-        [](auto* value) { value->candidates.front().frequency = "132.325"; },
-        "frequency");
-    requireTransceiverChange(
-        [](auto* value) { value->candidates.front().latitudeDeg += 0.1; },
-        "latitude geometry");
-    requireTransceiverChange(
-        [](auto* value) { value->candidates.front().longitudeDeg += 0.1; },
-        "longitude geometry");
-    requireTransceiverChange(
-        [](auto* value) { value->available = false; },
-        "availability");
-    requireTransceiverChange(
-        [](auto* value) { value->stale = true; },
-        "stale state");
-
     brain::BrainOwnedRuntimeState runtime;
     brain::BrainOwnedRadioBoardCommitInput initialCommit;
     initialCommit.nowSeconds = 100;
@@ -430,9 +360,6 @@ int RunPerformanceContractGateACalm2Probe() {
     (void)brain::CommitBrainOwnedRadioBoardRefresh(
         &runtime,
         std::move(initialCommit));
-    const auto* initialProjection = runtime.authorityTransceiverEvidence.get();
-    const auto initialObservation = runtime.transceiverObservationGeneration;
-
     brain::BrainOwnedRadioBoardCommitInput unchangedCommit;
     unchangedCommit.nowSeconds = 105;
     unchangedCommit.controllerGeneration = 2;
@@ -441,14 +368,6 @@ int RunPerformanceContractGateACalm2Probe() {
     (void)brain::CommitBrainOwnedRadioBoardRefresh(
         &runtime,
         std::move(unchangedCommit));
-    require(
-        runtime.authorityTransceiverEvidence.get() == initialProjection &&
-            runtime.authorityTransceiverEvidenceDigest == transceiverDigest,
-        "unchanged five-second refresh replaced semantic authority evidence");
-    require(
-        runtime.transceiverObservationGeneration == initialObservation + 1,
-        "unchanged refresh observation was not counted");
-
     auto changedGeometry = transceivers;
     changedGeometry.candidates.front().latitudeDeg += 0.2;
     brain::BrainOwnedRadioBoardCommitInput changedCommit;
@@ -459,16 +378,11 @@ int RunPerformanceContractGateACalm2Probe() {
     (void)brain::CommitBrainOwnedRadioBoardRefresh(
         &runtime,
         std::move(changedCommit));
-    require(
-        runtime.authorityTransceiverEvidence.get() != initialProjection &&
-            runtime.authorityTransceiverEvidenceDigest != transceiverDigest,
-        "real transceiver geometry change retained obsolete projection");
-
-    // The plugin's dispatch gate compares these semantic digests plus route,
-    // dataset, plan, and lifecycle identity. Simulate twelve unchanged
-    // five-second observations: none may create a changed-input request.
+    // Authority dispatch depends on controller, route, dataset, plan, and
+    // lifecycle identity. Radio/transceiver refreshes are deliberately absent.
+    // Simulate twelve five-second radio observations: none may create an
+    // authority changed-input request.
     std::uint64_t expectedControllerDigest = controllerDigest;
-    std::uint64_t expectedTransceiverDigest = transceiverDigest;
     int changedInputRequests = 0;
     for (int refresh = 1; refresh <= 12; ++refresh) {
         auto radioRefresh = volatileRefresh;
@@ -480,13 +394,9 @@ int RunPerformanceContractGateACalm2Probe() {
                 controllerContentDigest,
                 true,
                 false);
-        const auto refreshedTransceiverDigest =
-            AuthorityTransceiverDigest(radioRefresh);
-        if (refreshedControllerDigest != expectedControllerDigest ||
-            refreshedTransceiverDigest != expectedTransceiverDigest) {
+        if (refreshedControllerDigest != expectedControllerDigest) {
             ++changedInputRequests;
             expectedControllerDigest = refreshedControllerDigest;
-            expectedTransceiverDigest = refreshedTransceiverDigest;
         }
     }
     require(
@@ -519,9 +429,9 @@ int RunPerformanceContractGateACalm2Probe() {
 
     std::vector<brain::ControllerSnapshot> determinismControllers;
     auto centerController = ControllerFixture();
-    centerController.callsign = "DOG_POOP_CTR";
+    centerController.callsign = "CZVR_CTR";
     centerController.frequency = "133.700";
-    centerController.textAtis = "UNMATCHED CENTER";
+    centerController.textAtis = "DIRECT SOURCE-MAPPED CENTER";
     determinismControllers.push_back(centerController);
     determinismControllers.push_back(controllers.back());
     auto determinismTransceivers = TransceiverFixture();
@@ -576,8 +486,6 @@ int RunPerformanceContractGateACalm2Probe() {
             determinismControllers,
             true,
             false);
-    const auto baseTransceiverIdentity =
-        AuthorityTransceiverDigest(determinismTransceivers);
     std::vector<ColdStartDeterminismResult> determinismResults;
     for (const auto& variant : variants) {
         require(
@@ -586,11 +494,6 @@ int RunPerformanceContractGateACalm2Probe() {
                 true,
                 false) == baseControllerIdentity,
             std::string("cold-start controller identity changed for ") +
-                variant.name);
-        require(
-            AuthorityTransceiverDigest(variant.transceivers) ==
-                baseTransceiverIdentity,
-            std::string("cold-start transceiver identity changed for ") +
                 variant.name);
         determinismResults.push_back(
             RunColdStartDeterminismVariant(
@@ -605,11 +508,11 @@ int RunPerformanceContractGateACalm2Probe() {
             baseDeterminism.synchronousDigest == baseDeterminism.workerDigest,
         "base cold-start synchronous/worker authority output diverged");
     require(
-        baseDeterminism.synchronousRelevant.find("DOG_POOP_CTR") !=
+        baseDeterminism.synchronousRelevant.find("CZVR_CTR") !=
             std::string::npos,
         "cold-start fixture did not produce a real relevant authority");
     require(
-        baseDeterminism.synchronousDisplay.find("DOG_POOP_CTR") !=
+        baseDeterminism.synchronousDisplay.find("CZVR_CTR") !=
             std::string::npos,
         "cold-start fixture did not exercise downstream controller display");
     for (std::size_t index = 0; index < variants.size(); ++index) {
@@ -659,7 +562,7 @@ int RunPerformanceContractGateACalm2Probe() {
         << " geometryInvalidates=1"
         << " frequencyInvalidates=1"
         << " staleInvalidates=1"
-        << " stableProjectionReused=1"
+        << " authorityTransceiverProjectionAbsent=1"
         << " coldStartVariants=" << variants.size()
         << " coldStartOutputDeterministic=1"
         << " downstreamDisplayDeterministic=1\n";

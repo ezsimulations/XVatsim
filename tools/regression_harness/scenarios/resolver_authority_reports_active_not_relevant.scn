@@ -31,8 +31,6 @@ expect.resolver_route_authority_gaps=<none>
 expect.resolver_route_current_sectors=<none>
 expect.resolver_route_next_sectors=<none>
 expect.resolver_authority_relevance_available=true
-expect.resolver_authority_status=AUTHORITY candidates=1 authorities=0 polygons=0 routeKeys=0 active=0 relevant=0 diagnostics=1 activationGaps=0
-expect.resolver_authority_diagnostics=HKG_W_CTR:unmapped-controller
+expect.resolver_authority_status=AUTHORITY candidates=1 authorities=2 polygons=1 routeKeys=0 active=1 relevant=0 diagnostics=1 activationGaps=0
+expect.resolver_authority_diagnostics=HKG_W_CTR:active-not-relevant:VATGLASSES:HKG_W_CTR:VATSPY_BOUNDARY:VHHK:center
 expect.resolver_authority_relevant_matches=<none>
-expect.resolver_enroute_available=false
-expect.resolver_enroute_callsigns=<none>

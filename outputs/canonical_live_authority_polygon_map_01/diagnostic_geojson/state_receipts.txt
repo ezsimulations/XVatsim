@@ -1,0 +1,32 @@
+Diagnostic GeoJSON state receipts
+Date: 2026-10-25
+
+resolver_vnas_parent_assignment_lights_canonical_polygon.scn
+  LIVE_AUTHORITY_MAP definitions=2 assignments=1 conflicts=0 unmapped=0
+  asserted: "state":"ACTIVE_PARENT"
+  asserted: "frequency":"119.850"
+  asserted: "state":"OFFLINE"
+
+resolver_live_authority_conflict_fails_closed.scn
+  LIVE_AUTHORITY_MAP definitions=1 assignments=2 conflicts=1 unmapped=0
+  asserted: "state":"CONFLICT"
+  asserted: "conflictedPolygonIds":["VATSPY_BOUNDARY:TEST"]
+  board result: no relevant controller row
+
+resolver_authority_reports_unmapped_controller_gap.scn
+  LIVE_AUTHORITY_MAP definitions=1 assignments=0 conflicts=0 unmapped=1
+  asserted: "unmappedControllers":["HKG_W_CTR"]
+  asserted: "state":"OFFLINE"
+  board result: no relevant controller row
+
+resolver_live_authority_stale_feed_fails_closed.scn
+  LIVE_AUTHORITY_MAP definitions=2 assignments=0 conflicts=0 unmapped=0
+  asserted: "available":false
+  asserted: "stale":true
+  asserted: "state":"STALE"
+  board result: no relevant controller row
+
+All assertions inspect the deterministic GeoJSON returned by
+RouteSectorResolver::BuildAuthorityDiagnosticGeoJson from the already-decided
+LiveAuthorityMapSnapshot. The exporter does not run activation or ownership
+matching.

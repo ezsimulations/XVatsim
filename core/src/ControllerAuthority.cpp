@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <iterator>
+#include <iomanip>
 #include <limits>
 #include <optional>
 #include <sstream>
@@ -1041,14 +1043,74 @@ std::string PolygonIdFromRecord(const AuthorityPolygonSourceRecord& record) {
     }
 
     if (record.source == AuthoritySource::SimAwareTracon) {
-        // SimAware TRACON records use a missing suffix for approach coverage.
-        const auto suffix = NormalizeAuthorityToken(record.suffix).empty()
-                                ? std::string("APP")
-                                : NormalizeAuthorityToken(record.suffix);
-        return sourcePrefix + ":" + baseId + "_" + suffix;
+        std::vector<std::string> roles;
+        for (const auto role : record.serviceRoles) {
+            roles.push_back(
+                role == AuthorityServiceRole::Departure ? "DEP" : "APP");
+        }
+        if (roles.empty()) {
+            const auto suffix = NormalizeAuthorityToken(record.suffix);
+            roles.push_back(suffix == "DEP" ? "DEP" : "APP");
+        }
+        SortUnique(&roles);
+        std::string roleKey;
+        for (const auto& role : roles) {
+            if (!roleKey.empty()) {
+                roleKey.push_back('_');
+            }
+            roleKey += role;
+        }
+        return sourcePrefix + ":" + baseId + "_" + roleKey;
     }
 
     return sourcePrefix + ":" + baseId;
+}
+
+std::string PolygonRecordFingerprint(
+    const AuthorityPolygonSourceRecord& record) {
+    std::uint64_t hash = 1469598103934665603ULL;
+    const auto addByte = [&](unsigned char value) {
+        hash ^= static_cast<std::uint64_t>(value);
+        hash *= 1099511628211ULL;
+    };
+    const auto addString = [&](const std::string& value) {
+        for (const auto character : value) {
+            addByte(static_cast<unsigned char>(character));
+        }
+        addByte(0xff);
+    };
+    const auto addCoordinate = [&](double value) {
+        const auto scaled = static_cast<std::int64_t>(
+            std::llround(value * 10000000.0));
+        for (std::size_t shift = 0; shift < sizeof(scaled) * 8; shift += 8) {
+            addByte(static_cast<unsigned char>(
+                (static_cast<std::uint64_t>(scaled) >> shift) & 0xffULL));
+        }
+    };
+
+    addString(NormalizeAuthorityToken(record.id));
+    addString(NormalizeAuthorityToken(record.polygonKey));
+    addString(record.sourceRecord);
+    for (const auto& part : record.parts) {
+        addString(part.componentId);
+        const auto addRing = [&](const AuthorityPolygonRing& ring) {
+            for (const auto& point : ring.points) {
+                addCoordinate(point.latitudeDeg);
+                addCoordinate(point.longitudeDeg);
+            }
+            addByte(0xfe);
+        };
+        addRing(part.exterior);
+        for (const auto& hole : part.holes) {
+            addRing(hole);
+        }
+        addByte(0xfd);
+    }
+
+    std::ostringstream stream;
+    stream << std::uppercase << std::hex << std::setw(16)
+           << std::setfill('0') << hash;
+    return stream.str();
 }
 
 std::string AuthorityIdFromPositionRecord(const AuthorityPositionSourceRecord& record) {
@@ -1506,7 +1568,10 @@ std::vector<AuthorityPolygonSourceRecord> ParseVatGlassesStaticAirspacePolygons(
                     record.lookupTokens.push_back(airspaceKey);
                 }
                 SortUnique(&record.lookupTokens);
-                record.rings.push_back(ring);
+                AuthorityPolygonPart part;
+                part.componentId = std::to_string(sectorIndex);
+                part.exterior = ring;
+                record.parts.push_back(std::move(part));
                 record.sourceRecord = airspaceName;
                 records.push_back(std::move(record));
             }
@@ -1567,7 +1632,10 @@ std::vector<AuthorityPolygonSourceRecord> ParseVatGlassesDynamicAirspacePolygons
                 record.lookupTokens.push_back(groupKey);
             }
             SortUnique(&record.lookupTokens);
-            record.rings.push_back(ring);
+            AuthorityPolygonPart part;
+            part.componentId = std::to_string(sectorIndex);
+            part.exterior = ring;
+            record.parts.push_back(std::move(part));
             record.sourceRecord = airspaceName.empty() ? rawAirspaceId : airspaceName;
             records.push_back(std::move(record));
             ++sectorIndex;
@@ -1595,18 +1663,35 @@ void AddSimAwareTraconLookupKeys(
     }
 
     const auto id = NormalizeAuthorityToken(record.id);
-    const auto suffix = NormalizeAuthorityToken(record.suffix).empty()
-                            ? std::string("APP")
-                            : NormalizeAuthorityToken(record.suffix);
+    auto serviceRoles = record.serviceRoles;
+    if (serviceRoles.empty()) {
+        serviceRoles.push_back(
+            NormalizeAuthorityToken(record.suffix) == "DEP"
+                ? AuthorityServiceRole::Departure
+                : AuthorityServiceRole::Approach);
+    }
     AddLookupKey(lookupKeys, id);
-    AddLookupKey(lookupKeys, id + "_" + suffix);
+    AddLookupKey(lookupKeys, record.polygonKey);
+    for (const auto role : serviceRoles) {
+        AddLookupKey(
+            lookupKeys,
+            id + (role == AuthorityServiceRole::Departure ? "_DEP" : "_APP"));
+    }
     for (const auto& prefix : record.prefixes) {
         const auto normalizedPrefix = NormalizeAuthorityToken(prefix);
         if (normalizedPrefix.empty()) {
             continue;
         }
         AddLookupKey(lookupKeys, normalizedPrefix);
-        AddLookupKey(lookupKeys, normalizedPrefix + "_" + suffix);
+        for (const auto role : serviceRoles) {
+            AddLookupKey(
+                lookupKeys,
+                normalizedPrefix +
+                    (role == AuthorityServiceRole::Departure ? "_DEP" : "_APP"));
+        }
+    }
+    for (const auto& token : record.lookupTokens) {
+        AddLookupKey(lookupKeys, token);
     }
 }
 
@@ -1614,15 +1699,25 @@ bool RingIsValid(const AuthorityPolygonRing& ring) {
     return ring.points.size() >= 3;
 }
 
-std::vector<AuthorityPolygonRing> ValidRings(
-    const std::vector<AuthorityPolygonRing>& rings) {
-    std::vector<AuthorityPolygonRing> validRings;
-    for (const auto& ring : rings) {
-        if (RingIsValid(ring)) {
-            validRings.push_back(ring);
+std::vector<AuthorityPolygonPart> ValidParts(
+    const std::vector<AuthorityPolygonPart>& parts) {
+    std::vector<AuthorityPolygonPart> validParts;
+    validParts.reserve(parts.size());
+    for (const auto& sourcePart : parts) {
+        if (!RingIsValid(sourcePart.exterior)) {
+            continue;
         }
+        AuthorityPolygonPart part;
+        part.componentId = sourcePart.componentId;
+        part.exterior = sourcePart.exterior;
+        for (const auto& hole : sourcePart.holes) {
+            if (RingIsValid(hole)) {
+                part.holes.push_back(hole);
+            }
+        }
+        validParts.push_back(std::move(part));
     }
-    return validRings;
+    return validParts;
 }
 
 bool PolygonMatchesAuthorityKey(
@@ -1703,8 +1798,18 @@ bool PointInRing(const GeoPoint& point, const AuthorityPolygonRing& ring) {
 }
 
 bool PointInPolygon(const GeoPoint& point, const AuthorityPolygon& polygon) {
-    for (const auto& ring : polygon.rings) {
-        if (PointInRing(point, ring)) {
+    for (const auto& part : polygon.parts) {
+        if (!PointInRing(point, part.exterior)) {
+            continue;
+        }
+        bool insideHole = false;
+        for (const auto& hole : part.holes) {
+            if (PointInRing(point, hole)) {
+                insideHole = true;
+                break;
+            }
+        }
+        if (!insideHole) {
             return true;
         }
     }
@@ -1775,33 +1880,37 @@ std::vector<double> CollectSegmentBoundaryFractions(
     const auto projectedEnd =
         ProjectPointForSegment(end, referenceLatitudeDeg, referenceLongitudeDeg);
 
-    for (const auto& ring : polygon.rings) {
+    const auto collectRing = [&](const AuthorityPolygonRing& ring) {
         const auto count = ring.points.size();
-        if (count < 2) {
-            continue;
-        }
-
-        for (std::size_t index = 0; index < count; ++index) {
-            const auto& edgeStartPoint = ring.points[index];
-            const auto& edgeEndPoint = ring.points[(index + 1) % count];
-            const auto projectedEdgeStart =
-                ProjectPointForSegment(
-                    edgeStartPoint,
-                    referenceLatitudeDeg,
-                    referenceLongitudeDeg);
-            const auto projectedEdgeEnd =
-                ProjectPointForSegment(
-                    edgeEndPoint,
-                    referenceLatitudeDeg,
-                    referenceLongitudeDeg);
-            const auto fraction = SegmentIntersectionFraction(
-                projectedStart,
-                projectedEnd,
-                projectedEdgeStart,
-                projectedEdgeEnd);
-            if (fraction.has_value()) {
-                fractions.push_back(*fraction);
+        if (count >= 2) {
+            for (std::size_t index = 0; index < count; ++index) {
+                const auto& edgeStartPoint = ring.points[index];
+                const auto& edgeEndPoint = ring.points[(index + 1) % count];
+                const auto projectedEdgeStart =
+                    ProjectPointForSegment(
+                        edgeStartPoint,
+                        referenceLatitudeDeg,
+                        referenceLongitudeDeg);
+                const auto projectedEdgeEnd =
+                    ProjectPointForSegment(
+                        edgeEndPoint,
+                        referenceLatitudeDeg,
+                        referenceLongitudeDeg);
+                const auto fraction = SegmentIntersectionFraction(
+                    projectedStart,
+                    projectedEnd,
+                    projectedEdgeStart,
+                    projectedEdgeEnd);
+                if (fraction.has_value()) {
+                    fractions.push_back(*fraction);
+                }
             }
+        }
+    };
+    for (const auto& part : polygon.parts) {
+        collectRing(part.exterior);
+        for (const auto& hole : part.holes) {
+            collectRing(hole);
         }
     }
 
@@ -1963,6 +2072,45 @@ bool CallsignMatchesPattern(
            callsign.compare(callsign.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
+bool AuthorityPolygonContainsPoint(
+    const AuthorityPolygon& polygon,
+    const GeoPoint& point) {
+    return PointInPolygon(point, polygon);
+}
+
+bool AuthorityPolygonsIntersect(
+    const AuthorityPolygon& left,
+    const AuthorityPolygon& right) {
+    const auto anyExteriorPointContained = [](
+        const AuthorityPolygon& candidate,
+        const AuthorityPolygon& container) {
+        for (const auto& part : candidate.parts) {
+            for (const auto& point : part.exterior.points) {
+                if (PointInPolygon(point, container)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    if (anyExteriorPointContained(left, right) ||
+        anyExteriorPointContained(right, left)) {
+        return true;
+    }
+
+    for (const auto& part : left.parts) {
+        const auto count = part.exterior.points.size();
+        for (std::size_t index = 0; index < count; ++index) {
+            const auto& start = part.exterior.points[index];
+            const auto& end = part.exterior.points[(index + 1) % count];
+            if (!CollectSegmentBoundaryFractions(start, end, right).empty()) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
     const std::string& vatspyDat) {
     enum class Section {
@@ -2066,6 +2214,7 @@ ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
                 authority.polygonKey,
                 "missing-callsign-prefix",
                 authority.sourceRecord,
+                authority.source,
             });
         }
 
@@ -2123,6 +2272,7 @@ ControllerAuthorityCatalog CompileAuthorityPositionCatalog(
                 polygonKey,
                 "missing-position-id",
                 record.sourceRecord,
+                record.source,
             });
             continue;
         }
@@ -2205,6 +2355,7 @@ ControllerAuthorityCatalog CompileAuthorityPositionCatalog(
                 authority.polygonKey,
                 "missing-polygon-key",
                 authority.sourceRecord,
+                authority.source,
             });
         }
         if (authority.controllerCallsignPatterns.empty()) {
@@ -2213,6 +2364,7 @@ ControllerAuthorityCatalog CompileAuthorityPositionCatalog(
                 authority.polygonKey,
                 "missing-callsign-pattern",
                 authority.sourceRecord,
+                authority.source,
             });
         }
 
@@ -2416,27 +2568,54 @@ ControllerAuthorityCatalog MergeControllerAuthorityCatalogs(
 AuthorityPolygonCatalog CompileAuthorityPolygons(
     const std::vector<AuthorityPolygonSourceRecord>& sourceRecords) {
     AuthorityPolygonCatalog catalog;
+    std::unordered_map<std::string, std::size_t> polygonIdCounts;
+    for (const auto& record : sourceRecords) {
+        const auto id = PolygonIdFromRecord(record);
+        if (!id.empty()) {
+            ++polygonIdCounts[id];
+        }
+    }
+    std::unordered_map<std::string, std::size_t> emittedStableIdCounts;
 
     for (const auto& record : sourceRecords) {
-        const auto polygonId = PolygonIdFromRecord(record);
-        const auto polygonKey = NormalizeAuthorityToken(record.id);
+        auto polygonId = PolygonIdFromRecord(record);
+        const auto polygonKey = NormalizeAuthorityToken(
+            record.polygonKey.empty() ? record.id : record.polygonKey);
         if (polygonId.empty() || polygonKey.empty()) {
             catalog.dataGaps.push_back({
                 polygonId.empty() ? SourcePrefix(record.source) + ":<missing-id>" : polygonId,
                 polygonKey,
                 "missing-polygon-key",
                 record.sourceRecord,
+                record.source,
             });
             continue;
         }
 
+        if (polygonIdCounts[polygonId] > 1) {
+            polygonId += ":" + PolygonRecordFingerprint(record);
+            const auto collisionOrdinal = ++emittedStableIdCounts[polygonId];
+            if (collisionOrdinal > 1) {
+                polygonId += ":DUPLICATE_" +
+                             std::to_string(collisionOrdinal);
+            }
+        }
+
         AuthorityPolygon polygon;
         polygon.id = polygonId;
+        polygon.sourceFeatureId = NormalizeAuthorityToken(record.id);
         polygon.source = record.source;
         polygon.kind = SourceDefaultKind(record.source);
         polygon.name = Trim(record.name);
         polygon.polygonKey = polygonKey;
-        polygon.controllerSuffix = NormalizeAuthorityToken(record.suffix);
+        polygon.serviceRoles = record.serviceRoles;
+        if (polygon.serviceRoles.empty() &&
+            record.source == AuthoritySource::SimAwareTracon) {
+            polygon.serviceRoles.push_back(
+                NormalizeAuthorityToken(record.suffix) == "DEP"
+                    ? AuthorityServiceRole::Departure
+                    : AuthorityServiceRole::Approach);
+        }
         for (const auto& prefix : record.prefixes) {
             const auto normalizedPrefix = NormalizeAuthorityToken(prefix);
             if (!normalizedPrefix.empty()) {
@@ -2456,13 +2635,14 @@ AuthorityPolygonCatalog CompileAuthorityPolygons(
         }
         SortUnique(&polygon.lookupKeys);
 
-        polygon.rings = ValidRings(record.rings);
-        if (polygon.rings.empty()) {
+        polygon.parts = ValidParts(record.parts);
+        if (polygon.parts.empty()) {
             catalog.dataGaps.push_back({
                 polygon.id,
                 polygon.polygonKey,
-                "missing-valid-polygon-ring",
+                "missing-valid-polygon-part",
                 record.sourceRecord,
+                polygon.source,
             });
             continue;
         }
@@ -2729,6 +2909,7 @@ AuthorityActivationResult ActivateAuthorityPolygons(
                     authorityMatch.polygonKey,
                     "missing-authority-polygon",
                     authorityMatch.callsign,
+                    decision.evidence.authoritySource,
                 });
             }
         }

@@ -13,13 +13,19 @@ brain_controller_relevance.stage=Departure
 brain_controller_relevance.v2_enabled=true
 brain_controller_relevance.vnas_sector_precedence_enabled=true
 
+endpoint_polygon_query.airport_icao=KCRQ
+endpoint_polygon_query.lat=33.1283
+endpoint_polygon_query.lon=-117.2800
+endpoint_polygon_query.feature=id=SCT;name=SoCal San Diego;prefixes=SAN;polygon=32.5,-118.0|33.8,-118.0|33.8,-116.5|32.5,-116.5
+
 controller.entry=callsign=SCT_APP;frequency=128.050;facility=5;actionable=true;atis=false
 transceiver.available=true
 transceiver.stale=false
 transceiver.station=callsign=SCT_APP;frequency=128.050;lat=33.1283;lon=-117.2800;facility=5;actionable=true
+transceiver.candidate=callsign=SCT_APP;frequency=128.050;distanceNm=0;score=100
 
 vnas.controller_feed_json={"updatedAt":"2026-09-07T02:31:00Z","controllers":[{"artccId":"ZLA","isActive":true,"isObserver":false,"positions":[{"facilityId":"SCT","positionId":"P_SCT","positionName":"Consolidated","positionType":"Tracon","frequency":128050000,"isActive":true,"starsData":{"areaId":"A_ALL","assumedTcps":["6G","5W","5D"]}}],"vatsimData":{"callsign":"SCT_APP","primaryFrequency":128050000}}]}
 vnas.artcc_facility_json={"id":"ZLA","facility":{"id":"ZLA","type":"Artcc","positions":[],"childFacilities":[{"id":"SCT","type":"Tracon","starsConfiguration":{"internalAirports":["CRQ"],"areas":[{"id":"A_SAN","name":"San Diego","underlyingAirports":["CRQ"]},{"id":"A_ALL","name":"Consolidated","underlyingAirports":["CRQ"]}],"tcps":[{"id":"T_6G","subset":6,"sectorId":"G"},{"id":"T_5W","subset":5,"sectorId":"W","parentTcpId":"T_6G"}]},"positions":[{"id":"P_SAN_W","callsign":"SAN_W_APP","frequency":119600000,"starsConfiguration":{"areaId":"A_SAN","tcpId":"T_5W"}},{"id":"P_SCT","callsign":"SCT_APP","frequency":128050000,"starsConfiguration":{"areaId":"A_ALL","tcpId":"T_6G"}}],"childFacilities":[]}]}}
 
 expect.brain_controller_relevance_departure_callsigns=SCT_APP
-expect.brain_controller_relevance_completions_contains=SCT_APP:accepted,vnas=+1[endpoint-ownership-match,facility=SCT,has-child=1,tcp=5W
+expect.brain_controller_relevance_completions_contains=SCT_APP:accepted,terminal-relationship=EXPLICIT_PARENT,canonical-live-map=+1[active-explicit-parent-assignment@SIMAWARE_TRACON:SCT_APP_DEP:SIMAWARE_TRACON:SAN_APP:VNAS_LIVE_OWNERSHIP,brain-terminal-explicit-parent-display

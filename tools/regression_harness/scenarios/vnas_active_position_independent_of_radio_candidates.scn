@@ -1,0 +1,18 @@
+name=vNAS Active Position Independent Of Radio Candidates
+now_seconds=1000
+
+state.flight_active=true
+flight.callsign=AAL123
+flight.departure_icao=KTCL
+flight.departure_lat=33.2206
+flight.departure_lon=-87.6114
+flight.has_departure_coordinates=true
+flight.destination_icao=KDFW
+
+brain_controller_relevance.stage=Departure
+brain_controller_relevance.v2_enabled=true
+
+vnas.controller_feed_json={"updatedAt":"2026-09-06T20:00:00Z","controllers":[{"artccId":"ZTL","primaryFacilityId":"BHM","primaryPositionId":"01GW3KRMM7YQ2MWZ1A0GCJT0M6","isActive":true,"isObserver":false,"positions":[{"facilityId":"BHM","facilityName":"Birmingham ATCT/TRACON","positionId":"01GW3KRMM7YQ2MWZ1A0GCJT0M6","positionName":"South Radar","positionType":"Tracon","radioName":"Birmingham Approach","defaultCallsign":"BHM_APP","frequency":123800000,"isPrimary":true,"isActive":true,"starsData":{"areaId":"01GW3KNF97SEQ44PJ3PNF670JK","assumedTcps":["1S","1N"]}}],"vatsimData":{"callsign":"BHM_APP","primaryFrequency":123800000}}]}
+vnas.artcc_facility_json={"id":"ZTL","facility":{"id":"ZTL","type":"Artcc","name":"Atlanta Center","positions":[],"childFacilities":[{"id":"BHM","type":"Tracon","name":"Birmingham ATCT/TRACON","starsConfiguration":{"internalAirports":["ANB","ASN","BHM","EET","EKY","GAD","JFX","PLR","SCD","TCL"],"areas":[{"id":"01GW3KNF97SEQ44PJ3PNF670JK","name":"Approach","airports":["TCL"]}]},"positions":[{"id":"01GW3KRMM7YQ2MWZ1A0GCJT0M6","name":"South Radar","callsign":"BHM_APP","frequency":123800000,"starsConfiguration":{"areaId":"01GW3KNF97SEQ44PJ3PNF670JK","tcpId":"TCP-BHM-S","tcpToken":"1S"}}],"tcpDefinitions":[{"id":"TCP-BHM-S","token":"1S"}],"childFacilities":[]}]}}
+
+expect.vnas_live_ownership_facts=BHM_APP:123.800:BHM:01GW3KRMM7YQ2MWZ1A0GCJT0M6:BHM_APP:exact

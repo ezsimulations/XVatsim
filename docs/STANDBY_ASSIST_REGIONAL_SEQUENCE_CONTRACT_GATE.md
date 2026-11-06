@@ -41,9 +41,10 @@ that waits behind every controller role. For Enroute, the UNICOM fallback is
 universal and does not depend on the departure or arrival airport's CTAF
 status.
 
-This slice changes Standby Assist selection only. It does not create a new
-radio writer, network lookup, worker decision, controller display rule, or
-xPilot bridge.
+The original slice changed Standby Assist selection only. The follow-on UI
+regression repair also requires the Arrival display to use the same hierarchy,
+so the visible next frequency matches the frequency Assist selects. It does not
+create a new radio writer, network lookup, worker decision, or xPilot bridge.
 
 ## 2. Governing Bible
 
@@ -258,7 +259,8 @@ This gate does not authorize:
 
 - changing how controllers are declared online;
 - changing the controller operational-eligibility work from the prior gate;
-- changing the visual order of overlay rows;
+- changing Departure visual order or Arrival visual order outside the shared
+  regional frequency hierarchy;
 - adding a visible Enroute UNICOM row;
 - changing Departure radio order;
 - changing the CTAF lookup service or its network endpoint;

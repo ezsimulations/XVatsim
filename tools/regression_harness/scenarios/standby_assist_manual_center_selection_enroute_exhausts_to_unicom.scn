@@ -1,0 +1,32 @@
+name=Standby Assist manual Center selection exhausts Enroute hierarchy to UNICOM
+
+display_intent.stage=Enroute
+display_intent.current_polygon=KZJX
+
+radio.valid=true
+radio.com1_active=124.700
+radio.com1_standby=132.975
+radio.standby_assist_enabled=true
+
+enroute.station=role=Center;callsign=ATL_CTR;frequency=132.975;online=true;polygonKey=KZJX;sectorActive=true
+display_intent.relation=callsign=ATL_CTR;frequency=132.975;relation=CurrentPolygon
+
+standby_assist.apply=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Enroute
+standby_assist.plan_key=FFT2791|KMCO|KORD
+
+center_frequency_selection.apply=true
+center_frequency_selection.callsign=ATL_CTR
+center_frequency_selection.frequency=132.975
+center_frequency_selection.write_succeeded=true
+
+expect.display_source=Enroute
+expect.display_callsigns=ATL_CTR
+expect.standby_assist_decisions_contains=callsign=ATL_CTR:role=CTR:freq=132.975,final=skip-active
+expect.standby_assist_decisions_contains=sourceDecision=standby-enroute-unicom-fallback,role=UNICOM,freq=122.800,actualSelectedTargetSource=enroute-unicom-fallback,actualSelectedTargetFrequency=122.800,final=recommend-com1-standby
+expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=122.800,normalizedFrequency=122800,targetCom=COM1_STANDBY,source=enroute-unicom-fallback
+expect.overlay_body_lines=xPilot not loaded|CTR ATL_CTR 132.975 *Active*
+expect.overlay_selectable_center_frequencies=ATL_CTR@132.975

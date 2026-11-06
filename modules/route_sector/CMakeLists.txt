@@ -28,6 +28,7 @@ target_compile_definitions(XVatsimRouteSector PRIVATE
 )
 
 target_link_libraries(XVatsimRouteSector PUBLIC
+    XVatsimAuthorityMap
     XVatsimBrain
     XVatsimWorkflowCore
     winhttp

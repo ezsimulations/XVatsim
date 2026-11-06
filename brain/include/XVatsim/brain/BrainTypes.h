@@ -8,7 +8,6 @@
 namespace xvatsim::brain {
 
 constexpr double kBrainOwnedMaxRadioBoardCandidateDistanceNm = 300.0;
-constexpr double kBrainOwnedCenterDisplayRangeNm = 250.0;
 
 enum class OverlayMode {
     Dormant,
@@ -163,41 +162,41 @@ struct ControllerSnapshot {
     std::string textAtis;
 };
 
-// vNAS is an optional, United-States-only operational evidence source.  The
-// network/parser module reduces its live controller and facility documents to
-// these endpoint-specific facts before they enter the Brain.  It does not make
-// a display decision. A missing or incomplete record is deliberately UNKNOWN;
-// it is never evidence against a controller.
-enum class VnasTerminalOwnershipKind {
-    Unknown,
-    FacilityOnly,
-    ConsolidatedFallback,
-    DirectOwner,
+enum class VnasLiveOwnershipKind {
+    ExactPosition,
+    DynamicAssumption,
+    ParentAssumption,
 };
 
-struct VnasTerminalEvidenceRecord {
+// Source-owned vNAS operating facts may be acquired globally by the adapter.
+// Ordinary authority work filters them to exact radio-board controller
+// identities before they enter the Brain decision identity. sourcePosition*
+// identifies the static vNAS position whose polygon ownership may be joined;
+// controller* remains the live VATSIM identity and contact frequency.
+struct VnasLiveOwnershipFactSnapshot {
     std::string controllerCallsign;
     std::string controllerFrequency;
-    std::string airportIcao;
     std::string artccId;
     std::string facilityId;
-    std::string facilityName;
-    std::string positionId;
-    std::string positionName;
-    std::string areaName;
-    std::string positionTcpId;
-    std::vector<std::string> positionTcpAncestorIds;
+    std::string livePositionId;
+    std::string livePositionCallsign;
+    std::string sourcePositionId;
+    std::string sourcePositionCallsign;
+    std::string sourcePositionFrequency;
+    std::string tcpToken;
+    // Source-published airports owned by the live position's facility/area.
+    // These are group-to-child join keys for the canonical terminal map; they
+    // are never inferred from radio range or an endpoint query.
+    std::vector<std::string> ownedAirportCodes;
+    // Airports for which this live controller/frequency is explicitly
+    // published as the TDLS departure owner.
+    std::vector<std::string> departureAirportCodes;
+    VnasLiveOwnershipKind ownershipKind =
+        VnasLiveOwnershipKind::ExactPosition;
     std::string proof;
-    bool supportsEndpoint = false;
-    bool ownershipFactsComplete = false;
-    bool serviceCompatible = false;
-    bool areaSupportsEndpoint = false;
-    bool positionTcpHasEndpointDescendant = false;
-    bool tdlsDepartureFrequencyMatch = false;
-    std::vector<std::string> matchedTcpTokens;
 };
 
-struct VnasTerminalEvidenceSnapshot {
+struct VnasLiveOwnershipSnapshot {
     bool enabled = false;
     bool available = false;
     bool stale = true;
@@ -205,8 +204,9 @@ struct VnasTerminalEvidenceSnapshot {
     bool ownershipDataAvailable = false;
     std::uint64_t generation = 0;
     std::uint64_t stableHash = 0;
+    std::uint64_t unresolvedLivePositions = 0;
     std::string statusLine;
-    std::vector<VnasTerminalEvidenceRecord> records;
+    std::vector<VnasLiveOwnershipFactSnapshot> facts;
 };
 
 // A worker reports one bounded score per independent evidence family. Scores
@@ -427,23 +427,6 @@ struct TransceiverResolutionSnapshot {
     std::vector<TransceiverControllerEvidenceSnapshot> controllerEvidence;
 };
 
-// Immutable authority-only projection of the radio resolver output. Distance,
-// feed-health diagnostics, parser counters, cache age, and presentation text
-// are intentionally absent because they cannot change authority membership.
-struct AuthorityTransceiverCandidateSnapshot {
-    std::string callsign;
-    std::string frequency;
-    double latitudeDeg = 0.0;
-    double longitudeDeg = 0.0;
-};
-
-struct AuthorityTransceiverEvidenceSnapshot {
-    bool available = false;
-    bool stale = true;
-    int receivableControllers = 0;
-    std::vector<AuthorityTransceiverCandidateSnapshot> candidates;
-};
-
 struct RouteWaypointSnapshot {
     std::string ident;
     double latitudeDeg = 0.0;
@@ -509,10 +492,6 @@ struct AuthorityRelevanceSourceEvidenceSnapshot {
     int workDeferredSectorCount = 0;
     std::vector<std::string> routeAuthorityKeys;
     std::vector<std::string> routeAuthorityMatchKeys;
-    bool authorityTransceiverSnapshotPresent = false;
-    bool authorityTransceiverAvailable = false;
-    bool authorityTransceiverStale = true;
-    int authorityTransceiverCandidateCount = 0;
     bool cacheHit = false;
     std::string cacheStatus;
     std::string cacheReason;
@@ -525,8 +504,8 @@ struct AuthorityDecisionEvidenceSnapshot {
     std::string polygonKey;
     std::string matchedPattern;
     bool accepted = false;
-    bool oldRouteScopeMatched = false;
-    bool oldRelevantAuthoritySurvivor = false;
+    bool routeScopeMatched = false;
+    bool relevant = false;
     std::vector<std::string> rejectionReasons;
 };
 
@@ -541,8 +520,8 @@ struct AuthorityPolygonEvidenceSnapshot {
     bool routeKeyMatch = false;
     bool routeFamilyMatch = false;
     bool routeEndpointMatch = false;
-    bool inOldScopedCatalog = false;
-    std::string oldScopedOutReason;
+    bool inQueryScope = false;
+    std::string queryScopeOutReason;
     bool routeGeometryRelevant = false;
     bool aircraftInside = false;
     bool routeIntersects = false;
@@ -551,51 +530,8 @@ struct AuthorityPolygonEvidenceSnapshot {
     std::string activeProofSource;
     std::string activeProofDetail;
     bool routeKeyCompatible = false;
-    bool geometryCompatible = true;
-    bool oldCompatibilityRelevantSurvivor = false;
-    std::string compatibilityFilteredReason;
-};
-
-struct AuthorityTransceiverRouteProofEvidenceSnapshot {
-    std::string callsign;
-    int stationCandidateCount = 0;
-    std::string stationCallsign;
-    std::string stationFrequency;
-    double stationLatitudeDeg = 0.0;
-    double stationLongitudeDeg = 0.0;
-    double stationScore = 0.0;
-    bool bestByModuleScore = false;
-    std::string polygonId;
-    std::string polygonKey;
-    std::string authoritySource;
-    std::string authorityKind;
-    double stationPolygonDistanceNm = 0.0;
-    double toleranceNm = 0.0;
-    bool withinTolerance = false;
-    bool sourceOwnershipMatch = false;
-    bool unownedBorderMismatch = false;
-    bool blockedByDirectActiveProof = false;
-    bool noStationCandidates = false;
-    bool oldProofSurvivor = false;
-    std::string proofRejectionReason;
-};
-
-struct AuthorityDuplicatedAtisProofEvidenceSnapshot {
-    std::string callsign;
-    bool textAtisPresent = false;
-    std::vector<std::string> extractedCoveredTokens;
-    std::string coveredToken;
-    std::vector<std::string> matchedRouteAuthorityAliases;
-    std::string authorityId;
-    std::string authoritySource;
-    std::string authorityKind;
-    std::string polygonKey;
-    bool sourceKindAllowed = false;
-    bool routeRelevantPolygonFound = false;
-    bool facilityEligible = false;
-    bool missingSourceOwnership = false;
-    bool oldProofSurvivor = false;
-    std::string proofRejectionReason;
+    bool relevant = false;
+    std::string filteredReason;
 };
 
 struct AuthorityControllerEvidenceSnapshot {
@@ -619,10 +555,6 @@ struct AuthorityRelevanceEvidenceSnapshot {
     std::vector<AuthorityControllerEvidenceSnapshot> controllerEvidence;
     std::vector<AuthorityPolygonEvidenceSnapshot> polygonEvidence;
     std::vector<AuthorityPolygonEvidenceSnapshot> activePolygonEvidence;
-    std::vector<AuthorityTransceiverRouteProofEvidenceSnapshot>
-        transceiverRouteProofEvidence;
-    std::vector<AuthorityDuplicatedAtisProofEvidenceSnapshot>
-        duplicatedAtisProofEvidence;
 };
 
 struct RelevantAuthoritySnapshot {
@@ -640,6 +572,90 @@ struct RelevantAuthoritySnapshot {
     double routeEntryDistanceNm = 0.0;
 };
 
+enum class LiveAuthorityAssignmentState {
+    ActiveExact,
+    ActiveDynamic,
+    ActiveParent,
+    Conflict,
+    Unmapped,
+    Stale,
+    Offline,
+};
+
+inline bool IsActiveLiveAuthorityState(LiveAuthorityAssignmentState state) {
+    return state == LiveAuthorityAssignmentState::ActiveExact ||
+           state == LiveAuthorityAssignmentState::ActiveDynamic ||
+           state == LiveAuthorityAssignmentState::ActiveParent;
+}
+
+struct LiveAuthorityAssignmentSnapshot {
+    LiveAuthorityAssignmentState state =
+        LiveAuthorityAssignmentState::ActiveExact;
+    // Mechanical source-position join before the Brain applies global conflict
+    // and publication policy. Incremental refresh may reuse this immutable
+    // fact, but only the Brain-owned state field above controls consumers.
+    LiveAuthorityAssignmentState candidateState =
+        LiveAuthorityAssignmentState::ActiveExact;
+    // Mechanical catalog fact used by the Brain's multi-controller conflict
+    // policy. This is not itself an authority decision.
+    bool explicitTerminalPosition = false;
+    std::string canonicalPolygonId;
+    std::string polygonKey;
+    std::string positionId;
+    std::string callsign;
+    std::string frequency;
+    int facility = 0;
+    std::string authoritySource;
+    AuthorityRelevanceKind kind = AuthorityRelevanceKind::Center;
+    std::string matchedPattern;
+    std::string ownershipProof;
+    std::vector<std::string> departureAirportCodes;
+    std::uint64_t dynamicOwnershipGeneration = 0;
+    bool aircraftInside = false;
+    bool routeIntersects = false;
+    double routeEntryDistanceNm = 0.0;
+};
+
+struct LiveAuthorityPolygonStateSnapshot {
+    LiveAuthorityAssignmentState state =
+        LiveAuthorityAssignmentState::Offline;
+    std::string canonicalPolygonId;
+    std::string polygonKey;
+    std::string authoritySource;
+    AuthorityRelevanceKind kind = AuthorityRelevanceKind::Center;
+    std::vector<std::string> controllerCallsigns;
+};
+
+struct LiveAuthorityMapSnapshot {
+    bool available = false;
+    bool stale = true;
+    // False on a mechanical worker fact packet. Only the Brain may set this
+    // after applying conflict, freshness, and publication decisions.
+    bool brainDecisionsApplied = false;
+    std::uint64_t stableHash = 0;
+    std::uint64_t canonicalMapIdentity = 0;
+    std::uint64_t controllerFeedGeneration = 0;
+    std::uint64_t centerBoundaryGeneration = 0;
+    std::uint64_t authorityCatalogGeneration = 0;
+    std::uint64_t terminalBoundaryGeneration = 0;
+    std::uint64_t dynamicOwnershipGeneration = 0;
+    std::uint64_t polygonDefinitionCount = 0;
+    std::uint64_t polygonPartCount = 0;
+    std::uint64_t dataGapCount = 0;
+    // Incremental-refresh audit only. These counters describe worker fact
+    // processing; they never grant or suppress controller authority.
+    std::uint64_t verifiedControllerFactCount = 0;
+    std::uint64_t reusedControllerFactCount = 0;
+    std::uint64_t removedControllerFactCount = 0;
+    std::uint64_t verifiedDynamicOwnershipFactCount = 0;
+    std::uint64_t reusedDynamicOwnershipFactCount = 0;
+    std::vector<LiveAuthorityAssignmentSnapshot> assignments;
+    std::vector<LiveAuthorityPolygonStateSnapshot> polygonStates;
+    std::vector<std::string> conflictedPolygonIds;
+    std::vector<std::string> unmappedControllerCallsigns;
+    std::string statusLine;
+};
+
 struct AuthorityRelevanceSnapshot {
     bool available = false;
     bool stale = true;
@@ -654,17 +670,10 @@ struct AuthorityRelevanceSnapshot {
     int diagnosticDeferredSectorCount = 0;
     std::string statusLine;
     std::vector<std::string> diagnostics;
-    // True when the route_sector-built survivor vector is retained only for
-    // parity diagnostics. Live relevantAuthorities must then come from brain
-    // evidence decisions, not route_sector survivor construction.
-    bool relevantAuthoritiesCompatibilityOnly = false;
+    LiveAuthorityMapSnapshot liveMap;
     bool liveRelevantAuthoritiesBrainOwned = false;
-    int compatibilityRelevantAuthorityCount = 0;
     int droppedBeforeBrainControllers = 0;
     AuthorityRelevanceEvidenceSnapshot evidence;
-    // Old route_sector survivor construction kept for diagnostics/parity only
-    // after brain-owned projection has rebuilt live relevantAuthorities.
-    std::vector<RelevantAuthoritySnapshot> compatibilityRelevantAuthorities;
     std::vector<RelevantAuthoritySnapshot> relevantAuthorities;
 };
 
@@ -703,6 +712,36 @@ enum class StationRole {
     Unicom,
 };
 
+// Canonical Arrival frequency hierarchy shared by the display and Standby
+// Assist. Countries without CTAF put UNICOM ahead of Tower; CTAF arrivals put
+// Tower ahead of CTAF. Ground and Delivery always follow the arrival radio.
+constexpr int ArrivalFrequencyHierarchyRank(
+    StationRole role,
+    bool unicomArrival) noexcept {
+    switch (role) {
+        case StationRole::Center:
+            return 0;
+        case StationRole::Approach:
+        case StationRole::Departure:
+            return 10;
+        case StationRole::Tower:
+            return unicomArrival ? 30 : 20;
+        case StationRole::Ctaf:
+            return 30;
+        case StationRole::Unicom:
+            return 20;
+        case StationRole::Ground:
+            return 40;
+        case StationRole::Delivery:
+            return 50;
+        case StationRole::Atis:
+            return 60;
+        case StationRole::Other:
+        default:
+            return 70;
+    }
+}
+
 enum class DisplayRelation {
     Unknown,
     CurrentPolygon,
@@ -710,6 +749,18 @@ enum class DisplayRelation {
     ArrivalPrep,
     Filtered,
     Hidden,
+};
+
+// The sole Brain-owned authority classification for an APP/DEP candidate
+// evaluated against a filed endpoint. Vote totals may still be retained in
+// diagnostics, but they must never be used to derive this relationship.
+enum class TerminalEndpointRelationship {
+    NotApplicable,
+    DirectEndpoint,
+    ExplicitParent,
+    NearbyOnly,
+    Unrelated,
+    Unknown,
 };
 
 struct BoardStationSnapshot {
@@ -723,6 +774,9 @@ struct BoardStationSnapshot {
     bool hasRouteEntryDistance = false;
     double routeEntryDistanceNm = 0.0;
     std::string polygonKey;
+    TerminalEndpointRelationship terminalRelationship =
+        TerminalEndpointRelationship::NotApplicable;
+    std::string terminalRelationshipProof;
     std::string sourceEvidenceId;
     std::string sourceEvidenceType;
     std::string sourceEvidenceDomain;
@@ -754,6 +808,9 @@ struct FinalDisplayStationSnapshot {
     double routeEntryDistanceNm = 0.0;
     std::string polygonKey;
     DisplayRelation displayRelation = DisplayRelation::Unknown;
+    TerminalEndpointRelationship terminalRelationship =
+        TerminalEndpointRelationship::NotApplicable;
+    std::string terminalRelationshipProof;
     std::string sourceEvidenceId;
     std::string sourceEvidenceType;
     std::string sourceEvidenceDomain;
@@ -787,6 +844,11 @@ enum class OverlayTone {
 struct OverlayTextLine {
     std::string text;
     OverlayTone tone = OverlayTone::Normal;
+    bool centerFrequencySelectable = false;
+    std::string centerCallsign;
+    std::string centerFrequency;
+    std::string centerStableKey;
+    std::string centerPlanKey;
 };
 
 enum class OverlayVersionTone {

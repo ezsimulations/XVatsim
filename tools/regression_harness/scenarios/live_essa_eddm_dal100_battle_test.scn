@@ -2675,8 +2675,6 @@ expect.resolver_route_authority_gaps=current:ESAA,current:ESOS,next:ESMM,next:ED
 expect.resolver_route_current_sectors=ESAA,ESOS
 expect.resolver_route_next_sectors=ESMM,EDWW,EDXX,EDMM,LKAA
 expect.resolver_authority_relevance_available=true
-expect.resolver_authority_status=AUTHORITY candidates=23 authorities=9 polygons=8 routeKeys=3 active=2 relevant=2 diagnostics=52 activationGaps=0 stage=NEAR_ROUTE_WINDOW window=200nm deferred=4
-expect.resolver_authority_relevant_matches=ESMM_2_CTR:TRANSCEIVER:ESMM_2_CTR:VATSPY_BOUNDARY:ESMM:aircraft=0:route=1:entry=156,ESOS_3_CTR:TRANSCEIVER:ESOS_3_CTR:VATSPY_BOUNDARY:ESOS:aircraft=1:route=1:entry=0
-expect.resolver_authority_proof_sources=ESMM_2_CTR:TRANSCEIVER_GEO_ROUTE,ESOS_3_CTR:TRANSCEIVER_GEO_ROUTE
-expect.resolver_enroute_available=true
-expect.resolver_enroute_callsigns=ESOS_3_CTR,ESMM_2_CTR
+expect.resolver_authority_status=AUTHORITY candidates=60 authorities=1385 polygons=132 routeKeys=3 active=2 relevant=0 diagnostics=84 activationGaps=24 stage=NEAR_ROUTE_WINDOW window=200nm deferred=4
+expect.resolver_authority_relevant_matches=<none>
+expect.resolver_authority_proof_sources=<none>

@@ -1,0 +1,32 @@
+name=Brain Controller Relevance UPS344 Vancouver Next Center Ignores Transmitter Distance
+now_seconds=1000
+
+state.flight_active=true
+state.departure_released=true
+flight.callsign=UPS344
+flight.departure_icao=PANC
+flight.destination_icao=KONT
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.battery_on=true
+
+xpilot.connected=true
+controller.feed_available=true
+controller.feed_stale=false
+authority.board_handoff=true
+brain_controller_relevance.stage=Enroute
+brain_controller_relevance.v2_enabled=true
+
+route.current_sector=identifier=PAZA;entryDistanceNm=0;matchTokens=PAZA;controllerPrefixes=PAZA,ZAN;controllerPatterns=PAZA_CTR,ZAN_CTR,ZAN_*_CTR
+route.next_sector=identifier=CZVR;entryDistanceNm=622;matchTokens=CZVR;controllerPrefixes=CZVR;controllerPatterns=CZVR_CTR,CZVR_*_CTR
+
+controller.entry=callsign=CZVR_CTR;frequency=133.700;facility=6;actionable=true;atis=false
+
+transceiver.available=true
+transceiver.stale=false
+transceiver.status=RX 1 receivable
+transceiver.candidate=callsign=CZVR_CTR;frequency=133.700;distanceNm=299;score=100
+
+expect.brain_controller_relevance_enroute_callsigns=CZVR_CTR
+expect.brain_controller_relevance_completions_contains=CZVR_CTR:accepted:center-next-polygon-match

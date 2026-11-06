@@ -711,3 +711,9 @@ machine-locked xPilot 3.0.2 absolute-fingerprint scenario was excluded because
 that binary is not installed; its relative-path companion passed. The Product
 Owner confirmed the final live behavior and authorized the combined source
 commit on 2026-10-22.
+
+Current compatibility update, 2026-10-27: xPilot 3.2 remains supported through
+the legacy integration and the machine now runs xPilot 4.0.0 beta 9 through the
+read-only companion path. The former host exclusion is now a passing
+generation-boundary scenario: beta 9 is fingerprinted and proven unable to
+enter the legacy private-dataref path. The full current suite passes `927/927`.

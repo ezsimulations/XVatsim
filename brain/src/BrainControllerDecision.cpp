@@ -17,10 +17,28 @@ std::string JoinReason(const std::string& left, const std::string& right) {
     return left + "+" + right;
 }
 
-}  // namespace
+const char* TerminalRelationshipToken(
+    TerminalEndpointRelationship relationship) {
+    switch (relationship) {
+        case TerminalEndpointRelationship::DirectEndpoint:
+            return "DIRECT_ENDPOINT";
+        case TerminalEndpointRelationship::ExplicitParent:
+            return "EXPLICIT_PARENT";
+        case TerminalEndpointRelationship::NearbyOnly:
+            return "NEARBY_ONLY";
+        case TerminalEndpointRelationship::Unrelated:
+            return "UNRELATED";
+        case TerminalEndpointRelationship::Unknown:
+            return "UNKNOWN";
+        case TerminalEndpointRelationship::NotApplicable:
+        default:
+            return "NOT_APPLICABLE";
+    }
+}
 
-BrainControllerDecisionReceipt DecideBrainControllerCandidate(
-    const BrainControllerDecisionInput& input) {
+BrainControllerDecisionReceipt CollectEvidence(
+    const BrainControllerDecisionInput& input,
+    bool diagnosticOnly) {
     BrainControllerDecisionReceipt receipt;
 
     // Every raw fact remains countable. Only facts with the same explicit
@@ -29,6 +47,7 @@ BrainControllerDecisionReceipt DecideBrainControllerCandidate(
     for (const auto& raw : input.votes) {
         auto vote = raw;
         vote.score = Ternary(vote.score);
+        if (diagnosticOnly) vote.contributesToScore = false;
         if (vote.source.empty()) vote.source = "unknown";
         if (vote.score > 0) ++receipt.rawPositiveFacts;
         else if (vote.score < 0) ++receipt.rawNegativeFacts;
@@ -60,6 +79,14 @@ BrainControllerDecisionReceipt DecideBrainControllerCandidate(
         }
         receipt.votes.push_back(std::move(vote));
     }
+    return receipt;
+}
+
+}  // namespace
+
+BrainControllerDecisionReceipt DecideBrainControllerCandidate(
+    const BrainControllerDecisionInput& input) {
+    auto receipt = CollectEvidence(input, false);
 
     if (!input.ineligibleReason.empty()) receipt.reason = input.ineligibleReason;
     else if (!input.actionable) receipt.reason = "brain-ineligible-offline";
@@ -86,6 +113,44 @@ BrainControllerDecisionReceipt DecideBrainControllerCandidate(
     return receipt;
 }
 
+BrainControllerDecisionReceipt DecideBrainTerminalControllerCandidate(
+    const BrainControllerDecisionInput& input,
+    TerminalEndpointRelationship relationship,
+    std::string relationshipProof,
+    bool relationshipBoardEligible,
+    std::string relationshipIneligibleReason) {
+    // Terminal evidence retains its original polarity so diagnostics can show
+    // what each source reported. Every fact is forcibly non-scoring here.
+    auto receipt = CollectEvidence(input, true);
+    receipt.terminalRelationship = relationship;
+    receipt.terminalRelationshipProof = std::move(relationshipProof);
+
+    if (!input.ineligibleReason.empty()) receipt.reason = input.ineligibleReason;
+    else if (!input.actionable) receipt.reason = "brain-ineligible-offline";
+    else if (input.atis) receipt.reason = "brain-ineligible-atis";
+    else if (!input.supportedFacility) receipt.reason = "brain-ineligible-facility";
+    else if (input.guardFrequency) receipt.reason = "brain-ineligible-guard";
+    else if (!input.phaseApplicable) receipt.reason = "brain-ineligible-phase";
+    else if (!relationshipBoardEligible) {
+        receipt.reason = relationshipIneligibleReason.empty()
+            ? "brain-terminal-relationship-suppressed"
+            : std::move(relationshipIneligibleReason);
+    } else if (relationship == TerminalEndpointRelationship::DirectEndpoint) {
+        receipt.accepted = true;
+        receipt.reason = "brain-terminal-direct-endpoint-display";
+    } else if (relationship == TerminalEndpointRelationship::ExplicitParent) {
+        receipt.accepted = true;
+        receipt.reason = "brain-terminal-explicit-parent-display";
+    } else if (relationship == TerminalEndpointRelationship::NearbyOnly) {
+        receipt.reason = "brain-terminal-nearby-only-hidden";
+    } else if (relationship == TerminalEndpointRelationship::Unrelated) {
+        receipt.reason = "brain-terminal-unrelated-hidden";
+    } else {
+        receipt.reason = "brain-terminal-relationship-unknown-hidden";
+    }
+    return receipt;
+}
+
 std::string FormatBrainControllerDecisionReceipt(
     const BrainControllerDecisionReceipt& receipt) {
     std::ostringstream out;
@@ -93,6 +158,14 @@ std::string FormatBrainControllerDecisionReceipt(
         << receipt.rawNegativeFacts << "/" << receipt.rawNeutralFacts
         << ":brain-votes=" << receipt.positiveVotes << "/"
         << receipt.negativeVotes << "/" << receipt.neutralVotes;
+    if (receipt.terminalRelationship !=
+        TerminalEndpointRelationship::NotApplicable) {
+        out << ":terminal-relationship="
+            << TerminalRelationshipToken(receipt.terminalRelationship);
+        if (!receipt.terminalRelationshipProof.empty()) {
+            out << "[" << receipt.terminalRelationshipProof << "]";
+        }
+    }
     for (const auto& vote : receipt.votes) {
         out << ":" << vote.source << "="
             << (vote.score > 0 ? "+1" : vote.score < 0 ? "-1" : "0")

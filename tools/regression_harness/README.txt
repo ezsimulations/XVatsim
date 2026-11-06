@@ -895,10 +895,10 @@ Included scenarios
   Proves fresh live transceiver geography can reject a source-owned same-frequency controller when its station is incompatible with the claimed polygon.
 
 - resolver_duplicated_atis_derived_relevance_feeds_enroute.scn
-  Proves ATIS text can activate a source-owned, route-relevant covered position only through `DUPLICATED_ATIS_DERIVED` proof.
+  Proves ATIS text cannot activate a source-owned polygon and the unmatched controller remains diagnostic-only.
 
 - resolver_duplicated_atis_derived_rejects_wrong_facility.scn
-  Proves ATIS-derived covered-position proof rejects a non-center/FSS facility instead of lighting an ENROUTE polygon.
+  Proves an APP controller cannot use ATIS text to activate a Center polygon and remains diagnostic-only.
 
 - source_package_combines_vatglasses_dynamic_files.scn
   Proves VATGlasses dynamic positions, airspace, and ownership files combine into the parser-ready source package payload.

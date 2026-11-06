@@ -8,10 +8,10 @@ flight.destination_icao=KPVD
 
 brain_controller_relevance.stage=Arrival
 
-terminal_authority.airport_icao=KPVD
-terminal_authority.lat=41.724000
-terminal_authority.lon=-71.428222
-terminal_authority.feature=id=PVD;name=Providence Approach;prefixes=PVD;polygon=41.0,-72.0|42.0,-72.0|42.0,-70.0|41.0,-70.0
+endpoint_polygon_query.airport_icao=KPVD
+endpoint_polygon_query.lat=41.724000
+endpoint_polygon_query.lon=-71.428222
+endpoint_polygon_query.feature=id=PVD;name=Providence Approach;prefixes=PVD;polygon=41.0,-72.0|42.0,-72.0|42.0,-70.0|41.0,-70.0
 
 controller.entry=callsign=PVD_APP;frequency=123.675;facility=5;actionable=true;atis=false
 
@@ -19,7 +19,7 @@ transceiver.available=true
 transceiver.stale=false
 transceiver.candidate=callsign=PVD_APP;frequency=123.675;distanceNm=5;score=100
 
-expect.terminal_authority_owners=PVD_APP,PVD_DEP
-expect.terminal_authority_polygons=PVD
+expect.endpoint_polygon_owners=PVD_APP,PVD_DEP
+expect.endpoint_polygons=PVD
 expect.brain_controller_relevance_arrival_callsigns=PVD_APP
 expect.brain_controller_relevance_completions=PVD_APP:accepted

@@ -1,0 +1,20 @@
+Terminal Endpoint Authority Relationship Gate 02
+Full environment-independent regression summary
+Date: 2026-10-25
+
+Scenarios discovered: 918
+Passed: 917
+Environment-independent failures: 0
+Excluded host-specific fixture: 1
+
+Excluded fixture:
+- v2_step6_pdc_private_messages_55_absolute_plugin_path_canonicalization.scn
+- Actual assertion: absolute plugin path did not qualify exact target once
+- Justification: the fixture is bound to another machine's absolute X-Plane/plugin path. It is the same previously documented host-specific exclusion and is unrelated to terminal authority, UI Center selection, or radio behavior.
+
+Command:
+Get-ChildItem tools/regression_harness/scenarios/*.scn | Sort-Object Name | ForEach-Object { build/tools/XVatsimRegressionHarness.exe $_.FullName }
+
+Result:
+All 917 environment-independent scenarios passed.
+

@@ -36,10 +36,7 @@ expect.resolver_route_resolved=true
 expect.resolver_route_authority_gaps=<none>
 expect.resolver_route_current_sectors=CZVR
 expect.resolver_authority_relevance_available=true
-expect.resolver_authority_status=AUTHORITY candidates=1 authorities=1 polygons=1 routeKeys=1 active=1 relevant=1 diagnostics=0 activationGaps=0
-expect.resolver_authority_diagnostics=<none>
-expect.resolver_authority_relevant_matches=DOG_POOP_CTR:TRANSCEIVER:DOG_POOP_CTR:VATSPY_BOUNDARY:CZVR:aircraft=1:route=1:entry=0
-expect.resolver_authority_proof_sources=DOG_POOP_CTR:TRANSCEIVER_GEO_ROUTE
-expect.resolver_authority_proof_detail_contains=DOG_POOP_CTR:frequency=133700,proofItems=facility-type>transceiver-frequency>transceiver-geometry>route-relevant-polygon,routeRelevance=aircraft-inside+route-intersects
-expect.resolver_enroute_available=true
-expect.resolver_enroute_callsigns=DOG_POOP_CTR
+expect.resolver_authority_status=AUTHORITY candidates=1 authorities=1 polygons=1 routeKeys=1 active=0 relevant=0 diagnostics=1 activationGaps=0
+expect.resolver_authority_diagnostics=DOG_POOP_CTR:unmapped-controller
+expect.resolver_authority_relevant_matches=<none>
+expect.resolver_authority_proof_sources=<none>

@@ -1,0 +1,17 @@
+name=Authority Polygon Topology Hole Excludes Aircraft
+now_seconds=1000
+
+# The first ring is the exterior. The second ring is an interior hole.
+# The aircraft is inside the hole and therefore outside the polygon.
+aircraft.valid=true
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+authority_position.tracon=id=TEST_APP;polygon=TEST_APP;patterns=TEST_APP;kind=terminal
+authority_polygon.tracon=id=TEST;suffix=APP;prefixes=TEST;exterior=-2,-2|-2,2|2,2|2,-2;hole=-1,-1|-1,1|1,1|1,-1
+
+controller.entry=callsign=TEST_APP;frequency=120.000;facility=5;actionable=true;atis=false
+
+expect.authority_polygon_ring_counts=SIMAWARE_TRACON:TEST_APP:2
+expect.authority_active_polygon_matches=TEST_APP:SIMAWARE_TRACON:TEST_APP:SIMAWARE_TRACON:TEST_APP:TEST:TEST_APP
+expect.authority_relevant_polygon_matches=<none>

@@ -14,6 +14,7 @@ struct GeoPoint {
 
 struct SectorPolygon {
     std::vector<GeoPoint> ring;
+    std::vector<std::vector<GeoPoint>> holes;
 };
 
 struct SectorFeature {

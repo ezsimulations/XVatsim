@@ -1,0 +1,37 @@
+name=Brain Controller Relevance Departure Direct Child Suppresses Explicit Parent
+now_seconds=1000
+
+state.flight_active=true
+flight.callsign=TEST8274
+flight.departure_icao=KNGU
+flight.departure_lat=36.937644
+flight.departure_lon=-76.289289
+flight.has_departure_coordinates=true
+flight.destination_icao=EDFH
+
+brain_controller_relevance.stage=Departure
+brain_controller_relevance.v2_enabled=true
+
+endpoint_polygon_query.airport_icao=KNGU
+endpoint_polygon_query.lat=36.937644
+endpoint_polygon_query.lon=-76.289289
+endpoint_polygon_query.feature=id=ORF;name=Norfolk Approach;prefixes=ORF;polygon=36.5,-76.8|37.3,-76.8|37.3,-75.8|36.5,-75.8
+
+controller.entry=callsign=ORF_APP;frequency=118.700;facility=5;actionable=true;atis=false
+controller.entry=callsign=PCT_APP;frequency=119.850;facility=5;actionable=true;atis=false
+
+transceiver.available=true
+transceiver.stale=false
+transceiver.station=callsign=ORF_APP;frequency=118.700;lat=36.937644;lon=-76.289289;facility=5;actionable=true
+transceiver.station=callsign=PCT_APP;frequency=119.850;lat=36.937644;lon=-76.289289;facility=5;actionable=true
+transceiver.candidate=callsign=ORF_APP;frequency=118.700;distanceNm=0;score=100
+transceiver.candidate=callsign=PCT_APP;frequency=119.850;distanceNm=0;score=100
+
+vnas.controller_feed_json={"updatedAt":"2026-10-25T20:00:00Z","controllers":[{"artccId":"ZDC","primaryFacilityId":"PCT","primaryPositionId":"P_PCT","isActive":true,"isObserver":false,"positions":[{"facilityId":"PCT","facilityName":"Potomac TRACON","positionId":"P_PCT","positionName":"Consolidated","positionType":"Tracon","defaultCallsign":"PCT_APP","frequency":119850000,"isPrimary":true,"isActive":true,"starsData":{"areaId":"A_PCT","assumedTcps":["1O"]}}],"vatsimData":{"callsign":"PCT_APP","primaryFrequency":119850000}}]}
+vnas.artcc_facility_json={"id":"ZDC","facility":{"id":"ZDC","type":"Artcc","name":"Washington Center","positions":[],"childFacilities":[{"id":"PCT","type":"Tracon","name":"Potomac TRACON","starsConfiguration":{"internalAirports":["NGU"],"areas":[{"id":"A_PCT","name":"Consolidated"}],"tcps":[{"id":"TCP-PCT","subset":1,"sectorId":"P"},{"id":"TCP-ORF","subset":1,"sectorId":"O","parentTcpId":"TCP-PCT"}]},"positions":[{"id":"P_PCT","name":"Consolidated","callsign":"PCT_APP","frequency":119850000,"starsConfiguration":{"areaId":"A_PCT","tcpId":"TCP-PCT"}},{"id":"P_ORF","name":"Norfolk Radar","callsign":"ORF_APP","frequency":118700000,"starsConfiguration":{"areaId":"A_PCT","tcpId":"TCP-ORF"}}],"childFacilities":[]}]}}
+
+expect.endpoint_polygon_owners=ORF_APP,ORF_DEP
+expect.endpoint_polygons=ORF
+expect.brain_controller_relevance_departure_callsigns=ORF_APP
+expect.brain_controller_relevance_completions=ORF_APP:accepted,PCT_APP:rejected
+expect.brain_controller_relevance_completions_contains=ORF_APP:accepted,terminal-relationship=DIRECT_ENDPOINT,PCT_APP:rejected,terminal-relationship=EXPLICIT_PARENT,brain-terminal-explicit-parent-suppressed-by-direct-endpoint

@@ -81,8 +81,8 @@ void HashCombine(std::uint64_t* seed, bool value) {
     HashCombine(seed, static_cast<std::uint64_t>(value ? 1 : 0));
 }
 
-std::string BuildTerminalAuthorityRequestKey(
-    const BrainOwnedTerminalAuthorityRefreshInput& input) {
+std::string BuildEndpointPolygonQueryRequestKey(
+    const BrainEndpointPolygonRefreshInput& input) {
     const auto airportIcao = NormalizeIcao(input.airportIcao);
     if (!input.flightContextActive || airportIcao.empty() ||
         !input.hasAirportCoordinates) {
@@ -97,8 +97,8 @@ std::string BuildTerminalAuthorityRequestKey(
     return stream.str();
 }
 
-std::uint64_t HashTerminalAuthorityFact(
-    const BrainTerminalAuthorityWorkerOutput& fact) {
+std::uint64_t HashEndpointPolygonFact(
+    const BrainEndpointPolygonQueryOutput& fact) {
     std::uint64_t hash = 1469598103934665603ULL;
     HashCombine(&hash, fact.available);
     HashCombine(&hash, fact.pending);
@@ -114,10 +114,13 @@ std::uint64_t HashTerminalAuthorityFact(
         HashCombine(&hash, NormalizeCallsign(polygonKey));
     }
     for (const auto& polygon : fact.polygons) {
+        HashCombine(&hash, NormalizeCallsign(polygon.canonicalPolygonId));
         HashCombine(&hash, NormalizeCallsign(polygon.polygonKey));
-        HashCombine(&hash, NormalizeCallsign(polygon.serviceSuffix));
+        for (const auto& serviceSuffix : polygon.serviceSuffixes) {
+            HashCombine(&hash, NormalizeCallsign(serviceSuffix));
+        }
         HashCombine(&hash, polygon.containsAirport);
-        HashCombine(&hash, polygon.intersectsEndpointAnchor);
+        HashCombine(&hash, polygon.intersectsEndpointAnchorContextOnly);
         for (const auto& prefix : polygon.controllerPrefixes) {
             HashCombine(&hash, NormalizeCallsign(prefix));
         }
@@ -501,8 +504,8 @@ std::string TerminalServiceTokenFromControllerCallsign(std::string callsign) {
     return serviceOwner.empty() ? std::string{} : serviceOwner + "_" + role;
 }
 
-bool TerminalAuthorityFactMatchesCandidate(
-    const BrainTerminalAuthorityWorkerOutput& fact,
+bool EndpointPolygonFactMatchesCandidate(
+    const BrainEndpointPolygonQueryOutput& fact,
     const RadioReachableControllerCandidate& candidate) {
     if (!fact.resolved || fact.stale || fact.ownerTokens.empty()) {
         return false;
@@ -544,8 +547,8 @@ workflow::WorkflowSignals BuildBrainOwnedWorkflowSignals(
         }
 
         if (!IsDepartureTerminalCandidate(candidate) ||
-            !TerminalAuthorityFactMatchesCandidate(
-                input.departureTerminalAuthority,
+            !EndpointPolygonFactMatchesCandidate(
+                input.departureEndpointPolygons,
                 candidate)) {
             continue;
         }
@@ -1589,7 +1592,8 @@ StandbyAdvisoryCandidatesForPlan(
                        !IsBlockedControllerFrequency(station.frequency);
             });
     if (input.workflowStage == WorkflowStage::Enroute &&
-        !hasEligibleEnrouteController) {
+        (!hasEligibleEnrouteController ||
+         output.actualSelectedTargetSource == "enroute-unicom-fallback")) {
         candidates.push_back(BuildEnrouteUnicomFallbackCandidate());
     }
     return candidates;
@@ -1727,32 +1731,6 @@ FindAcceptedArrivalRadioCandidate(
     return unicomCandidate;
 }
 
-int ArrivalRegionalSequenceRank(
-    StationRole role,
-    bool unicomArrival) {
-    switch (role) {
-        case StationRole::Center:
-            return 0;
-        case StationRole::Approach:
-        case StationRole::Departure:
-            return 10;
-        case StationRole::Tower:
-            return unicomArrival ? 30 : 20;
-        case StationRole::Ctaf:
-            return 30;
-        case StationRole::Unicom:
-            return 20;
-        case StationRole::Ground:
-            return 40;
-        case StationRole::Delivery:
-            return 50;
-        case StationRole::Atis:
-        case StationRole::Other:
-        default:
-            return 100;
-    }
-}
-
 struct ArrivalStandbySequenceEntry {
     bool advisory = false;
     std::size_t boardIndex = 0;
@@ -1853,6 +1831,10 @@ bool TrySelectArrivalRegionalSequenceTarget(
     std::size_t stableOrder = 0;
     for (std::size_t index = 0; index < output->board.stations.size(); ++index) {
         const auto& station = output->board.stations[index];
+        if (input.manualCenterTierResolved &&
+            station.role == StationRole::Center) {
+            continue;
+        }
         if (station.offline || !IsStandbyEligibleRole(station.role) ||
             station.frequency.empty() ||
             IsBlockedControllerFrequency(station.frequency)) {
@@ -1860,7 +1842,7 @@ bool TrySelectArrivalRegionalSequenceTarget(
         }
         ArrivalStandbySequenceEntry entry;
         entry.boardIndex = index;
-        entry.rank = ArrivalRegionalSequenceRank(
+        entry.rank = ArrivalFrequencyHierarchyRank(
             station.role,
             unicomArrival);
         entry.stableOrder = stableOrder++;
@@ -1872,7 +1854,7 @@ bool TrySelectArrivalRegionalSequenceTarget(
         ArrivalStandbySequenceEntry entry;
         entry.advisory = true;
         entry.advisoryCandidate = arrivalRadio;
-        entry.rank = ArrivalRegionalSequenceRank(
+        entry.rank = ArrivalFrequencyHierarchyRank(
             unicomArrival ? StationRole::Unicom : StationRole::Ctaf,
             unicomArrival);
         entry.stableOrder = stableOrder++;
@@ -4846,6 +4828,14 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     const auto lastPilotIdentitySnapshot = state->lastPilotIdentitySnapshot;
     const auto lastFlightPlanSnapshot = state->lastFlightPlanSnapshot;
     const auto lastNetworkPlanSnapshot = state->lastNetworkPlanSnapshot;
+    const auto manualCenterTierResolved = state->manualCenterTierResolved;
+    const auto manualCenterTierPlanKey = state->manualCenterTierPlanKey;
+    const auto manuallySelectedCenterCallsign =
+        state->manuallySelectedCenterCallsign;
+    const auto manuallySelectedCenterFrequency =
+        state->manuallySelectedCenterFrequency;
+    const auto manualCenterSelectionGeneration =
+        state->manualCenterSelectionGeneration;
     BrainXPilot4BridgeRuntimeState xpilot4Bridge;
     if (preserveXPilot4BridgeSession) {
         xpilot4Bridge = std::move(state->xpilot4Bridge);
@@ -4863,6 +4853,14 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
     state->lastPilotIdentitySnapshot = lastPilotIdentitySnapshot;
     state->lastFlightPlanSnapshot = lastFlightPlanSnapshot;
     state->lastNetworkPlanSnapshot = lastNetworkPlanSnapshot;
+    state->manualCenterTierResolved = manualCenterTierResolved;
+    state->manualCenterTierPlanKey = manualCenterTierPlanKey;
+    state->manuallySelectedCenterCallsign =
+        manuallySelectedCenterCallsign;
+    state->manuallySelectedCenterFrequency =
+        manuallySelectedCenterFrequency;
+    state->manualCenterSelectionGeneration =
+        manualCenterSelectionGeneration;
     if (preserveXPilot4BridgeSession) {
         state->xpilot4Bridge = std::move(xpilot4Bridge);
     }
@@ -5403,6 +5401,97 @@ BrainOwnedRadioBoardReuseOutput TryReuseBrainOwnedRadioBoard(
     return output;
 }
 
+BrainOwnedRadioBoardWorkerCompletionDecision
+DecideBrainOwnedRadioBoardWorkerCompletion(
+    const BrainOwnedRadioBoardWorkerCompletionInput& input) {
+    BrainOwnedRadioBoardWorkerCompletionDecision decision;
+    if (input.failed) {
+        decision.reason = "worker-failed";
+        return decision;
+    }
+    if (!input.completed) {
+        decision.reason = "worker-incomplete";
+        return decision;
+    }
+    if (!input.resultComplete) {
+        decision.reason = "result-incomplete";
+        return decision;
+    }
+    if (input.currentLifecycleEpoch != input.completedLifecycleEpoch) {
+        decision.reason = "lifecycle-epoch-mismatch";
+        return decision;
+    }
+    if (input.currentControllerGeneration != input.completedControllerGeneration) {
+        decision.reason = "controller-generation-mismatch";
+        return decision;
+    }
+    if (input.currentControllerContentDigest !=
+        input.completedControllerContentDigest) {
+        decision.reason = "controller-digest-mismatch";
+        return decision;
+    }
+    if (input.currentSourceGeneration != input.completedSourceGeneration) {
+        decision.reason = "transceiver-source-generation-mismatch";
+        return decision;
+    }
+    if (input.currentSourceContentDigest !=
+        input.completedSourceContentDigest) {
+        decision.reason = "transceiver-source-digest-mismatch";
+        return decision;
+    }
+    if (input.currentMonotonicMs < input.completedMonotonicMs) {
+        decision.reason = "completion-time-invalid";
+        return decision;
+    }
+    decision.ageMs = input.currentMonotonicMs - input.completedMonotonicMs;
+    if (decision.ageMs > input.maximumAgeMs) {
+        decision.reason = "completion-age-exceeded";
+        return decision;
+    }
+    if (!input.currentAircraft.valid || !input.completedAircraft.valid) {
+        decision.reason = "aircraft-invalid";
+        return decision;
+    }
+
+    constexpr double kPi = 3.14159265358979323846;
+    constexpr double kEarthRadiusNm = 3440.065;
+    const auto radians = [kPi](double degrees) {
+        return degrees * kPi / 180.0;
+    };
+    const auto latitudeDelta = radians(
+        input.currentAircraft.latitudeDeg -
+        input.completedAircraft.latitudeDeg);
+    const auto longitudeDelta = radians(
+        input.currentAircraft.longitudeDeg -
+        input.completedAircraft.longitudeDeg);
+    const auto firstLatitude = radians(input.completedAircraft.latitudeDeg);
+    const auto secondLatitude = radians(input.currentAircraft.latitudeDeg);
+    const auto a = std::clamp(
+        std::sin(latitudeDelta / 2.0) * std::sin(latitudeDelta / 2.0) +
+        std::cos(firstLatitude) * std::cos(secondLatitude) *
+            std::sin(longitudeDelta / 2.0) *
+            std::sin(longitudeDelta / 2.0),
+        0.0,
+        1.0);
+    decision.displacementNm = kEarthRadiusNm * 2.0 *
+        std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
+    if (decision.displacementNm > input.maximumDisplacementNm) {
+        decision.reason = "aircraft-displacement-exceeded";
+        return decision;
+    }
+    decision.altitudeDeltaFt = std::fabs(
+        input.currentAircraft.altitudeAglFt -
+        input.completedAircraft.altitudeAglFt);
+    if (decision.altitudeDeltaFt > input.maximumAltitudeDeltaFt) {
+        decision.reason = "aircraft-altitude-delta-exceeded";
+        return decision;
+    }
+
+    decision.accepted = true;
+    decision.reason = "exact-current-radio-board-fact";
+    return decision;
+}
+
 BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
     BrainOwnedRuntimeState* state,
     BrainOwnedRadioBoardCommitInput input) {
@@ -5433,23 +5522,6 @@ BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
     state->hasRadioBoard = true;
     state->lastRadioBoardRefreshSeconds = input.nowSeconds;
     state->lastControllerGeneration = input.controllerGeneration;
-    auto authorityEvidence = BuildBrainAuthorityTransceiverEvidence(
-        input.transceiverSnapshot);
-    const auto authorityEvidenceDigest =
-        HashBrainAuthorityTransceiverEvidence(authorityEvidence);
-    if (state->authorityTransceiverEvidence == nullptr ||
-        state->authorityTransceiverEvidenceDigest !=
-            authorityEvidenceDigest) {
-        state->authorityTransceiverEvidence = std::make_shared<
-            const AuthorityTransceiverEvidenceSnapshot>(
-                std::move(authorityEvidence));
-        state->authorityTransceiverEvidenceDigest =
-            authorityEvidenceDigest;
-    }
-    ++state->transceiverObservationGeneration;
-    if (state->transceiverObservationGeneration == 0) {
-        state->transceiverObservationGeneration = 1;
-    }
     state->transceiverSnapshot = std::make_shared<
         const TransceiverResolutionSnapshot>(
             std::move(input.transceiverSnapshot));
@@ -5464,11 +5536,11 @@ BrainOwnedRadioBoardCommitOutput CommitBrainOwnedRadioBoardRefresh(
     return output;
 }
 
-static BrainOwnedTerminalAuthorityRefreshInput
-BuildDepartureTerminalAuthorityRefreshInput(
+static BrainEndpointPolygonRefreshInput
+BuildDepartureEndpointPolygonRefreshInput(
     const workflow::FlightContext& flightContext,
     long long nowSeconds) {
-    BrainOwnedTerminalAuthorityRefreshInput input;
+    BrainEndpointPolygonRefreshInput input;
     input.flightContextActive = flightContext.active;
     input.airportIcao = flightContext.departureIcao;
     input.hasAirportCoordinates = flightContext.hasDepartureCoordinates;
@@ -5478,11 +5550,11 @@ BuildDepartureTerminalAuthorityRefreshInput(
     return input;
 }
 
-static BrainOwnedTerminalAuthorityRefreshInput
-BuildArrivalTerminalAuthorityRefreshInput(
+static BrainEndpointPolygonRefreshInput
+BuildArrivalEndpointPolygonRefreshInput(
     const workflow::FlightContext& flightContext,
     long long nowSeconds) {
-    BrainOwnedTerminalAuthorityRefreshInput input;
+    BrainEndpointPolygonRefreshInput input;
     input.flightContextActive = flightContext.active;
     input.airportIcao = flightContext.destinationIcao;
     input.hasAirportCoordinates = flightContext.hasDestinationCoordinates;
@@ -5503,11 +5575,11 @@ static BrainOwnedAirportFrequencyRefreshInput BuildAirportFrequencyRefreshInput(
     return input;
 }
 
-BrainOwnedTerminalAuthorityRefreshPlan BeginBrainOwnedDepartureTerminalAuthorityRefresh(
+BrainEndpointPolygonRefreshPlan BeginBrainOwnedDepartureEndpointPolygonRefresh(
     const BrainOwnedRuntimeState& state,
-    const BrainOwnedTerminalAuthorityRefreshInput& input) {
-    BrainOwnedTerminalAuthorityRefreshPlan plan;
-    plan.requestKey = BuildTerminalAuthorityRequestKey(input);
+    const BrainEndpointPolygonRefreshInput& input) {
+    BrainEndpointPolygonRefreshPlan plan;
+    plan.requestKey = BuildEndpointPolygonQueryRequestKey(input);
     plan.workerInput.airportIcao = NormalizeIcao(input.airportIcao);
     plan.workerInput.hasAirportCoordinates = input.hasAirportCoordinates;
     plan.workerInput.airportLatitudeDeg = input.airportLatitudeDeg;
@@ -5531,27 +5603,27 @@ BrainOwnedTerminalAuthorityRefreshPlan BeginBrainOwnedDepartureTerminalAuthority
     }
 
     const auto hasReusableFact =
-        state.hasDepartureTerminalAuthority &&
-        state.departureTerminalAuthorityRequestKey == plan.requestKey &&
-        state.departureTerminalAuthority.resolved &&
-        !state.departureTerminalAuthority.stale;
+        state.hasDepartureEndpointPolygons &&
+        state.departureEndpointPolygonRequestKey == plan.requestKey &&
+        state.departureEndpointPolygons.resolved &&
+        !state.departureEndpointPolygons.stale;
     if (hasReusableFact) {
-        plan.cachedFact = state.departureTerminalAuthority;
+        plan.cachedFact = state.departureEndpointPolygons;
         plan.reason = "departure-terminal-authority-cache-hit";
         plan.cacheStatus = "terminal-authority-cache-hit";
         return plan;
     }
 
     const auto lastFactPending =
-        state.hasDepartureTerminalAuthority &&
-        state.departureTerminalAuthorityRequestKey == plan.requestKey &&
-        state.departureTerminalAuthority.pending;
+        state.hasDepartureEndpointPolygons &&
+        state.departureEndpointPolygonRequestKey == plan.requestKey &&
+        state.departureEndpointPolygons.pending;
     const auto pollCadenceSeconds = lastFactPending ? 1 : 15;
-    const auto lastLookup = state.lastDepartureTerminalAuthorityLookupSeconds;
+    const auto lastLookup = state.lastDepartureEndpointPolygonLookupSeconds;
     if (lastLookup > 0 &&
         (input.nowSeconds - lastLookup) < pollCadenceSeconds &&
-        state.departureTerminalAuthorityRequestKey == plan.requestKey) {
-        plan.cachedFact = state.departureTerminalAuthority;
+        state.departureEndpointPolygonRequestKey == plan.requestKey) {
+        plan.cachedFact = state.departureEndpointPolygons;
         plan.reason = lastFactPending ? "departure-terminal-authority-pending"
                                       : "departure-terminal-authority-backoff";
         plan.cacheStatus = "terminal-authority-wait";
@@ -5559,18 +5631,18 @@ BrainOwnedTerminalAuthorityRefreshPlan BeginBrainOwnedDepartureTerminalAuthority
     }
 
     plan.shouldRunWorker = true;
-    plan.reason = state.departureTerminalAuthorityRequestKey == plan.requestKey
+    plan.reason = state.departureEndpointPolygonRequestKey == plan.requestKey
                       ? "departure-terminal-authority-refresh"
                       : "departure-terminal-authority-new-airport";
     plan.cacheStatus = "terminal-authority-worker-requested";
     return plan;
 }
 
-BrainOwnedTerminalAuthorityRefreshPlan BeginBrainOwnedArrivalTerminalAuthorityRefresh(
+BrainEndpointPolygonRefreshPlan BeginBrainOwnedArrivalEndpointPolygonRefresh(
     const BrainOwnedRuntimeState& state,
-    const BrainOwnedTerminalAuthorityRefreshInput& input) {
-    BrainOwnedTerminalAuthorityRefreshPlan plan;
-    plan.requestKey = BuildTerminalAuthorityRequestKey(input);
+    const BrainEndpointPolygonRefreshInput& input) {
+    BrainEndpointPolygonRefreshPlan plan;
+    plan.requestKey = BuildEndpointPolygonQueryRequestKey(input);
     plan.workerInput.airportIcao = NormalizeIcao(input.airportIcao);
     plan.workerInput.hasAirportCoordinates = input.hasAirportCoordinates;
     plan.workerInput.airportLatitudeDeg = input.airportLatitudeDeg;
@@ -5594,27 +5666,27 @@ BrainOwnedTerminalAuthorityRefreshPlan BeginBrainOwnedArrivalTerminalAuthorityRe
     }
 
     const auto hasReusableFact =
-        state.hasArrivalTerminalAuthority &&
-        state.arrivalTerminalAuthorityRequestKey == plan.requestKey &&
-        state.arrivalTerminalAuthority.resolved &&
-        !state.arrivalTerminalAuthority.stale;
+        state.hasArrivalEndpointPolygons &&
+        state.arrivalEndpointPolygonRequestKey == plan.requestKey &&
+        state.arrivalEndpointPolygons.resolved &&
+        !state.arrivalEndpointPolygons.stale;
     if (hasReusableFact) {
-        plan.cachedFact = state.arrivalTerminalAuthority;
+        plan.cachedFact = state.arrivalEndpointPolygons;
         plan.reason = "arrival-terminal-authority-cache-hit";
         plan.cacheStatus = "terminal-authority-cache-hit";
         return plan;
     }
 
     const auto lastFactPending =
-        state.hasArrivalTerminalAuthority &&
-        state.arrivalTerminalAuthorityRequestKey == plan.requestKey &&
-        state.arrivalTerminalAuthority.pending;
+        state.hasArrivalEndpointPolygons &&
+        state.arrivalEndpointPolygonRequestKey == plan.requestKey &&
+        state.arrivalEndpointPolygons.pending;
     const auto pollCadenceSeconds = lastFactPending ? 1 : 15;
-    const auto lastLookup = state.lastArrivalTerminalAuthorityLookupSeconds;
+    const auto lastLookup = state.lastArrivalEndpointPolygonLookupSeconds;
     if (lastLookup > 0 &&
         (input.nowSeconds - lastLookup) < pollCadenceSeconds &&
-        state.arrivalTerminalAuthorityRequestKey == plan.requestKey) {
-        plan.cachedFact = state.arrivalTerminalAuthority;
+        state.arrivalEndpointPolygonRequestKey == plan.requestKey) {
+        plan.cachedFact = state.arrivalEndpointPolygons;
         plan.reason = lastFactPending ? "arrival-terminal-authority-pending"
                                       : "arrival-terminal-authority-backoff";
         plan.cacheStatus = "terminal-authority-wait";
@@ -5622,7 +5694,7 @@ BrainOwnedTerminalAuthorityRefreshPlan BeginBrainOwnedArrivalTerminalAuthorityRe
     }
 
     plan.shouldRunWorker = true;
-    plan.reason = state.arrivalTerminalAuthorityRequestKey == plan.requestKey
+    plan.reason = state.arrivalEndpointPolygonRequestKey == plan.requestKey
                       ? "arrival-terminal-authority-refresh"
                       : "arrival-terminal-authority-new-airport";
     plan.cacheStatus = "terminal-authority-worker-requested";
@@ -5685,52 +5757,52 @@ BrainOwnedAirportFrequencyRefreshPlan BeginBrainOwnedAirportFrequencyRefresh(
     return plan;
 }
 
-void CommitBrainOwnedDepartureTerminalAuthorityRefresh(
+void CommitBrainOwnedDepartureEndpointPolygonRefresh(
     BrainOwnedRuntimeState* state,
-    const BrainOwnedTerminalAuthorityRefreshPlan& plan,
-    const BrainTerminalAuthorityWorkerOutput& workerOutput) {
+    const BrainEndpointPolygonRefreshPlan& plan,
+    const BrainEndpointPolygonQueryOutput& workerOutput) {
     if (state == nullptr || plan.requestKey.empty()) {
         return;
     }
 
-    const auto previousHash = state->departureTerminalAuthorityHash;
-    state->hasDepartureTerminalAuthority = true;
-    state->departureTerminalAuthority = workerOutput;
-    state->departureTerminalAuthority.airportIcao =
-        NormalizeIcao(state->departureTerminalAuthority.airportIcao);
-    state->departureTerminalAuthorityRequestKey = plan.requestKey;
-    state->departureTerminalAuthorityHash =
-        HashTerminalAuthorityFact(state->departureTerminalAuthority);
-    state->lastDepartureTerminalAuthorityLookupSeconds =
+    const auto previousHash = state->departureEndpointPolygonHash;
+    state->hasDepartureEndpointPolygons = true;
+    state->departureEndpointPolygons = workerOutput;
+    state->departureEndpointPolygons.airportIcao =
+        NormalizeIcao(state->departureEndpointPolygons.airportIcao);
+    state->departureEndpointPolygonRequestKey = plan.requestKey;
+    state->departureEndpointPolygonHash =
+        HashEndpointPolygonFact(state->departureEndpointPolygons);
+    state->lastDepartureEndpointPolygonLookupSeconds =
         plan.workerInput.nowSeconds;
 
-    if (previousHash != state->departureTerminalAuthorityHash) {
+    if (previousHash != state->departureEndpointPolygonHash) {
         state->candidateCompletions.clear();
         state->candidatesComplete = false;
         state->lastIdleReason.clear();
     }
 }
 
-void CommitBrainOwnedArrivalTerminalAuthorityRefresh(
+void CommitBrainOwnedArrivalEndpointPolygonRefresh(
     BrainOwnedRuntimeState* state,
-    const BrainOwnedTerminalAuthorityRefreshPlan& plan,
-    const BrainTerminalAuthorityWorkerOutput& workerOutput) {
+    const BrainEndpointPolygonRefreshPlan& plan,
+    const BrainEndpointPolygonQueryOutput& workerOutput) {
     if (state == nullptr || plan.requestKey.empty()) {
         return;
     }
 
-    const auto previousHash = state->arrivalTerminalAuthorityHash;
-    state->hasArrivalTerminalAuthority = true;
-    state->arrivalTerminalAuthority = workerOutput;
-    state->arrivalTerminalAuthority.airportIcao =
-        NormalizeIcao(state->arrivalTerminalAuthority.airportIcao);
-    state->arrivalTerminalAuthorityRequestKey = plan.requestKey;
-    state->arrivalTerminalAuthorityHash =
-        HashTerminalAuthorityFact(state->arrivalTerminalAuthority);
-    state->lastArrivalTerminalAuthorityLookupSeconds =
+    const auto previousHash = state->arrivalEndpointPolygonHash;
+    state->hasArrivalEndpointPolygons = true;
+    state->arrivalEndpointPolygons = workerOutput;
+    state->arrivalEndpointPolygons.airportIcao =
+        NormalizeIcao(state->arrivalEndpointPolygons.airportIcao);
+    state->arrivalEndpointPolygonRequestKey = plan.requestKey;
+    state->arrivalEndpointPolygonHash =
+        HashEndpointPolygonFact(state->arrivalEndpointPolygons);
+    state->lastArrivalEndpointPolygonLookupSeconds =
         plan.workerInput.nowSeconds;
 
-    if (previousHash != state->arrivalTerminalAuthorityHash) {
+    if (previousHash != state->arrivalEndpointPolygonHash) {
         state->candidateCompletions.clear();
         state->candidatesComplete = false;
         state->lastIdleReason.clear();
@@ -5765,52 +5837,52 @@ void CommitBrainOwnedAirportFrequencyRefresh(
     }
 }
 
-BrainTerminalAuthorityWorkerOutput RefreshBrainOwnedDepartureTerminalAuthority(
+BrainEndpointPolygonQueryOutput RefreshBrainOwnedDepartureEndpointPolygons(
     BrainOwnedRuntimeState* state,
     const workflow::FlightContext& flightContext,
     long long nowSeconds,
-    BrainTerminalAuthorityWorker* worker) {
+    BrainEndpointPolygonQueryWorker* worker) {
     BrainOwnedRuntimeState emptyState;
     const auto& runtimeState = state != nullptr ? *state : emptyState;
     const auto input =
-        BuildDepartureTerminalAuthorityRefreshInput(flightContext, nowSeconds);
+        BuildDepartureEndpointPolygonRefreshInput(flightContext, nowSeconds);
     const auto plan =
-        BeginBrainOwnedDepartureTerminalAuthorityRefresh(runtimeState, input);
+        BeginBrainOwnedDepartureEndpointPolygonRefresh(runtimeState, input);
     auto fact = plan.cachedFact;
 
     if (!plan.shouldRunWorker || worker == nullptr) {
         return fact;
     }
 
-    fact = worker->ResolveAirportTerminalOwner(plan.workerInput);
-    CommitBrainOwnedDepartureTerminalAuthorityRefresh(state, plan, fact);
+    fact = worker->QueryEndpointPolygons(plan.workerInput);
+    CommitBrainOwnedDepartureEndpointPolygonRefresh(state, plan, fact);
     if (state != nullptr) {
-        fact = state->departureTerminalAuthority;
+        fact = state->departureEndpointPolygons;
     }
     return fact;
 }
 
-BrainTerminalAuthorityWorkerOutput RefreshBrainOwnedArrivalTerminalAuthority(
+BrainEndpointPolygonQueryOutput RefreshBrainOwnedArrivalEndpointPolygons(
     BrainOwnedRuntimeState* state,
     const workflow::FlightContext& flightContext,
     long long nowSeconds,
-    BrainTerminalAuthorityWorker* worker) {
+    BrainEndpointPolygonQueryWorker* worker) {
     BrainOwnedRuntimeState emptyState;
     const auto& runtimeState = state != nullptr ? *state : emptyState;
     const auto input =
-        BuildArrivalTerminalAuthorityRefreshInput(flightContext, nowSeconds);
+        BuildArrivalEndpointPolygonRefreshInput(flightContext, nowSeconds);
     const auto plan =
-        BeginBrainOwnedArrivalTerminalAuthorityRefresh(runtimeState, input);
+        BeginBrainOwnedArrivalEndpointPolygonRefresh(runtimeState, input);
     auto fact = plan.cachedFact;
 
     if (!plan.shouldRunWorker || worker == nullptr) {
         return fact;
     }
 
-    fact = worker->ResolveAirportTerminalOwner(plan.workerInput);
-    CommitBrainOwnedArrivalTerminalAuthorityRefresh(state, plan, fact);
+    fact = worker->QueryEndpointPolygons(plan.workerInput);
+    CommitBrainOwnedArrivalEndpointPolygonRefresh(state, plan, fact);
     if (state != nullptr) {
-        fact = state->arrivalTerminalAuthority;
+        fact = state->arrivalEndpointPolygons;
     }
     return fact;
 }
@@ -6375,6 +6447,11 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
     orderedEligibleIndices.reserve(output.board.stations.size());
     for (std::size_t index = 0; index < output.board.stations.size(); ++index) {
         const auto& station = output.board.stations[index];
+        if (input.workflowStage == WorkflowStage::Enroute &&
+            input.manualCenterTierResolved &&
+            station.role == StationRole::Center) {
+            continue;
+        }
         if (station.offline ||
             !IsStandbyEligibleRole(station.role) ||
             station.frequency.empty() ||
@@ -6406,7 +6483,9 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
         ++targetPosition;
     }
     if (targetPosition >= orderedEligibleIndices.size()) {
-        if (input.workflowStage != WorkflowStage::Enroute) {
+        if (input.workflowStage == WorkflowStage::Enroute) {
+            TrySelectEnrouteUnicomFallbackTarget(input, &output);
+        } else {
             TryPromoteCtafUnicomStandbyTarget(input, &output);
         }
         return finalize();
@@ -6421,6 +6500,105 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
 
     SelectControllerStandbyTarget(input, targetIndex, &output);
     return finalize();
+}
+
+BrainOwnedCenterFrequencySelectionDecision
+DecideBrainOwnedCenterFrequencySelection(
+    const BrainOwnedRuntimeState& state,
+    const BrainOwnedCenterFrequencySelectionRequest& request) {
+    BrainOwnedCenterFrequencySelectionDecision decision;
+    decision.requestSequence = request.requestSequence;
+    decision.callsign = request.callsign;
+    decision.frequency = request.frequency;
+    decision.planKey = request.planKey;
+
+    if (request.requestSequence == 0) {
+        decision.reason = "invalid-request-sequence";
+        return decision;
+    }
+    if (request.planKey.empty() || request.planKey != state.lastPlanKey) {
+        decision.reason = "stale-plan";
+        return decision;
+    }
+    if (!request.radios.valid || !request.radios.standbyAssistEnabled) {
+        decision.reason = "standby-assist-unavailable";
+        return decision;
+    }
+    if (NormalizeFrequency(request.frequency).empty() ||
+        IsBlockedControllerFrequency(request.frequency)) {
+        decision.reason = "invalid-center-frequency";
+        return decision;
+    }
+
+    const FinalDisplayStationSnapshot* selectedCenter = nullptr;
+    for (const auto& station : state.finalDisplaySnapshot.stations) {
+        if (!IsLiveRouteCenterStation(station)) {
+            continue;
+        }
+        if (NormalizeCallsign(station.callsign) !=
+                NormalizeCallsign(request.callsign) ||
+            !FrequencyMatches(station.frequency, request.frequency)) {
+            continue;
+        }
+        if (!request.stableKey.empty() &&
+            !station.stableCompletionKey.empty() &&
+            request.stableKey != station.stableCompletionKey) {
+            continue;
+        }
+        selectedCenter = &station;
+    }
+
+    if (selectedCenter == nullptr) {
+        decision.reason = "center-row-no-longer-displayed";
+        return decision;
+    }
+
+    decision.callsign = selectedCenter->callsign;
+    decision.frequency = selectedCenter->frequency;
+    decision.alreadyCom1Active =
+        IsCom1ActiveFrequency(selectedCenter->frequency, request.radios);
+    decision.shouldWriteCom1Active = !decision.alreadyCom1Active;
+    decision.accepted = true;
+    decision.reason = decision.alreadyCom1Active
+        ? "center-already-com1-active"
+        : "center-frequency-selection-accepted";
+    return decision;
+}
+
+BrainOwnedCenterFrequencySelectionDecision
+CompleteBrainOwnedCenterFrequencySelection(
+    BrainOwnedRuntimeState* state,
+    BrainOwnedCenterFrequencySelectionDecision decision,
+    bool writeSucceeded) {
+    decision.writeSucceeded =
+        !decision.shouldWriteCom1Active || writeSucceeded;
+    if (state == nullptr || !decision.accepted) {
+        if (state == nullptr && decision.reason.empty()) {
+            decision.reason = "runtime-state-unavailable";
+        }
+        return decision;
+    }
+    if (!decision.writeSucceeded) {
+        decision.reason = "com1-active-write-failed";
+        return decision;
+    }
+
+    state->manualCenterTierResolved = true;
+    state->manualCenterTierPlanKey = decision.planKey;
+    state->manuallySelectedCenterCallsign = decision.callsign;
+    state->manuallySelectedCenterFrequency = decision.frequency;
+    ++state->manualCenterSelectionGeneration;
+    if (state->manualCenterSelectionGeneration == 0) {
+        state->manualCenterSelectionGeneration = 1;
+    }
+    decision.selectionGeneration =
+        state->manualCenterSelectionGeneration;
+    decision.completed = true;
+    decision.reason = decision.alreadyCom1Active
+        ? "center-tier-resolved-from-active-row"
+        : "center-frequency-tuned-and-tier-resolved";
+    ResetBrainOwnedStandbyAssistLatch(state);
+    return decision;
 }
 
 BrainOwnedStandbyAssistSideEffectDecision

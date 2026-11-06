@@ -46,7 +46,6 @@ constexpr std::size_t kMaxFacilityAreas = 256;
 constexpr std::size_t kMaxTcps = 1024;
 constexpr std::size_t kMaxDepartureCoordinations = 512;
 constexpr std::size_t kMaxDepartureFrequencies = 128;
-constexpr std::size_t kMaxInterestedArtccs = 16;
 constexpr std::size_t kMaxTextChars = 128;
 constexpr int kMaxTcpParentDepth = 16;
 
@@ -665,37 +664,6 @@ void ParseFacilityNode(
     }
 }
 
-std::vector<std::string> AirportAliases(const std::string& airportIcao) {
-    std::vector<std::string> aliases;
-    const auto normalized = NormalizeId(airportIcao);
-    if (normalized.empty()) {
-        return aliases;
-    }
-    aliases.push_back(normalized);
-    if (normalized.size() == 4) {
-        aliases.push_back(normalized.substr(1));
-    }
-    if (normalized.size() > 3) {
-        aliases.push_back(normalized.substr(normalized.size() - 3));
-    }
-    std::sort(aliases.begin(), aliases.end());
-    aliases.erase(std::unique(aliases.begin(), aliases.end()), aliases.end());
-    return aliases;
-}
-
-bool ContainsAny(
-    const std::vector<std::string>& values,
-    const std::vector<std::string>& aliases) {
-    return std::any_of(
-        values.begin(),
-        values.end(),
-        [&](const auto& value) {
-            const auto normalized = NormalizeId(value);
-            return std::find(aliases.begin(), aliases.end(), normalized) !=
-                   aliases.end();
-        });
-}
-
 const VnasFacility* FindFacility(
     const VnasArtccFacilityDocument& document,
     const std::string& facilityId) {
@@ -724,35 +692,6 @@ const VnasArtccFacilityDocument* FindArtccDocument(
     return found == documents.end() ? nullptr : found->get();
 }
 
-bool FacilityContainsAirport(
-    const VnasFacility& facility,
-    const std::string& airportIcao) {
-    const auto aliases = AirportAliases(airportIcao);
-    return ContainsAny(facility.internalAirports, aliases) ||
-           ContainsAny(facility.childFacilityIds, aliases) ||
-           std::find(
-               aliases.begin(),
-               aliases.end(),
-               NormalizeId(facility.facilityId)) != aliases.end();
-}
-
-bool FrequenciesMatch(
-    const std::string& left,
-    const std::string& right) {
-    const auto normalizedLeft = NormalizeFrequency(left);
-    const auto normalizedRight = NormalizeFrequency(right);
-    return !normalizedLeft.empty() && !normalizedRight.empty() &&
-           normalizedLeft == normalizedRight;
-}
-
-bool CandidateMatchesController(
-    const brain::RadioReachableControllerCandidate& candidate,
-    const VnasLiveController& controller) {
-    return NormalizeCallsign(candidate.callsign) ==
-               NormalizeCallsign(controller.vatsimCallsign) &&
-           FrequenciesMatch(candidate.frequency, controller.vatsimFrequency);
-}
-
 const VnasFacilityPosition* FindFacilityPosition(
     const VnasFacility& facility,
     const std::string& positionId) {
@@ -766,49 +705,6 @@ const VnasFacilityPosition* FindFacilityPosition(
     return found == facility.positions.end() ? nullptr : &*found;
 }
 
-const VnasFacilityArea* FindFacilityArea(
-    const VnasFacility& facility,
-    const std::string& areaId) {
-    const auto normalized = NormalizeId(areaId);
-    const auto found = std::find_if(
-        facility.areas.begin(),
-        facility.areas.end(),
-        [&](const auto& area) {
-            return area.areaId == normalized;
-        });
-    return found == facility.areas.end() ? nullptr : &*found;
-}
-
-bool AreaContainsAirport(
-    const VnasFacility& facility,
-    const std::string& areaId,
-    const std::string& airportIcao) {
-    const auto* area = FindFacilityArea(facility, areaId);
-    return area != nullptr && ContainsAny(
-        area->airports, AirportAliases(airportIcao));
-}
-
-bool CallsignServiceCompatible(
-    const std::string& value,
-    bool departure) {
-    const auto callsign = NormalizeCallsign(value);
-    const auto separator = callsign.rfind('_');
-    if (separator == std::string::npos || separator >= callsign.size() - 1) {
-        return false;
-    }
-    const auto role = callsign.substr(separator + 1);
-    if (departure) {
-        return role == "APP" || role == "DEP";
-    }
-    return role == "APP";
-}
-
-bool PositionServiceCompatible(
-    const VnasFacilityPosition& position,
-    bool departure) {
-    return CallsignServiceCompatible(position.callsign, departure);
-}
-
 const VnasTcp* FindTcpById(
     const VnasFacility& facility,
     const std::string& tcpId) {
@@ -819,6 +715,17 @@ const VnasTcp* FindTcpById(
         [&](const auto& tcp) {
             return tcp.tcpId == normalized;
         });
+    return found == facility.tcps.end() ? nullptr : &*found;
+}
+
+const VnasTcp* FindTcpByToken(
+    const VnasFacility& facility,
+    const std::string& tcpToken) {
+    const auto normalized = NormalizeId(tcpToken);
+    const auto found = std::find_if(
+        facility.tcps.begin(),
+        facility.tcps.end(),
+        [&](const auto& tcp) { return tcp.tcpToken == normalized; });
     return found == facility.tcps.end() ? nullptr : &*found;
 }
 
@@ -878,152 +785,6 @@ bool TcpIsAncestorOf(
     return false;
 }
 
-std::vector<std::string> TcpAncestorIds(
-    const VnasFacility& facility,
-    const std::string& tcpId) {
-    std::vector<std::string> ancestors;
-    if (!facility.tcpGraphValid) {
-        return ancestors;
-    }
-
-    auto current = NormalizeId(tcpId);
-    std::unordered_set<std::string> visited;
-    for (int depth = 0;
-         depth < kMaxTcpParentDepth && !current.empty();
-         ++depth) {
-        if (!visited.insert(current).second) {
-            ancestors.clear();
-            return ancestors;
-        }
-        const auto* tcp = FindTcpById(facility, current);
-        if (tcp == nullptr || tcp->parentTcpId.empty()) {
-            return ancestors;
-        }
-        ancestors.push_back(tcp->parentTcpId);
-        current = tcp->parentTcpId;
-    }
-    if (!current.empty()) {
-        ancestors.clear();
-    }
-    return ancestors;
-}
-
-bool PositionIsFallbackForEndpoint(
-    const VnasFacility& facility,
-    const VnasFacilityPosition& position,
-    const std::string& airportIcao,
-    bool departure) {
-    if (position.tcpId.empty()) {
-        return false;
-    }
-    return std::any_of(
-        facility.positions.begin(),
-        facility.positions.end(),
-        [&](const auto& other) {
-            return other.positionId != position.positionId &&
-                   !other.tcpId.empty() &&
-                   PositionServiceCompatible(other, departure) &&
-                   AreaContainsAirport(
-                       facility, other.areaId, airportIcao) &&
-                   TcpIsAncestorOf(
-                       facility, position.tcpId, other.tcpId);
-        });
-}
-
-std::vector<std::string> DirectTcpTokensForEndpoint(
-    const VnasFacility& facility,
-    const std::string& airportIcao,
-    bool departure) {
-    std::vector<std::string> tokens;
-    if (!facility.tcpGraphValid) {
-        return tokens;
-    }
-    for (const auto& position : facility.positions) {
-        if (position.tcpToken.empty() ||
-            !PositionServiceCompatible(position, departure) ||
-            !AreaContainsAirport(facility, position.areaId, airportIcao) ||
-            PositionIsFallbackForEndpoint(
-                facility, position, airportIcao, departure)) {
-            continue;
-        }
-        AddUniqueNormalizedId(&tokens, position.tcpToken, kMaxTcps);
-    }
-
-    if (departure) {
-        const auto aliases = AirportAliases(airportIcao);
-        for (const auto& coordination : facility.departureCoordinations) {
-            if (!ContainsAny({coordination.airportIcao}, aliases)) {
-                continue;
-            }
-            for (const auto& token : coordination.receivingTcpTokens) {
-                // Coordination channels are supporting evidence only when the
-                // receiving TCP is also represented by an endpoint-specific
-                // radar position. This avoids trusting a mislabeled free-text
-                // list title or a cross-facility handoff by itself.
-                const auto represented = std::any_of(
-                    facility.positions.begin(),
-                    facility.positions.end(),
-                    [&](const auto& position) {
-                        return position.tcpToken == token &&
-                               PositionServiceCompatible(position, true) &&
-                               AreaContainsAirport(
-                                   facility,
-                                   position.areaId,
-                                   airportIcao);
-                    });
-                if (represented) {
-                    AddUniqueNormalizedId(&tokens, token, kMaxTcps);
-                }
-            }
-        }
-    }
-    std::sort(tokens.begin(), tokens.end());
-    return tokens;
-}
-
-std::vector<std::string> IntersectTcpTokens(
-    const std::vector<std::string>& liveTokens,
-    const std::vector<std::string>& endpointTokens) {
-    std::vector<std::string> matches;
-    for (const auto& live : liveTokens) {
-        const auto normalized = NormalizeId(live);
-        if (!normalized.empty() &&
-            std::find(
-                endpointTokens.begin(),
-                endpointTokens.end(),
-                normalized) != endpointTokens.end()) {
-            AddUniqueNormalizedId(&matches, normalized, kMaxTcps);
-        }
-    }
-    std::sort(matches.begin(), matches.end());
-    return matches;
-}
-
-bool TdlsDepartureFrequencyMatches(
-    const VnasArtccFacilityDocument& document,
-    const std::string& airportIcao,
-    const std::string& frequency) {
-    const auto aliases = AirportAliases(airportIcao);
-    const auto normalizedFrequency = NormalizeFrequency(frequency);
-    if (normalizedFrequency.empty()) {
-        return false;
-    }
-    return std::any_of(
-        document.facilities.begin(),
-        document.facilities.end(),
-        [&](const auto& facility) {
-            return std::find(
-                       aliases.begin(),
-                       aliases.end(),
-                       NormalizeId(facility.facilityId)) != aliases.end() &&
-                   std::find(
-                       facility.departureFrequencies.begin(),
-                       facility.departureFrequencies.end(),
-                       normalizedFrequency) !=
-                       facility.departureFrequencies.end();
-        });
-}
-
 void HashCombine(std::uint64_t* seed, std::uint64_t value) {
     *seed ^= value + 0x9e3779b97f4a7c15ULL + (*seed << 6) + (*seed >> 2);
 }
@@ -1038,39 +799,36 @@ void HashCombine(std::uint64_t* seed, const std::string& value) {
     }
 }
 
-std::uint64_t HashEvidence(
-    const brain::VnasTerminalEvidenceSnapshot& snapshot) {
+std::uint64_t HashLiveOwnership(
+    const brain::VnasLiveOwnershipSnapshot& snapshot) {
     std::uint64_t hash = 1469598103934665603ULL;
     HashCombine(&hash, snapshot.enabled ? 1U : 0U);
     HashCombine(&hash, snapshot.available ? 1U : 0U);
     HashCombine(&hash, snapshot.stale ? 1U : 0U);
     HashCombine(&hash, snapshot.facilityDataComplete ? 1U : 0U);
     HashCombine(&hash, snapshot.ownershipDataAvailable ? 1U : 0U);
-    for (const auto& record : snapshot.records) {
-        HashCombine(&hash, record.controllerCallsign);
-        HashCombine(&hash, NormalizeFrequency(record.controllerFrequency));
-        HashCombine(&hash, record.airportIcao);
-        HashCombine(&hash, record.artccId);
-        HashCombine(&hash, record.facilityId);
-        HashCombine(&hash, record.positionId);
-        HashCombine(&hash, record.areaName);
-        HashCombine(&hash, record.positionTcpId);
-        for (const auto& ancestorId : record.positionTcpAncestorIds) {
-            HashCombine(&hash, ancestorId);
+    HashCombine(&hash, snapshot.unresolvedLivePositions);
+    for (const auto& fact : snapshot.facts) {
+        HashCombine(&hash, NormalizeCallsign(fact.controllerCallsign));
+        HashCombine(&hash, NormalizeFrequency(fact.controllerFrequency));
+        HashCombine(&hash, NormalizeId(fact.artccId));
+        HashCombine(&hash, NormalizeId(fact.facilityId));
+        HashCombine(&hash, NormalizeId(fact.livePositionId));
+        HashCombine(&hash, NormalizeCallsign(fact.livePositionCallsign));
+        HashCombine(&hash, NormalizeId(fact.sourcePositionId));
+        HashCombine(&hash, NormalizeCallsign(fact.sourcePositionCallsign));
+        HashCombine(&hash, NormalizeFrequency(fact.sourcePositionFrequency));
+        HashCombine(&hash, NormalizeId(fact.tcpToken));
+        for (const auto& airport : fact.ownedAirportCodes) {
+            HashCombine(&hash, NormalizeId(airport));
         }
-        HashCombine(&hash, record.supportsEndpoint ? 1U : 0U);
-        HashCombine(&hash, record.ownershipFactsComplete ? 1U : 0U);
-        HashCombine(&hash, record.serviceCompatible ? 1U : 0U);
-        HashCombine(&hash, record.areaSupportsEndpoint ? 1U : 0U);
+        for (const auto& airport : fact.departureAirportCodes) {
+            HashCombine(&hash, NormalizeId(airport));
+        }
         HashCombine(
             &hash,
-            record.positionTcpHasEndpointDescendant ? 1U : 0U);
-        HashCombine(
-            &hash,
-            record.tdlsDepartureFrequencyMatch ? 1U : 0U);
-        for (const auto& token : record.matchedTcpTokens) {
-            HashCombine(&hash, token);
-        }
+            static_cast<std::uint64_t>(fact.ownershipKind));
+        HashCombine(&hash, fact.proof);
     }
     return hash;
 }
@@ -1142,29 +900,6 @@ std::uint64_t HashFacilityDocument(
     return hash;
 }
 
-std::string ControllerInterestKey(
-    const std::string& callsign,
-    const std::string& frequency) {
-    return NormalizeCallsign(callsign) + "|" +
-           NormalizeFrequency(frequency);
-}
-
-std::uint64_t HashControllerInterest(
-    const std::vector<brain::RadioReachableControllerCandidate>& candidates) {
-    std::uint64_t hash = 1469598103934665603ULL;
-    for (const auto& candidate : candidates) {
-        if (candidate.group != brain::RadioReachableFacilityGroup::AppDep) {
-            continue;
-        }
-        const auto key = ControllerInterestKey(
-            candidate.callsign, candidate.frequency);
-        if (key != "|") {
-            HashCombine(&hash, key);
-        }
-    }
-    return hash;
-}
-
 std::string BuildProof(
     const VnasLiveController& controller,
     const VnasLivePosition& position,
@@ -1183,25 +918,28 @@ std::string BuildProof(
 }
 
 std::unordered_set<std::string> CollectInterestedArtccs(
-    const VnasControllerFeedDocument& feed,
-    const std::vector<brain::RadioReachableControllerCandidate>& candidates) {
+    const VnasControllerFeedDocument& feed) {
     std::unordered_set<std::string> artccs;
     if (!feed.hasCache || feed.stale) {
         return artccs;
     }
-    for (const auto& candidate : candidates) {
-        if (candidate.group != brain::RadioReachableFacilityGroup::AppDep) {
+    for (const auto& controller : feed.controllers) {
+        if (!controller.active || controller.observer) {
             continue;
         }
-        for (const auto& controller : feed.controllers) {
-            if (!controller.active || controller.observer ||
-                !CandidateMatchesController(candidate, controller)) {
-                continue;
-            }
-            const auto artcc = NormalizeId(controller.artccId);
-            if (!artcc.empty() && artccs.size() < kMaxInterestedArtccs) {
-                artccs.insert(artcc);
-            }
+        const auto hasActiveTraconPosition = std::any_of(
+            controller.positions.begin(),
+            controller.positions.end(),
+            [](const auto& position) {
+                return position.active &&
+                       Upper(position.positionType) == "TRACON";
+            });
+        if (!hasActiveTraconPosition) {
+            continue;
+        }
+        const auto artcc = NormalizeId(controller.artccId);
+        if (!artcc.empty()) {
+            artccs.insert(artcc);
         }
     }
     return artccs;
@@ -1338,49 +1076,28 @@ VnasArtccFacilityDocument DecodeVnasArtccFacilityDocument(
     return document;
 }
 
-bool IsUnitedStatesTerminalIcao(const std::string& airportIcao) {
-    const auto icao = NormalizeId(airportIcao);
-    if (icao.size() != 4) {
-        return false;
-    }
-    if (icao.front() == 'K') {
-        return true;
-    }
-    const auto prefix = icao.substr(0, 2);
-    static const std::unordered_set<std::string> prefixes = {
-        "PA", "PF", "PH", "PG", "PJ", "PK", "PM", "PW", "TI", "TJ"};
-    return prefixes.find(prefix) != prefixes.end();
-}
-
-brain::VnasTerminalEvidenceSnapshot BuildVnasTerminalEvidenceSnapshot(
+brain::VnasLiveOwnershipSnapshot BuildVnasLiveOwnershipSnapshot(
     const VnasControllerFeedDocument& controllerFeed,
     const std::vector<std::shared_ptr<const VnasArtccFacilityDocument>>&
         facilityDocuments,
-    const std::string& departureIcao,
-    const std::string& arrivalIcao,
-    const std::vector<brain::RadioReachableControllerCandidate>& candidates,
     bool enabled) {
-    brain::VnasTerminalEvidenceSnapshot snapshot;
-    const auto usEndpoint =
-        IsUnitedStatesTerminalIcao(departureIcao) ||
-        IsUnitedStatesTerminalIcao(arrivalIcao);
-    snapshot.enabled = enabled && usEndpoint;
-    if (!snapshot.enabled) {
-        snapshot.statusLine = enabled ? "vnas-outside-us" : "vnas-disabled";
-        snapshot.stableHash = HashEvidence(snapshot);
+    brain::VnasLiveOwnershipSnapshot snapshot;
+    snapshot.enabled = enabled;
+    if (!enabled) {
+        snapshot.statusLine = "vnas-live-ownership-disabled";
+        snapshot.stableHash = HashLiveOwnership(snapshot);
         return snapshot;
     }
 
     snapshot.available = controllerFeed.hasCache && !controllerFeed.stale;
     snapshot.stale = !snapshot.available;
     if (!snapshot.available) {
-        snapshot.statusLine = "vnas-controller-feed-unavailable";
-        snapshot.stableHash = HashEvidence(snapshot);
+        snapshot.statusLine = "vnas-live-ownership-feed-unavailable";
+        snapshot.stableHash = HashLiveOwnership(snapshot);
         return snapshot;
     }
 
-    const auto interestedArtccs =
-        CollectInterestedArtccs(controllerFeed, candidates);
+    const auto interestedArtccs = CollectInterestedArtccs(controllerFeed);
     snapshot.facilityDataComplete = std::all_of(
         interestedArtccs.begin(),
         interestedArtccs.end(),
@@ -1388,205 +1105,229 @@ brain::VnasTerminalEvidenceSnapshot BuildVnasTerminalEvidenceSnapshot(
             return FindArtccDocument(facilityDocuments, artcc) != nullptr;
         });
 
-    const std::vector<std::pair<std::string, bool>> endpoints = {
-        {NormalizeId(departureIcao), true},
-        {NormalizeId(arrivalIcao), false}};
-    for (const auto& candidate : candidates) {
-        if (candidate.group != brain::RadioReachableFacilityGroup::AppDep) {
+    std::unordered_set<std::string> insertedFacts;
+    const auto appendFact = [&snapshot, &insertedFacts](
+                                const VnasLiveController& controller,
+                                const VnasLivePosition& livePosition,
+                                const VnasArtccFacilityDocument& artcc,
+                                const VnasFacility& facility,
+                                const VnasFacilityPosition& sourcePosition,
+                                brain::VnasLiveOwnershipKind kind) {
+        if (sourcePosition.callsign.empty()) {
+            return;
+        }
+        const auto key = NormalizeCallsign(controller.vatsimCallsign) + "|" +
+                         NormalizeId(livePosition.positionId) + "|" +
+                         NormalizeId(sourcePosition.positionId) + "|" +
+                         std::to_string(static_cast<int>(kind));
+        if (!insertedFacts.insert(key).second) {
+            return;
+        }
+
+        brain::VnasLiveOwnershipFactSnapshot fact;
+        fact.controllerCallsign = controller.vatsimCallsign;
+        fact.controllerFrequency = controller.vatsimFrequency;
+        fact.artccId = controller.artccId;
+        fact.facilityId = livePosition.facilityId;
+        fact.livePositionId = livePosition.positionId;
+        fact.livePositionCallsign = livePosition.defaultCallsign;
+        fact.sourcePositionId = sourcePosition.positionId;
+        fact.sourcePositionCallsign = sourcePosition.callsign;
+        fact.sourcePositionFrequency = sourcePosition.frequency;
+        fact.tcpToken = sourcePosition.tcpToken;
+        const auto area = std::find_if(
+            facility.areas.begin(),
+            facility.areas.end(),
+            [&](const auto& value) {
+                return NormalizeId(value.areaId) ==
+                       NormalizeId(livePosition.areaId);
+            });
+        const auto& sourceAirports =
+            area != facility.areas.end() && !area->airports.empty()
+                ? area->airports
+                : facility.internalAirports;
+        for (const auto& airport : sourceAirports) {
+            const auto normalized = NormalizeId(airport);
+            if (!normalized.empty()) {
+                fact.ownedAirportCodes.push_back(normalized);
+            }
+        }
+        std::sort(
+            fact.ownedAirportCodes.begin(),
+            fact.ownedAirportCodes.end());
+        fact.ownedAirportCodes.erase(
+            std::unique(
+                fact.ownedAirportCodes.begin(),
+                fact.ownedAirportCodes.end()),
+            fact.ownedAirportCodes.end());
+        const auto liveFrequency = NormalizeFrequency(
+            !controller.vatsimFrequency.empty()
+                ? controller.vatsimFrequency
+                : livePosition.frequency);
+        for (const auto& candidateFacility : artcc.facilities) {
+            const auto isCurrentOrChild =
+                NormalizeId(candidateFacility.facilityId) ==
+                    NormalizeId(facility.facilityId) ||
+                NormalizeId(candidateFacility.parentFacilityId) ==
+                    NormalizeId(facility.facilityId);
+            if (!isCurrentOrChild || liveFrequency.empty()) {
+                continue;
+            }
+            const auto frequencyMatched = std::any_of(
+                candidateFacility.departureFrequencies.begin(),
+                candidateFacility.departureFrequencies.end(),
+                [&](const auto& value) {
+                    return NormalizeFrequency(value) == liveFrequency;
+                });
+            if (frequencyMatched) {
+                fact.departureAirportCodes.push_back(
+                    NormalizeId(candidateFacility.facilityId));
+            }
+        }
+        std::sort(
+            fact.departureAirportCodes.begin(),
+            fact.departureAirportCodes.end());
+        fact.departureAirportCodes.erase(
+            std::unique(
+                fact.departureAirportCodes.begin(),
+                fact.departureAirportCodes.end()),
+            fact.departureAirportCodes.end());
+        fact.ownershipKind = kind;
+        std::ostringstream proof;
+        proof << BuildProof(controller, livePosition, &sourcePosition)
+              << "/source-position=" << sourcePosition.positionId;
+        if (!sourcePosition.tcpToken.empty()) {
+            proof << "/tcp=" << sourcePosition.tcpToken;
+        }
+        if (!fact.ownedAirportCodes.empty()) {
+            proof << "/airports=";
+            for (std::size_t index = 0;
+                 index < fact.ownedAirportCodes.size();
+                 ++index) {
+                if (index > 0) {
+                    proof << ',';
+                }
+                proof << fact.ownedAirportCodes[index];
+            }
+        }
+        if (!fact.departureAirportCodes.empty()) {
+            proof << "/departure-airports=";
+            for (std::size_t index = 0;
+                 index < fact.departureAirportCodes.size();
+                 ++index) {
+                if (index > 0) {
+                    proof << ',';
+                }
+                proof << fact.departureAirportCodes[index];
+            }
+        }
+        switch (kind) {
+            case brain::VnasLiveOwnershipKind::ExactPosition:
+                proof << "/ownership=exact-position";
+                break;
+            case brain::VnasLiveOwnershipKind::DynamicAssumption:
+                proof << "/ownership=dynamic-assumption";
+                break;
+            case brain::VnasLiveOwnershipKind::ParentAssumption:
+                proof << "/ownership=parent-assumption";
+                break;
+        }
+        fact.proof = proof.str();
+        snapshot.facts.push_back(std::move(fact));
+    };
+
+    for (const auto& controller : controllerFeed.controllers) {
+        if (!controller.active || controller.observer) {
             continue;
         }
-        for (const auto& controller : controllerFeed.controllers) {
-            if (!controller.active || controller.observer ||
-                !CandidateMatchesController(candidate, controller)) {
+        const auto* artcc =
+            FindArtccDocument(facilityDocuments, controller.artccId);
+        if (artcc == nullptr) {
+            snapshot.unresolvedLivePositions +=
+                std::count_if(
+                    controller.positions.begin(),
+                    controller.positions.end(),
+                    [](const auto& position) { return position.active; });
+            continue;
+        }
+        for (const auto& livePosition : controller.positions) {
+            if (!livePosition.active) {
                 continue;
             }
-            const auto* artcc =
-                FindArtccDocument(facilityDocuments, controller.artccId);
-            if (artcc == nullptr) {
+            const auto* facility =
+                FindFacility(*artcc, livePosition.facilityId);
+            const auto* exactPosition = facility != nullptr
+                ? FindFacilityPosition(*facility, livePosition.positionId)
+                : nullptr;
+            if (facility == nullptr || exactPosition == nullptr) {
+                ++snapshot.unresolvedLivePositions;
                 continue;
             }
 
-            for (const auto& endpointFact : endpoints) {
-                const auto& endpoint = endpointFact.first;
-                const auto departure = endpointFact.second;
-                if (!IsUnitedStatesTerminalIcao(endpoint)) {
+            appendFact(
+                controller,
+                livePosition,
+                *artcc,
+                *facility,
+                *exactPosition,
+                brain::VnasLiveOwnershipKind::ExactPosition);
+            for (const auto& rawAssumedToken : livePosition.assumedTcps) {
+                const auto* assumedTcp =
+                    FindTcpByToken(*facility, rawAssumedToken);
+                if (assumedTcp == nullptr) {
                     continue;
                 }
-                for (const auto& position : controller.positions) {
-                    if (!position.active ||
-                        Upper(position.positionType) != "TRACON") {
+                for (const auto& ownedPosition : facility->positions) {
+                    if (ownedPosition.tcpId != assumedTcp->tcpId) {
                         continue;
                     }
-                    const auto* facility =
-                        FindFacility(*artcc, position.facilityId);
-                    if (facility == nullptr) {
-                        continue;
+                    auto kind = brain::VnasLiveOwnershipKind::DynamicAssumption;
+                    if (ownedPosition.positionId == exactPosition->positionId) {
+                        kind = brain::VnasLiveOwnershipKind::ExactPosition;
+                    } else if (facility->tcpGraphValid &&
+                               TcpIsAncestorOf(
+                                   *facility,
+                                   exactPosition->tcpId,
+                                   ownedPosition.tcpId)) {
+                        kind = brain::VnasLiveOwnershipKind::ParentAssumption;
                     }
-                    const auto* staticPosition =
-                        FindFacilityPosition(*facility, position.positionId);
-                    const auto facilitySupportsEndpoint =
-                        FacilityContainsAirport(*facility, endpoint) ||
-                        (staticPosition != nullptr &&
-                         AreaContainsAirport(
-                             *facility,
-                             staticPosition->areaId,
-                             endpoint));
-                    if (!facilitySupportsEndpoint) {
-                        continue;
-                    }
-
-                    const auto serviceCompatible = CallsignServiceCompatible(
-                        candidate.callsign, departure);
-                    const auto directTcpTokens = DirectTcpTokensForEndpoint(
-                        *facility, endpoint, departure);
-                    const auto matchedTcps = IntersectTcpTokens(
-                        position.assumedTcps, directTcpTokens);
-                    const auto topologyReady =
-                        staticPosition != nullptr &&
-                        !staticPosition->tcpId.empty() &&
-                        facility->tcpGraphValid &&
-                        !directTcpTokens.empty();
-                    const auto areaSupportsEndpoint =
-                        staticPosition != nullptr &&
-                        AreaContainsAirport(
-                            *facility,
-                            staticPosition->areaId,
-                            endpoint);
-                    const auto fallbackPosition =
-                        topologyReady && areaSupportsEndpoint &&
-                        PositionIsFallbackForEndpoint(
-                            *facility,
-                            *staticPosition,
-                            endpoint,
-                            departure);
-                    const auto tdlsDirect =
-                        departure && serviceCompatible &&
-                        TdlsDepartureFrequencyMatches(
-                            *artcc, endpoint, candidate.frequency);
-
-                    brain::VnasTerminalEvidenceRecord record;
-                    record.controllerCallsign = candidate.callsign;
-                    record.controllerFrequency = candidate.frequency;
-                    record.airportIcao = endpoint;
-                    record.artccId = controller.artccId;
-                    record.facilityId = position.facilityId;
-                    record.facilityName = position.facilityName.empty()
-                                              ? facility->facilityName
-                                              : position.facilityName;
-                    record.positionId = position.positionId;
-                    record.positionName = position.positionName;
-                    record.areaName = staticPosition != nullptr
-                                          ? staticPosition->areaName
-                                          : std::string{};
-                    record.positionTcpId = staticPosition != nullptr
-                                               ? staticPosition->tcpId
-                                               : std::string{};
-                    if (topologyReady) {
-                        record.positionTcpAncestorIds = TcpAncestorIds(
-                            *facility, staticPosition->tcpId);
-                    }
-                    record.proof =
-                        BuildProof(controller, position, staticPosition);
-                    record.supportsEndpoint = true;
-                    record.serviceCompatible = serviceCompatible;
-                    record.areaSupportsEndpoint = areaSupportsEndpoint;
-                    record.positionTcpHasEndpointDescendant =
-                        fallbackPosition;
-                    record.tdlsDepartureFrequencyMatch = tdlsDirect;
-                    record.matchedTcpTokens = matchedTcps;
-                    record.ownershipFactsComplete =
-                        (staticPosition != nullptr && !serviceCompatible) ||
-                        topologyReady || tdlsDirect;
-                    if (record.ownershipFactsComplete) {
-                        snapshot.ownershipDataAvailable = true;
-                    }
-                    std::ostringstream factProof;
-                    factProof << record.proof
-                              << "/facts="
-                              << (record.ownershipFactsComplete ? 1 : 0)
-                              << "/service="
-                              << (record.serviceCompatible ? 1 : 0)
-                              << "/area="
-                              << (record.areaSupportsEndpoint ? 1 : 0)
-                              << "/has-child="
-                              << (record.positionTcpHasEndpointDescendant
-                                      ? 1
-                                      : 0);
-                    if (!record.matchedTcpTokens.empty()) {
-                        factProof << "/tcp=";
-                        for (std::size_t tcpIndex = 0;
-                             tcpIndex < record.matchedTcpTokens.size();
-                             ++tcpIndex) {
-                            if (tcpIndex > 0) {
-                                factProof << '+';
-                            }
-                            factProof << record.matchedTcpTokens[tcpIndex];
-                        }
-                    }
-                    if (tdlsDirect) {
-                        factProof << "/tdls-frequency";
-                    }
-                    if (!record.positionTcpId.empty()) {
-                        factProof << "/position-tcp="
-                                  << record.positionTcpId;
-                    }
-                    if (!record.positionTcpAncestorIds.empty()) {
-                        factProof << "/tcp-ancestors=";
-                        for (std::size_t ancestorIndex = 0;
-                             ancestorIndex <
-                                 record.positionTcpAncestorIds.size();
-                             ++ancestorIndex) {
-                            if (ancestorIndex > 0) {
-                                factProof << '+';
-                            }
-                            factProof <<
-                                record.positionTcpAncestorIds[ancestorIndex];
-                        }
-                    }
-                    record.proof = factProof.str();
-                    snapshot.records.push_back(std::move(record));
-                    break;
+                    appendFact(
+                        controller,
+                        livePosition,
+                        *artcc,
+                        *facility,
+                        ownedPosition,
+                        kind);
                 }
             }
         }
     }
 
     std::sort(
-        snapshot.records.begin(),
-        snapshot.records.end(),
+        snapshot.facts.begin(),
+        snapshot.facts.end(),
         [](const auto& left, const auto& right) {
-            if (left.airportIcao != right.airportIcao) {
-                return left.airportIcao < right.airportIcao;
-            }
             if (left.controllerCallsign != right.controllerCallsign) {
                 return left.controllerCallsign < right.controllerCallsign;
             }
-            if (left.controllerFrequency != right.controllerFrequency) {
-                return left.controllerFrequency < right.controllerFrequency;
+            if (left.livePositionId != right.livePositionId) {
+                return left.livePositionId < right.livePositionId;
             }
-            return left.positionId < right.positionId;
+            if (left.sourcePositionId != right.sourcePositionId) {
+                return left.sourcePositionId < right.sourcePositionId;
+            }
+            return static_cast<int>(left.ownershipKind) <
+                   static_cast<int>(right.ownershipKind);
         });
-    snapshot.records.erase(
-        std::unique(
-            snapshot.records.begin(),
-            snapshot.records.end(),
-            [](const auto& left, const auto& right) {
-                return left.airportIcao == right.airportIcao &&
-                       left.controllerCallsign == right.controllerCallsign &&
-                       NormalizeFrequency(left.controllerFrequency) ==
-                           NormalizeFrequency(right.controllerFrequency);
-            }),
-        snapshot.records.end());
-
+    snapshot.ownershipDataAvailable = !snapshot.facts.empty();
     std::ostringstream status;
-    status << "vnas-ready records=" << snapshot.records.size()
+    status << "vnas-live-ownership-ready facts=" << snapshot.facts.size()
            << " artccs=" << interestedArtccs.size()
            << " facilityComplete="
            << (snapshot.facilityDataComplete ? 1 : 0)
-           << " ownership="
-           << (snapshot.ownershipDataAvailable ? 1 : 0);
+           << " unresolved=" << snapshot.unresolvedLivePositions;
     snapshot.statusLine = status.str();
-    snapshot.stableHash = HashEvidence(snapshot);
+    snapshot.stableHash = HashLiveOwnership(snapshot);
     return snapshot;
 }
 
@@ -1598,7 +1339,6 @@ struct VnasDataClient::Impl {
         std::string artccId;
         VnasControllerFeedDocument controllerFeed;
         VnasArtccFacilityDocument facility;
-        std::uint64_t controllerInterestHash = 0;
         bool completed = false;
     };
 
@@ -1625,8 +1365,6 @@ struct VnasDataClient::Impl {
         if (pending.type == TaskType::ControllerFeed) {
             if (pending.controllerFeed.hasCache) {
                 controllerLastSuccess = now;
-                controllerFeedInterestHash =
-                    pending.controllerInterestHash;
                 if (!controllerFeed.hasCache ||
                     controllerFeed.stableHash !=
                         pending.controllerFeed.stableHash) {
@@ -1656,30 +1394,14 @@ struct VnasDataClient::Impl {
         pending = {};
     }
 
-    bool StartControllerFetch(
-        long long now,
-        const std::vector<brain::RadioReachableControllerCandidate>&
-            candidates,
-        std::uint64_t interestHash) {
+    bool StartControllerFetch(long long now) {
         if (workerBusy.exchange(true)) {
             return false;
         }
         JoinWorker();
         controllerLastAttempt = now;
-        controllerLastAttemptInterestHash = interestHash;
-        std::unordered_set<std::string> interestedControllers;
-        for (const auto& candidate : candidates) {
-            if (candidate.group ==
-                brain::RadioReachableFacilityGroup::AppDep) {
-                interestedControllers.insert(ControllerInterestKey(
-                    candidate.callsign, candidate.frequency));
-            }
-        }
         try {
-            worker = std::thread(
-                [this,
-                 interestedControllers = std::move(interestedControllers),
-                 interestHash]() {
+            worker = std::thread([this]() {
                 VnasControllerFeedDocument decoded;
                 try {
                     decoded = DecodeVnasControllerFeedDocument(
@@ -1687,30 +1409,10 @@ struct VnasDataClient::Impl {
                             kControllerFeedHost,
                             kControllerFeedPath,
                             kMaxControllerPayloadBytes));
-                    if (decoded.hasCache) {
-                        decoded.controllers.erase(
-                            std::remove_if(
-                                decoded.controllers.begin(),
-                                decoded.controllers.end(),
-                                [&](const auto& controller) {
-                                    return interestedControllers.find(
-                                               ControllerInterestKey(
-                                                   controller.vatsimCallsign,
-                                                   controller.vatsimFrequency)) ==
-                                           interestedControllers.end();
-                                }),
-                            decoded.controllers.end());
-                        // Only endpoint APP/DEP candidates cross back to the
-                        // simulator thread. Global vNAS churn is discarded on
-                        // this background worker.
-                        decoded.stableHash =
-                            HashControllerFeedDocument(decoded);
-                    }
                     std::lock_guard<std::mutex> lock(mutex);
                     pending = {};
                     pending.type = TaskType::ControllerFeed;
                     pending.controllerFeed = std::move(decoded);
-                    pending.controllerInterestHash = interestHash;
                     pending.completed = true;
                 } catch (...) {
                 }
@@ -1758,115 +1460,22 @@ struct VnasDataClient::Impl {
         return true;
     }
 
-    std::uint64_t BuildRequestKey(
-        const std::string& departureIcao,
-        const std::string& arrivalIcao,
-        const std::vector<brain::RadioReachableControllerCandidate>& candidates,
-        bool enabled,
-        bool feedStale) const {
-        std::uint64_t hash = 1469598103934665603ULL;
-        HashCombine(&hash, sourceVersion);
-        HashCombine(&hash, NormalizeId(departureIcao));
-        HashCombine(&hash, NormalizeId(arrivalIcao));
-        HashCombine(&hash, enabled ? 1U : 0U);
-        HashCombine(&hash, feedStale ? 1U : 0U);
-        for (const auto& candidate : candidates) {
-            if (candidate.group == brain::RadioReachableFacilityGroup::AppDep) {
-                HashCombine(&hash, NormalizeCallsign(candidate.callsign));
-                HashCombine(&hash, NormalizeFrequency(candidate.frequency));
-            }
-        }
-        return hash;
-    }
-
-    std::shared_ptr<const brain::VnasTerminalEvidenceSnapshot> Poll(
-        const std::string& departureIcao,
-        const std::string& arrivalIcao,
-        const std::vector<brain::RadioReachableControllerCandidate>& candidates,
-        bool enabled) {
+    void AdvanceSourceAcquisition(bool enabled, long long now) {
         Harvest();
-        const auto now = CurrentTickSeconds();
-        const auto usEnabled =
-            enabled &&
-            (IsUnitedStatesTerminalIcao(departureIcao) ||
-             IsUnitedStatesTerminalIcao(arrivalIcao));
-
-        // Outside the supported US terminal scope (or when disabled), vNAS
-        // is a stable negative fact. Do not scan or hash the live radio board
-        // on every simulator callback just to rediscover that result.
-        if (!usEnabled) {
-            std::uint64_t inactiveRequestKey = 1469598103934665603ULL;
-            HashCombine(&inactiveRequestKey, NormalizeId(departureIcao));
-            HashCombine(&inactiveRequestKey, NormalizeId(arrivalIcao));
-            HashCombine(&inactiveRequestKey, enabled ? 1U : 0U);
-            if (published && inactiveRequestKey == lastRequestKey) {
-                return published;
-            }
-
-            static const std::vector<
-                std::shared_ptr<const VnasArtccFacilityDocument>>
-                kNoFacilityDocuments;
-            static const std::vector<
-                brain::RadioReachableControllerCandidate>
-                kNoCandidates;
-            auto next = BuildVnasTerminalEvidenceSnapshot(
-                controllerFeed,
-                kNoFacilityDocuments,
-                departureIcao,
-                arrivalIcao,
-                kNoCandidates,
-                enabled);
-            if (!published || published->stableHash != next.stableHash) {
-                next.generation = ++evidenceGeneration;
-            } else {
-                next.generation = published->generation;
-            }
-            published = std::make_shared<
-                const brain::VnasTerminalEvidenceSnapshot>(std::move(next));
-            lastRequestKey = inactiveRequestKey;
-            return published;
-        }
-
-        const auto hasTerminalCandidate = std::any_of(
-            candidates.begin(),
-            candidates.end(),
-            [](const auto& candidate) {
-                return candidate.group ==
-                       brain::RadioReachableFacilityGroup::AppDep;
-            });
-        const auto controllerInterestHash =
-            HashControllerInterest(candidates);
-
-        // Avoid any network or JSON work until an actual US APP/DEP candidate
-        // needs terminal evidence. Center/local-only flights do not pay for
-        // this optional source.
-        if (usEnabled && hasTerminalCandidate && !workerBusy.load()) {
-            const auto interestChanged =
-                controllerInterestHash != controllerFeedInterestHash;
-            const auto changedInterestDue =
-                interestChanged &&
-                (controllerInterestHash !=
-                     controllerLastAttemptInterestHash ||
-                 controllerLastAttempt == 0 ||
-                 (now - controllerLastAttempt) >= kFailureBackoffSeconds);
-            const auto periodicRefreshDue =
-                !interestChanged &&
-                (controllerLastAttempt == 0 ||
-                 (now - controllerLastAttempt) >=
-                     (controllerFeed.hasCache ? kControllerRefreshSeconds
-                                              : kFailureBackoffSeconds));
+        if (enabled && !workerBusy.load()) {
             const auto feedDue =
-                changedInterestDue || periodicRefreshDue;
+                controllerLastAttempt == 0 ||
+                (now - controllerLastAttempt) >=
+                    (controllerFeed.hasCache ? kControllerRefreshSeconds
+                                             : kFailureBackoffSeconds);
             if (feedDue) {
-                (void)StartControllerFetch(
-                    now, candidates, controllerInterestHash);
+                (void)StartControllerFetch(now);
             } else if (controllerFeed.hasCache) {
                 auto feedForInterest = controllerFeed;
                 feedForInterest.stale =
                     controllerLastSuccess == 0 ||
                     (now - controllerLastSuccess) > kControllerHoldoverSeconds;
-                const auto artccs =
-                    CollectInterestedArtccs(feedForInterest, candidates);
+                const auto artccs = CollectInterestedArtccs(feedForInterest);
                 std::vector<std::string> ordered(artccs.begin(), artccs.end());
                 std::sort(ordered.begin(), ordered.end());
                 for (const auto& artcc : ordered) {
@@ -1888,38 +1497,46 @@ struct VnasDataClient::Impl {
                                controllerLastSuccess == 0 ||
                                (now - controllerLastSuccess) >
                                    kControllerHoldoverSeconds;
-        const auto requestKey = BuildRequestKey(
-            departureIcao,
-            arrivalIcao,
-            candidates,
-            enabled,
-            controllerFeed.stale);
-        if (published && requestKey == lastRequestKey) {
-            return published;
-        }
+    }
 
-        std::vector<std::shared_ptr<const VnasArtccFacilityDocument>>
-            documents;
+    std::vector<std::shared_ptr<const VnasArtccFacilityDocument>>
+    FacilityDocuments() const {
+        std::vector<std::shared_ptr<const VnasArtccFacilityDocument>> documents;
         documents.reserve(facilities.size());
         for (const auto& entry : facilities) {
             documents.push_back(entry.second);
         }
-        auto next = BuildVnasTerminalEvidenceSnapshot(
+        return documents;
+    }
+
+    std::shared_ptr<const brain::VnasLiveOwnershipSnapshot>
+    PollLiveOwnership(bool enabled) {
+        const auto now = CurrentTickSeconds();
+        AdvanceSourceAcquisition(enabled, now);
+        std::uint64_t requestKey = 1469598103934665603ULL;
+        HashCombine(&requestKey, sourceVersion);
+        HashCombine(&requestKey, enabled ? 1U : 0U);
+        HashCombine(&requestKey, controllerFeed.stale ? 1U : 0U);
+        if (publishedLiveOwnership != nullptr &&
+            requestKey == lastLiveOwnershipRequestKey) {
+            return publishedLiveOwnership;
+        }
+
+        const auto documents = FacilityDocuments();
+        auto next = BuildVnasLiveOwnershipSnapshot(
             controllerFeed,
             documents,
-            departureIcao,
-            arrivalIcao,
-            candidates,
             enabled);
-        if (!published || published->stableHash != next.stableHash) {
-            next.generation = ++evidenceGeneration;
+        if (publishedLiveOwnership == nullptr ||
+            publishedLiveOwnership->stableHash != next.stableHash) {
+            next.generation = ++liveOwnershipGeneration;
         } else {
-            next.generation = published->generation;
+            next.generation = publishedLiveOwnership->generation;
         }
-        published = std::make_shared<
-            const brain::VnasTerminalEvidenceSnapshot>(std::move(next));
-        lastRequestKey = requestKey;
-        return published;
+        publishedLiveOwnership = std::make_shared<
+            const brain::VnasLiveOwnershipSnapshot>(std::move(next));
+        lastLiveOwnershipRequestKey = requestKey;
+        return publishedLiveOwnership;
     }
 
     void Reset() {
@@ -1932,12 +1549,10 @@ struct VnasDataClient::Impl {
         facilityLastAttempt.clear();
         controllerLastAttempt = 0;
         controllerLastSuccess = 0;
-        controllerFeedInterestHash = 0;
-        controllerLastAttemptInterestHash = 0;
         sourceVersion = 0;
-        evidenceGeneration = 0;
-        lastRequestKey = 0;
-        published.reset();
+        liveOwnershipGeneration = 0;
+        lastLiveOwnershipRequestKey = 0;
+        publishedLiveOwnership.reset();
     }
 
     std::atomic<bool> workerBusy{false};
@@ -1951,25 +1566,20 @@ struct VnasDataClient::Impl {
     std::unordered_map<std::string, long long> facilityLastAttempt;
     long long controllerLastAttempt = 0;
     long long controllerLastSuccess = 0;
-    std::uint64_t controllerFeedInterestHash = 0;
-    std::uint64_t controllerLastAttemptInterestHash = 0;
     std::uint64_t sourceVersion = 0;
-    std::uint64_t evidenceGeneration = 0;
-    std::uint64_t lastRequestKey = 0;
-    std::shared_ptr<const brain::VnasTerminalEvidenceSnapshot> published;
+    std::uint64_t liveOwnershipGeneration = 0;
+    std::uint64_t lastLiveOwnershipRequestKey = 0;
+    std::shared_ptr<const brain::VnasLiveOwnershipSnapshot>
+        publishedLiveOwnership;
 };
 
 VnasDataClient::VnasDataClient() : impl_(std::make_unique<Impl>()) {}
 
 VnasDataClient::~VnasDataClient() = default;
 
-std::shared_ptr<const brain::VnasTerminalEvidenceSnapshot> VnasDataClient::Poll(
-    const std::string& departureIcao,
-    const std::string& arrivalIcao,
-    const std::vector<brain::RadioReachableControllerCandidate>& candidates,
-    bool enabled) {
-    return impl_->Poll(
-        departureIcao, arrivalIcao, candidates, enabled);
+std::shared_ptr<const brain::VnasLiveOwnershipSnapshot>
+VnasDataClient::PollLiveOwnership(bool enabled) {
+    return impl_->PollLiveOwnership(enabled);
 }
 
 void VnasDataClient::Reset() {

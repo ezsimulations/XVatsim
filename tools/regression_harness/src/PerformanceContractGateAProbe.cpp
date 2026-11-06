@@ -84,7 +84,8 @@ modules::route_sector::AuthorityWorkerRequest BuildRequest(
     const std::vector<brain::ControllerSnapshot>& controllers,
     const brain::TransceiverResolutionSnapshot& transceivers,
     std::uint64_t requestId,
-    std::uint32_t delayMs) {
+    std::uint32_t delayMs,
+    bool controllerFeedComplete = true) {
     modules::route_sector::AuthorityWorkerRequest request;
     request.identity.requestId = requestId;
     request.identity.lifecycleEpoch = 7;
@@ -96,11 +97,7 @@ modules::route_sector::AuthorityWorkerRequest BuildRequest(
             controllers,
             true,
             false);
-    const auto authorityTransceivers =
-        brain::BuildBrainAuthorityTransceiverEvidence(transceivers);
-    request.identity.transceiverDigest =
-        brain::HashBrainAuthorityTransceiverEvidence(
-            authorityTransceivers);
+    (void)transceivers;
     request.identity.datasetIdentity =
         resolver.GetAuthoritySourceDatasetIdentity();
     request.aircraft = aircraft;
@@ -111,16 +108,13 @@ modules::route_sector::AuthorityWorkerRequest BuildRequest(
     request.hasControllerEvidence = true;
     request.controllerFeedAvailable = true;
     request.controllerFeedStale = false;
+    request.controllerFeedComplete = controllerFeedComplete;
     request.controllerFeedGeneration = 9;
     request.controllerFeedConnectedControllers =
         static_cast<int>(controllers.size());
     request.terminalBoundaryGeneration =
         resolver.GetTerminalBoundaryGeneration();
     request.scheduleReason = "controller-relevance-evidence-ledger";
-    request.hasTransceiverEvidence = true;
-    request.transceivers = std::make_shared<
-        const brain::AuthorityTransceiverEvidenceSnapshot>(
-            authorityTransceivers);
     request.dataset = resolver.GetAuthoritySourceDataset();
     request.dispatchedMonotonicMs = 1000;
     request.cooperativeDelayForTestingMs = delayMs;
@@ -222,18 +216,23 @@ int RunPerformanceContractGateAProbe() {
         [](auto* value) { ++value->controllerDigest; },
         "controller-digest-mismatch");
     requireIdentityReject(
-        [](auto* value) { ++value->transceiverDigest; },
-        "transceiver-digest-mismatch");
+        [](auto* value) { ++value->dynamicOwnershipDigest; },
+        "dynamic-ownership-digest-mismatch");
     requireIdentityReject(
         [](auto* value) { ++value->datasetIdentity; },
         "authority-dataset-identity-mismatch");
+    auto incompleteCompletion = validation;
+    incompleteCompletion.controllerFeedComplete = false;
+    require(
+        brain::DecideBrainAuthorityCompletion(incompleteCompletion).reason ==
+            "authority-controller-feed-unusable",
+        "incomplete controller feed completion was publishable");
 
     auto continuityCurrent = validation.expected;
     ++continuityCurrent.requestId;
     const auto stableContinuity =
         brain::DecideBrainAuthorityPublicationContinuity(
-            {validation.expected, continuityCurrent, true, false, true,
-             true, false});
+            {validation.expected, continuityCurrent, true, false, true});
     require(
         stableContinuity.mayReuseLastAccepted &&
             !stableContinuity.evidenceRefreshPending,
@@ -241,45 +240,59 @@ int RunPerformanceContractGateAProbe() {
     ++continuityCurrent.controllerDigest;
     const auto controllerRefreshContinuity =
         brain::DecideBrainAuthorityPublicationContinuity(
-            {validation.expected, continuityCurrent, true, false, true,
-             true, false});
+            {validation.expected, continuityCurrent, true, false, true});
     require(
         controllerRefreshContinuity.mayReuseLastAccepted &&
             controllerRefreshContinuity.evidenceRefreshPending &&
             controllerRefreshContinuity.controllerRefreshPending &&
-            !controllerRefreshContinuity.transceiverRefreshPending,
+            !controllerRefreshContinuity.routeRefreshPending &&
+            !controllerRefreshContinuity.dynamicOwnershipRefreshPending,
         "controller-only refresh erased the last proven authority result");
-    continuityCurrent = validation.expected;
-    ++continuityCurrent.transceiverDigest;
-    const auto transceiverRefreshContinuity =
+    auto routeRefreshCurrent = validation.expected;
+    ++routeRefreshCurrent.routeDigest;
+    const auto routeRefreshContinuity =
         brain::DecideBrainAuthorityPublicationContinuity(
-            {validation.expected, continuityCurrent, true, false, true,
-             true, false});
+            {validation.expected, routeRefreshCurrent, true, false, true});
     require(
-        transceiverRefreshContinuity.mayReuseLastAccepted &&
-            transceiverRefreshContinuity.evidenceRefreshPending &&
-            !transceiverRefreshContinuity.controllerRefreshPending &&
-            transceiverRefreshContinuity.transceiverRefreshPending,
-        "transceiver-only refresh erased the last proven authority result");
-    ++continuityCurrent.controllerDigest;
+        routeRefreshContinuity.mayReuseLastAccepted &&
+            routeRefreshContinuity.evidenceRefreshPending &&
+            routeRefreshContinuity.routeRefreshPending &&
+            !routeRefreshContinuity.controllerRefreshPending &&
+            !routeRefreshContinuity.dynamicOwnershipRefreshPending,
+        "GTI1098 route refresh erased the proven SDF terminal authority");
+    auto ownershipRefreshCurrent = validation.expected;
+    ++ownershipRefreshCurrent.dynamicOwnershipDigest;
+    const auto ownershipRefreshContinuity =
+        brain::DecideBrainAuthorityPublicationContinuity(
+            {validation.expected, ownershipRefreshCurrent, true, false, true});
+    require(
+        ownershipRefreshContinuity.mayReuseLastAccepted &&
+            ownershipRefreshContinuity.evidenceRefreshPending &&
+            ownershipRefreshContinuity.dynamicOwnershipRefreshPending &&
+            !ownershipRefreshContinuity.controllerRefreshPending &&
+            !ownershipRefreshContinuity.routeRefreshPending,
+        "GTI1098 vNAS churn erased the proven SDF terminal authority");
+    auto combinedRefreshCurrent = validation.expected;
+    ++combinedRefreshCurrent.controllerDigest;
+    ++combinedRefreshCurrent.routeDigest;
+    ++combinedRefreshCurrent.dynamicOwnershipDigest;
     const auto combinedRefreshContinuity =
         brain::DecideBrainAuthorityPublicationContinuity(
-            {validation.expected, continuityCurrent, true, false, true,
-             true, false});
+            {validation.expected, combinedRefreshCurrent, true, false, true});
     require(
         combinedRefreshContinuity.mayReuseLastAccepted &&
             combinedRefreshContinuity.evidenceRefreshPending &&
             combinedRefreshContinuity.controllerRefreshPending &&
-            combinedRefreshContinuity.transceiverRefreshPending,
-        "combined evidence refresh erased the last proven authority result");
+            combinedRefreshContinuity.routeRefreshPending &&
+            combinedRefreshContinuity.dynamicOwnershipRefreshPending,
+        "GTI1098 combined refresh published an unavailable authority gap");
     const auto requireContinuityReject =
         [&](auto mutate, const char* expectedReason) {
             auto changed = validation.expected;
             mutate(&changed);
             const auto decision =
                 brain::DecideBrainAuthorityPublicationContinuity(
-                    {validation.expected, changed, true, false, true,
-                     true, false});
+                    {validation.expected, changed, true, false, true});
             require(
                 !decision.mayReuseLastAccepted &&
                     decision.reason == expectedReason,
@@ -293,30 +306,19 @@ int RunPerformanceContractGateAProbe() {
         [](auto* value) { value->planKey += "-changed"; },
         "authority-plan-changed");
     requireContinuityReject(
-        [](auto* value) { ++value->routeDigest; },
-        "authority-route-changed");
-    requireContinuityReject(
         [](auto* value) { ++value->datasetIdentity; },
         "authority-dataset-changed");
+    requireContinuityReject(
+        [](auto* value) { value->routeDigest = 0; },
+        "authority-route-identity-unavailable");
     const auto unavailableFeedContinuity =
         brain::DecideBrainAuthorityPublicationContinuity(
-            {validation.expected, continuityCurrent, false, true, false,
-             true, false});
+            {validation.expected, continuityCurrent, false, true, false});
     require(
         !unavailableFeedContinuity.mayReuseLastAccepted &&
             unavailableFeedContinuity.reason ==
                 "authority-controller-feed-unusable",
         "unusable controller feed retained old authority proof");
-    const auto unavailableTransceiverContinuity =
-        brain::DecideBrainAuthorityPublicationContinuity(
-            {validation.expected, continuityCurrent, true, false, true,
-             false, true});
-    require(
-        !unavailableTransceiverContinuity.mayReuseLastAccepted &&
-            unavailableTransceiverContinuity.reason ==
-                "authority-transceiver-evidence-unusable",
-        "unusable transceiver evidence retained old authority proof");
-
     auto oldCompletion = validation;
     oldCompletion.nowMonotonicMs = 8000;
     require(
@@ -360,6 +362,20 @@ int RunPerformanceContractGateAProbe() {
     controller.frequency = "125.600";
     controller.facility = 6;
     controllers.push_back(controller);
+    auto atisOnlyControllers = controllers;
+    atisOnlyControllers.front().textAtis = "DESCRIPTIVE TEXT ONLY";
+    require(
+        brain::HashBrainAuthorityControllerEvidenceContent(controllers) ==
+            brain::HashBrainAuthorityControllerEvidenceContent(
+                atisOnlyControllers),
+        "ATIS descriptive content changed authority-semantic identity");
+    auto atisEligibilityControllers = controllers;
+    atisEligibilityControllers.front().atis = true;
+    require(
+        brain::HashBrainAuthorityControllerEvidenceContent(controllers) !=
+            brain::HashBrainAuthorityControllerEvidenceContent(
+                atisEligibilityControllers),
+        "ATIS eligibility state did not change authority-semantic identity");
     brain::ControllerFeedSnapshot controllerFeed;
     controllerFeed.available = true;
     controllerFeed.stale = false;
@@ -372,8 +388,7 @@ int RunPerformanceContractGateAProbe() {
             aircraft,
             controllerFeed,
             route,
-            "controller-relevance-evidence-ledger",
-            &transceivers);
+            "controller-relevance-evidence-ledger");
     const auto synchronousDigest =
         brain::HashBrainAuthorityRelevanceSnapshot(synchronous);
 
@@ -407,6 +422,293 @@ int RunPerformanceContractGateAProbe() {
                 brain::HashBrainAuthorityRelevanceSnapshot(
                     *parityFact.snapshotLease->snapshot),
         "worker output did not match the synchronous authority oracle");
+
+    // A baseline continues to completion while one newest roster waits. The
+    // follow-up verifies only the two additions and reuses all ten unchanged
+    // controller facts from the worker's non-authoritative mechanical cache.
+    std::vector<brain::ControllerSnapshot> baselineControllers;
+    for (int index = 0; index < 10; ++index) {
+        brain::ControllerSnapshot value;
+        value.callsign = "DELTA" + std::to_string(index) + "_CTR";
+        value.frequency = "12" + std::to_string(index) + ".600";
+        value.facility = 6;
+        baselineControllers.push_back(std::move(value));
+    }
+    auto expandedControllers = baselineControllers;
+    for (int index = 10; index < 12; ++index) {
+        brain::ControllerSnapshot value;
+        value.callsign = "DELTA" + std::to_string(index) + "_CTR";
+        value.frequency = "13" + std::to_string(index - 10) + ".600";
+        value.facility = 6;
+        expandedControllers.push_back(std::move(value));
+    }
+    auto baselineRequest = BuildRequest(
+        resolver,
+        aircraft,
+        route,
+        baselineControllers,
+        transceivers,
+        20,
+        500);
+    require(
+        worker.StartLatest(std::move(baselineRequest)),
+        "ten-controller baseline dispatch failed");
+    require(
+        WaitUntilRunning(&worker, Milliseconds(1000)),
+        "ten-controller baseline did not start");
+    auto additionRequest = BuildRequest(
+        resolver,
+        aircraft,
+        route,
+        expandedControllers,
+        transceivers,
+        21,
+        0);
+    require(
+        worker.StartLatest(std::move(additionRequest)),
+        "two-controller delta dispatch failed");
+    modules::route_sector::AuthorityWorkerFact baselineFact;
+    modules::route_sector::AuthorityWorkerFact additionFact;
+    require(
+        WaitForFact(
+            &worker,
+            20,
+            Milliseconds(5000),
+            &baselineFact,
+            &harvestTimings),
+        "ten-controller baseline was cancelled or lost");
+    require(
+        baselineFact.completed && !baselineFact.cancelled &&
+            baselineFact.snapshotLease != nullptr &&
+            baselineFact.snapshotLease->snapshot != nullptr &&
+            baselineFact.snapshotLease->snapshot->liveMap
+                    .verifiedControllerFactCount == 10 &&
+            baselineFact.snapshotLease->snapshot->liveMap
+                    .reusedControllerFactCount == 0,
+        "ten-controller baseline did not verify exactly ten records");
+    require(
+        WaitForFact(
+            &worker,
+            21,
+            Milliseconds(5000),
+            &additionFact,
+            &harvestTimings),
+        "two-controller follow-up did not complete");
+    require(
+        additionFact.completed && !additionFact.cancelled &&
+            additionFact.snapshotLease != nullptr &&
+            additionFact.snapshotLease->snapshot != nullptr &&
+            additionFact.snapshotLease->snapshot->liveMap
+                    .verifiedControllerFactCount == 2 &&
+            additionFact.snapshotLease->snapshot->liveMap
+                    .reusedControllerFactCount == 10,
+        "ten-plus-two follow-up did not limit verification to two additions");
+
+    std::vector<modules::route_sector::AuthorityWorkerFact>
+        incrementalAuditFacts;
+    const auto runRoster = [&](const auto& roster,
+                               std::uint64_t requestId,
+                               bool complete) {
+        auto request = BuildRequest(
+            resolver,
+            aircraft,
+            route,
+            roster,
+            transceivers,
+            requestId,
+            0,
+            complete);
+        require(
+            worker.StartLatest(std::move(request)),
+            "incremental audit dispatch failed");
+        modules::route_sector::AuthorityWorkerFact fact;
+        require(
+            WaitForFact(
+                &worker,
+                requestId,
+                Milliseconds(5000),
+                &fact,
+                &harvestTimings),
+            "incremental audit result did not complete");
+        incrementalAuditFacts.push_back(std::move(fact));
+        return incrementalAuditFacts.back().snapshotLease != nullptr
+            ? incrementalAuditFacts.back().snapshotLease->snapshot
+            : std::shared_ptr<
+                  const brain::AuthorityRelevanceSnapshot>{};
+    };
+
+    auto reorderedControllers = expandedControllers;
+    std::reverse(reorderedControllers.begin(), reorderedControllers.end());
+    const auto reorderedSnapshot = runRoster(reorderedControllers, 22, true);
+    require(
+        reorderedSnapshot != nullptr &&
+            reorderedSnapshot->liveMap.verifiedControllerFactCount == 0 &&
+            reorderedSnapshot->liveMap.reusedControllerFactCount == 12 &&
+            reorderedSnapshot->liveMap.removedControllerFactCount == 0,
+        "source reordering re-verified unchanged controller facts");
+
+    auto descriptiveAtisControllers = expandedControllers;
+    descriptiveAtisControllers.front().textAtis =
+        "DESCRIPTIVE SENTENCE CHANGED";
+    const auto descriptiveAtisSnapshot =
+        runRoster(descriptiveAtisControllers, 23, true);
+    require(
+        descriptiveAtisSnapshot != nullptr &&
+            descriptiveAtisSnapshot->liveMap
+                    .verifiedControllerFactCount == 0 &&
+            descriptiveAtisSnapshot->liveMap.reusedControllerFactCount == 12,
+        "descriptive ATIS churn re-verified authority facts");
+
+    auto incompleteRoster = expandedControllers;
+    incompleteRoster.pop_back();
+    const auto incompleteSnapshot = runRoster(incompleteRoster, 24, false);
+    require(
+        incompleteSnapshot != nullptr &&
+            incompleteSnapshot->liveMap.removedControllerFactCount == 0 &&
+            incompleteSnapshot->liveMap.verifiedControllerFactCount == 0 &&
+            incompleteSnapshot->liveMap.reusedControllerFactCount == 11,
+        "incomplete roster inferred a controller removal");
+    const auto restoredSnapshot = runRoster(expandedControllers, 25, true);
+    require(
+        restoredSnapshot != nullptr &&
+            restoredSnapshot->liveMap.verifiedControllerFactCount == 0 &&
+            restoredSnapshot->liveMap.reusedControllerFactCount == 12 &&
+            restoredSnapshot->liveMap.removedControllerFactCount == 0,
+        "incomplete roster discarded a retained controller fact");
+
+    auto removedRoster = expandedControllers;
+    removedRoster.pop_back();
+    const auto removedSnapshot = runRoster(removedRoster, 26, true);
+    require(
+        removedSnapshot != nullptr &&
+            removedSnapshot->liveMap.verifiedControllerFactCount == 0 &&
+            removedSnapshot->liveMap.reusedControllerFactCount == 11 &&
+            removedSnapshot->liveMap.removedControllerFactCount == 1,
+        "complete roster did not remove exactly one signed-off controller");
+
+    auto frequencyChangedRoster = removedRoster;
+    frequencyChangedRoster.front().frequency = "134.775";
+    const auto frequencyChangedSnapshot =
+        runRoster(frequencyChangedRoster, 27, true);
+    require(
+        frequencyChangedSnapshot != nullptr &&
+            frequencyChangedSnapshot->liveMap
+                    .verifiedControllerFactCount == 1 &&
+            frequencyChangedSnapshot->liveMap.reusedControllerFactCount == 10,
+        "frequency change did not verify exactly one controller fact");
+
+    auto facilityChangedRoster = frequencyChangedRoster;
+    facilityChangedRoster[1].facility = 5;
+    const auto facilityChangedSnapshot =
+        runRoster(facilityChangedRoster, 28, true);
+    require(
+        facilityChangedSnapshot != nullptr &&
+            facilityChangedSnapshot->liveMap
+                    .verifiedControllerFactCount == 1 &&
+            facilityChangedSnapshot->liveMap.reusedControllerFactCount == 10,
+        "facility change did not verify exactly one controller fact");
+    const auto unchangedSnapshot =
+        runRoster(facilityChangedRoster, 29, true);
+    require(
+        unchangedSnapshot != nullptr &&
+            unchangedSnapshot->liveMap.verifiedControllerFactCount == 0 &&
+            unchangedSnapshot->liveMap.reusedControllerFactCount == 11,
+        "unchanged generation performed authority verification");
+    const auto auditCounts = [](const auto& snapshot) {
+        if (snapshot == nullptr) {
+            return std::string("missing");
+        }
+        return std::to_string(
+                   snapshot->liveMap.verifiedControllerFactCount) + "/" +
+               std::to_string(
+                   snapshot->liveMap.reusedControllerFactCount) + "/" +
+               std::to_string(
+                   snapshot->liveMap.removedControllerFactCount);
+    };
+    std::cout << "INCREMENTAL_AUTHORITY_AUDIT"
+              << " reorder=" << auditCounts(reorderedSnapshot)
+              << " atisText=" << auditCounts(descriptiveAtisSnapshot)
+              << " incomplete=" << auditCounts(incompleteSnapshot)
+              << " restored=" << auditCounts(restoredSnapshot)
+              << " removed=" << auditCounts(removedSnapshot)
+              << " frequency=" << auditCounts(frequencyChangedSnapshot)
+              << " facility=" << auditCounts(facilityChangedSnapshot)
+              << " unchanged=" << auditCounts(unchangedSnapshot)
+              << " format=verified/reused/removed\n";
+
+    auto randomizedRoster = facilityChangedRoster;
+    int randomizedParityChecks = 0;
+    for (int iteration = 0; iteration < 20; ++iteration) {
+        switch (iteration % 4) {
+            case 0: {
+                brain::ControllerSnapshot added;
+                added.callsign =
+                    "RANDOM" + std::to_string(iteration) + "_CTR";
+                added.frequency =
+                    "127." + std::to_string(700 + iteration);
+                added.facility = 6;
+                randomizedRoster.push_back(std::move(added));
+                break;
+            }
+            case 1:
+                if (randomizedRoster.size() > 4) {
+                    randomizedRoster.erase(randomizedRoster.begin() + 2);
+                }
+                break;
+            case 2:
+                randomizedRoster.front().frequency =
+                    iteration % 8 == 2 ? "128.100" : "129.100";
+                break;
+            case 3:
+                std::rotate(
+                    randomizedRoster.begin(),
+                    randomizedRoster.begin() + 1,
+                    randomizedRoster.end());
+                break;
+        }
+        const auto incrementalSnapshot = runRoster(
+            randomizedRoster,
+            static_cast<std::uint64_t>(30 + iteration),
+            true);
+        modules::route_sector::RouteSectorResolver oracleResolver;
+        oracleResolver.LoadBoundaryPayloadsForTesting(
+            kEmptyGeoJson,
+            kEmptyGeoJson,
+            "[FIR]\nTEST|TEST|TEST|\n",
+            "{}");
+        brain::ControllerFeedSnapshot oracleFeed;
+        oracleFeed.available = true;
+        oracleFeed.stale = false;
+        oracleFeed.controllerComponentComplete = true;
+        oracleFeed.generation = 9;
+        oracleFeed.connectedControllers =
+            static_cast<int>(randomizedRoster.size());
+        oracleFeed.controllers = &randomizedRoster;
+        const auto oracleSnapshot =
+            oracleResolver.ResolveBrainScheduledAuthorityVerification(
+                aircraft,
+                oracleFeed,
+                route,
+                "controller-relevance-evidence-ledger");
+        const auto parity =
+            incrementalSnapshot != nullptr &&
+            incrementalSnapshot->liveMap.brainDecisionsApplied &&
+            oracleSnapshot.liveMap.brainDecisionsApplied &&
+            incrementalSnapshot->liveMap.stableHash ==
+                oracleSnapshot.liveMap.stableHash &&
+            incrementalSnapshot->liveMap.assignments.size() ==
+                oracleSnapshot.liveMap.assignments.size() &&
+            incrementalSnapshot->liveMap.conflictedPolygonIds ==
+                oracleSnapshot.liveMap.conflictedPolygonIds &&
+            incrementalSnapshot->liveMap.unmappedControllerCallsigns ==
+                oracleSnapshot.liveMap.unmappedControllerCallsigns;
+        require(parity, "randomized incremental map diverged from clean oracle");
+        if (parity) {
+            ++randomizedParityChecks;
+        }
+    }
+    std::cout << "INCREMENTAL_AUTHORITY_ORACLE_PARITY checks="
+              << randomizedParityChecks << "/20\n";
 
     std::vector<long long> dispatchTimings;
     const auto runDelayed = [&](std::uint64_t requestId, std::uint32_t delayMs) {
@@ -470,7 +772,19 @@ int RunPerformanceContractGateAProbe() {
             "latest-only replacement dispatch failed");
         dispatchTimings.push_back(ElapsedUs(dispatchStarted));
     }
+    modules::route_sector::AuthorityWorkerFact runningFact;
     modules::route_sector::AuthorityWorkerFact latestFact;
+    require(
+        WaitForFact(
+            &worker,
+            100,
+            Milliseconds(5000),
+            &runningFact,
+            &harvestTimings),
+        "running authority work was cancelled by ordinary roster churn");
+    require(
+        runningFact.completed && !runningFact.cancelled,
+        "ordinary roster churn did not preserve the running completion");
     require(
         WaitForFact(
             &worker,
@@ -484,8 +798,8 @@ int RunPerformanceContractGateAProbe() {
         queueSnapshot.maximumPendingDepth == 1,
         "worker pending depth exceeded one");
     require(
-        queueSnapshot.cancellations > 0,
-        "superseded running work was not cooperatively cancelled");
+        queueSnapshot.cancellations == 0,
+        "ordinary roster churn cancelled active authority work");
 
     // Production bounds controller decoding at 5,000 records. Build that
     // immutable evidence package before timing, as the live fetch thread does,
@@ -511,29 +825,8 @@ int RunPerformanceContractGateAProbe() {
                 worstCaseControllers));
     auto immutableWorstCaseRoute = std::make_shared<
         const brain::RouteSectorSnapshot>(enrichedRoute);
-    auto worstCaseTransceiverValue =
-        std::make_shared<brain::TransceiverResolutionSnapshot>();
-    worstCaseTransceiverValue->available = true;
-    worstCaseTransceiverValue->stale = false;
-    worstCaseTransceiverValue->receivableControllers =
-        static_cast<int>(kWorstCaseControllerCount);
-    worstCaseTransceiverValue->candidates.reserve(kWorstCaseControllerCount);
-    for (std::size_t index = 0; index < kWorstCaseControllerCount; ++index) {
-        brain::ReceivableControllerSnapshot candidate;
-        candidate.callsign = "K" + std::to_string(index) + "_CTR";
-        candidate.frequency = "125.600";
-        candidate.distanceNm = static_cast<double>(index % 300);
-        worstCaseTransceiverValue->candidates.push_back(std::move(candidate));
-    }
-    auto immutableWorstCaseTransceivers = std::make_shared<
-        const brain::AuthorityTransceiverEvidenceSnapshot>(
-            brain::BuildBrainAuthorityTransceiverEvidence(
-                *worstCaseTransceiverValue));
     const auto worstCaseRouteDigest =
         brain::HashBrainAuthorityRouteSnapshot(*immutableWorstCaseRoute);
-    const auto worstCaseTransceiverDigest =
-        brain::HashBrainAuthorityTransceiverEvidence(
-            *immutableWorstCaseTransceivers);
     std::vector<long long> packageAndSubmitTimings;
     const auto packageAndSubmit = [&](std::uint64_t requestId,
                                       std::uint32_t delayMs) {
@@ -548,7 +841,6 @@ int RunPerformanceContractGateAProbe() {
                 worstCaseControllerContentDigest,
                 true,
                 false);
-        request.identity.transceiverDigest = worstCaseTransceiverDigest;
         const auto datasetPublication =
             resolver.GetAuthoritySourceDatasetPublication();
         request.identity.datasetIdentity = datasetPublication.identity;
@@ -558,14 +850,13 @@ int RunPerformanceContractGateAProbe() {
         request.hasControllerEvidence = true;
         request.controllerFeedAvailable = true;
         request.controllerFeedStale = false;
+        request.controllerFeedComplete = true;
         request.controllerFeedGeneration = 10;
         request.controllerFeedConnectedControllers =
             static_cast<int>(kWorstCaseControllerCount);
         request.terminalBoundaryGeneration =
             datasetPublication.terminalBoundaryGeneration;
         request.scheduleReason = "controller-relevance-evidence-ledger";
-        request.hasTransceiverEvidence = true;
-        request.transceivers = immutableWorstCaseTransceivers;
         request.dataset = datasetPublication.dataset;
         request.dispatchedMonotonicMs = 1000;
         request.cooperativeDelayForTestingMs = delayMs;
@@ -581,12 +872,24 @@ int RunPerformanceContractGateAProbe() {
     for (std::uint64_t requestId = 1001; requestId <= 1256; ++requestId) {
         packageAndSubmit(requestId, requestId == 1256 ? 0 : 2000);
     }
+    modules::route_sector::AuthorityWorkerFact packageBaselineFact;
     modules::route_sector::AuthorityWorkerFact packageFact;
     require(
         WaitForFact(
             &worker,
+            1000,
+            Milliseconds(15000),
+            &packageBaselineFact,
+            &harvestTimings),
+        "worst-case package baseline did not finish before its delta");
+    require(
+        packageBaselineFact.completed && !packageBaselineFact.cancelled,
+        "worst-case baseline was cancelled by ordinary churn");
+    require(
+        WaitForFact(
+            &worker,
             1256,
-            Milliseconds(10000),
+            Milliseconds(15000),
             &packageFact,
             &harvestTimings),
         "worst-case package queue did not publish the newest request");
@@ -647,11 +950,24 @@ int RunPerformanceContractGateAProbe() {
     const auto harvestP99Us = Percentile99(harvestTimings);
     require(dispatchP99Us < 250, "authority submission P99 exceeded 250 us");
     require(harvestP99Us < 500, "authority harvest P99 exceeded 500 us");
-    for (auto* fact : {&parityFact, &latestFact}) {
+    for (auto* fact : {
+             &parityFact,
+             &baselineFact,
+             &additionFact,
+             &runningFact,
+             &latestFact,
+             &packageBaselineFact}) {
         if (fact->snapshotLease != nullptr) {
             fact->snapshotLease->retired.store(
                 true, std::memory_order_release);
             fact->snapshotLease.reset();
+        }
+    }
+    for (auto& fact : incrementalAuditFacts) {
+        if (fact.snapshotLease != nullptr) {
+            fact.snapshotLease->retired.store(
+                true, std::memory_order_release);
+            fact.snapshotLease.reset();
         }
     }
     worker.NotifyRetirement();
@@ -682,6 +998,7 @@ int RunPerformanceContractGateAProbe() {
               << " cancelUs=" << cancelUs
               << " forcedDelaysMs=500,2000"
               << " stalePublications=0"
+              << " authorityContinuityRegression=GTI1098_SDF_D_APP"
               << "\n";
     return 0;
 }

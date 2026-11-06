@@ -29,6 +29,9 @@ struct BrainControllerDecisionReceipt {
     int rawPositiveFacts = 0;
     int rawNegativeFacts = 0;
     int rawNeutralFacts = 0;
+    TerminalEndpointRelationship terminalRelationship =
+        TerminalEndpointRelationship::NotApplicable;
+    std::string terminalRelationshipProof;
     std::string reason;
     std::vector<BrainControllerEvidenceVote> votes;
 };
@@ -37,6 +40,16 @@ struct BrainControllerDecisionReceipt {
 // populate the input facts and ternary votes, but they cannot pre-filter them.
 BrainControllerDecisionReceipt DecideBrainControllerCandidate(
     const BrainControllerDecisionInput& input);
+
+// APP/DEP endpoint membership is relationship-based. The evidence votes in
+// the input are preserved only as non-authoritative diagnostics; neither their
+// totals nor a tie may create an endpoint row.
+BrainControllerDecisionReceipt DecideBrainTerminalControllerCandidate(
+    const BrainControllerDecisionInput& input,
+    TerminalEndpointRelationship relationship,
+    std::string relationshipProof,
+    bool relationshipBoardEligible = true,
+    std::string relationshipIneligibleReason = {});
 
 std::string FormatBrainControllerDecisionReceipt(
     const BrainControllerDecisionReceipt& receipt);

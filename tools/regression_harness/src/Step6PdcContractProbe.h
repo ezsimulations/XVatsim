@@ -68,7 +68,7 @@ inline constexpr std::array<Step6ProbeMetadata, 61> kStep6ProbeMetadata{{
     {"52_canonical_policy_runtime_preflight_parity", "identical primitive runtime and preflight evidence", "one canonical qualification result", "12.3"},
     {"53_exact_fingerprint_version_advisory", "exact fingerprint plus four version metadata variants", "supplementary version never vetoes exact binary", "12.4"},
     {"54_wrong_fingerprint_fails_closed", "plausible version plus wrong size and hash", "fingerprint remains fatal authority", "12.5"},
-    {"55_absolute_plugin_path_canonicalization", "locked xPilot absolute path", "exact canonical target hashed once", "12.6"},
+    {"55_installed_xpilot4_beta9_isolated_from_legacy_gate", "installed xPilot 4.0.0 beta 9 absolute path", "canonical target hashed once and rejected by legacy xPilot 3 private gate", "12.6"},
     {"56_relative_plugin_path_canonicalization", "locked xPilot relative path and X-Plane root", "same canonical target identity", "12.7"},
     {"57_plugin_file_read_failure_reason", "missing unreadable and non-file target evidence", "bounded fail-closed reasons without search", "12.8"},
     {"58_dataref_capability_reason_matrix", "each missing and wrong-type private dataref", "independent fatal capability bits", "12.9"},

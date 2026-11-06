@@ -1,0 +1,4 @@
+ENV_INDEPENDENT_SUITE total=926 passed=926 failed=0 excluded=v2_step6_pdc_private_messages_55_absolute_plugin_path_canonicalization.scn
+
+The excluded scenario is the pre-existing host-specific exact installed-xPilot
+fingerprint fixture. It is not an authority-refresh failure.

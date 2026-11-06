@@ -248,7 +248,8 @@ OverlayTone ToneForDisplayRelation(DisplayRelation relation) {
 
 OverlayTextLine FormatBoardLine(
     const FinalDisplayStationSnapshot& station,
-    BoardSource boardSource) {
+    bool centerFrequencySelectionEnabled,
+    const std::string& centerSelectionPlanKey) {
     OverlayTextLine line;
     if (HasDisplayRelationTone(station.displayRelation)) {
         line.tone = ToneForDisplayRelation(station.displayRelation);
@@ -282,6 +283,16 @@ OverlayTextLine FormatBoardLine(
     }
 
     line.text = SanitizeDisplayText(std::move(text), kMaxDisplayLineChars);
+    if (centerFrequencySelectionEnabled &&
+        station.role == StationRole::Center &&
+        !station.offline &&
+        !frequency.empty()) {
+        line.centerFrequencySelectable = true;
+        line.centerCallsign = callsign;
+        line.centerFrequency = frequency;
+        line.centerStableKey = station.stableCompletionKey;
+        line.centerPlanKey = centerSelectionPlanKey;
+    }
     return line;
 }
 
@@ -423,7 +434,8 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
     const TransceiverResolutionSnapshot& transceiverResolutionSnapshot,
     const FinalDisplaySnapshot& finalDisplaySnapshot,
     const ManualQuerySnapshot& manualQuerySnapshot,
-    const OverlayUpdateSnapshot& updateSnapshot) {
+    const OverlayUpdateSnapshot& updateSnapshot,
+    const std::string& centerSelectionPlanKey) {
     (void)controllerFeedSnapshot;
 
     OverlayViewModel model;
@@ -440,11 +452,17 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
     };
 
     if (finalDisplaySnapshot.available || !finalDisplaySnapshot.stations.empty()) {
+        const auto centerFrequencySelectionEnabled =
+            radioStateSnapshot.standbyAssistEnabled;
         const auto countToDisplay =
             std::min(finalDisplaySnapshot.stations.size(), kMaxDisplayedStations);
         for (std::size_t index = 0; index < countToDisplay; ++index) {
             const auto& station = finalDisplaySnapshot.stations[index];
-            bodyLines.push_back(FormatBoardLine(station, finalDisplaySnapshot.source));
+            bodyLines.push_back(
+                FormatBoardLine(
+                    station,
+                    centerFrequencySelectionEnabled,
+                    centerSelectionPlanKey));
         }
         if (finalDisplaySnapshot.stations.size() > countToDisplay) {
             bodyLines.push_back(

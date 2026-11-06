@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "XVatsim/brain/BrainTypes.h"
 #include "XVatsim/modules/overlay/OverlayAccessoryCore.h"
@@ -20,6 +21,29 @@ using OverlayAccessoryInputWakeCallback = void (*)(
 using OverlayAccessoryPreparationFailureCallback = void (*)(
     AccessoryPreparationWorkerFailure failure,
     void* refcon);
+
+struct OverlayCenterFrequencyRenderTarget {
+    int designLeft = 0;
+    int designTop = 0;
+    int designRight = 0;
+    int designBottom = 0;
+    std::string callsign;
+    std::string frequency;
+    std::string stableKey;
+    std::string planKey;
+};
+
+struct OverlayCenterFrequencyClickFact {
+    std::uint64_t requestSequence = 0;
+    std::uint64_t notificationSequence = 0;
+    std::uint64_t mouseDownMicroseconds = 0;
+    std::uint64_t mouseUpMicroseconds = 0;
+    std::uint64_t mouseCallbackExitedMicroseconds = 0;
+    std::string callsign;
+    std::string frequency;
+    std::string stableKey;
+    std::string planKey;
+};
 
 struct OverlayAccessoryIntegrationCounters {
     std::uint64_t clickFactsProduced = 0;
@@ -64,6 +88,10 @@ public:
         OverlayAccessoryPreparationFailureCallback callback,
         void* refcon);
     bool BeginAccessoryInputDispatch(OverlayAccessoryClickFact* outFact);
+    bool ConsumeCenterFrequencyClickFact(
+        OverlayCenterFrequencyClickFact* outFact);
+    bool HasPendingCenterFrequencyClickFacts() const;
+    std::size_t DiscardPendingCenterFrequencyClickFacts();
     bool HasPendingAccessoryClickFacts() const;
     bool HasPendingAccessoryWork() const;
     std::uint64_t GetAccessoryInputNotificationSequence() const;
@@ -159,6 +187,12 @@ private:
     void QueueAccessoryClick(
         brain::BrainOwnedAccessoryDrawerId drawer,
         std::uint64_t mouseCallbackEnteredMicroseconds);
+    std::optional<OverlayCenterFrequencyRenderTarget>
+    HitTestCenterFrequency(int x, int y) const;
+    void QueueCenterFrequencyClick(
+        const OverlayCenterFrequencyRenderTarget& target,
+        std::uint64_t mouseDownMicroseconds,
+        std::uint64_t mouseUpMicroseconds);
     void RecordAccessoryPerformance(
         AccessoryPerformanceCategory category,
         std::uint64_t elapsedMicroseconds);
@@ -201,6 +235,18 @@ private:
     bool windowVisible_ = false;
     bool overlayEnabled_ = true;
     int scrollOffset_ = 0;
+    std::vector<OverlayCenterFrequencyRenderTarget>
+        centerFrequencyRenderTargets_;
+    std::optional<OverlayCenterFrequencyRenderTarget>
+        armedCenterFrequencyTarget_;
+    std::uint64_t armedCenterFrequencyMouseDownMicroseconds_ = 0;
+    static constexpr std::size_t kCenterFrequencyClickCapacity = 16;
+    std::array<OverlayCenterFrequencyClickFact,
+               kCenterFrequencyClickCapacity> centerFrequencyClickFacts_{};
+    std::size_t centerFrequencyClickHead_ = 0;
+    std::size_t centerFrequencyClickSize_ = 0;
+    std::uint64_t nextCenterFrequencyClickSequence_ = 1;
+    std::uint64_t centerFrequencyClickNotificationSequence_ = 0;
     float animationProgress_ = 0.0f;
     float animationTarget_ = 0.0f;
     float animationLastTimestampSeconds_ = -1.0f;

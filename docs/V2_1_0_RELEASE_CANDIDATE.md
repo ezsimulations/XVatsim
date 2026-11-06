@@ -93,12 +93,13 @@ verification found all four managed hashes exact, a four-file V2.1.0 receipt,
 and an empty staging area. The earlier full transaction scenario matrix remains
 evidence for the unchanged transaction paths.
 
-The one saved scenario excluded from the environment-independent total checks
-the exact legacy xPilot 3.0.2 simulator-plugin fingerprint at its real X-Plane
-path. This machine currently contains the approved xPilot 4 Beta 7 simulator
-plugin there. The legacy xPilot 3 manager path and no-bridge behavior passed the
-Product Owner scenario matrix; the exact fingerprint scenario remains an
-environment-specific release check when the legacy binary occupies that path.
+The original saved scenario excluded from the environment-independent total
+checked the exact legacy xPilot 3.0.2 simulator-plugin fingerprint at its real
+X-Plane path. The machine now runs xPilot 4.0.0 Beta 9 at that path. Current
+regression coverage records the beta 9 plugin fingerprint and proves it fails
+closed against the legacy private-dataref gate; synthetic exact-fingerprint
+coverage continues to protect the legacy path. The xPilot 3.2 Manager path and
+no-bridge behavior remain supported independently.
 
 ## Publication boundary
 

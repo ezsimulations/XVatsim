@@ -1,0 +1,40 @@
+name=Resolver Live Authority Stale Feed Fails Closed
+now_seconds=1000
+
+xpilot.connected=true
+controller.feed_available=true
+controller.feed_stale=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.0
+plan.destination_lon=5.0
+plan.has_destination_coordinates=true
+
+controller.entry=callsign=NEAR_APP;frequency=120.000;facility=5;actionable=true;atis=false
+
+resolver.route_resolve=true
+resolver.center_feature=label=TEST;tokens=TEST;polygon=-1,-1|-1,6|1,6|1,-1
+resolver.authority_catalog_fir=TEST|Test Center|TST|TEST
+resolver.terminal_feature=id=NEAR;name=Near Approach;prefixes=NEAR;suffix=APP;polygon=-1,-1|-1,1|1,1|1,-1
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_relevant_matches=<none>
+expect.resolver_live_authority_map_status=LIVE_AUTHORITY_MAP definitions=2 assignments=0 conflicts=0 unmapped=0
+expect.resolver_live_authority_assignments=<none>
+expect.resolver_live_authority_conflicts=<none>
+expect.resolver_live_authority_unmapped=<none>
+expect.resolver_authority_diagnostic_geojson_contains="available":false
+expect.resolver_authority_diagnostic_geojson_contains="stale":true
+expect.resolver_authority_diagnostic_geojson_contains="state":"STALE"

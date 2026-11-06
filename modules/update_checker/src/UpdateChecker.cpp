@@ -576,62 +576,100 @@ UpdateCheckResult EvaluateUpdateManifestPayload(
 }
 
 UpdateChecker::~UpdateChecker() {
+    Stop();
+}
+
+bool UpdateChecker::Start() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (started_) {
+        return true;
+    }
+    stopping_ = false;
+    inProgress_ = false;
+    resultReady_ = false;
+    pendingRequest_.reset();
+    result_ = {};
+    try {
+        worker_ = std::thread([this]() { WorkerMain(); });
+    } catch (...) {
+        return false;
+    }
+    started_ = true;
+    return true;
+}
+
+void UpdateChecker::Stop() {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!started_ && !worker_.joinable()) {
+            return;
+        }
+        stopping_ = true;
+        pendingRequest_.reset();
+    }
+    wake_.notify_all();
     if (worker_.joinable()) {
         worker_.join();
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    started_ = false;
+    stopping_ = false;
+    inProgress_ = false;
+    resultReady_ = false;
+    pendingRequest_.reset();
+    result_ = {};
+}
+
+void UpdateChecker::WorkerMain() {
+#if defined(_WIN32)
+    (void)SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+#endif
+    for (;;) {
+        UpdateCheckRequest request;
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            wake_.wait(lock, [this]() {
+                return stopping_ || pendingRequest_.has_value();
+            });
+            if (stopping_) {
+                return;
+            }
+            request = std::move(*pendingRequest_);
+            pendingRequest_.reset();
+        }
+
+        UpdateCheckResult completed;
+        try {
+            completed = FetchAndEvaluate(request);
+        } catch (...) {
+            completed = FailedResult(request, "update-worker-exception");
+        }
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (stopping_) {
+            return;
+        }
+        result_ = std::move(completed);
+        resultReady_ = true;
+        inProgress_ = false;
     }
 }
 
 bool UpdateChecker::StartCheck(const UpdateCheckRequest& request) {
-    if (worker_.joinable()) {
-        bool shouldJoin = false;
-        bool hasUnharvestedResult = false;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            shouldJoin = !inProgress_;
-            hasUnharvestedResult = resultReady_;
-        }
-        if (hasUnharvestedResult) {
-            return false;
-        }
-        if (shouldJoin) {
-            worker_.join();
-        }
-    }
-
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (inProgress_ || resultReady_) {
+        if (!started_ || stopping_ || inProgress_ || resultReady_) {
             return false;
         }
+        pendingRequest_ = request;
         inProgress_ = true;
-        resultReady_ = false;
         result_ = {};
     }
-
-    worker_ = std::thread([this, request]() {
-        auto result = FetchAndEvaluate(request);
-        std::lock_guard<std::mutex> lock(mutex_);
-        result_ = std::move(result);
-        resultReady_ = true;
-        inProgress_ = false;
-    });
+    wake_.notify_one();
     return true;
 }
 
 std::optional<UpdateCheckResult> UpdateChecker::HarvestResult() {
-    bool ready = false;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        ready = resultReady_;
-    }
-    if (!ready) {
-        return std::nullopt;
-    }
-
-    if (worker_.joinable()) {
-        worker_.join();
-    }
-
     std::lock_guard<std::mutex> lock(mutex_);
     if (!resultReady_) {
         return std::nullopt;

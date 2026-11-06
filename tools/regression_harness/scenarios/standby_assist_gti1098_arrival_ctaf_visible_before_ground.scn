@@ -1,0 +1,37 @@
+name=Standby Assist GTI1098 Arrival CTAF visible before Ground
+
+display_intent.stage=Arrival
+display_intent.current_polygon=KZID
+display_intent.arrival_polygon=KZID
+
+ctaf_unicom.probe=true
+ctaf_unicom.stage=Arrival
+ctaf_unicom.departure=airport=KIAH;attempted=true;cacheHit=true;requestSucceeded=true;status=resolved-no-ctaf;resolved=true;available=false;age=10;failures=0
+ctaf_unicom.arrival=airport=KSDF;attempted=true;cacheHit=true;requestSucceeded=true;status=2xx;resolved=true;available=true;frequency=124.200;age=12;failures=0
+
+enroute.station=role=Center;callsign=IND_83_CTR;frequency=128.225;online=true;polygonKey=KZID
+arrival.station=role=Approach;callsign=SDF_D_APP;frequency=132.075;online=true;polygonKey=KZID
+arrival.station=role=Ground;callsign=SDF_E_GND;frequency=121.700;online=true;polygonKey=KZID
+arrival.station=role=Ctaf;callsign=KSDF;frequency=124.200;online=true;polygonKey=KZID
+
+display_intent.relation=callsign=IND_83_CTR;frequency=128.225;relation=CurrentPolygon
+display_intent.relation=callsign=SDF_D_APP;frequency=132.075;relation=ArrivalPrep
+display_intent.relation=callsign=SDF_E_GND;frequency=121.700;relation=ArrivalPrep
+
+radio.valid=true
+radio.com1_active=132.075
+radio.standby_assist_enabled=true
+
+standby_assist.apply=true
+standby_assist.use_display_board_with_ctaf_advisories=true
+standby_assist.side_effect=true
+standby_assist.enabled=true
+standby_assist.write_succeeded=true
+standby_assist.stage=Arrival
+standby_assist.plan_key=GTI1098|KIAH|KSDF
+
+expect.display_source=Arrival
+expect.display_callsigns=IND_83_CTR,SDF_D_APP,KSDF,SDF_E_GND
+expect.standby_assist_decisions_contains=callsign=SDF_D_APP:role=APP:freq=132.075,final=no-target,sourceDecision=ctaf-unicom-preview:arrival:KSDF,role=CTAF,freq=124.200,actualSelectedTargetSource=arrival-ctaf-sequence,actualSelectedTargetFrequency=124.200,final=recommend-com1-standby,callsign=SDF_E_GND:role=GND:freq=121.700,final=no-target
+expect.standby_assist_writer_result_contains=code=write-succeeded,inputFrequency=124.200,source=arrival-ctaf-sequence
+expect.overlay_body_lines=xPilot not loaded|CTR IND_83_CTR 128.225|APP SDF_D_APP 132.075 *Active*|CTAF KSDF 124.200 *Standby*|GND SDF_E_GND 121.700

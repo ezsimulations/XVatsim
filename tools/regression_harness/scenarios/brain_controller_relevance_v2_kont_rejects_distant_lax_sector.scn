@@ -13,10 +13,10 @@ brain_controller_relevance.stage=Arrival
 brain_controller_relevance.v2_enabled=true
 brain_controller_relevance.terminal_radius_nm=5
 
-terminal_authority.airport_icao=KONT
-terminal_authority.lat=34.0560
-terminal_authority.lon=-117.6010
-terminal_authority.feature=id=SCT;name=SoCal Approach;prefixes=ONT,SCT;polygon=33.0,-119.0|35.0,-119.0|35.0,-116.0|33.0,-116.0
+endpoint_polygon_query.airport_icao=KONT
+endpoint_polygon_query.lat=34.0560
+endpoint_polygon_query.lon=-117.6010
+endpoint_polygon_query.feature=id=SCT;name=SoCal Approach;prefixes=ONT,SCT;polygon=33.0,-119.0|35.0,-119.0|35.0,-116.0|33.0,-116.0
 
 controller.entry=callsign=LAX_S_DEP;frequency=124.300;facility=5;actionable=true;atis=false
 transceiver.available=true
@@ -25,4 +25,4 @@ transceiver.candidate=callsign=LAX_S_DEP;frequency=124.300;distanceNm=3;score=10
 transceiver.station=callsign=LAX_S_DEP;frequency=124.300;lat=33.9425;lon=-118.4081
 
 expect.brain_controller_relevance_arrival_callsigns=<none>
-expect.brain_controller_relevance_completions_contains=LAX_S_DEP:rejected,frequency-distance=-1[outside-airport-radius@40.7nm,terminal-source=0,brain-final=hide
+expect.brain_controller_relevance_completions_contains=LAX_S_DEP:rejected,terminal-relationship=UNKNOWN[canonical-live-assignment-unavailable],canonical-live-map=0[canonical-assignment-unavailable,frequency-distance=-1[outside-airport-radius@40.7nm,brain-final=hide

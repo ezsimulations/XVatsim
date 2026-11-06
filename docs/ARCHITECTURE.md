@@ -52,6 +52,8 @@ Responsibilities:
   lifecycle clearing, and PDC capture closure
 - publish immutable, generation-tagged accessory preparation snapshots and
   the complete brain-approved accessory presentation state
+- validate manual Center-frequency selections against the current plan and
+  live final board, and own the resulting Arrival Center-tier resolution state
 
 ### Overlay
 
@@ -62,6 +64,8 @@ Responsibilities:
 - expose text-entry facts without owning controller logic
 - report bounded ORB-click and exact first-visible revision facts without
   deciding drawer selection, acknowledgement, status, content, or lifecycle
+- report bounded exact-frequency Center-click facts without deciding whether
+  COM1 may be tuned or which standby tier follows
 - own presentation-only drawer scrolling, shared window geometry, hit testing,
   raster resources, texture-local signatures, and rendering
 
@@ -233,11 +237,16 @@ direction is recorded in `docs/XPLANE_SDK_4_4_PANEL_GRAPHICS_DIRECTION.md`.
 ## V2.0.2 Brain Evidence And PDC Boundary
 
 V2.0.2 keeps controller selection inside the Brain. Controller workers report
-bounded mechanical evidence as yes, no, or neutral votes; they do not suppress
-candidates. The Brain receives VATSIM and VATSpy identity, airport-distance,
-route-geometry, declared-extension, and US vNAS evidence when available. This
-supports callsign variations and extended Australian Center coverage without a
-second decision path.
+bounded mechanical facts; they do not suppress candidates. Center/FIR and
+airport-local domains retain their existing evidence decision. APP/DEP endpoint
+membership is stricter: the Brain assigns exactly one typed relationship
+(`DIRECT_ENDPOINT`, `EXPLICIT_PARENT`, `NEARBY_ONLY`, `UNRELATED`, or
+`UNKNOWN`). Only exact candidate-polygon containment or a fresh explicit vNAS
+ownership relationship may create an APP/DEP endpoint row. Radio distance,
+polygon adjacency, callsign similarity, roster presence, route context, and
+published frequency remain diagnostics and cannot vote a terminal row into the
+board. The typed relationship and its proof travel with the immutable board to
+the final UI and Standby Assist consumers.
 
 The PDC service uses a five-second Brain-owned cadence. A worker reads bounded
 xPilot network-log ranges and reports protocol facts. The Brain alone admits
@@ -247,6 +256,39 @@ orders and bounds history, owns unread state, and projects `NEW` or `IDLE`.
 Routine callback timing is reduced in memory to one diagnostic distribution
 per minute. Detailed outlier records are rate-limited, while worker failures,
 state changes, and complete change-driven controller receipts remain logged.
+
+## Incremental Live Authority Refresh Boundary
+
+Ordinary controller-roster churn no longer cancels an authority verification
+already in progress. The authority worker has one running request and one
+newest pending request. A completed fact remains available until the Brain
+harvests it; only lifecycle or structural reset paths may cooperatively cancel
+work and reset the mechanical cache.
+
+The mechanical authority cache is keyed by normalized callsign, frequency,
+facility, actionable state, and canonical static-map identity. Descriptive
+ATIS sentence changes and source ordering do not invalidate authority facts;
+ATIS eligibility, frequency, facility, actionable state, static-map identity,
+and exact vNAS ownership facts do. A complete roster proves removals. An
+incomplete roster cannot remove a cached controller fact, and its completion
+cannot be published as accepted authority.
+
+Workers return immutable controller-to-polygon candidate facts and audit
+counters. The worldwide static catalog remains passive. The filed route builds
+one ordered polygon projection, and the complete current Brain-owned radio
+board is the sole live-controller admission set. Exact vNAS and other ownership
+facts are filtered to those admitted callsigns before authority identity is
+computed. `BuildBrainOwnedLiveAuthorityMapSnapshot` is the sole scoped
+active/conflict decision for that radio board; it is not a worldwide live-map
+builder.
+
+Route relevance compares the radio-lit polygon set with the ordered route.
+Center publication is relational: the current route polygon is green and the
+immediately next route polygon is orange, regardless of transmitter distance.
+APP/DEP evidence may approve or reject an admitted candidate but may not inject
+a missing candidate. A worker fact can therefore neither create a controller
+nor light or hide a polygon by itself. UI boards, Center selection, and Standby
+Assist consume the same final immutable Brain publication.
 
 ## Harness-Only Legacy Coverage
 

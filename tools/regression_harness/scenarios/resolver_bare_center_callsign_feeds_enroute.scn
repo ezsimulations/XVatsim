@@ -38,5 +38,3 @@ expect.resolver_authority_diagnostics=<none>
 expect.resolver_authority_relevant_matches=CZVR:VATSPY_FIR:CZVR:VATSPY_BOUNDARY:CZVR:aircraft=1:route=1:entry=0
 expect.resolver_authority_proof_sources=CZVR:VATSPY_FIR
 expect.resolver_authority_proof_detail_contains=CZVR:authoritySource=VATSPY_FIR,proofItems=callsign-pattern>facility-type,routeRelevance=aircraft-inside+route-intersects
-expect.resolver_enroute_available=true
-expect.resolver_enroute_callsigns=CZVR

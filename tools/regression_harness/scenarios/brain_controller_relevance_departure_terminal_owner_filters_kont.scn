@@ -6,12 +6,12 @@ flight.callsign=UPS2153
 flight.departure_icao=KONT
 flight.destination_icao=PANC
 
-terminal_authority.airport_icao=KONT
-terminal_authority.lat=34.055999
-terminal_authority.lon=-117.601000
-terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=LAX;polygon=33.0,-119.0|35.0,-119.0|35.0,-116.0|33.0,-116.0
-terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=ONT;polygon=33.0,-119.0|35.0,-119.0|35.0,-116.0|33.0,-116.0
-terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SCT;polygon=33.0,-119.0|35.0,-119.0|35.0,-116.0|33.0,-116.0
+endpoint_polygon_query.airport_icao=KONT
+endpoint_polygon_query.lat=34.055999
+endpoint_polygon_query.lon=-117.601000
+endpoint_polygon_query.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=LAX;polygon=33.0,-119.0|35.0,-119.0|35.0,-116.0|33.0,-116.0
+endpoint_polygon_query.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=ONT;polygon=33.0,-119.0|35.0,-119.0|35.0,-116.0|33.0,-116.0
+endpoint_polygon_query.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SCT;polygon=33.0,-119.0|35.0,-119.0|35.0,-116.0|33.0,-116.0
 
 controller.entry=callsign=SCT_APP;frequency=128.050;facility=5;actionable=true;atis=false
 controller.entry=callsign=SCT_1_APP;frequency=128.050;facility=5;actionable=true;atis=false
@@ -27,7 +27,7 @@ transceiver.candidate=callsign=LAX_S_DEP;frequency=124.300;distanceNm=27;score=3
 transceiver.candidate=callsign=SAN_W1_APP;frequency=119.600;distanceNm=69;score=30
 transceiver.candidate=callsign=LAS_F_APP;frequency=135.000;distanceNm=0;score=30
 
-expect.terminal_authority_owners=ONT_APP,SCT_APP
-expect.terminal_authority_polygons=SCT
+expect.endpoint_polygon_owners=ONT_APP,SCT_APP
+expect.endpoint_polygons=SCT
 expect.brain_controller_relevance_departure_callsigns=SCT_1_APP,SCT_APP
 expect.brain_controller_relevance_completions=LAS_F_APP:rejected,LAX_S_DEP:rejected,SAN_W1_APP:rejected,SCT_1_APP:accepted,SCT_APP:accepted

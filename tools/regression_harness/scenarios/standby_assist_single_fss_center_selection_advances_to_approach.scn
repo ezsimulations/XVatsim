@@ -1,0 +1,32 @@
+name=Standby Assist single FSS Center selection advances Arrival to Approach
+
+display_intent.stage=Arrival
+display_intent.progress_nm=0
+display_intent.current_polygon=KZDC
+display_intent.next_polygon=KZNY
+display_intent.arrival_polygon=KZNY
+
+radio.valid=true
+radio.com1_active=118.700
+radio.standby_assist_enabled=true
+
+arrival.station=role=Approach;callsign=ORF_APP;frequency=119.800;online=true;polygonKey=KZNY
+enroute.station=role=Center;callsign=NY_CL_FSS;frequency=130.000;online=true;polygonKey=KZNY;routeEntryDistanceNm=145
+
+display_intent.relation=callsign=NY_CL_FSS;frequency=130.000;relation=NextPolygon
+display_intent.relation=callsign=ORF_APP;frequency=119.800;relation=ArrivalPrep
+
+standby_assist.apply=true
+standby_assist.stage=Arrival
+standby_assist.plan_key=GTI8274|KNGU|EDFH
+
+center_frequency_selection.apply=true
+center_frequency_selection.callsign=NY_CL_FSS
+center_frequency_selection.frequency=130.000
+center_frequency_selection.write_succeeded=true
+
+expect.display_source=Arrival
+expect.display_callsigns=NY_CL_FSS,ORF_APP
+expect.standby_assist_decisions_contains=callsign=NY_CL_FSS:role=CTR:freq=130.000,final=skip-active,callsign=ORF_APP:role=APP:freq=119.800,actualSelectedTargetSource=controller-display-row,actualSelectedTargetFrequency=119.800,final=recommend-com1-standby
+expect.overlay_body_lines=xPilot not loaded|CTR NY_CL_FSS 130.000 145nm *Active*|APP ORF_APP 119.800
+expect.overlay_selectable_center_frequencies=NY_CL_FSS@130.000

@@ -635,23 +635,16 @@ int RunRuntimeActivationGateProbe() {
                 fullRefreshesBeforeReset == 8,
             "settled gate reset did not restore a clean initial wake");
 
-    xvatsim::modules::vnas_data::VnasDataClient outsideUsVnas;
-    std::vector<brain::RadioReachableControllerCandidate>
-        outsideUsCandidates(1);
-    outsideUsCandidates.front().callsign = "YVR_APP";
-    outsideUsCandidates.front().frequency = "132.300";
-    outsideUsCandidates.front().group =
-        brain::RadioReachableFacilityGroup::AppDep;
-    const auto outsideUsFirst = outsideUsVnas.Poll(
-        "CYXX", {}, outsideUsCandidates, true);
-    const auto outsideUsSecond = outsideUsVnas.Poll(
-        "CYXX", {}, outsideUsCandidates, true);
-    require(outsideUsFirst != nullptr &&
-                outsideUsFirst == outsideUsSecond &&
-                !outsideUsFirst->enabled &&
-                outsideUsFirst->statusLine == "vnas-outside-us" &&
-                outsideUsFirst->generation == outsideUsSecond->generation,
-            "outside-US vNAS polling did not remain a cached dormant fact");
+    xvatsim::modules::vnas_data::VnasDataClient disabledVnas;
+    const auto disabledFirst = disabledVnas.PollLiveOwnership(false);
+    const auto disabledSecond = disabledVnas.PollLiveOwnership(false);
+    require(disabledFirst != nullptr &&
+                disabledFirst == disabledSecond &&
+                !disabledFirst->enabled &&
+                disabledFirst->statusLine ==
+                    "vnas-live-ownership-disabled" &&
+                disabledFirst->generation == disabledSecond->generation,
+            "disabled global vNAS polling did not remain a cached dormant fact");
 
     std::cout << "RUNTIME_ACTIVATION_GATE_PROBE"
               << " enableConnectedPdcServices="

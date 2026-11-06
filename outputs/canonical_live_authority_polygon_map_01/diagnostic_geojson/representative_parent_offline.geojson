@@ -1,0 +1,166 @@
+{
+  "type": "FeatureCollection",
+  "xvatsim": {
+    "stableHash": 15458593473280066084,
+    "canonicalMapIdentity": 15222954582173496693,
+    "controllerFeedGeneration": 0,
+    "dynamicOwnershipGeneration": 0,
+    "available": true,
+    "stale": false,
+    "polygonDefinitions": 2,
+    "polygonParts": 2,
+    "dataGaps": 1,
+    "unmappedControllers": [],
+    "conflictedPolygonIds": [],
+    "sourceReceipts": [
+      {
+        "source": "VATSPY_FIR",
+        "provider": "VATSpy",
+        "configuredIdentity": "position-catalog",
+        "region": "GLOBAL",
+        "revision": "370475FB1CB96F91",
+        "contentHash": 3964423293372034961,
+        "state": "PARTIAL",
+        "acceptedPositions": 1,
+        "acceptedPolygons": 0,
+        "acceptedPolygonParts": 0,
+        "rejectedRecords": 1,
+        "reason": "typed-data-gaps"
+      },
+      {
+        "source": "VATSPY_UIR",
+        "provider": "VATSpy",
+        "configuredIdentity": "position-catalog",
+        "region": "GLOBAL",
+        "revision": "370475FB1CB96F91",
+        "contentHash": 3964423293372034961,
+        "state": "COMPLETE",
+        "acceptedPositions": 0,
+        "acceptedPolygons": 0,
+        "acceptedPolygonParts": 0,
+        "rejectedRecords": 0,
+        "reason": "source-records-reconciled"
+      },
+      {
+        "source": "VATSPY_BOUNDARY",
+        "provider": "VATSIM Map Data",
+        "configuredIdentity": "center-boundary",
+        "region": "GLOBAL",
+        "revision": "77D788D149ADE6E2",
+        "contentHash": 8635521242971891426,
+        "state": "COMPLETE",
+        "acceptedPositions": 0,
+        "acceptedPolygons": 1,
+        "acceptedPolygonParts": 1,
+        "rejectedRecords": 0,
+        "reason": "source-records-reconciled"
+      },
+      {
+        "source": "SIMAWARE_TRACON",
+        "provider": "SimAware",
+        "configuredIdentity": "terminal-boundary+ownership",
+        "region": "GLOBAL",
+        "revision": "39CB72931909C704",
+        "contentHash": 4164548256539985668,
+        "state": "COMPLETE",
+        "acceptedPositions": 1,
+        "acceptedPolygons": 1,
+        "acceptedPolygonParts": 1,
+        "rejectedRecords": 0,
+        "reason": "source-records-reconciled"
+      },
+      {
+        "source": "VATGLASSES",
+        "provider": "VATGlasses",
+        "configuredIdentity": "dynamic-ownership",
+        "region": "GLOBAL",
+        "revision": "44BD2BD473CCF799",
+        "contentHash": 4953163356653287321,
+        "state": "UNAVAILABLE",
+        "acceptedPositions": 0,
+        "acceptedPolygons": 0,
+        "acceptedPolygonParts": 0,
+        "rejectedRecords": 0,
+        "reason": "optional-source-missing"
+      },
+      {
+        "source": "SPECIAL_SECTOR_DATA",
+        "provider": "VATSIM Map Data",
+        "configuredIdentity": "special-sector-data",
+        "region": "GLOBAL",
+        "revision": "44BD2BD473CCF799",
+        "contentHash": 4953163356653287321,
+        "state": "UNAVAILABLE",
+        "acceptedPositions": 0,
+        "acceptedPolygons": 0,
+        "acceptedPolygonParts": 0,
+        "rejectedRecords": 0,
+        "reason": "optional-source-missing"
+      },
+      {
+        "source": "AIRPORT_LOCAL",
+        "provider": "XVatsim",
+        "configuredIdentity": "retired-synthetic-airport-local",
+        "region": "GLOBAL",
+        "revision": "14650FB0739D0383",
+        "contentHash": 1469598103934665603,
+        "state": "UNAVAILABLE",
+        "acceptedPositions": 0,
+        "acceptedPolygons": 0,
+        "acceptedPolygonParts": 0,
+        "rejectedRecords": 0,
+        "reason": "optional-source-missing"
+      }
+    ]
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "SIMAWARE_TRACON:DCA_APP",
+      "properties": {
+        "canonicalPolygonId": "SIMAWARE_TRACON:DCA_APP",
+        "sourceFeatureId": "DCA",
+        "polygonKey": "DCA_APP",
+        "name": "Potomac DCA",
+        "source": "SIMAWARE_TRACON",
+        "kind": "TERMINAL",
+        "state": "ACTIVE_PARENT",
+        "assignments": [
+          {
+            "state": "ACTIVE_PARENT",
+            "callsign": "PCT_APP",
+            "frequency": "119.850",
+            "positionId": "SIMAWARE_TRACON:DCA_APP",
+            "proofSource": "VNAS_LIVE_OWNERSHIP",
+            "proof": "artcc=ZDC/facility=PCT/position=PCTPARENT/area=Potomac/source-position=DCACHILD/tcp=1DCA/airports=DCA/ownership=parent-assumption",
+            "controllerFeedGeneration": 0,
+            "dynamicOwnershipGeneration": 0
+          }
+        ]
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [[[[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "VATSPY_BOUNDARY:TEST",
+      "properties": {
+        "canonicalPolygonId": "VATSPY_BOUNDARY:TEST",
+        "sourceFeatureId": "TEST",
+        "polygonKey": "TEST",
+        "name": "TEST",
+        "source": "VATSPY_BOUNDARY",
+        "kind": "CENTER",
+        "state": "OFFLINE",
+        "assignments": []
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [[[[-1, -1], [6, -1], [6, 1], [-1, 1], [-1, -1]]]]
+      }
+    }
+  ]
+}
+

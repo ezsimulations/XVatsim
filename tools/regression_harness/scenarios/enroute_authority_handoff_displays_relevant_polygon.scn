@@ -12,5 +12,3 @@ route.waypoint=ident=B;lat=0.0;lon=114.0
 
 expect.authority_active_polygon_matches=HKG_W_CTR:VATSPY_FIR:VHHK:VATSPY_BOUNDARY:VHHK:VHHK:HKG_*_CTR
 expect.authority_relevant_polygon_matches=HKG_W_CTR:VATSPY_FIR:VHHK:VATSPY_BOUNDARY:VHHK:aircraft=0:route=1:entry=120
-expect.enroute_available=true
-expect.enroute_callsigns=HKG_W_CTR

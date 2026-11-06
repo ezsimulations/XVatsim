@@ -1,0 +1,8 @@
+INCREMENTAL_AUTHORITY_AUDIT reorder=0/12/0 atisText=0/12/0 incomplete=0/11/0 restored=0/12/0 removed=0/11/1 frequency=1/10/0 facility=1/10/0 unchanged=0/11/0 format=verified/reused/removed
+INCREMENTAL_AUTHORITY_ORACLE_PARITY checks=20/20
+PERFORMANCE_CONTRACT_GATE_A_PASSED syncDigest=5390049975492966385 dispatchP99Us=4 packageAndSubmitP99Us=3 worstCaseControllers=5000 harvestP99Us=2 maxPendingDepth=1 starts=548 replacements=510 completions=37 cancellations=1 workerSnapshotRetirements=35 cancelUs=0 forcedDelaysMs=500,2000 stalePublications=0
+
+Interpretation:
+- The one cancellation is the explicit lifecycle-cancellation fixture.
+- Ordinary roster churn produced zero active-request cancellations.
+- The baseline plus two additions mechanically processed exactly 12 records.

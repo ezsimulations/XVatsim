@@ -1,0 +1,48 @@
+CANONICAL-LIVE-AUTHORITY-POLYGON-MAP-01
+Static ambiguity audit
+Date: 2026-10-25
+
+Search scope:
+  brain core modules plugin tools/regression_harness
+Excluded from architectural searches:
+  build outputs docs scenario prose and output artifacts
+
+PASS (0 hits): TerminalAuthorityResolver, BrainTerminalAuthorityWorker,
+BrainTerminalPolygon, ResolveAirportTerminalOwner, departureTerminalAuthority,
+arrivalTerminalAuthority, terminalAuthorityResolver, terminalAuthorityOutput
+
+PASS (0 hits): resolver_enroute_, resolverEnroute
+PASS (0 hits): VnasTerminalEvidence, BuildVnasTerminalEvidence,
+candidate-scoped
+PASS (0 hits): DUPLICATED_ATIS_DERIVED, TRANSCEIVER_GEO,
+exact-source-nearby-endpoint-polygon, endpoint-polygon
+PASS (0 hits): XVatsimHarnessLegacy, modules/arrival, modules/departure,
+modules/enroute
+PASS (0 hits): BuildTerminalAuthorityPositionRecords,
+BuildTerminalAuthorityPolygonRecords
+PASS (0 hits): SourceAuthorityMatch,
+EvaluateTerminalPolygonRelationship
+
+Canonical compiler occurrences:
+  modules/authority_map/include/XVatsim/modules/authority_map/
+    CanonicalAuthorityMapCompiler.h: declaration
+  modules/authority_map/src/CanonicalAuthorityMapCompiler.cpp: sole definition
+  modules/route_sector/src/RouteSectorResolver.cpp: sole production call site
+
+Point containment occurrences:
+  core/src/ControllerAuthority.cpp: private PointInPolygon implementation
+  core/src/ControllerAuthority.cpp: public AuthorityPolygonContainsPoint adapter
+  core/include/XVatsim/core/ControllerAuthority.h: adapter declaration
+  No second route-sector or terminal-resolver implementation remains.
+
+SimAware acquisition occurrences:
+  core/src/MapDataSource.cpp: one manifest fallback URL and manifest parsing
+  modules/route_sector/src/RouteSectorResolver.cpp: one manifest-owned download
+  No secondary terminal downloader remains.
+
+Disposition:
+  The endpoint product is BrainEndpointPolygonQueryOutput. It is a canonical
+  geometry query and cannot establish live authority. The only APP/DEP
+  admission join is a matching active LiveAuthorityMapSnapshot assignment plus
+  endpoint containment in the same canonical polygon ID.
+

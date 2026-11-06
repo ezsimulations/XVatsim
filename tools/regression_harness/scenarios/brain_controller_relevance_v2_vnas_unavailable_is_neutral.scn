@@ -12,10 +12,10 @@ flight.has_destination_coordinates=true
 brain_controller_relevance.stage=Arrival
 brain_controller_relevance.v2_enabled=true
 
-terminal_authority.airport_icao=KBWI
-terminal_authority.lat=39.1754
-terminal_authority.lon=-76.6683
-terminal_authority.feature=id=PCT;name=Potomac Approach;prefixes=BWI;polygon=38.5,-78.0|40.0,-78.0|40.0,-75.5|38.5,-75.5
+endpoint_polygon_query.airport_icao=KBWI
+endpoint_polygon_query.lat=39.1754
+endpoint_polygon_query.lon=-76.6683
+endpoint_polygon_query.feature=id=PCT;name=Potomac Approach;prefixes=BWI;polygon=38.5,-78.0|40.0,-78.0|40.0,-75.5|38.5,-75.5
 
 controller.entry=callsign=IAD_M_APP;frequency=126.650;facility=5;actionable=true;atis=false
 transceiver.available=true
@@ -23,5 +23,5 @@ transceiver.stale=false
 transceiver.candidate=callsign=IAD_M_APP;frequency=126.650;distanceNm=90;score=100;lat=39.1754;lon=-76.6683
 transceiver.station=callsign=IAD_M_APP;frequency=126.650;lat=39.1754;lon=-76.6683
 
-expect.brain_controller_relevance_arrival_callsigns=IAD_M_APP
-expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,vnas=0[unavailable-or-stale,published-frequency=0,brain-positive-majority-display
+expect.brain_controller_relevance_arrival_callsigns=<none>
+expect.brain_controller_relevance_completions_contains=IAD_M_APP:rejected,terminal-relationship=NEARBY_ONLY,canonical-live-map=0[canonical-assignment-unavailable,published-frequency=0,brain-terminal-nearby-only-hidden

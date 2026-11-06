@@ -1,4 +1,5 @@
 add_library(XVatsimTransceiverResolver STATIC
+    src/RadioBoardFactWorker.cpp
     src/TransceiverResolver.cpp
 )
 
@@ -19,6 +20,7 @@ target_compile_definitions(XVatsimTransceiverResolver PRIVATE
 )
 
 target_link_libraries(XVatsimTransceiverResolver PUBLIC
+    XVatsimBrain
     winhttp
     windowsapp
 )

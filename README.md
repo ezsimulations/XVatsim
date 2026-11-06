@@ -7,7 +7,8 @@ flight-plan operations.
 ## Current Release
 
 XVatsim V2.2.0 is the current public freeware release for Windows, X-Plane 12,
-xPilot 3, and xPilot 4.
+xPilot 3.2, and xPilot 4.0.0 beta 9. Both xPilot generations remain supported
+through separate integrations; neither compatibility path replaces the other.
 
 - Freeware package:
   [XVatsim_2.2.0_Freeware_Windows_XP12.zip](https://github.com/ezsimulations/XVatsim/releases/download/v2.2.0/XVatsim_2.2.0_Freeware_Windows_XP12.zip)
@@ -37,7 +38,8 @@ xPilot 3, and xPilot 4.
 - Preserves established Australian callsign abbreviations and fail-safe
   display behavior when valid evidence remains tied or incomplete.
 - Adds regional Standby Assist ordering for CTAF and non-CTAF arrivals and
-  loads UNICOM `122.800` during Enroute when no eligible controller is online.
+  loads UNICOM `122.800` during Enroute when the controller hierarchy is
+  exhausted.
 - Broadens aircraft electrical-state evidence so custom aircraft can keep
   XVatsim active through battery, GPU, APU, and generator power changes.
 - Bounds diagnostic-file growth and route-scopes detailed controller evidence
@@ -139,7 +141,7 @@ newest-first history. xPilot remains the authoritative VATSIM client.
 
 - Windows
 - X-Plane 12
-- xPilot 3 or xPilot 4
+- xPilot 3.2 or xPilot 4.0.0 beta 9
 - IFR flight-plan controller workflow
 - Departure, Enroute, and Arrival controller-board ownership
 - Route-aware center selection using typed route parsing and authority catalogs

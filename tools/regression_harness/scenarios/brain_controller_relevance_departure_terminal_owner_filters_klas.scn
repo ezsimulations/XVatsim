@@ -6,11 +6,11 @@ flight.callsign=SWA789
 flight.departure_icao=KLAS
 flight.destination_icao=PANC
 
-terminal_authority.airport_icao=KLAS
-terminal_authority.lat=36.080100
-terminal_authority.lon=-115.152300
-terminal_authority.feature=id=L30;name=Las Vegas Approach;suffix=APP;prefixes=LAS;polygon=35.0,-116.5|37.0,-116.5|37.0,-114.0|35.0,-114.0
-terminal_authority.feature=id=L30;name=Las Vegas Departure;suffix=DEP;prefixes=LAS;polygon=35.0,-116.5|37.0,-116.5|37.0,-114.0|35.0,-114.0
+endpoint_polygon_query.airport_icao=KLAS
+endpoint_polygon_query.lat=36.080100
+endpoint_polygon_query.lon=-115.152300
+endpoint_polygon_query.feature=id=L30;name=Las Vegas Approach;suffix=APP;prefixes=LAS,L30;polygon=35.0,-116.5|37.0,-116.5|37.0,-114.0|35.0,-114.0
+endpoint_polygon_query.feature=id=L30;name=Las Vegas Departure;suffix=DEP;prefixes=LAS,L30;polygon=35.0,-116.5|37.0,-116.5|37.0,-114.0|35.0,-114.0
 
 controller.entry=callsign=LAS_F_APP;frequency=135.000;facility=5;actionable=true;atis=false
 controller.entry=callsign=L30_APP;frequency=125.900;facility=5;actionable=true;atis=false
@@ -26,7 +26,7 @@ transceiver.candidate=callsign=SCT_APP;frequency=128.050;distanceNm=180;score=30
 transceiver.candidate=callsign=LAX_S_DEP;frequency=124.300;distanceNm=185;score=30
 transceiver.candidate=callsign=ONT_APP;frequency=125.500;distanceNm=170;score=30
 
-expect.terminal_authority_owners=L30_APP,L30_DEP,LAS_APP,LAS_DEP
-expect.terminal_authority_polygons=L30
+expect.endpoint_polygon_owners=L30_APP,L30_DEP,LAS_APP,LAS_DEP
+expect.endpoint_polygons=L30
 expect.brain_controller_relevance_departure_callsigns=L30_APP,LAS_F_APP
 expect.brain_controller_relevance_completions=L30_APP:accepted,LAS_F_APP:accepted,LAX_S_DEP:rejected,ONT_APP:rejected,SCT_APP:rejected

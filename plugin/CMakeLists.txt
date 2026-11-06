@@ -85,7 +85,6 @@ target_link_libraries(XVatsimPlugin PRIVATE
     XVatsimRouteSector
     XVatsimRuntimeWorkers
     XVatsimSettingsStore
-    XVatsimTerminalAuthority
     XVatsimTransceiverResolver
     XVatsimUpdateChecker
     XVatsimVatsimDataFeed

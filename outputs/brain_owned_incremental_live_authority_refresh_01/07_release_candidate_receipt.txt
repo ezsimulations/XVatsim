@@ -1,0 +1,14 @@
+RELEASE_BUILD_PASSED
+
+Candidate:
+C:\Users\DARRON\OneDrive\Documents\XVatsim\outputs\brain_owned_incremental_live_authority_refresh_01\candidate\XVatsim.xpl
+bytes=3193344
+sha256=FC63F81753D0C6D657625E1AC334BA012FE283912B4B10DFDF45AD8CB4785D87
+
+Installed X-Plane binary observed but not modified:
+C:\X-Plane 12\Resources\plugins\XVatsim\win_x64\XVatsim.xpl
+bytes=3171328
+sha256=2DF8260140A0176D808646F155532EBE1A0B5129DA1E7553BEA626DD677925DA
+
+Installation status: DEFERRED; X-Plane is running.
+Commit status: NOT AUTHORIZED.

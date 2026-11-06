@@ -30,6 +30,10 @@ struct DiagnosticsWriterOptions {
     // worker preserves the newest half and continues writing. Three retained
     // dates therefore use at most 24 MiB with the production default.
     std::uintmax_t maximumDateLogBytes = 8ULL * 1024ULL * 1024ULL;
+    // Hard physical-record boundary, including the writer-owned tick prefix
+    // and trailing newline. Oversized logical records are losslessly split on
+    // the writer thread.
+    std::size_t maximumPhysicalLineBytes = 4096;
     std::chrono::milliseconds artificialWorkerDelayForTesting{0};
     std::size_t artificialWorkerDelayRecordCountForTesting =
         std::numeric_limits<std::size_t>::max();
@@ -38,11 +42,39 @@ struct DiagnosticsWriterOptions {
     std::filesystem::path pdcLogDirectoryForTesting;
 };
 
+enum class FlightLoopPhase : std::uint8_t {
+    UpdateService = 0,
+    AircraftBoundary,
+    XPilotBoundary,
+    VatsimRadioInputs,
+    RefreshGate,
+    ControllerPlans,
+    FlightContextCtaf,
+    Route,
+    RadioBoard,
+    VnasScope,
+    Authority,
+    WorkflowPublisher,
+    AtisAsyncFacts,
+    AssistCommit,
+    Wake,
+    Overlay,
+    Shell,
+    Count,
+};
+
+constexpr std::size_t kFlightLoopPhaseCount =
+    static_cast<std::size_t>(FlightLoopPhase::Count);
+
 struct FlightLoopTimingRecord {
     std::uint64_t sequence = 0;
     std::uint64_t completeBeforeTelemetryUs = 0;
     std::uint64_t refreshUs = 0;
     std::uint64_t diagnosticsSubmissionUs = 0;
+    std::uint64_t threadCpuUs = 0;
+    bool threadCpuAvailable = false;
+    std::array<std::uint64_t, kFlightLoopPhaseCount> phaseWallUs{};
+    std::uint64_t refreshPhaseReconciliationUs = 0;
     bool accessoryPath = false;
     bool activeCadence = false;
 };
@@ -123,6 +155,11 @@ struct DiagnosticsWriterSnapshot {
     std::uint64_t dequeuedFlightLoopTiming = 0;
     std::uint64_t dequeuedRouteEvidence = 0;
     std::uint64_t written = 0;
+    std::uint64_t writtenPhysicalLines = 0;
+    std::uint64_t splitLogicalRecords = 0;
+    std::uint64_t splitPhysicalLines = 0;
+    std::uint64_t maximumLogicalRecordBytes = 0;
+    std::uint64_t maximumPhysicalLineBytes = 0;
     std::uint64_t writtenFlightLoopTiming = 0;
     std::uint64_t writtenRouteEvidence = 0;
     std::uint64_t droppedContention = 0;

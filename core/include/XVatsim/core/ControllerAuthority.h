@@ -31,6 +31,17 @@ struct AuthorityPolygonRing {
     std::vector<GeoPoint> points;
 };
 
+struct AuthorityPolygonPart {
+    std::string componentId;
+    AuthorityPolygonRing exterior;
+    std::vector<AuthorityPolygonRing> holes;
+};
+
+enum class AuthorityServiceRole {
+    Approach,
+    Departure,
+};
+
 struct ControllerAuthority {
     std::string id;
     AuthoritySource source = AuthoritySource::VatSpyFir;
@@ -48,14 +59,15 @@ struct ControllerAuthority {
 
 struct AuthorityPolygon {
     std::string id;
+    std::string sourceFeatureId;
     AuthoritySource source = AuthoritySource::VatSpyBoundary;
     AuthorityKind kind = AuthorityKind::Center;
     std::string name;
     std::string polygonKey;
     std::vector<std::string> lookupKeys;
-    std::string controllerSuffix;
+    std::vector<AuthorityServiceRole> serviceRoles;
     std::vector<std::string> controllerPrefixes;
-    std::vector<AuthorityPolygonRing> rings;
+    std::vector<AuthorityPolygonPart> parts;
     std::string sourceRecord;
 };
 
@@ -64,6 +76,7 @@ struct AuthorityDataGap {
     std::string polygonKey;
     std::string reason;
     std::string sourceRecord;
+    AuthoritySource source = AuthoritySource::VatSpyBoundary;
 };
 
 struct AirportCallsignAlias {
@@ -84,14 +97,72 @@ struct AuthorityPolygonCatalog {
     std::vector<AuthorityDataGap> dataGaps;
 };
 
+enum class AuthoritySourceHealthState {
+    Unavailable,
+    Partial,
+    Complete,
+    Stale,
+    Invalid,
+};
+
+struct AuthoritySourceHealthReceipt {
+    std::string source;
+    std::string provider;
+    std::string configuredIdentity;
+    std::string region = "GLOBAL";
+    std::string revision;
+    std::uint64_t contentHash = 0;
+    AuthoritySourceHealthState state =
+        AuthoritySourceHealthState::Unavailable;
+    std::uint64_t payloadBytes = 0;
+    std::uint64_t acceptedPositions = 0;
+    std::uint64_t acceptedPolygons = 0;
+    std::uint64_t acceptedPolygonParts = 0;
+    std::uint64_t acceptedRecords = 0;
+    std::uint64_t rejectedRecords = 0;
+    bool required = false;
+    std::string reason;
+};
+
+struct AuthorityCatalogReceipt {
+    std::uint64_t controllerPositions = 0;
+    std::uint64_t polygonDefinitions = 0;
+    std::uint64_t polygonParts = 0;
+    std::uint64_t polygonHoles = 0;
+    std::uint64_t dataGaps = 0;
+    std::uint64_t retainedBytes = 0;
+    bool uniquePolygonIds = false;
+    bool uniquePositionIds = false;
+    std::uint64_t unresolvedPositionPolygonReferences = 0;
+    std::vector<AuthoritySourceHealthReceipt> sources;
+};
+
+// Immutable source generation shared by activation and every spatial query.
+// Route and endpoint scopes are views over this catalog, never replacement
+// catalogs and never ownership filters.
+struct CanonicalAuthorityMapDataset {
+    std::uint64_t identity = 0;
+    std::uint64_t centerBoundaryGeneration = 0;
+    std::uint64_t authorityCatalogGeneration = 0;
+    std::uint64_t terminalBoundaryGeneration = 0;
+    ControllerAuthorityCatalog controllerAuthorityCatalog;
+    AuthorityPolygonCatalog authorityPolygonCatalog;
+    AuthorityCatalogReceipt receipt;
+};
+
 struct AuthorityPolygonSourceRecord {
     AuthoritySource source = AuthoritySource::VatSpyBoundary;
+    // Stable source feature identity. It is not a controller-position join key.
     std::string id;
+    // Primary controller-position join key. Additional joins belong in
+    // lookupTokens; neither field controls canonical geometry identity.
+    std::string polygonKey;
     std::string name;
     std::string suffix;
+    std::vector<AuthorityServiceRole> serviceRoles;
     std::vector<std::string> prefixes;
     std::vector<std::string> lookupTokens;
-    std::vector<AuthorityPolygonRing> rings;
+    std::vector<AuthorityPolygonPart> parts;
     std::string sourceRecord;
 };
 
@@ -175,6 +246,14 @@ std::string NormalizeControllerCallsign(std::string value);
 bool CallsignMatchesPattern(
     const std::string& rawPattern,
     const std::string& rawCallsign);
+
+bool AuthorityPolygonContainsPoint(
+    const AuthorityPolygon& polygon,
+    const GeoPoint& point);
+
+bool AuthorityPolygonsIntersect(
+    const AuthorityPolygon& left,
+    const AuthorityPolygon& right);
 
 ControllerAuthorityCatalog CompileVatSpyAuthorityCatalog(
     const std::string& vatspyDat);

@@ -1,0 +1,34 @@
+name=Resolver Radio-Scoped Activation Precedes Route Relevance
+now_seconds=1000
+
+xpilot.connected=true
+
+aircraft.valid=true
+aircraft.on_ground=false
+aircraft.latitude_deg=0.0
+aircraft.longitude_deg=0.0
+
+plan.departure_icao=KAAA
+plan.stale=false
+plan.departure_lat=0.0
+plan.departure_lon=0.0
+plan.has_departure_coordinates=true
+plan.destination_icao=KBBB
+plan.destination_lat=0.0
+plan.destination_lon=5.0
+plan.has_destination_coordinates=true
+
+controller.entry=callsign=NEAR_APP;frequency=120.000;facility=5;actionable=true;atis=false
+controller.entry=callsign=FAR_APP;frequency=121.000;facility=5;actionable=true;atis=false
+
+resolver.route_resolve=true
+resolver.center_feature=label=TEST;tokens=TEST;polygon=-1,-1|-1,6|1,6|1,-1
+resolver.authority_catalog_fir=TEST|Test Center|TST|TEST
+resolver.terminal_feature=id=NEAR;name=Near Approach;prefixes=NEAR;suffix=APP;polygon=-1,-1|-1,1|1,1|1,-1
+resolver.terminal_feature=id=FAR;name=Far Approach;prefixes=FAR;suffix=APP;polygon=39,39|39,41|41,41|41,39
+
+expect.resolver_route_available=true
+expect.resolver_route_resolved=true
+expect.resolver_authority_relevance_available=true
+expect.resolver_authority_relevant_matches=NEAR_APP:SIMAWARE_TRACON:NEAR_APP:SIMAWARE_TRACON:NEAR_APP:aircraft=1:route=1:entry=0
+expect.resolver_authority_active_polygon_evidence_contains=FAR_APP:SIMAWARE_TRACON:FAR_APP:SIMAWARE_TRACON:FAR_APP:key=FAR_APP:src=SIMAWARE_TRACON:kind=terminal:proof=SIMAWARE_TRACON:active=1,NEAR_APP:SIMAWARE_TRACON:NEAR_APP:SIMAWARE_TRACON:NEAR_APP:key=NEAR_APP:src=SIMAWARE_TRACON:kind=terminal:proof=SIMAWARE_TRACON:active=1

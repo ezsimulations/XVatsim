@@ -195,7 +195,8 @@ int RunPerformanceContractGateACalm1Probe() {
                 formatterThread.store(ThreadIdentity(), std::memory_order_release);
                 std::string largePayload(16'384, 'Q');
                 return std::string{"event=calm1-deferred-format bytes="} +
-                       std::to_string(largePayload.size());
+                        std::to_string(largePayload.size()) +
+                        " payload=" + largePayload;
             }),
             "deferred formatter was not accepted");
         FlightLoopTimingRecord timing;
@@ -240,9 +241,13 @@ int RunPerformanceContractGateACalm1Probe() {
             logs.find("event=calm1-normal-line") != std::string::npos,
             "normal line was not persisted");
         require(
-            logs.find("event=calm1-deferred-format bytes=16384") !=
-                std::string::npos,
-            "deferred formatter output was not persisted");
+            logs.find("event=diagnostic-record-oversize ") !=
+                    std::string::npos &&
+                logs.find("sourceEvent=calm1-deferred-format") !=
+                    std::string::npos &&
+                logs.find("event=diagnostic-record-part ") !=
+                    std::string::npos,
+            "deferred formatter output was not losslessly split");
         require(
             logs.find("event=flight-loop-outlier sequence=17") !=
                 std::string::npos,
@@ -267,8 +272,6 @@ int RunPerformanceContractGateACalm1Probe() {
         options.artificialWorkerDelayForTesting =
             std::chrono::seconds(2);
         options.artificialWorkerDelayRecordCountForTesting = 1;
-        options.artificialQueueLockHoldForTesting =
-            std::chrono::milliseconds(100);
         require(writer.Start(options), "slow writer failed to start");
         require(
             writer.TryEnqueueLine("event=slow-storage-anchor"),
@@ -277,34 +280,22 @@ int RunPerformanceContractGateACalm1Probe() {
             WaitForDequeued(writer, 1, std::chrono::seconds(2)),
             "slow writer did not enter the delayed storage path");
 
-        const auto forceContention = [&](DiagnosticsImportance importance) {
-            constexpr std::size_t kContenders = 8;
-            std::atomic<std::size_t> ready{0};
-            std::atomic<bool> go{false};
-            std::vector<std::thread> contenders;
-            contenders.reserve(kContenders);
-            for (std::size_t index = 0; index < kContenders; ++index) {
-                contenders.emplace_back([&, index]() {
-                    ready.fetch_add(1, std::memory_order_release);
-                    while (!go.load(std::memory_order_acquire)) {
-                        std::this_thread::yield();
-                    }
-                    (void)writer.TryEnqueueLine(
-                        "event=forced-mailbox-contention index=" +
-                            std::to_string(index),
-                        importance);
-                });
-            }
-            while (ready.load(std::memory_order_acquire) != kContenders) {
-                std::this_thread::yield();
-            }
-            go.store(true, std::memory_order_release);
-            for (auto& contender : contenders) {
-                contender.join();
-            }
-        };
-        forceContention(DiagnosticsImportance::Routine);
-        forceContention(DiagnosticsImportance::Critical);
+        for (std::size_t index = 0; index < 8; ++index) {
+            require(
+                writer.TryEnqueueLine(
+                    "event=slow-routine-spsc-proof index=" +
+                        std::to_string(index),
+                    DiagnosticsImportance::Routine),
+                "routine SPSC proof record was not accepted");
+        }
+        for (std::size_t index = 0; index < 4; ++index) {
+            require(
+                writer.TryEnqueueLine(
+                    "event=slow-critical-spsc-proof index=" +
+                        std::to_string(index),
+                    DiagnosticsImportance::Critical),
+                "critical SPSC proof record was not accepted");
+        }
 
         std::vector<std::uint64_t> samples;
         samples.reserve(5'000);
@@ -347,11 +338,11 @@ int RunPerformanceContractGateACalm1Probe() {
                 saturated.droppedFlightLoopTimingFull == 0,
             "timing lane lost a record during routine/critical contention");
         require(
-            slowRoutineContention > 0,
-            "forced routine contention was not observed");
+            slowRoutineContention == 0,
+            "routine SPSC lane reported impossible mutex contention");
         require(
-            slowCriticalContention > 0,
-            "forced critical contention was not observed");
+            slowCriticalContention == 0,
+            "critical SPSC lane reported impossible mutex contention");
         require(
             slowMaximumDepth <=
                 options.routineQueueCapacity + options.criticalQueueCapacity,

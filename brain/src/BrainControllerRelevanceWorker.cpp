@@ -86,8 +86,6 @@ std::uint64_t HashRadioTuningIdentity(const RadioStateSnapshot& radios) {
 }
 
 std::uint64_t HashTerminalRelevancePolicy(
-    bool enabled,
-    bool vnasSectorPrecedenceEnabled,
     double transmitterRadiusNm,
     bool hasDepartureCoordinates,
     double departureLatitudeDeg,
@@ -96,11 +94,6 @@ std::uint64_t HashTerminalRelevancePolicy(
     double arrivalLatitudeDeg,
     double arrivalLongitudeDeg) {
     std::uint64_t hash = 1469598103934665603ULL;
-    HashCombine(&hash, static_cast<std::uint64_t>(enabled ? 1u : 0u));
-    HashCombine(
-        &hash,
-        static_cast<std::uint64_t>(
-            vnasSectorPrecedenceEnabled ? 1u : 0u));
     HashCombine(
         &hash,
         static_cast<std::uint64_t>(std::llround(transmitterRadiusNm * 1000.0)));
@@ -163,670 +156,6 @@ std::string NormalizeCallsign(std::string value) {
     return value;
 }
 
-std::vector<std::string> BuildAirportTokens(const std::string& airportIcao) {
-    std::vector<std::string> tokens;
-    const auto normalized = NormalizeIcaoInput(airportIcao);
-    if (normalized.empty()) {
-        return tokens;
-    }
-
-    tokens.push_back(normalized);
-    if (normalized.size() == 4) {
-        tokens.push_back(normalized.substr(1));
-    }
-    if (normalized.size() >= 3) {
-        tokens.push_back(normalized.substr(normalized.size() - 3));
-    }
-
-    std::sort(tokens.begin(), tokens.end());
-    tokens.erase(std::unique(tokens.begin(), tokens.end()), tokens.end());
-    return tokens;
-}
-
-bool SplitControllerCallsign(
-    const std::string& callsign,
-    std::string* outPrefix,
-    std::string* outSuffix) {
-    const auto normalized = NormalizeCallsign(callsign);
-    const auto separatorIndex = normalized.rfind('_');
-    if (separatorIndex == std::string::npos || separatorIndex == 0 ||
-        separatorIndex >= (normalized.size() - 1)) {
-        return false;
-    }
-
-    if (outPrefix != nullptr) {
-        *outPrefix = normalized.substr(0, separatorIndex);
-    }
-    if (outSuffix != nullptr) {
-        *outSuffix = normalized.substr(separatorIndex + 1);
-    }
-    return true;
-}
-
-bool ControllerMatchesAirport(
-    const std::string& callsign,
-    const std::vector<std::string>& airportTokens) {
-    std::string prefix;
-    if (!SplitControllerCallsign(callsign, &prefix, nullptr)) {
-        return false;
-    }
-
-    return std::any_of(
-        airportTokens.begin(),
-        airportTokens.end(),
-        [&](const auto& token) {
-            return prefix == token ||
-                   (prefix.size() > token.size() &&
-                    prefix.compare(0, token.size(), token) == 0 &&
-                    (prefix[token.size()] == '_' ||
-                     prefix[token.size()] == '-'));
-        });
-}
-
-std::string TerminalServiceTokenFromControllerCallsign(std::string callsign) {
-    callsign = NormalizeCallsign(std::move(callsign));
-    const auto lastSeparator = callsign.rfind('_');
-    if (lastSeparator == std::string::npos ||
-        lastSeparator >= callsign.size() - 1) {
-        return {};
-    }
-
-    const auto role = callsign.substr(lastSeparator + 1);
-    if (role != "APP" && role != "DEP") {
-        return {};
-    }
-
-    const auto terminalBase = callsign.substr(0, lastSeparator);
-    if (terminalBase.empty()) {
-        return {};
-    }
-
-    const auto firstSeparator = callsign.find('_');
-    const auto serviceOwner =
-        (firstSeparator == std::string::npos || firstSeparator == 0)
-            ? terminalBase
-            : terminalBase.substr(0, firstSeparator);
-    return serviceOwner.empty() ? std::string{} : serviceOwner + "_" + role;
-}
-
-bool TerminalAuthorityFactAvailable(
-    const BrainTerminalAuthorityWorkerOutput& authority) {
-    return authority.available &&
-           authority.resolved &&
-           !authority.stale &&
-           !authority.ownerTokens.empty();
-}
-
-bool AirportFrequencyFactAvailable(
-    const BrainAirportFrequencyWorkerOutput& frequencies) {
-    return frequencies.available &&
-           frequencies.resolved &&
-           !frequencies.stale;
-}
-
-struct AirportFrequencyEvidence {
-    bool available = false;
-    bool endpointRoleFacts = false;
-    bool frequencyFound = false;
-    bool roleMatch = false;
-    StationRole matchedRole = StationRole::Other;
-    std::string suffix;
-};
-
-std::string StationRoleToken(StationRole role) {
-    switch (role) {
-        case StationRole::Delivery:
-            return "DEL";
-        case StationRole::Ground:
-            return "GND";
-        case StationRole::Tower:
-            return "TWR";
-        case StationRole::Departure:
-        case StationRole::Approach:
-            return "APP_DEP";
-        case StationRole::Atis:
-            return "ATIS";
-        case StationRole::Ctaf:
-            return "CTAF";
-        case StationRole::Unicom:
-            return "UNICOM";
-        case StationRole::Center:
-            return "CTR";
-        case StationRole::Other:
-        default:
-            return "OTHER";
-    }
-}
-
-bool FrequencyRecordRoleMatches(
-    StationRole candidateRole,
-    StationRole frequencyRole) {
-    if ((candidateRole == StationRole::Approach ||
-         candidateRole == StationRole::Departure) &&
-        (frequencyRole == StationRole::Approach ||
-         frequencyRole == StationRole::Departure)) {
-        return true;
-    }
-    return candidateRole == frequencyRole;
-}
-
-const std::vector<BrainAirportFrequencyRecord>& EndpointFrequencyRecords(
-    const BrainAirportFrequencyWorkerOutput& frequencies,
-    BrainAirportFrequencyEndpoint endpoint) {
-    static const std::vector<BrainAirportFrequencyRecord> kEmpty;
-    if (endpoint == BrainAirportFrequencyEndpoint::Departure) {
-        return frequencies.departureFrequencies;
-    }
-    if (endpoint == BrainAirportFrequencyEndpoint::Arrival) {
-        return frequencies.arrivalFrequencies;
-    }
-    return kEmpty;
-}
-
-AirportFrequencyEvidence ResolveAirportFrequencyEvidence(
-    const BrainControllerRelevanceWorkerInput& input,
-    const RadioReachableControllerCandidate& candidate,
-    BrainAirportFrequencyEndpoint endpoint,
-    StationRole candidateRole) {
-    AirportFrequencyEvidence evidence;
-    if (!AirportFrequencyFactAvailable(input.airportFrequencies)) {
-        return evidence;
-    }
-    evidence.available = true;
-
-    const auto normalizedFrequency = NormalizeFrequency(candidate.frequency);
-    if (normalizedFrequency.empty()) {
-        return evidence;
-    }
-
-    for (const auto& record :
-         EndpointFrequencyRecords(input.airportFrequencies, endpoint)) {
-        if (FrequencyRecordRoleMatches(candidateRole, record.role)) {
-            evidence.endpointRoleFacts = true;
-        }
-        if (NormalizeFrequency(record.frequency) != normalizedFrequency) {
-            continue;
-        }
-        evidence.frequencyFound = true;
-        evidence.matchedRole = record.role;
-        if (FrequencyRecordRoleMatches(candidateRole, record.role)) {
-            evidence.roleMatch = true;
-        }
-    }
-
-    const auto endpointToken =
-        endpoint == BrainAirportFrequencyEndpoint::Departure ? "dep" : "arr";
-    if (evidence.roleMatch) {
-        evidence.suffix = ":freq=" + std::string(endpointToken) + "-" +
-                          StationRoleToken(evidence.matchedRole);
-    } else if (evidence.frequencyFound) {
-        evidence.suffix = ":freq=" + std::string(endpointToken) + "-other-" +
-                          StationRoleToken(evidence.matchedRole);
-    } else {
-        evidence.suffix = ":freq=" + std::string(endpointToken) + "-miss";
-    }
-    return evidence;
-}
-
-std::string AirportFrequencyEvidenceSuffix(
-    const AirportFrequencyEvidence& evidence) {
-    return evidence.suffix;
-}
-
-std::string CompactAuthorityValues(
-    const std::vector<std::string>& values,
-    std::size_t maxValues = 2) {
-    std::vector<std::string> compactValues;
-    compactValues.reserve(values.size());
-    for (const auto& value : values) {
-        auto normalized = NormalizeCallsign(value);
-        if (normalized.empty()) {
-            continue;
-        }
-        if (std::find(
-                compactValues.begin(),
-                compactValues.end(),
-                normalized) == compactValues.end()) {
-            compactValues.push_back(std::move(normalized));
-        }
-    }
-
-    if (compactValues.empty()) {
-        return "none";
-    }
-
-    std::ostringstream stream;
-    const auto count = std::min(maxValues, compactValues.size());
-    for (std::size_t index = 0; index < count; ++index) {
-        if (index > 0) {
-            stream << '+';
-        }
-        stream << compactValues[index];
-    }
-    if (compactValues.size() > count) {
-        stream << "+more";
-    }
-    return stream.str();
-}
-
-std::string TerminalAuthorityFactSuffix(
-    const BrainTerminalAuthorityWorkerOutput& authority,
-    bool includeStatus) {
-    std::ostringstream stream;
-    if (!authority.ownerTokens.empty()) {
-        stream << ":owner=" << CompactAuthorityValues(authority.ownerTokens);
-    }
-    if (!authority.polygonKeys.empty()) {
-        stream << ":poly=" << CompactAuthorityValues(authority.polygonKeys);
-    }
-    if ((includeStatus || stream.str().empty()) && !authority.status.empty()) {
-        stream << ":status=" << NormalizeCallsign(authority.status);
-    }
-    return stream.str();
-}
-
-std::string TerminalAuthorityDecisionReason(
-    const std::string& baseReason,
-    const std::string& candidateOwner,
-    const BrainTerminalAuthorityWorkerOutput& authority) {
-    std::string reason = baseReason;
-    if (!candidateOwner.empty()) {
-        reason += ":" + candidateOwner;
-    }
-    reason += TerminalAuthorityFactSuffix(
-        authority,
-        baseReason.find("unavailable") != std::string::npos);
-    return reason;
-}
-
-bool ControllerMatchesTerminalAuthority(
-    const std::string& callsign,
-    const BrainTerminalAuthorityWorkerOutput& authority,
-    std::string* outCandidateOwner) {
-    const auto candidateOwner =
-        TerminalServiceTokenFromControllerCallsign(callsign);
-    if (outCandidateOwner != nullptr) {
-        *outCandidateOwner = candidateOwner;
-    }
-    if (candidateOwner.empty() || !TerminalAuthorityFactAvailable(authority)) {
-        return false;
-    }
-
-    return std::any_of(
-        authority.ownerTokens.begin(),
-        authority.ownerTokens.end(),
-        [&](const auto& ownerToken) {
-            return NormalizeCallsign(ownerToken) == candidateOwner;
-        });
-}
-
-bool FrequencyTuned(
-    const std::string& frequency,
-    const RadioStateSnapshot& radioStateSnapshot) {
-    const auto normalizedTarget = NormalizeFrequency(frequency);
-    if (normalizedTarget.empty()) {
-        return false;
-    }
-
-    return NormalizeFrequency(radioStateSnapshot.com1ActiveFrequency) ==
-               normalizedTarget ||
-           NormalizeFrequency(radioStateSnapshot.com2ActiveFrequency) ==
-               normalizedTarget;
-}
-
-bool GuardFrequency(const std::string& frequency) {
-    const auto normalizedFrequency = NormalizeFrequency(frequency);
-    return normalizedFrequency == "121500" || normalizedFrequency == "199998";
-}
-
-StationRole RoleFromRadioCandidate(
-    const RadioReachableControllerCandidate& candidate) {
-    switch (candidate.group) {
-        case RadioReachableFacilityGroup::Delivery:
-            return StationRole::Delivery;
-        case RadioReachableFacilityGroup::Ground:
-            return StationRole::Ground;
-        case RadioReachableFacilityGroup::Tower:
-            return StationRole::Tower;
-        case RadioReachableFacilityGroup::AppDep: {
-            std::string suffix;
-            if (SplitControllerCallsign(candidate.callsign, nullptr, &suffix) &&
-                suffix == "DEP") {
-                return StationRole::Departure;
-            }
-            return StationRole::Approach;
-        }
-        case RadioReachableFacilityGroup::Center:
-            return StationRole::Center;
-        case RadioReachableFacilityGroup::Atis:
-            return StationRole::Atis;
-        case RadioReachableFacilityGroup::Other:
-        default:
-            return StationRole::Other;
-    }
-}
-
-void AppendStationUnique(
-    const BoardStationSnapshot& station,
-    ModuleBoardSnapshot* board,
-    std::unordered_set<std::string>* insertedKeys) {
-    if (board == nullptr || insertedKeys == nullptr || station.frequency.empty() ||
-        GuardFrequency(station.frequency)) {
-        return;
-    }
-
-    const auto key =
-        std::to_string(static_cast<int>(station.role)) + "|" +
-        NormalizeCallsign(station.callsign) + "|" +
-        NormalizeFrequency(station.frequency);
-    if (!insertedKeys->insert(key).second) {
-        return;
-    }
-
-    board->stations.push_back(station);
-    board->available = true;
-}
-
-std::string CandidateStableKey(
-    const RadioReachableControllerCandidate& candidate) {
-    if (!candidate.stableKey.empty()) {
-        return candidate.stableKey;
-    }
-
-    return NormalizeCallsign(candidate.callsign) + "|" +
-           NormalizeFrequency(candidate.frequency) + "|" +
-           std::to_string(static_cast<int>(candidate.group));
-}
-
-void RecordCandidateDecision(
-    const BrainControllerRelevanceWorkerInput& input,
-    const RadioReachableControllerCandidate& candidate,
-    BrainOwnedCandidateDecision decision,
-    const std::string& reason,
-    const BoardStationSnapshot& station,
-    DisplayRelation displayRelation,
-    std::vector<BrainOwnedCandidateCompletion>* completions) {
-    if (completions == nullptr) {
-        return;
-    }
-
-    auto keyedCandidate = candidate;
-    keyedCandidate.stableKey = CandidateStableKey(candidate);
-
-    BrainOwnedCandidateCompletion completion;
-    completion.radioBoardHash = input.radioBoardHash;
-    completion.routePolygonHash = input.routePolygonHash;
-    completion.workflowStage = input.workflowStage;
-    completion.currentPolygonIndex = input.currentPolygonIndex;
-    completion.currentPolygonKey = input.currentPolygonKey;
-    completion.matchedPolygonKey = station.polygonKey;
-    completion.callsign = candidate.callsign;
-    completion.frequency = candidate.frequency;
-    completion.facilityGroup = candidate.group;
-    completion.displayRelation = displayRelation;
-    completion.decision = decision;
-    completion.displayed = false;
-    completion.hasRouteEntryDistance = station.hasRouteEntryDistance;
-    completion.routeEntryDistanceNm = station.routeEntryDistanceNm;
-    completion.reason = reason;
-    completion.stableKey = BuildBrainOwnedCandidateCompletionKey(
-        input.radioBoardHash,
-        input.routePolygonHash,
-        input.workflowStage,
-        input.currentPolygonKey,
-        keyedCandidate);
-    if (completion.frequency.empty()) {
-        completion.frequency = station.frequency;
-    }
-    completions->push_back(std::move(completion));
-}
-
-bool WildcardMatch(std::string pattern, std::string value) {
-    if (pattern.empty()) {
-        return false;
-    }
-
-    std::size_t patternIndex = 0;
-    std::size_t valueIndex = 0;
-    std::size_t starIndex = std::string::npos;
-    std::size_t valueRetryIndex = 0;
-    while (valueIndex < value.size()) {
-        if (patternIndex < pattern.size() &&
-            pattern[patternIndex] == value[valueIndex]) {
-            ++patternIndex;
-            ++valueIndex;
-            continue;
-        }
-
-        if (patternIndex < pattern.size() && pattern[patternIndex] == '*') {
-            starIndex = patternIndex++;
-            valueRetryIndex = valueIndex;
-            continue;
-        }
-
-        if (starIndex != std::string::npos) {
-            patternIndex = starIndex + 1;
-            valueIndex = ++valueRetryIndex;
-            continue;
-        }
-
-        return false;
-    }
-
-    while (patternIndex < pattern.size() && pattern[patternIndex] == '*') {
-        ++patternIndex;
-    }
-    return patternIndex == pattern.size();
-}
-
-bool CallsignMatchesPattern(
-    const std::string& rawPattern,
-    const std::string& rawCallsign) {
-    const auto pattern = NormalizeCallsign(rawPattern);
-    const auto callsign = NormalizeCallsign(rawCallsign);
-    if (pattern.empty() || callsign.empty()) {
-        return false;
-    }
-    if (pattern.find('*') != std::string::npos) {
-        return WildcardMatch(pattern, callsign);
-    }
-    return pattern == callsign;
-}
-
-std::vector<std::string> CallsignPrefixCandidates(
-    const std::string& rawCallsign) {
-    std::vector<std::string> prefixes;
-    const auto callsign = NormalizeCallsign(rawCallsign);
-    if (callsign.empty()) {
-        return prefixes;
-    }
-
-    prefixes.push_back(callsign);
-    const auto firstSeparator = callsign.find('_');
-    if (firstSeparator != std::string::npos && firstSeparator > 0) {
-        prefixes.push_back(callsign.substr(0, firstSeparator));
-    }
-    const auto lastSeparator = callsign.rfind('_');
-    if (lastSeparator != std::string::npos && lastSeparator > 0) {
-        prefixes.push_back(callsign.substr(0, lastSeparator));
-    }
-
-    std::sort(prefixes.begin(), prefixes.end());
-    prefixes.erase(std::unique(prefixes.begin(), prefixes.end()), prefixes.end());
-    return prefixes;
-}
-
-bool CallsignMatchesPrefix(
-    const std::string& rawPrefix,
-    const std::string& rawCallsign) {
-    const auto prefix = NormalizeCallsign(rawPrefix);
-    if (prefix.empty() || prefix.size() < 2) {
-        return false;
-    }
-
-    for (const auto& candidatePrefix : CallsignPrefixCandidates(rawCallsign)) {
-        if (candidatePrefix == prefix) {
-            return true;
-        }
-        if (candidatePrefix.size() > prefix.size() &&
-            candidatePrefix.compare(0, prefix.size(), prefix) == 0 &&
-            (candidatePrefix[prefix.size()] == '_' ||
-             candidatePrefix[prefix.size()] == '-')) {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool SectorHasCenterMetadata(const RouteSectorMatchSnapshot& sector) {
-    return !sector.controllerCallsignPatterns.empty() ||
-           !sector.controllerPrefixes.empty() ||
-           !sector.matchTokens.empty();
-}
-
-bool SectorsHaveCenterMetadata(
-    const std::vector<RouteSectorMatchSnapshot>& sectors) {
-    return std::any_of(
-        sectors.begin(),
-        sectors.end(),
-        [](const auto& sector) { return SectorHasCenterMetadata(sector); });
-}
-
-bool SectorMatchesCenterCandidate(
-    const RouteSectorMatchSnapshot& sector,
-    const RadioReachableControllerCandidate& candidate,
-    std::string* reason) {
-    for (const auto& pattern : sector.controllerCallsignPatterns) {
-        if (CallsignMatchesPattern(pattern, candidate.callsign)) {
-            if (reason != nullptr) {
-                *reason = "pattern:" + NormalizeCallsign(pattern);
-            }
-            return true;
-        }
-    }
-
-    for (const auto& prefix : sector.controllerPrefixes) {
-        if (CallsignMatchesPrefix(prefix, candidate.callsign)) {
-            if (reason != nullptr) {
-                *reason = "prefix:" + NormalizeCallsign(prefix);
-            }
-            return true;
-        }
-    }
-
-    for (const auto& token : sector.matchTokens) {
-        if (CallsignMatchesPrefix(token, candidate.callsign)) {
-            if (reason != nullptr) {
-                *reason = "token:" + NormalizeCallsign(token);
-            }
-            return true;
-        }
-    }
-
-    if (CallsignMatchesPrefix(sector.identifier, candidate.callsign)) {
-        if (reason != nullptr) {
-            *reason = "sector:" + NormalizeCallsign(sector.identifier);
-        }
-        return true;
-    }
-    return false;
-}
-
-struct CenterRouteMatch {
-    bool hasRouteMetadata = false;
-    bool matched = false;
-    std::string polygonKey;
-    DisplayRelation displayRelation = DisplayRelation::Unknown;
-    bool hasRouteEntryDistance = false;
-    double routeEntryDistanceNm = 0.0;
-    std::string reason;
-};
-
-CenterRouteMatch MatchCenterToRoutePolygon(
-    const BrainControllerRelevanceWorkerInput& input,
-    const RadioReachableControllerCandidate& candidate) {
-    CenterRouteMatch match;
-    const auto& currentSectors = input.route != nullptr
-        ? input.route->currentSectors
-        : input.currentSectors;
-    const auto& nextSectors = input.route != nullptr
-        ? input.route->nextSectors
-        : input.nextSectors;
-    match.hasRouteMetadata =
-        SectorsHaveCenterMetadata(currentSectors) ||
-        SectorsHaveCenterMetadata(nextSectors);
-
-    for (const auto& sector : currentSectors) {
-        std::string proof;
-        if (SectorMatchesCenterCandidate(sector, candidate, &proof)) {
-            match.matched = true;
-            match.polygonKey =
-                !sector.identifier.empty() ? sector.identifier : input.currentPolygonKey;
-            match.displayRelation = DisplayRelation::CurrentPolygon;
-            match.hasRouteEntryDistance = false;
-            match.routeEntryDistanceNm = 0.0;
-            match.reason = "center-current-polygon-match:" + proof;
-            return match;
-        }
-    }
-
-    for (const auto& sector : nextSectors) {
-        std::string proof;
-        if (SectorMatchesCenterCandidate(sector, candidate, &proof)) {
-            match.matched = true;
-            match.polygonKey =
-                !sector.identifier.empty() ? sector.identifier : input.nextPolygonKey;
-            match.displayRelation = DisplayRelation::NextPolygon;
-            match.hasRouteEntryDistance = true;
-            match.routeEntryDistanceNm =
-                std::max(0.0, sector.entryDistanceNm);
-            match.reason = "center-next-polygon-match:" + proof;
-            return match;
-        }
-    }
-
-    match.reason = match.hasRouteMetadata ? "center-not-route-polygon-match"
-                                          : "center-route-metadata-unavailable";
-    return match;
-}
-
-struct CenterCandidate {
-    BoardStationSnapshot station;
-};
-
-std::string ControllerRootToken(const std::string& callsign) {
-    const auto normalized = NormalizeCallsign(callsign);
-    if (normalized.empty()) {
-        return {};
-    }
-
-    const auto separator = normalized.find('_');
-    return separator == std::string::npos ? normalized
-                                          : normalized.substr(0, separator);
-}
-
-std::unordered_set<std::string> BuildCurrentRouteCenterRoots(
-    const BrainControllerRelevanceWorkerInput& input) {
-    std::unordered_set<std::string> roots;
-    for (const auto& candidate : input.candidates) {
-        if (candidate.group != RadioReachableFacilityGroup::Center) {
-            continue;
-        }
-
-        const auto routeMatch = MatchCenterToRoutePolygon(input, candidate);
-        if (!routeMatch.matched ||
-            routeMatch.displayRelation != DisplayRelation::CurrentPolygon) {
-            continue;
-        }
-
-        const auto root = ControllerRootToken(candidate.callsign);
-        if (!root.empty()) {
-            roots.insert(root);
-        }
-    }
-    return roots;
-}
-
 constexpr const char* kAuthorityRelevancePreviewSurvivor =
     "brain-preview-authority-relevance-survivor";
 constexpr const char* kAuthorityRelevancePreviewRejectedNonActionable =
@@ -843,12 +172,6 @@ constexpr const char* kAuthorityRelevancePreviewRejectedRouteScope =
     "brain-preview-authority-relevance-rejected-route-scope";
 constexpr const char* kAuthorityRelevancePreviewRejectedActiveNotRelevant =
     "brain-preview-authority-relevance-rejected-active-not-relevant";
-constexpr const char* kAuthorityRelevancePreviewRejectedTransceiverGeoMismatch =
-    "brain-preview-authority-relevance-rejected-transceiver-geo-mismatch";
-constexpr const char* kAuthorityRelevancePreviewRejectedTransceiverProof =
-    "brain-preview-authority-relevance-rejected-transceiver-proof";
-constexpr const char* kAuthorityRelevancePreviewRejectedDuplicatedAtisProof =
-    "brain-preview-authority-relevance-rejected-duplicated-atis-proof";
 constexpr const char* kAuthorityRelevancePreviewRejectedNoUsableProof =
     "brain-preview-authority-relevance-rejected-no-usable-proof";
 
@@ -878,23 +201,8 @@ bool PreviewDecisionMatchesRelevantAuthority(
            decision.matchedPattern == relevant.matchedPattern;
 }
 
-bool HasAuthorityRelevanceEvidenceLedger(
+const std::vector<RelevantAuthoritySnapshot>& CurrentRelevantAuthorities(
     const AuthorityRelevanceSnapshot& snapshot) {
-    return snapshot.evidence.source.scheduled ||
-           snapshot.evidence.source.sourceControllerCountKnown ||
-           !snapshot.evidence.controllerEvidence.empty() ||
-           !snapshot.evidence.polygonEvidence.empty() ||
-           !snapshot.evidence.activePolygonEvidence.empty() ||
-           !snapshot.evidence.transceiverRouteProofEvidence.empty() ||
-           !snapshot.evidence.duplicatedAtisProofEvidence.empty();
-}
-
-const std::vector<RelevantAuthoritySnapshot>& CompatibilityRelevantAuthorities(
-    const AuthorityRelevanceSnapshot& snapshot) {
-    if (snapshot.liveRelevantAuthoritiesBrainOwned ||
-        !snapshot.compatibilityRelevantAuthorities.empty()) {
-        return snapshot.compatibilityRelevantAuthorities;
-    }
     return snapshot.relevantAuthorities;
 }
 
@@ -902,11 +210,10 @@ bool CallsignHasRelevantAuthority(
     const AuthorityRelevanceSnapshot& snapshot,
     const std::string& callsign) {
     const auto normalizedCallsign = NormalizeCallsign(callsign);
-    const auto& compatibilityRelevantAuthorities =
-        CompatibilityRelevantAuthorities(snapshot);
+    const auto& relevantAuthorities = CurrentRelevantAuthorities(snapshot);
     return std::any_of(
-        compatibilityRelevantAuthorities.begin(),
-        compatibilityRelevantAuthorities.end(),
+        relevantAuthorities.begin(),
+        relevantAuthorities.end(),
         [&](const auto& relevant) {
             return NormalizeCallsign(relevant.callsign) == normalizedCallsign;
         });
@@ -939,42 +246,6 @@ BrainAuthorityRelevancePreviewDecision BuildPolygonAuthorityRelevanceDecision(
     previewDecision.proofSource = polygon.activeProofSource;
     previewDecision.decision = decision;
     previewDecision.reason = reason;
-    return previewDecision;
-}
-
-BrainAuthorityRelevancePreviewDecision BuildTransceiverProofRejection(
-    const AuthorityTransceiverRouteProofEvidenceSnapshot& proof) {
-    BrainAuthorityRelevancePreviewDecision previewDecision;
-    previewDecision.evidenceKind = "transceiver-proof";
-    previewDecision.callsign = proof.callsign;
-    previewDecision.polygonId = proof.polygonId;
-    previewDecision.polygonKey = proof.polygonKey;
-    previewDecision.proofSource = "TRANSCEIVER_GEO_ROUTE";
-    previewDecision.decision =
-        kAuthorityRelevancePreviewRejectedTransceiverProof;
-    previewDecision.reason =
-        proof.proofRejectionReason.empty()
-            ? "transceiver-proof-rejected"
-            : proof.proofRejectionReason;
-    return previewDecision;
-}
-
-BrainAuthorityRelevancePreviewDecision BuildDuplicatedAtisProofRejection(
-    const AuthorityDuplicatedAtisProofEvidenceSnapshot& proof) {
-    BrainAuthorityRelevancePreviewDecision previewDecision;
-    previewDecision.evidenceKind = "duplicated-atis-proof";
-    previewDecision.callsign = proof.callsign;
-    previewDecision.authorityId = proof.authorityId;
-    previewDecision.polygonKey = proof.polygonKey;
-    previewDecision.matchedPattern =
-        proof.coveredToken.empty() ? std::string{} : "ATIS_COVERED:" + proof.coveredToken;
-    previewDecision.proofSource = "DUPLICATED_ATIS_DERIVED";
-    previewDecision.decision =
-        kAuthorityRelevancePreviewRejectedDuplicatedAtisProof;
-    previewDecision.reason =
-        proof.proofRejectionReason.empty()
-            ? "duplicated-atis-proof-rejected"
-            : proof.proofRejectionReason;
     return previewDecision;
 }
 
@@ -1022,17 +293,6 @@ std::string ControllerAuthorityRelevanceRejectDecision(
         }
         return kAuthorityRelevancePreviewRejectedRouteScope;
     }
-    if (HasEvidenceReason(
-            controller.evidenceReasons,
-            "transceiver-station-pending-compatibility-proof") ||
-        HasEvidenceReason(
-            controller.evidenceReasons,
-            "duplicated-atis-pending-compatibility-proof")) {
-        if (outReason != nullptr) {
-            *outReason = "compatibility-proof-not-survivor";
-        }
-        return kAuthorityRelevancePreviewRejectedNoUsableProof;
-    }
     if (!controller.authorityDecisions.empty()) {
         if (outReason != nullptr) {
             *outReason = "authority-decision-not-relevant";
@@ -1049,19 +309,15 @@ std::string ActivePolygonAuthorityRelevanceRejectDecision(
     const AuthorityPolygonEvidenceSnapshot& activePolygon,
     std::string* outReason) {
     const auto reason =
-        activePolygon.compatibilityFilteredReason.empty()
+        activePolygon.filteredReason.empty()
             ? std::string("active-not-relevant")
-            : activePolygon.compatibilityFilteredReason;
+            : activePolygon.filteredReason;
     if (outReason != nullptr) {
         *outReason = reason;
     }
-    if (reason == "transceiver-geo-mismatch" ||
-        !activePolygon.geometryCompatible) {
-        return kAuthorityRelevancePreviewRejectedTransceiverGeoMismatch;
-    }
     if (reason == "route-key-filtered" ||
         (!activePolygon.routeKeyCompatible &&
-         activePolygon.compatibilityFilteredReason != "active-not-relevant")) {
+         activePolygon.filteredReason != "active-not-relevant")) {
         return kAuthorityRelevancePreviewRejectedRouteScope;
     }
     if (reason == "duplicate-active-key") {
@@ -1074,8 +330,8 @@ BrainAuthorityRelevanceDecisionPreview
 BuildBrainAuthorityRelevanceDecisionPreviewInternal(
     const AuthorityRelevanceSnapshot& authorityRelevance) {
     BrainAuthorityRelevanceDecisionPreview preview;
-    const auto& compatibilityRelevantAuthorities =
-        CompatibilityRelevantAuthorities(authorityRelevance);
+    const auto& relevantAuthorities =
+        CurrentRelevantAuthorities(authorityRelevance);
     preview.summary.authority =
         authorityRelevance.liveRelevantAuthoritiesBrainOwned
             ? "brain-evidence"
@@ -1084,12 +340,10 @@ BuildBrainAuthorityRelevanceDecisionPreviewInternal(
         authorityRelevance.evidence.source.sourceControllerCount;
     preview.summary.evidenceControllerCount =
         static_cast<int>(authorityRelevance.evidence.controllerEvidence.size());
-    preview.summary.compatibilityRelevantAuthorityCount =
-        static_cast<int>(compatibilityRelevantAuthorities.size());
+    preview.summary.relevantAuthorityCount =
+        static_cast<int>(relevantAuthorities.size());
     preview.summary.droppedBeforeBrainControllers =
         authorityRelevance.droppedBeforeBrainControllers;
-    preview.summary.relevantAuthoritiesCompatibilityOnly =
-        authorityRelevance.relevantAuthoritiesCompatibilityOnly;
     preview.summary.liveRelevantAuthoritiesBrainOwned =
         authorityRelevance.liveRelevantAuthoritiesBrainOwned;
 
@@ -1109,8 +363,8 @@ BuildBrainAuthorityRelevanceDecisionPreviewInternal(
     }
 
     for (const auto& polygon : authorityRelevance.evidence.polygonEvidence) {
-        if (polygon.oldScopedOutReason.empty() ||
-            polygon.oldCompatibilityRelevantSurvivor) {
+        if (polygon.queryScopeOutReason.empty() ||
+            polygon.relevant) {
             continue;
         }
         preview.decisions.push_back(
@@ -1118,21 +372,21 @@ BuildBrainAuthorityRelevanceDecisionPreviewInternal(
                 "route-scope-polygon",
                 polygon,
                 kAuthorityRelevancePreviewRejectedRouteScope,
-                polygon.oldScopedOutReason));
+                polygon.queryScopeOutReason));
     }
 
     for (const auto& activePolygon :
          authorityRelevance.evidence.activePolygonEvidence) {
-        if (activePolygon.oldCompatibilityRelevantSurvivor) {
+        if (activePolygon.relevant) {
             auto decision = BuildPolygonAuthorityRelevanceDecision(
                 "active-polygon",
                 activePolygon,
                 kAuthorityRelevancePreviewSurvivor,
-                "old-relevant-authority");
+                "canonical-live-authority-relevant");
             decision.matchesOldSurvivor =
                 std::any_of(
-                    compatibilityRelevantAuthorities.begin(),
-                    compatibilityRelevantAuthorities.end(),
+                    relevantAuthorities.begin(),
+                    relevantAuthorities.end(),
                     [&](const auto& relevant) {
                         return RelevantAuthorityMatchesActiveEvidence(
                             relevant,
@@ -1153,22 +407,6 @@ BuildBrainAuthorityRelevanceDecisionPreviewInternal(
                 reason));
     }
 
-    for (const auto& proof :
-         authorityRelevance.evidence.transceiverRouteProofEvidence) {
-        if (proof.oldProofSurvivor) {
-            continue;
-        }
-        preview.decisions.push_back(BuildTransceiverProofRejection(proof));
-    }
-
-    for (const auto& proof :
-         authorityRelevance.evidence.duplicatedAtisProofEvidence) {
-        if (proof.oldProofSurvivor) {
-            continue;
-        }
-        preview.decisions.push_back(BuildDuplicatedAtisProofRejection(proof));
-    }
-
     for (const auto& decision : preview.decisions) {
         if (decision.decision == kAuthorityRelevancePreviewSurvivor) {
             ++preview.summary.previewSurvivorCount;
@@ -1177,7 +415,7 @@ BuildBrainAuthorityRelevanceDecisionPreviewInternal(
         }
     }
 
-    for (const auto& relevant : compatibilityRelevantAuthorities) {
+    for (const auto& relevant : relevantAuthorities) {
         const auto matched = std::any_of(
             preview.decisions.begin(),
             preview.decisions.end(),
@@ -1200,20 +438,6 @@ BuildBrainAuthorityRelevanceDecisionPreviewInternal(
     return preview;
 }
 
-void AppendSelectedCenterStations(
-    const std::vector<CenterCandidate>& centerCandidates,
-    ModuleBoardSnapshot* enrouteBoard,
-    std::unordered_set<std::string>* enrouteKeys) {
-    if (enrouteBoard == nullptr || enrouteKeys == nullptr ||
-        centerCandidates.empty()) {
-        return;
-    }
-
-    for (const auto& candidate : centerCandidates) {
-        AppendStationUnique(candidate.station, enrouteBoard, enrouteKeys);
-    }
-}
-
 }  // namespace
 
 BrainAuthorityRelevanceDecisionPreview
@@ -1222,46 +446,242 @@ BuildBrainAuthorityRelevanceDecisionPreview(
     return BuildBrainAuthorityRelevanceDecisionPreviewInternal(authorityRelevance);
 }
 
+LiveAuthorityMapSnapshot BuildBrainOwnedLiveAuthorityMapSnapshot(
+    LiveAuthorityMapSnapshot liveMap,
+    std::vector<std::string>* decisionDiagnostics) {
+    if (!liveMap.available || liveMap.brainDecisionsApplied) {
+        return liveMap;
+    }
+
+    liveMap.conflictedPolygonIds.clear();
+    std::unordered_map<
+        std::string,
+        std::vector<LiveAuthorityAssignmentSnapshot*>>
+        assignmentsByPolygon;
+    for (auto& assignment : liveMap.assignments) {
+        assignment.state = assignment.candidateState;
+        if (IsActiveLiveAuthorityState(assignment.candidateState) &&
+            !assignment.canonicalPolygonId.empty()) {
+            assignmentsByPolygon[assignment.canonicalPolygonId].push_back(
+                &assignment);
+        }
+    }
+    for (const auto& [polygonId, assignments] : assignmentsByPolygon) {
+        std::unordered_set<std::string> callsigns;
+        for (const auto* assignment : assignments) {
+            if (assignment != nullptr) {
+                callsigns.insert(NormalizeCallsign(assignment->callsign));
+            }
+        }
+        if (callsigns.size() <= 1) {
+            continue;
+        }
+        const auto allExplicitTerminalPositions =
+            !assignments.empty() &&
+            std::all_of(
+                assignments.begin(),
+                assignments.end(),
+                [](const auto* assignment) {
+                    return assignment != nullptr &&
+                           assignment->candidateState ==
+                               LiveAuthorityAssignmentState::ActiveExact &&
+                           assignment->kind ==
+                               AuthorityRelevanceKind::Terminal &&
+                           assignment->explicitTerminalPosition;
+                });
+        const auto hasDirect = std::any_of(
+            assignments.begin(), assignments.end(), [](const auto* assignment) {
+                return assignment != nullptr &&
+                       assignment->candidateState ==
+                           LiveAuthorityAssignmentState::ActiveExact;
+            });
+        const auto hasParent = std::any_of(
+            assignments.begin(), assignments.end(), [](const auto* assignment) {
+                return assignment != nullptr &&
+                       assignment->candidateState ==
+                           LiveAuthorityAssignmentState::ActiveParent;
+            });
+        const auto directParentHierarchy =
+            hasDirect && hasParent &&
+            std::all_of(
+                assignments.begin(),
+                assignments.end(),
+                [](const auto* assignment) {
+                    return assignment != nullptr &&
+                           (assignment->candidateState ==
+                                LiveAuthorityAssignmentState::ActiveExact ||
+                            assignment->candidateState ==
+                                LiveAuthorityAssignmentState::ActiveParent);
+                });
+        if (allExplicitTerminalPositions || directParentHierarchy) {
+            continue;
+        }
+        liveMap.conflictedPolygonIds.push_back(polygonId);
+        if (decisionDiagnostics != nullptr) {
+            decisionDiagnostics->push_back(
+                "conflict:" + polygonId + ":controllers=" +
+                std::to_string(callsigns.size()));
+        }
+        for (auto* assignment : assignments) {
+            if (assignment != nullptr) {
+                assignment->state = LiveAuthorityAssignmentState::Conflict;
+                assignment->aircraftInside = false;
+                assignment->routeIntersects = false;
+                assignment->routeEntryDistanceNm = 0.0;
+            }
+        }
+    }
+    std::sort(
+        liveMap.conflictedPolygonIds.begin(),
+        liveMap.conflictedPolygonIds.end());
+    liveMap.conflictedPolygonIds.erase(
+        std::unique(
+            liveMap.conflictedPolygonIds.begin(),
+            liveMap.conflictedPolygonIds.end()),
+        liveMap.conflictedPolygonIds.end());
+    if (decisionDiagnostics != nullptr) {
+        std::sort(decisionDiagnostics->begin(), decisionDiagnostics->end());
+        decisionDiagnostics->erase(
+            std::unique(
+                decisionDiagnostics->begin(), decisionDiagnostics->end()),
+            decisionDiagnostics->end());
+    }
+
+    const auto statePriority = [](LiveAuthorityAssignmentState state) {
+        switch (state) {
+            case LiveAuthorityAssignmentState::Conflict:
+                return 5;
+            case LiveAuthorityAssignmentState::ActiveExact:
+                return 4;
+            case LiveAuthorityAssignmentState::ActiveDynamic:
+                return 3;
+            case LiveAuthorityAssignmentState::ActiveParent:
+                return 2;
+            case LiveAuthorityAssignmentState::Stale:
+                return 1;
+            case LiveAuthorityAssignmentState::Unmapped:
+            case LiveAuthorityAssignmentState::Offline:
+                return 0;
+        }
+        return 0;
+    };
+    std::unordered_map<std::string, LiveAuthorityAssignmentState>
+        stateByPolygon;
+    std::unordered_map<std::string, std::vector<std::string>> ownersByPolygon;
+    for (const auto& assignment : liveMap.assignments) {
+        if (assignment.canonicalPolygonId.empty()) {
+            continue;
+        }
+        ownersByPolygon[assignment.canonicalPolygonId].push_back(
+            assignment.callsign);
+        const auto found = stateByPolygon.find(assignment.canonicalPolygonId);
+        if (found == stateByPolygon.end() ||
+            statePriority(assignment.state) > statePriority(found->second)) {
+            stateByPolygon[assignment.canonicalPolygonId] = assignment.state;
+        }
+    }
+    for (auto& polygon : liveMap.polygonStates) {
+        const auto state = stateByPolygon.find(polygon.canonicalPolygonId);
+        polygon.state = state != stateByPolygon.end()
+            ? state->second
+            : liveMap.stale
+                ? LiveAuthorityAssignmentState::Stale
+                : LiveAuthorityAssignmentState::Offline;
+        polygon.controllerCallsigns.clear();
+        const auto owners = ownersByPolygon.find(polygon.canonicalPolygonId);
+        if (owners != ownersByPolygon.end()) {
+            polygon.controllerCallsigns = owners->second;
+            std::sort(
+                polygon.controllerCallsigns.begin(),
+                polygon.controllerCallsigns.end());
+            polygon.controllerCallsigns.erase(
+                std::unique(
+                    polygon.controllerCallsigns.begin(),
+                    polygon.controllerCallsigns.end()),
+                polygon.controllerCallsigns.end());
+        }
+    }
+    liveMap.brainDecisionsApplied = true;
+    std::ostringstream status;
+    status << "LIVE_AUTHORITY_MAP definitions="
+           << liveMap.polygonDefinitionCount
+           << " assignments=" << liveMap.assignments.size()
+           << " conflicts=" << liveMap.conflictedPolygonIds.size()
+           << " unmapped=" << liveMap.unmappedControllerCallsigns.size();
+    liveMap.statusLine = status.str();
+    return liveMap;
+}
+
 AuthorityRelevanceSnapshot BuildBrainOwnedAuthorityRelevanceSnapshot(
     AuthorityRelevanceSnapshot authorityRelevance,
     const BrainAuthorityRelevanceDecisionPreview& preview) {
-    if (!HasAuthorityRelevanceEvidenceLedger(authorityRelevance)) {
+    (void)preview;
+    authorityRelevance.liveMap = BuildBrainOwnedLiveAuthorityMapSnapshot(
+        std::move(authorityRelevance.liveMap),
+        &authorityRelevance.diagnostics);
+    if (!authorityRelevance.liveMap.available) {
         return authorityRelevance;
     }
 
-    // Preserve route_sector's old survivor construction strictly as
-    // compatibility data. From this point on, relevantAuthorities is the
-    // brain-owned live projection built from evidence decisions.
-    if (!authorityRelevance.liveRelevantAuthoritiesBrainOwned &&
-        authorityRelevance.compatibilityRelevantAuthorities.empty()) {
-        authorityRelevance.compatibilityRelevantAuthorities =
-            authorityRelevance.relevantAuthorities;
-    }
+    auto& liveMap = authorityRelevance.liveMap;
 
-    const auto compatibilityRelevantAuthorities =
-        authorityRelevance.compatibilityRelevantAuthorities;
     authorityRelevance.relevantAuthorities.clear();
     authorityRelevance.relevantAuthorities.reserve(
-        compatibilityRelevantAuthorities.size());
+        authorityRelevance.liveMap.assignments.size());
 
-    for (const auto& relevant : compatibilityRelevantAuthorities) {
-        const auto acceptedByBrain = std::any_of(
-            preview.decisions.begin(),
-            preview.decisions.end(),
-            [&](const auto& decision) {
-                return decision.decision == kAuthorityRelevancePreviewSurvivor &&
-                       PreviewDecisionMatchesRelevantAuthority(decision, relevant);
-            });
-        if (acceptedByBrain) {
-            authorityRelevance.relevantAuthorities.push_back(relevant);
+    for (const auto& assignment : authorityRelevance.liveMap.assignments) {
+        if (!IsActiveLiveAuthorityState(assignment.state) ||
+            (!assignment.aircraftInside && !assignment.routeIntersects)) {
+            continue;
         }
+        RelevantAuthoritySnapshot relevant;
+        relevant.callsign = assignment.callsign;
+        relevant.frequency = assignment.frequency;
+        relevant.authorityId = assignment.positionId;
+        relevant.polygonId = assignment.canonicalPolygonId;
+        relevant.polygonKey = assignment.polygonKey;
+        relevant.matchedPattern = assignment.matchedPattern;
+        relevant.proofSource = assignment.authoritySource;
+        relevant.proofDetail = assignment.ownershipProof;
+        relevant.proofDetail += ";routeRelevance=";
+        if (assignment.aircraftInside && assignment.routeIntersects) {
+            relevant.proofDetail += "aircraft-inside+route-intersects";
+        } else if (assignment.aircraftInside) {
+            relevant.proofDetail += "aircraft-inside";
+        } else {
+            relevant.proofDetail += "route-intersects";
+        }
+        {
+            std::ostringstream routeEntry;
+            routeEntry << std::fixed << std::setprecision(1)
+                       << std::max(0.0, assignment.routeEntryDistanceNm)
+                       << "nm";
+            relevant.proofDetail += ";routeEntry=" + routeEntry.str();
+        }
+        relevant.kind = assignment.kind;
+        relevant.aircraftInside = assignment.aircraftInside;
+        relevant.routeIntersects = assignment.routeIntersects;
+        relevant.routeEntryDistanceNm = assignment.routeEntryDistanceNm;
+        authorityRelevance.relevantAuthorities.push_back(std::move(relevant));
     }
 
-    authorityRelevance.compatibilityRelevantAuthorityCount =
-        static_cast<int>(
-            authorityRelevance.compatibilityRelevantAuthorities.size());
+    std::sort(
+        authorityRelevance.relevantAuthorities.begin(),
+        authorityRelevance.relevantAuthorities.end(),
+        [](const auto& left, const auto& right) {
+            if (left.routeEntryDistanceNm != right.routeEntryDistanceNm) {
+                return left.routeEntryDistanceNm < right.routeEntryDistanceNm;
+            }
+            if (left.callsign != right.callsign) {
+                return left.callsign < right.callsign;
+            }
+            if (left.polygonId != right.polygonId) {
+                return left.polygonId < right.polygonId;
+            }
+            return left.authorityId < right.authorityId;
+        });
+
     authorityRelevance.liveRelevantAuthoritiesBrainOwned = true;
-    authorityRelevance.relevantAuthoritiesCompatibilityOnly = true;
     return authorityRelevance;
 }
 
@@ -1292,14 +712,8 @@ BrainControllerRelevanceWorkerInput BuildBrainOwnedControllerRelevanceInput(
     input.hasArrivalCoordinates = request.hasArrivalCoordinates;
     input.arrivalLatitudeDeg = request.arrivalLatitudeDeg;
     input.arrivalLongitudeDeg = request.arrivalLongitudeDeg;
-    input.terminalRelevanceV2Enabled = request.terminalRelevanceV2Enabled;
-    input.vnasSectorPrecedenceEnabled =
-        request.terminalRelevanceV2Enabled &&
-        request.vnasSectorPrecedenceEnabled;
     input.terminalTransmitterRadiusNm = request.terminalTransmitterRadiusNm;
     input.terminalRelevancePolicyHash = HashTerminalRelevancePolicy(
-        input.terminalRelevanceV2Enabled,
-        input.vnasSectorPrecedenceEnabled,
         input.terminalTransmitterRadiusNm,
         input.hasDepartureCoordinates,
         input.departureLatitudeDeg,
@@ -1307,16 +721,14 @@ BrainControllerRelevanceWorkerInput BuildBrainOwnedControllerRelevanceInput(
         input.hasArrivalCoordinates,
         input.arrivalLatitudeDeg,
         input.arrivalLongitudeDeg);
-    input.vnasTerminalEvidenceHash = request.vnasTerminalEvidenceHash;
-    input.vnasTerminalEvidence = request.vnasTerminalEvidence;
-    input.departureTerminalAuthorityHash =
-        state.departureTerminalAuthorityHash;
-    input.departureTerminalAuthority =
-        state.departureTerminalAuthority;
-    input.arrivalTerminalAuthorityHash =
-        state.arrivalTerminalAuthorityHash;
-    input.arrivalTerminalAuthority =
-        state.arrivalTerminalAuthority;
+    input.departureEndpointPolygonHash =
+        state.departureEndpointPolygonHash;
+    input.departureEndpointPolygons =
+        state.departureEndpointPolygons;
+    input.arrivalEndpointPolygonHash =
+        state.arrivalEndpointPolygonHash;
+    input.arrivalEndpointPolygons =
+        state.arrivalEndpointPolygons;
     input.airportFrequencyHash =
         state.airportFrequencyHash;
     input.airportFrequencies =
@@ -1344,16 +756,14 @@ BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
         state->hasRadioBoard &&
         state->lastRadioBoardHash == input.radioBoardHash &&
         state->routePolygonHash == input.routePolygonHash &&
-        state->lastDepartureTerminalAuthorityHash ==
-            input.departureTerminalAuthorityHash &&
-        state->lastArrivalTerminalAuthorityHash ==
-            input.arrivalTerminalAuthorityHash &&
+        state->lastDepartureEndpointPolygonHash ==
+            input.departureEndpointPolygonHash &&
+        state->lastArrivalEndpointPolygonHash ==
+            input.arrivalEndpointPolygonHash &&
         state->lastAirportFrequencyHash ==
             input.airportFrequencyHash &&
         state->lastAuthorityRelevanceHash ==
             input.authorityRelevanceHash &&
-        state->lastVnasTerminalEvidenceHash ==
-            input.vnasTerminalEvidenceHash &&
         state->lastTerminalRelevancePolicyHash ==
             input.terminalRelevancePolicyHash &&
         state->lastRadioTuningHash == input.radioTuningHash &&
@@ -1392,16 +802,14 @@ BrainOwnedControllerRelevanceRuntimeOutput RunBrainOwnedControllerRelevance(
         output.relevance.arrivalBoard;
     state->relevanceEnrouteBoardSnapshot =
         output.relevance.enrouteBoard;
-    state->lastDepartureTerminalAuthorityHash =
-        input.departureTerminalAuthorityHash;
-    state->lastArrivalTerminalAuthorityHash =
-        input.arrivalTerminalAuthorityHash;
+    state->lastDepartureEndpointPolygonHash =
+        input.departureEndpointPolygonHash;
+    state->lastArrivalEndpointPolygonHash =
+        input.arrivalEndpointPolygonHash;
     state->lastAirportFrequencyHash =
         input.airportFrequencyHash;
     state->lastAuthorityRelevanceHash =
         input.authorityRelevanceHash;
-    state->lastVnasTerminalEvidenceHash =
-        input.vnasTerminalEvidenceHash;
     state->lastTerminalRelevancePolicyHash =
         input.terminalRelevancePolicyHash;
     state->lastRadioTuningHash = input.radioTuningHash;

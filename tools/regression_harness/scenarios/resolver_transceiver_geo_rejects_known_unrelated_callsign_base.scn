@@ -43,8 +43,6 @@ expect.resolver_route_authority_gaps=current:ESAA
 expect.resolver_route_current_sectors=ESAA
 expect.resolver_route_next_sectors=<none>
 expect.resolver_authority_relevance_available=true
-expect.resolver_authority_diagnostics=EKDK_CTR:missing-source-ownership:TRANSCEIVER_GEO_ROUTE:ESAA:source=EKDK
+expect.resolver_authority_diagnostics=EKDK_CTR:unmapped-controller
 expect.resolver_authority_relevant_matches=<none>
 expect.resolver_authority_proof_sources=<none>
-expect.resolver_enroute_available=false
-expect.resolver_enroute_callsigns=<none>

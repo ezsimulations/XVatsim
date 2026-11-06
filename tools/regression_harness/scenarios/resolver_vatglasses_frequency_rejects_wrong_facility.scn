@@ -36,5 +36,3 @@ expect.resolver_authority_relevance_available=true
 expect.resolver_authority_status=AUTHORITY candidates=1 authorities=2 polygons=2 routeKeys=1 active=0 relevant=0 diagnostics=2 activationGaps=0
 expect.resolver_authority_diagnostics=HKG_W_CTR:facility-mismatch:VATGLASSES:TRW:TRW-AIRSPACE:HKG_*_CTR,HKG_W_CTR:facility-mismatch:VATSPY_FIR:VHHK:VHHK:HKG_*_CTR
 expect.resolver_authority_relevant_matches=<none>
-expect.resolver_enroute_available=false
-expect.resolver_enroute_callsigns=<none>

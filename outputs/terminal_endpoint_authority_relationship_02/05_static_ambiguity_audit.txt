@@ -1,0 +1,63 @@
+Terminal Endpoint Authority Relationship Gate 02
+Static ambiguity audit
+Date: 2026-10-25
+
+Search results
+==============
+
+1. rg -n "exact-source-nearby-endpoint-polygon" brain modules plugin core
+Result: no matches (exit 1).
+
+2. rg -n "intersectsEndpointAnchor\b" brain modules plugin core
+Result: no matches (exit 1).
+The replacement field is intersectsEndpointAnchorContextOnly and is emitted only as a score-free diagnostic fact.
+
+3. rg -n "terminalRelevanceV2Enabled|vnasSectorPrecedenceEnabled" brain
+Result: no matches (exit 1).
+No Brain APP/DEP decision can select the retired vote algorithm. The persisted terminal_relevance_v2 setting is retained outside the Brain only for its historical Center radio-range behavior. Endpoint evidence augmentation and vNAS collection are unconditional during endpoint stages.
+
+4. rg -n "ControllerMatchesTerminalAuthority|RecordCandidateDecision|BuildCurrentRouteCenterRoots|AppendSelectedCenterStations" brain/src/BrainControllerRelevanceWorker.cpp
+Result: no matches (exit 1).
+The unreachable pre-pipeline relevance implementation was deleted (approximately 680 lines).
+
+5. Terminal decision calls
+Result:
+- APP/DEP: exactly one call to DecideBrainTerminalControllerCandidate.
+- Airport-local non-APP/DEP: generic DecideBrainControllerCandidate.
+- Center/FIR: generic DecideBrainControllerCandidate.
+- Unsupported facilities: generic DecideBrainControllerCandidate.
+
+6. Tie policy
+The generic tie policy remains for non-APP/DEP domains. EvaluateTerminal reaches it only inside the explicit !IsAppDep(role) airport-local branch. APP/DEP receipts force every fact to contributesToScore=false and never read supportedTiesDisplay or positive/negative margins.
+
+7. Board invariant
+AppendUnique rejects an APP/DEP row unless terminalRelationship is DIRECT_ENDPOINT or EXPLICIT_PARENT. The relationship and source proof are propagated through BrainOwnedCandidateCompletion, BoardStationSnapshot, FinalDisplayStationSnapshot, and final-display hashing.
+
+8. Standby Assist
+Plugin ApplyStandbyRecommendation copies the already-published FinalDisplaySnapshot into BrainOwnedStandbyAssistPlanInput. It does not reintroduce controller candidates or recompute terminal authority.
+
+Legacy/factor disposition
+=========================
+
+| Legacy symbol or factor | Prior authority | Final disposition | Authoritative production references | Why safe |
+| --- | --- | --- | ---: | --- |
+| exact-source-nearby-endpoint-polygon | Positive ownership/relevance vote | Removed | 0 | Adjacency cannot create a row |
+| intersectsEndpointAnchor | Ambiguous relevance boolean | Renamed intersectsEndpointAnchorContextOnly | 0 old symbol | Context-only, score-free |
+| terminal relationAvailable aggregation | Any heterogeneous positive could unlock display | Removed from APP/DEP | 0 | Typed relationship is required |
+| terminal supportedTiesDisplay | Equal votes could display | Removed from APP/DEP | 0 | APP/DEP never calls generic vote decision |
+| terminal positive/negative margin | Final acceptance and endpoint selection | Diagnostic-only totals forced to 0/0/0; typed selection rank replaces margin | 0 authoritative | Totals cannot affect relationship or board |
+| terminalRelevanceV2Enabled rollback | Restored legacy decisions/evidence behavior | Removed from Brain APP/DEP path | 0 Brain references | Cannot restore vote authority |
+| vnasSectorPrecedenceEnabled rollback | Could expose lower owner fallback | Removed from Brain decision path | 0 Brain references | Explicit source hierarchy is always enforced |
+| old BrainControllerRelevanceWorker relevance implementation | Hidden duplicate algorithm | Deleted | 0 | One production path remains |
+| TerminalVatsimIdentityFact | Identity/callsign vote | Source-position identity diagnostic | 0 ownership | Callsign does not prove ownership |
+| VatsimRosterIdentityFact | Presence/absence vote | Roster identity and completeness diagnostic | 0 ownership | Roster does not prove endpoint service |
+| VatspyIdentityFact | Exact/fuzzy alias vote | Exact alias diagnostic; fuzzy variants neutral | 0 ownership | Alias cannot prove containment/hierarchy |
+| TerminalRadioServiceFact | Positive/negative vote | Radio-service lane; may classify NEARBY_ONLY | 0 display authority | NEARBY_ONLY is hidden |
+| VnasOwnershipFact | Vote | Explicit ownership/hierarchy and dynamic incompatibility fact | 1 typed classifier | Exact matched source relationship only |
+| RouteAuthorityContextFact | Positive route authority vote | Diagnostic context only | 0 endpoint authority | Aircraft/route relevance is not airport ownership |
+| TerminalOwnerDiagnosticFact | Match/mismatch vote | Diagnostic only; mismatch always neutral | 0 relationship authority | No duplicate owner-token algorithm |
+| EvaluateTerminalPolygonRelationship | Nearby/direct positive vote | Exact mapping plus containment; adjacency context-only | 1 typed classifier | Only containment can produce DIRECT_ENDPOINT |
+| PublishedFrequencyDiagnosticFact | Frequency vote | Corroboration diagnostic only | 0 ownership | Frequency cannot create a row |
+| route-context fact | Positive vote | Diagnostic only | 0 endpoint authority | Center-root similarity is not terminal ownership |
+| xPilot correlation | Positive/negative vote | Diagnostic only | 0 endpoint authority | Client correlation cannot create ownership |
+

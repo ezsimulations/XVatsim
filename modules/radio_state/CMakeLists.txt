@@ -1,4 +1,5 @@
 add_library(XVatsimRadioState STATIC
+    src/RadioReceiveLogic.cpp
     src/RadioStateSampler.cpp
 )
 

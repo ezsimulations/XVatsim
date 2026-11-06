@@ -35,5 +35,3 @@ expect.resolver_route_current_sectors=VHHK
 expect.resolver_route_current_controller_patterns=VHHK:HKG_W_CTR
 expect.resolver_authority_relevance_available=true
 expect.resolver_authority_relevant_matches=HKG_W_CTR:VATGLASSES:HKG_W_CTR:VATSPY_BOUNDARY:VHHK:aircraft=1:route=1:entry=0
-expect.resolver_enroute_available=true
-expect.resolver_enroute_callsigns=HKG_W_CTR

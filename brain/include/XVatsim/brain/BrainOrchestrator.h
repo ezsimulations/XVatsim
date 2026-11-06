@@ -18,7 +18,8 @@ public:
         const TransceiverResolutionSnapshot& transceiverResolutionSnapshot,
         const FinalDisplaySnapshot& finalDisplaySnapshot,
         const ManualQuerySnapshot& manualQuerySnapshot,
-        const OverlayUpdateSnapshot& updateSnapshot = {});
+        const OverlayUpdateSnapshot& updateSnapshot = {},
+        const std::string& centerSelectionPlanKey = {});
 };
 
 bool OverlayUpdateRequestsWake(const OverlayUpdateSnapshot& updateSnapshot);

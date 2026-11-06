@@ -33,8 +33,6 @@ expect.resolver_route_resolved=true
 expect.resolver_route_authority_gaps=<none>
 expect.resolver_route_current_sectors=P3T
 expect.resolver_authority_relevance_available=true
-expect.resolver_authority_relevant_matches=PHX_TWR:VATGLASSES:P3T:VATGLASSES:P3T_PHX_TWR_0:aircraft=1:route=1:entry=0,PHX_TWR:VATGLASSES:P3T:VATSPY_BOUNDARY:P3T:aircraft=1:route=1:entry=0
-expect.resolver_authority_proof_sources=PHX_TWR:VATGLASSES_STATIC_OWNER,PHX_TWR:VATGLASSES_STATIC_OWNER
-expect.resolver_authority_proof_detail_contains=PHX_TWR:authoritySource=VATGLASSES,pattern=PHX_TWR,proofItems=callsign-pattern>facility-type>published-frequency>FREQUENCY_OWNED_MATCH,routeRelevance=aircraft-inside+route-intersects
-expect.resolver_enroute_available=false
-expect.resolver_enroute_callsigns=<none>
+expect.resolver_authority_relevant_matches=<none>
+expect.resolver_authority_proof_sources=<none>
+expect.resolver_authority_proof_details=<none>

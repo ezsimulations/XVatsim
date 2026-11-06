@@ -1,9 +1,10 @@
 #pragma once
 
+#include <condition_variable>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
-#include <mutex>
 
 namespace xvatsim::modules::update_checker {
 
@@ -59,15 +60,23 @@ public:
     UpdateChecker(const UpdateChecker&) = delete;
     UpdateChecker& operator=(const UpdateChecker&) = delete;
 
+    bool Start();
+    void Stop();
     bool StartCheck(const UpdateCheckRequest& request);
     std::optional<UpdateCheckResult> HarvestResult();
     bool InProgress() const;
 
 private:
+    void WorkerMain();
+
     mutable std::mutex mutex_{};
+    std::condition_variable wake_{};
     std::thread worker_{};
+    bool started_ = false;
+    bool stopping_ = false;
     bool inProgress_ = false;
     bool resultReady_ = false;
+    std::optional<UpdateCheckRequest> pendingRequest_{};
     UpdateCheckResult result_{};
 };
 

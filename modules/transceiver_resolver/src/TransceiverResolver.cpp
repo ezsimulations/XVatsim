@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cctype>
+#include <cstring>
 #include <limits>
 #include <string>
 #include <unordered_map>
@@ -48,6 +49,39 @@ constexpr double kResolveAltitudeThresholdFt = 500.0;
 constexpr double kAirportCoverageAircraftAglFt = 5000.0;
 constexpr const char* kResolutionPathAuthorityStations = "authority-stations";
 constexpr const char* kResolutionPathAirportCoverage = "airport-coverage";
+
+std::uint64_t HashTransceiverSource(
+    const std::vector<CachedTransceiver>& transceivers) noexcept {
+    constexpr std::uint64_t kOffset = 1469598103934665603ULL;
+    constexpr std::uint64_t kPrime = 1099511628211ULL;
+    std::uint64_t hash = kOffset;
+    const auto appendBytes = [&](const void* data, std::size_t size) {
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        for (std::size_t index = 0; index < size; ++index) {
+            hash ^= static_cast<std::uint64_t>(bytes[index]);
+            hash *= kPrime;
+        }
+    };
+    const auto appendString = [&](const std::string& value) {
+        appendBytes(value.data(), value.size());
+        const unsigned char separator = 0xff;
+        appendBytes(&separator, sizeof(separator));
+    };
+    const auto appendDouble = [&](double value) {
+        std::uint64_t bits = 0;
+        static_assert(sizeof(bits) == sizeof(value));
+        std::memcpy(&bits, &value, sizeof(bits));
+        appendBytes(&bits, sizeof(bits));
+    };
+    for (const auto& transceiver : transceivers) {
+        appendString(transceiver.callsign);
+        appendString(transceiver.frequency);
+        appendDouble(transceiver.latitudeDeg);
+        appendDouble(transceiver.longitudeDeg);
+        appendDouble(transceiver.heightAglFt);
+    }
+    return hash;
+}
 
 struct WinHttpHandle {
     WinHttpHandle() = default;
@@ -1292,7 +1326,13 @@ void TransceiverResolver::Reset() {
     lastAirportCoverageLatitudeDeg_ = 0.0;
     lastAirportCoverageLongitudeDeg_ = 0.0;
     lastAirportCoverageControllerFeedHash_ = 0;
+    sourceGeneration_ = 0;
+    sourceContentDigest_ = 0;
     fetchInProgress_ = false;
+}
+
+TransceiverSourceIdentity TransceiverResolver::SourceIdentity() const noexcept {
+    return {sourceGeneration_, sourceContentDigest_};
 }
 
 brain::TransceiverSourceEvidenceSnapshot
@@ -1817,6 +1857,8 @@ void TransceiverResolver::HarvestPendingFetch() {
 
     cachedTransceivers_ = pendingTransceivers_;
     indexedTransceivers_ = IndexTransceiversByCallsign(cachedTransceivers_);
+    ++sourceGeneration_;
+    sourceContentDigest_ = HashTransceiverSource(cachedTransceivers_);
     pendingTransceivers_.clear();
     cachedParserCounters_ = pendingParserCounters_;
     pendingParserCounters_ = {};
@@ -1840,6 +1882,13 @@ void TransceiverResolver::SeedFeedCacheForTesting(
     std::lock_guard<std::mutex> lock(fetchMutex_);
     cachedTransceivers_ = std::move(transceivers);
     indexedTransceivers_ = IndexTransceiversByCallsign(cachedTransceivers_);
+    if (cachedTransceivers_.empty()) {
+        sourceGeneration_ = 0;
+        sourceContentDigest_ = 0;
+    } else {
+        ++sourceGeneration_;
+        sourceContentDigest_ = HashTransceiverSource(cachedTransceivers_);
+    }
     pendingTransceivers_.clear();
     cachedParserCounters_ = {};
     pendingParserCounters_ = {};

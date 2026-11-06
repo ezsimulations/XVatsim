@@ -5,6 +5,22 @@
 
 namespace xvatsim::modules::radio_state {
 
+// X-Plane's sim/atc/com*_active means the tuned frequency has activity; it is
+// not proof that this aircraft is currently receiving audio. Keep that fact in
+// the packet for regression coverage, but only exact receive signals may make
+// the pilot-facing RX indicator active.
+struct RadioReceiveActivityEvidence {
+    bool powered = false;
+    bool xpilotReceiveActive = false;
+    bool latchedReceiveActive = false;
+    bool receiveOverrideActive = false;
+    bool simulatorReceiveActive = false;
+    bool tunedFrequencyHasActivity = false;
+};
+
+bool EvaluateRadioReceiveActive(
+    const RadioReceiveActivityEvidence& evidence);
+
 class RadioStateSampler {
 public:
     RadioStateSampler() = default;
@@ -12,6 +28,7 @@ public:
 
     brain::RadioStateSnapshot Sample();
     void Reset();
+    bool SetCom1ActiveFrequency(const std::string& frequency);
     bool SetCom1StandbyFrequency(const std::string& frequency);
 
 private:
@@ -36,6 +53,7 @@ private:
         void* refcon);
 
     void* com1ActiveFrequencyRef_ = nullptr;
+    bool com1ActiveUsesLegacyFormat_ = false;
     void* com2ActiveFrequencyRef_ = nullptr;
     void* com1StandbyFrequencyRef_ = nullptr;
     bool com1StandbyUsesLegacyFormat_ = false;

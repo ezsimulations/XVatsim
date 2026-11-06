@@ -1,0 +1,10 @@
+Scenario: vNAS Active Position Independent Of Radio Candidates
+Pre-fix executable: build/tools/XVatsimRegressionHarness.exe
+Pre-fix contract seam: BuildVnasTerminalEvidenceSnapshot
+Radio-board candidates: none
+Active vNAS controller: BHM_APP 123.800
+Active vNAS position: ZTL/BHM/01GW3KRMM7YQ2MWZ1A0GCJT0M6
+Endpoint: KTCL
+Observed VnasTerminalEvidenceRecords: []
+Mismatch: vnasTerminalEvidenceRecords expected [BHM_APP:123.800:KTCL:ZTL:BHM:01GW3KRMM7YQ2MWZ1A0GCJT0M6] actual []
+EXIT=1

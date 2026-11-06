@@ -1,0 +1,18 @@
+STATIC_AMBIGUITY_AUDIT_PASSED
+
+ordinary_startlatest_cancel_calls=0
+conflict_state_writers_outside_brain=0
+brain_conflict_writers=2
+endpoint_brain_decision_guards=1
+authority_descriptive_text_hash_mentions=0
+authority_atis_eligibility_hash_mentions=1
+git_diff_check_errors=0
+
+Notes:
+- Both Brain conflict-writer matches are inside the single
+  BuildBrainOwnedLiveAuthorityMapSnapshot decision path: the conflict ID and
+  assignment state are emitted together.
+- Cancellation/reset writes remain only in lifecycle Stop/CancelPending paths.
+- Descriptive ATIS text is excluded from authority semantic identity; ATIS
+  eligibility remains semantic because it changes whether a position can own
+  airspace.

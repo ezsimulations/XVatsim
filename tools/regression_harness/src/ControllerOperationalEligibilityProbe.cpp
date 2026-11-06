@@ -5,7 +5,7 @@
 #include "XVatsim/brain/BrainOwnedWorkerTypes.h"
 #include "XVatsim/brain/BrainXPilot4BridgeTypes.h"
 #include "XVatsim/brain/BrainWorkflow.h"
-#include "XVatsim/modules/terminal_authority/TerminalAuthorityResolver.h"
+#include "XVatsim/modules/route_sector/RouteSectorResolver.h"
 #include "XVatsim/modules/vatsim_data_feed/VatsimDataFeedClient.h"
 
 #include <algorithm>
@@ -53,15 +53,42 @@ BrainControllerRelevanceWorkerInput BuildClevelandInput(
     input.hasArrivalCoordinates = true;
     input.arrivalLatitudeDeg = 41.4117;
     input.arrivalLongitudeDeg = -81.8498;
-    input.terminalRelevanceV2Enabled = true;
-    input.vnasSectorPrecedenceEnabled = true;
     input.terminalTransmitterRadiusNm = 5.0;
-    input.arrivalTerminalAuthority.available = true;
-    input.arrivalTerminalAuthority.resolved = true;
-    input.arrivalTerminalAuthority.stale = false;
-    input.arrivalTerminalAuthority.airportIcao = "KCLE";
-    input.arrivalTerminalAuthority.ownerTokens = {"CLE_APP"};
-    input.arrivalTerminalAuthority.source = "probe-terminal-owner";
+    input.arrivalEndpointPolygons.available = true;
+    input.arrivalEndpointPolygons.resolved = true;
+    input.arrivalEndpointPolygons.stale = false;
+    input.arrivalEndpointPolygons.airportIcao = "KCLE";
+    input.arrivalEndpointPolygons.ownerTokens = {"CLE_APP"};
+    input.arrivalEndpointPolygons.source = "probe-terminal-owner";
+    BrainEndpointPolygonFact clePolygon;
+    clePolygon.canonicalPolygonId = "PROBE:TERMINAL:CLE";
+    clePolygon.polygonKey = "CLE";
+    clePolygon.name = "Cleveland Approach";
+    clePolygon.serviceSuffixes = {"APP"};
+    clePolygon.controllerPrefixes = {"CLE"};
+    clePolygon.containsAirport = true;
+    clePolygon.source = "probe-canonical-map";
+    input.arrivalEndpointPolygons.polygons.push_back(std::move(clePolygon));
+
+    auto authority = std::make_shared<AuthorityRelevanceSnapshot>();
+    authority->available = true;
+    authority->stale = false;
+    authority->liveMap.available = true;
+    authority->liveMap.stale = false;
+    authority->liveMap.brainDecisionsApplied = true;
+    authority->liveMap.canonicalMapIdentity = 1;
+    LiveAuthorityAssignmentSnapshot assignment;
+    assignment.state = LiveAuthorityAssignmentState::ActiveExact;
+    assignment.canonicalPolygonId = "PROBE:TERMINAL:CLE";
+    assignment.polygonKey = "CLE";
+    assignment.positionId = "CLE_APP";
+    assignment.callsign = candidate.callsign;
+    assignment.frequency = candidate.frequency;
+    assignment.facility = candidate.vatsimFacility;
+    assignment.authoritySource = "probe-canonical-map";
+    assignment.kind = AuthorityRelevanceKind::Terminal;
+    authority->liveMap.assignments.push_back(std::move(assignment));
+    input.authorityRelevance = std::move(authority);
 
     auto route = std::make_shared<RouteSectorSnapshot>();
     route->available = true;
@@ -73,15 +100,6 @@ BrainControllerRelevanceWorkerInput BuildClevelandInput(
         {"KCLE", "CLE", "KZOB", "VATSPY_AIRPORT", "KCLE|CLE|KZOB"});
     input.route = route;
 
-    auto vnas = std::make_shared<VnasTerminalEvidenceSnapshot>();
-    vnas->enabled = true;
-    vnas->available = true;
-    vnas->stale = false;
-    vnas->facilityDataComplete = true;
-    vnas->ownershipDataAvailable = false;
-    vnas->statusLine = "probe-incomplete-us-data";
-    input.vnasTerminalEvidence = vnas;
-
     auto xpilot = std::make_shared<BrainXPilot4ControllerSnapshot>();
     xpilot->sourceAvailable = true;
     xpilot->networkConnected = true;
@@ -89,6 +107,11 @@ BrainControllerRelevanceWorkerInput BuildClevelandInput(
     xpilot->processEpoch = 117473758123352112ULL;
     xpilot->connectionEpoch = 1;
     xpilot->generation = 93;
+    BrainXPilot4ControllerFact xpilotController;
+    xpilotController.callsign = candidate.callsign;
+    xpilotController.frequencyHz = 120'500'000;
+    xpilotController.hasFrequency = true;
+    xpilot->controllers.push_back(std::move(xpilotController));
     input.xpilot4Controllers = xpilot;
 
     input.candidates.push_back(std::move(candidate));
@@ -310,77 +333,13 @@ int RunControllerOperationalEligibilityProbe() {
     base.sourceRosterRejectedRecords = decoded.rejectedControllerRecords;
     base.sourceRosterDigest = decoded.controllerContentDigest;
     base.sourceRoster = decoded.immutableControllers;
-    TransceiverResolutionSnapshot transceivers;
-    transceivers.available = true;
-    transceivers.stale = false;
-    TransceiverControllerEvidenceSnapshot evidence;
-    evidence.callsign = "CLT_APP";
-    evidence.controllerFrequency = "199.998";
-    evidence.facility = 5;
-    evidence.actionable = true;
-    evidence.hasTransceiverEntry = true;
-    evidence.matchingTransceiverCount = 1;
-    evidence.resolvedDisplayFrequency = "120.500";
-    evidence.displayFrequencySource = "transceiver";
-    TransceiverStationEvidenceSnapshot station;
-    station.sourceFrequency = "120.500";
-    station.latitudeDeg = 35.2140;
-    station.longitudeDeg = -80.9431;
-    station.hasAircraftDistance = true;
-    station.aircraftDistanceNm = 200.0;
-    station.withinMaxCandidateDistance = true;
-    station.hasReceivableRange = true;
-    station.withinReceivableRange = true;
-    evidence.stations.push_back(station);
-    transceivers.controllerEvidence.push_back(evidence);
-
-    auto cleEvidence = evidence;
-    cleEvidence.callsign = "CLE_APP";
-    cleEvidence.stations.front().latitudeDeg = 41.4117;
-    cleEvidence.stations.front().longitudeDeg = -81.8498;
-    transceivers.controllerEvidence.push_back(cleEvidence);
-
-    BrainTerminalAuthorityWorkerOutput emptyAuthority;
-    auto route = std::make_shared<RouteSectorSnapshot>();
-    route->available = true;
-    route->stale = false;
-    route->routeResolved = true;
-    route->departureIcao = "KLAS";
-    route->destinationIcao = "KCLE";
-    route->airportCallsignAliases.push_back(
-        {"KCLE", "CLE", "KZOB", "VATSPY_AIRPORT", "KCLE|CLE|KZOB"});
-    BrainEndpointTerminalEvidenceScope departureScope;
-    departureScope.airportIcao = "KLAS";
-    BrainEndpointTerminalEvidenceScope arrivalScope;
-    arrivalScope.airportIcao = "KCLE";
-    arrivalScope.hasAirportCoordinates = true;
-    arrivalScope.airportLatitudeDeg = 41.4117;
-    arrivalScope.airportLongitudeDeg = -81.8498;
-    const auto augmented =
-        BuildBrainEndpointScopedControllerSnapshot(
-            base,
-            transceivers,
-            emptyAuthority,
-            emptyAuthority,
-            route.get(),
-            departureScope,
-            arrivalScope,
-            5.0);
-    const auto cltCandidate = std::find_if(
-        augmented.candidates.begin(),
-        augmented.candidates.end(),
-        [](const auto& candidate) { return candidate.callsign == "CLT_APP"; });
-    const auto cleScopedCandidate = std::find_if(
-        augmented.candidates.begin(),
-        augmented.candidates.end(),
-        [](const auto& candidate) { return candidate.callsign == "CLE_APP"; });
-    const auto remoteCltExcluded =
-        cltCandidate == augmented.candidates.end() &&
-        augmented.statusLine.find("excludedOutsideEndpointScope=1") !=
-            std::string::npos;
+    // Global transceiver/controller evidence is not allowed to create a live
+    // APP/DEP candidate. The complete radio board is the sole admission set.
+    const auto radioScoped = base;
+    const auto globalAppDepNotInjected = radioScoped.candidates.empty();
     const auto scopedDecisionEvidenceHash =
-        HashBrainRadioControllerDecisionEvidence(augmented);
-    auto globalRosterChurn = augmented;
+        HashBrainRadioControllerDecisionEvidence(radioScoped);
+    auto globalRosterChurn = radioScoped;
     ++globalRosterChurn.sourceRosterDigest;
     globalRosterChurn.sourceRosterDeclaredRecords += 100;
     globalRosterChurn.sourceRosterRetainedRecords += 100;
@@ -392,33 +351,86 @@ int RunControllerOperationalEligibilityProbe() {
     const auto globalRosterChurnIgnored =
         HashBrainRadioControllerDecisionEvidence(globalRosterChurn) ==
             scopedDecisionEvidenceHash;
-    auto scopedCandidateChanged = augmented;
-    if (!scopedCandidateChanged.candidates.empty()) {
-        scopedCandidateChanged.candidates.front().actionable =
-            !scopedCandidateChanged.candidates.front().actionable;
-    }
+
+    RadioReachableControllerSnapshot vnasBoard = base;
+    RadioReachableControllerCandidate admittedVnasCandidate;
+    admittedVnasCandidate.callsign = "CLE_APP";
+    admittedVnasCandidate.frequency = "120.500";
+    admittedVnasCandidate.group = RadioReachableFacilityGroup::AppDep;
+    admittedVnasCandidate.stableKey = "CLE_APP|120.500|APP_DEP";
+    vnasBoard.candidates.push_back(admittedVnasCandidate);
+    const auto completeRadioFeed =
+        BuildRadioReachableVerificationFeed(vnasBoard);
+    const auto completeRadioControllerFeed =
+        completeRadioFeed.ToControllerFeedSnapshot();
+    const auto completeRadioBoardPublished =
+        completeRadioFeed.fullBoardSnapshot &&
+        completeRadioFeed.inputCandidates == 1 &&
+        completeRadioFeed.selectedControllers == 1 &&
+        completeRadioControllerFeed.controllerComponentComplete &&
+        completeRadioControllerFeed.retainedControllerRecords == 1;
+    VnasLiveOwnershipSnapshot globalVnas;
+    globalVnas.enabled = true;
+    globalVnas.available = true;
+    globalVnas.stale = false;
+    globalVnas.facilityDataComplete = true;
+    globalVnas.ownershipDataAvailable = true;
+    VnasLiveOwnershipFactSnapshot cleVnasFact;
+    cleVnasFact.controllerCallsign = "CLE_APP";
+    cleVnasFact.controllerFrequency = "120.500";
+    cleVnasFact.facilityId = "CLE";
+    cleVnasFact.sourcePositionId = "CLE-S";
+    cleVnasFact.sourcePositionCallsign = "CLE_APP";
+    cleVnasFact.sourcePositionFrequency = "120.500";
+    globalVnas.facts.push_back(cleVnasFact);
+    auto unrelatedVnasFact = cleVnasFact;
+    unrelatedVnasFact.controllerCallsign = "EDDF_APP";
+    unrelatedVnasFact.controllerFrequency = "119.025";
+    unrelatedVnasFact.facilityId = "EDDF";
+    unrelatedVnasFact.sourcePositionId = "EDDF-N";
+    unrelatedVnasFact.sourcePositionCallsign = "EDDF_N_APP";
+    unrelatedVnasFact.sourcePositionFrequency = "119.025";
+    globalVnas.facts.push_back(unrelatedVnasFact);
+    const auto scopedVnas =
+        BuildRadioScopedVnasLiveOwnershipSnapshot(globalVnas, vnasBoard);
+    const auto vnasExactBoardScope =
+        scopedVnas.facts.size() == 1 &&
+        scopedVnas.facts.front().controllerCallsign == "CLE_APP";
+    auto unrelatedVnasChanged = globalVnas;
+    unrelatedVnasChanged.facts.back().sourcePositionId = "EDDF-S";
+    const auto unrelatedVnasChangeIgnored =
+        BuildRadioScopedVnasLiveOwnershipSnapshot(
+            unrelatedVnasChanged, vnasBoard).stableHash == scopedVnas.stableHash;
+    auto relevantVnasChanged = globalVnas;
+    relevantVnasChanged.facts.front().sourcePositionId = "CLE-N";
+    const auto relevantVnasChangeDetected =
+        BuildRadioScopedVnasLiveOwnershipSnapshot(
+            relevantVnasChanged, vnasBoard).stableHash != scopedVnas.stableHash;
+
+    auto scopedCandidateChanged = radioScoped;
+    RadioReachableControllerCandidate scopedCandidate;
+    scopedCandidate.callsign = "CLE_APP";
+    scopedCandidate.frequency = "120.500";
+    scopedCandidate.group = RadioReachableFacilityGroup::AppDep;
+    scopedCandidate.stableKey = "CLE_APP|120.500|APP_DEP";
+    scopedCandidateChanged.candidates.push_back(std::move(scopedCandidate));
     const auto scopedCandidateChangeDetected =
         !scopedCandidateChanged.candidates.empty() &&
         HashBrainRadioControllerDecisionEvidence(scopedCandidateChanged) !=
             scopedDecisionEvidenceHash;
-    const auto guardPrimaryPreserved =
-        cleScopedCandidate != augmented.candidates.end() &&
-        cleScopedCandidate->sourcePrimaryFrequency == "199.998";
-
     RadioReachableControllerCandidate candidate;
-    if (cleScopedCandidate != augmented.candidates.end()) {
-        candidate = *cleScopedCandidate;
-    } else {
-        candidate.callsign = "CLE_APP";
-        candidate.frequency = "120.500";
-        candidate.sourcePrimaryFrequency = "199.998";
-        candidate.vatsimFacility = 5;
-        candidate.group = RadioReachableFacilityGroup::AppDep;
-        candidate.source = RadioReachableSource::AFVRadioRange;
-        candidate.actionable = true;
-        candidate.stationCoordinates.push_back(
-            {"120.500", 35.2140, -80.9431});
-    }
+    candidate.callsign = "CLE_APP";
+    candidate.frequency = "120.500";
+    candidate.sourcePrimaryFrequency = "199.998";
+    candidate.sourcePrimaryFrequencyProvided = true;
+    candidate.vatsimFacility = 5;
+    candidate.group = RadioReachableFacilityGroup::AppDep;
+    candidate.source = RadioReachableSource::AFVRadioRange;
+    candidate.actionable = true;
+    candidate.stationCoordinates.push_back(
+        {"120.500", 35.2140, -80.9431});
+    const auto guardPrimaryPreserved =
+        candidate.sourcePrimaryFrequency == "199.998";
     const auto cleOutput = RunBrainControllerRelevanceWorker(
         BuildClevelandInput(std::move(candidate)));
     const auto* cle = FindCompletion(cleOutput, "CLE_APP");
@@ -451,9 +463,17 @@ int RunControllerOperationalEligibilityProbe() {
               << (unknownPrimaryPreserved ? 1 : 0)
               << " exactCleAccepted=" << (exactCleAccepted ? 1 : 0)
               << " guardNotRescued=" << (guardNotRescued ? 1 : 0)
-              << " remoteCltExcluded=" << (remoteCltExcluded ? 1 : 0)
+              << " globalAppDepNotInjected="
+              << (globalAppDepNotInjected ? 1 : 0)
               << " globalRosterChurnIgnored="
               << (globalRosterChurnIgnored ? 1 : 0)
+              << " vnasExactBoardScope=" << (vnasExactBoardScope ? 1 : 0)
+              << " completeRadioBoardPublished="
+              << (completeRadioBoardPublished ? 1 : 0)
+              << " unrelatedVnasChangeIgnored="
+              << (unrelatedVnasChangeIgnored ? 1 : 0)
+              << " relevantVnasChangeDetected="
+              << (relevantVnasChangeDetected ? 1 : 0)
               << " scopedCandidateChangeDetected="
               << (scopedCandidateChangeDetected ? 1 : 0)
               << " cleRejected=" << (cleRejected ? 1 : 0)
@@ -463,13 +483,19 @@ int RunControllerOperationalEligibilityProbe() {
                   << cle->negativeVotes << "/" << cle->neutralVotes
                   << " cleReason=\"" << cle->reason << "\"";
     }
+    if (exactCle != nullptr) {
+        std::cout << " exactCleReason=\"" << exactCle->reason << "\"";
+    }
     std::cout << "\n";
 
     if (!obsSupRetained || !facilityZeroNotPromoted ||
         !observerSupervisorBrainRejected || !guard121Rejected ||
         !unknownPrimaryPreserved || !exactCleAccepted ||
-        !guardNotRescued || !remoteCltExcluded ||
-        !globalRosterChurnIgnored || !scopedCandidateChangeDetected ||
+        !guardNotRescued || !globalAppDepNotInjected ||
+        !globalRosterChurnIgnored || !vnasExactBoardScope ||
+        !completeRadioBoardPublished ||
+        !unrelatedVnasChangeIgnored || !relevantVnasChangeDetected ||
+        !scopedCandidateChangeDetected ||
         !cleRejected ||
         !supportedTieDisplays) {
         std::cerr << "CONTROLLER_OPERATIONAL_ELIGIBILITY_FAILED\n";
@@ -572,15 +598,18 @@ int RunEndpointTerminalPolygonOwnershipProbe() {
       ]
     })json";
 
-    xvatsim::modules::terminal_authority::TerminalAuthorityResolver resolver;
-    resolver.LoadPayloadForTesting(payload);
-    BrainTerminalAuthorityWorkerInput request;
+    xvatsim::modules::route_sector::RouteSectorResolver resolver;
+    resolver.LoadBoundaryPayloadsForTesting(
+        R"json({"type":"FeatureCollection","features":[]})json",
+        payload,
+        "[FIR]\n");
+    BrainEndpointPolygonQueryInput request;
     request.airportIcao = "EGLL";
     request.hasAirportCoordinates = true;
     request.airportLatitudeDeg = 51.470020;
     request.airportLongitudeDeg = -0.454295;
     request.nowSeconds = 1;
-    const auto authority = resolver.ResolveAirportTerminalOwner(request);
+    const auto authority = resolver.QueryEndpointPolygons(request);
 
     const auto thamesPolygon = std::find_if(
         authority.polygons.begin(),
@@ -595,7 +624,56 @@ int RunEndpointTerminalPolygonOwnershipProbe() {
         egllPolygon->containsAirport &&
         thamesPolygon != authority.polygons.end() &&
         !thamesPolygon->containsAirport &&
-        thamesPolygon->intersectsEndpointAnchor;
+        thamesPolygon->intersectsEndpointAnchorContextOnly;
+
+    std::vector<ControllerSnapshot> controllers;
+    ControllerSnapshot controller;
+    controller.callsign = "THAMES_APP";
+    controller.frequency = "132.700";
+    controller.facility = 5;
+    controller.visualRangeNm = 150;
+    controller.actionable = true;
+    controllers.push_back(controller);
+    ControllerFeedSnapshot controllerFeed;
+    controllerFeed.available = true;
+    controllerFeed.stale = false;
+    controllerFeed.generation = 1;
+    controllerFeed.connectedControllers = controllers.size();
+    controllerFeed.controllerComponentPresent = true;
+    controllerFeed.controllerComponentComplete = true;
+    controllerFeed.retainedControllerRecords = controllers.size();
+    controllerFeed.controllers = &controllers;
+
+    AircraftStateSnapshot aircraft;
+    aircraft.valid = true;
+    aircraft.latitudeDeg = request.airportLatitudeDeg;
+    aircraft.longitudeDeg = request.airportLongitudeDeg;
+
+    RouteSectorSnapshot authorityRoute;
+    authorityRoute.available = true;
+    authorityRoute.stale = false;
+    authorityRoute.routeResolved = true;
+    authorityRoute.departureIcao = "KATL";
+    authorityRoute.destinationIcao = "EGLL";
+    const auto canonicalAuthority =
+        resolver.ResolveBrainScheduledAuthorityVerification(
+            aircraft,
+            controllerFeed,
+            authorityRoute,
+            "endpoint-terminal-polygon-ownership-probe");
+    const auto thamesAssignment = std::find_if(
+        canonicalAuthority.liveMap.assignments.begin(),
+        canonicalAuthority.liveMap.assignments.end(),
+        [](const auto& assignment) {
+            return assignment.callsign == "THAMES_APP" &&
+                   assignment.kind == AuthorityRelevanceKind::Terminal &&
+                   IsActiveLiveAuthorityState(assignment.state);
+        });
+    const auto liveMapCorrect = canonicalAuthority.liveMap.available &&
+        !canonicalAuthority.liveMap.stale &&
+        thamesAssignment != canonicalAuthority.liveMap.assignments.end() &&
+        thamesAssignment->canonicalPolygonId ==
+            thamesPolygon->canonicalPolygonId;
 
     RadioReachableControllerCandidate candidate;
     candidate.callsign = "THAMES_APP";
@@ -621,10 +699,11 @@ int RunEndpointTerminalPolygonOwnershipProbe() {
     input.hasArrivalCoordinates = true;
     input.arrivalLatitudeDeg = request.airportLatitudeDeg;
     input.arrivalLongitudeDeg = request.airportLongitudeDeg;
-    input.terminalRelevanceV2Enabled = true;
     input.terminalTransmitterRadiusNm = 5.0;
-    input.arrivalTerminalAuthorityHash = 903;
-    input.arrivalTerminalAuthority = authority;
+    input.arrivalEndpointPolygonHash = 903;
+    input.arrivalEndpointPolygons = authority;
+    input.authorityRelevance =
+        std::make_shared<const AuthorityRelevanceSnapshot>(canonicalAuthority);
     auto route = std::make_shared<RouteSectorSnapshot>();
     route->available = true;
     route->routeResolved = true;
@@ -636,27 +715,33 @@ int RunEndpointTerminalPolygonOwnershipProbe() {
 
     const auto result = RunBrainControllerRelevanceWorker(input);
     const auto* completion = FindCompletion(result, "THAMES_APP");
-    const auto polygonVote = completion == nullptr
+    const auto canonicalFact = completion == nullptr
         ? std::vector<BrainControllerEvidenceVote>::const_iterator{}
         : std::find_if(
               completion->evidenceVotes.begin(),
               completion->evidenceVotes.end(),
               [](const auto& vote) {
-                  return vote.source == "endpoint-polygon" &&
-                         vote.score > 0 &&
-                         vote.reason ==
-                             "exact-source-nearby-endpoint-polygon";
+                  return vote.source == "canonical-live-map" &&
+                         vote.score == 0 &&
+                         vote.reason == "active-assignment-unrelated" &&
+                         vote.provenance ==
+                             "active-canonical-assignment-does-not-contain-endpoint";
               });
-    const auto brainAccepted = completion != nullptr &&
-        completion->decision == BrainOwnedCandidateDecision::Accepted &&
-        polygonVote != completion->evidenceVotes.end();
+    const auto brainRejected = completion != nullptr &&
+        completion->decision == BrainOwnedCandidateDecision::Rejected &&
+        completion->terminalRelationship ==
+            TerminalEndpointRelationship::Unrelated &&
+        canonicalFact != completion->evidenceVotes.end() &&
+        completion->reason.find("brain-terminal-unrelated-hidden") !=
+            std::string::npos;
 
     std::cout << "ENDPOINT_TERMINAL_POLYGON_OWNERSHIP"
               << " packageCorrect=" << (packageCorrect ? 1 : 0)
               << " polygons=" << authority.polygons.size()
               << " thamesNearby="
               << (thamesPolygon != authority.polygons.end() ? 1 : 0)
-              << " brainAccepted=" << (brainAccepted ? 1 : 0);
+              << " liveMapCorrect=" << (liveMapCorrect ? 1 : 0)
+              << " brainRejected=" << (brainRejected ? 1 : 0);
     if (completion != nullptr) {
         std::cout << " votes=" << completion->positiveVotes << "/"
                   << completion->negativeVotes << "/"
@@ -664,7 +749,7 @@ int RunEndpointTerminalPolygonOwnershipProbe() {
                   << " reason=\"" << completion->reason << "\"";
     }
     std::cout << "\n";
-    if (!packageCorrect || !brainAccepted) {
+    if (!packageCorrect || !liveMapCorrect || !brainRejected) {
         std::cerr << "ENDPOINT_TERMINAL_POLYGON_OWNERSHIP_FAILED\n";
         return 1;
     }

@@ -60,6 +60,12 @@ Read-only discovery on the Product Owner's machine found:
 - all four managed XVatsim and bridge files matching the embedded payload; and
 - a final recommendation of `Current`, with the bridge included and no warnings.
 
+Current-environment update, 2026-10-27: the Product Owner machine now runs
+xPilot `4.0.0-beta.9`. The compatibility matrix retains xPilot `3.2` as the
+legacy generation and now uses beta 9 as the current xPilot 4 fixture. The
+historical beta 7 transaction results below remain historical evidence and are
+not rewritten as beta 9 tests.
+
 The xPilot companion probe passed `21 / 21` checks after exercising the upper
 end of the supported SDK family with API `0.1.99`. API `0.2.0` still produced
 an explicit unavailable observation with zero event subscriptions. The Manager

@@ -38,8 +38,6 @@ expect.resolver_route_resolved=true
 expect.resolver_route_authority_gaps=current:LBSR
 expect.resolver_route_current_sectors=LBSR
 expect.resolver_authority_relevance_available=true
-expect.resolver_authority_status=AUTHORITY candidates=0 authorities=1 polygons=1 routeKeys=1 active=0 relevant=0 diagnostics=1 activationGaps=0
-expect.resolver_authority_diagnostics=ANK_2_CTR:missing-source-ownership:TRANSCEIVER_GEO_ROUTE:LBSR:source=LTBB-2
+expect.resolver_authority_status=AUTHORITY candidates=1 authorities=2 polygons=2 routeKeys=1 active=1 relevant=0 diagnostics=1 activationGaps=0
+expect.resolver_authority_diagnostics=ANK_2_CTR:active-not-relevant:VATSPY_FIR:LTBB-2:VATSPY_BOUNDARY:LTBB-2:center
 expect.resolver_authority_relevant_matches=<none>
-expect.resolver_enroute_available=false
-expect.resolver_enroute_callsigns=<none>

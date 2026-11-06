@@ -6,11 +6,11 @@ flight.callsign=ASA2153
 flight.departure_icao=PANC
 flight.destination_icao=KLAX
 
-terminal_authority.airport_icao=PANC
-terminal_authority.lat=61.174400
-terminal_authority.lon=-149.996400
-terminal_authority.feature=id=A11;name=Anchorage Approach;suffix=APP;prefixes=ANC;polygon=60.0,-151.0|62.0,-151.0|62.0,-149.0|60.0,-149.0
-terminal_authority.feature=id=A11;name=Anchorage Departure;suffix=DEP;prefixes=ANC;polygon=60.0,-151.0|62.0,-151.0|62.0,-149.0|60.0,-149.0
+endpoint_polygon_query.airport_icao=PANC
+endpoint_polygon_query.lat=61.174400
+endpoint_polygon_query.lon=-149.996400
+endpoint_polygon_query.feature=id=A11;name=Anchorage Approach;suffix=APP;prefixes=ANC;polygon=60.0,-151.0|62.0,-151.0|62.0,-149.0|60.0,-149.0
+endpoint_polygon_query.feature=id=A11;name=Anchorage Departure;suffix=DEP;prefixes=ANC;polygon=60.0,-151.0|62.0,-151.0|62.0,-149.0|60.0,-149.0
 
 controller.entry=callsign=ANC_APP;frequency=118.600;facility=5;actionable=true;atis=false
 controller.entry=callsign=ANC_DEP;frequency=119.100;facility=5;actionable=true;atis=false
@@ -24,7 +24,7 @@ transceiver.candidate=callsign=ANC_DEP;frequency=119.100;distanceNm=0;score=100
 transceiver.candidate=callsign=SCT_APP;frequency=128.050;distanceNm=250;score=30
 transceiver.candidate=callsign=LAX_S_DEP;frequency=124.300;distanceNm=250;score=30
 
-expect.terminal_authority_owners=A11_APP,A11_DEP,ANC_APP,ANC_DEP
-expect.terminal_authority_polygons=A11
+expect.endpoint_polygon_owners=A11_APP,A11_DEP,ANC_APP,ANC_DEP
+expect.endpoint_polygons=A11
 expect.brain_controller_relevance_departure_callsigns=ANC_APP,ANC_DEP
 expect.brain_controller_relevance_completions=ANC_APP:accepted,ANC_DEP:accepted,LAX_S_DEP:rejected,SCT_APP:rejected

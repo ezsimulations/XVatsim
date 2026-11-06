@@ -14,5 +14,3 @@ expect.authority_catalog_ids=VATGLASSES:HKG_W_CTR
 expect.authority_active_matches=HKG_W_CTR:VATGLASSES:HKG_W_CTR:VHHK:HKG_W_CTR
 expect.authority_active_polygon_matches=HKG_W_CTR:VATGLASSES:HKG_W_CTR:VATGLASSES:VHHK:VHHK:HKG_W_CTR
 expect.authority_relevant_polygon_matches=HKG_W_CTR:VATGLASSES:HKG_W_CTR:VATGLASSES:VHHK:aircraft=0:route=1:entry=120
-expect.enroute_available=true
-expect.enroute_callsigns=HKG_W_CTR

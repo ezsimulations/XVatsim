@@ -1,0 +1,3403 @@
+diff --git a/brain/include/XVatsim/brain/BrainControllerDecision.h b/brain/include/XVatsim/brain/BrainControllerDecision.h
+index 466af5e7c8b8ab33b0f7e4d7b759f567347f1f6b..5183226c2401f4df2572935106ffbf108fdb1123 100644
+--- a/brain/include/XVatsim/brain/BrainControllerDecision.h
++++ b/brain/include/XVatsim/brain/BrainControllerDecision.h
+@@ -29,6 +29,9 @@ struct BrainControllerDecisionReceipt {
+     int rawPositiveFacts = 0;
+     int rawNegativeFacts = 0;
+     int rawNeutralFacts = 0;
++    TerminalEndpointRelationship terminalRelationship =
++        TerminalEndpointRelationship::NotApplicable;
++    std::string terminalRelationshipProof;
+     std::string reason;
+     std::vector<BrainControllerEvidenceVote> votes;
+ };
+@@ -38,6 +41,16 @@ struct BrainControllerDecisionReceipt {
+ BrainControllerDecisionReceipt DecideBrainControllerCandidate(
+     const BrainControllerDecisionInput& input);
+ 
++// APP/DEP endpoint membership is relationship-based. The evidence votes in
++// the input are preserved only as non-authoritative diagnostics; neither their
++// totals nor a tie may create an endpoint row.
++BrainControllerDecisionReceipt DecideBrainTerminalControllerCandidate(
++    const BrainControllerDecisionInput& input,
++    TerminalEndpointRelationship relationship,
++    std::string relationshipProof,
++    bool relationshipBoardEligible = true,
++    std::string relationshipIneligibleReason = {});
++
+ std::string FormatBrainControllerDecisionReceipt(
+     const BrainControllerDecisionReceipt& receipt);
+ 
+diff --git a/brain/include/XVatsim/brain/BrainOrchestrator.h b/brain/include/XVatsim/brain/BrainOrchestrator.h
+index 80a3c7de54acb9517561588b6bf04ab3b1006e93..eb11c35834c9b11b95fc44b09385a6cac0720202 100644
+--- a/brain/include/XVatsim/brain/BrainOrchestrator.h
++++ b/brain/include/XVatsim/brain/BrainOrchestrator.h
+@@ -18,7 +18,8 @@ public:
+         const TransceiverResolutionSnapshot& transceiverResolutionSnapshot,
+         const FinalDisplaySnapshot& finalDisplaySnapshot,
+         const ManualQuerySnapshot& manualQuerySnapshot,
+-        const OverlayUpdateSnapshot& updateSnapshot = {});
++        const OverlayUpdateSnapshot& updateSnapshot = {},
++        const std::string& centerSelectionPlanKey = {});
+ };
+ 
+ bool OverlayUpdateRequestsWake(const OverlayUpdateSnapshot& updateSnapshot);
+diff --git a/brain/include/XVatsim/brain/BrainOwnedRuntime.h b/brain/include/XVatsim/brain/BrainOwnedRuntime.h
+index fee98027b0bbc1fd1eefc48f660087964a4086d5..2e4f6a54019071b60f6f0c072e9a5ab6947b3a7b 100644
+--- a/brain/include/XVatsim/brain/BrainOwnedRuntime.h
++++ b/brain/include/XVatsim/brain/BrainOwnedRuntime.h
+@@ -929,6 +929,9 @@ struct BrainOwnedCandidateCompletion {
+     std::string frequency;
+     RadioReachableFacilityGroup facilityGroup = RadioReachableFacilityGroup::Other;
+     DisplayRelation displayRelation = DisplayRelation::Unknown;
++    TerminalEndpointRelationship terminalRelationship =
++        TerminalEndpointRelationship::NotApplicable;
++    std::string terminalRelationshipProof;
+     BrainOwnedCandidateDecision decision = BrainOwnedCandidateDecision::Pending;
+     bool displayed = false;
+     bool hasRouteEntryDistance = false;
+@@ -965,7 +968,7 @@ struct BrainTerminalPolygonFact {
+     std::vector<std::string> controllerPrefixes;
+     std::vector<BrainTerminalPolygonRing> rings;
+     bool containsAirport = false;
+-    bool intersectsEndpointAnchor = false;
++    bool intersectsEndpointAnchorContextOnly = false;
+     std::string source;
+ };
+ 
+@@ -1117,6 +1120,11 @@ struct BrainOwnedRuntimeState {
+     std::string cruiseTargetSourceKey;
+     std::string standbyAssistLatchKey;
+     bool standbyAssistWriteConsumed = false;
++    bool manualCenterTierResolved = false;
++    std::string manualCenterTierPlanKey;
++    std::string manuallySelectedCenterCallsign;
++    std::string manuallySelectedCenterFrequency;
++    std::uint64_t manualCenterSelectionGeneration = 0;
+     std::string diversionOverrideSourceKey;
+     std::string preflightRouteCacheAppliedPlanKey;
+     BrainOwnedDisplayOverrideMode displayOverrideMode =
+@@ -1472,11 +1480,35 @@ struct BrainOwnedStandbyAssistPlanInput {
+     bool standbyAssistEnabled = true;
+     bool directCtafStandbyAssistEnabled = false;
+     std::string directCtafGateSource = "unknown";
++    bool manualCenterTierResolved = false;
+     FinalDisplaySnapshot board;
+     std::vector<BrainOwnedStandbyAssistAdvisoryCandidate>
+         ctafUnicomAdvisoryCandidates;
+ };
+ 
++struct BrainOwnedCenterFrequencySelectionRequest {
++    std::uint64_t requestSequence = 0;
++    std::string planKey;
++    std::string callsign;
++    std::string frequency;
++    std::string stableKey;
++    RadioStateSnapshot radios;
++};
++
++struct BrainOwnedCenterFrequencySelectionDecision {
++    std::uint64_t requestSequence = 0;
++    bool accepted = false;
++    bool alreadyCom1Active = false;
++    bool shouldWriteCom1Active = false;
++    bool completed = false;
++    bool writeSucceeded = false;
++    std::string callsign;
++    std::string frequency;
++    std::string planKey;
++    std::string reason;
++    std::uint64_t selectionGeneration = 0;
++};
++
+ struct BrainOwnedStandbyAssistSettingsDiagnostics {
+     bool standbyAssistEnabled = false;
+     bool directCtafStandbyAssistEnabled = false;
+@@ -2586,6 +2618,17 @@ void MarkBrainOwnedXPilotConnectedIfConnected(
+ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
+     const BrainOwnedStandbyAssistPlanInput& input);
+ 
++BrainOwnedCenterFrequencySelectionDecision
++DecideBrainOwnedCenterFrequencySelection(
++    const BrainOwnedRuntimeState& state,
++    const BrainOwnedCenterFrequencySelectionRequest& request);
++
++BrainOwnedCenterFrequencySelectionDecision
++CompleteBrainOwnedCenterFrequencySelection(
++    BrainOwnedRuntimeState* state,
++    BrainOwnedCenterFrequencySelectionDecision decision,
++    bool writeSucceeded);
++
+ BrainOwnedStandbyAssistSideEffectDecision
+ DecideBrainOwnedStandbyAssistSideEffect(
+     BrainOwnedRuntimeState* state,
+diff --git a/brain/include/XVatsim/brain/BrainOwnedWorkerTypes.h b/brain/include/XVatsim/brain/BrainOwnedWorkerTypes.h
+index 1203d63be33796ee3b341816757f002bc4419736..f16c3f1c442f5fe3fa58e9daf51259028a2529bd 100644
+--- a/brain/include/XVatsim/brain/BrainOwnedWorkerTypes.h
++++ b/brain/include/XVatsim/brain/BrainOwnedWorkerTypes.h
+@@ -427,8 +427,7 @@ struct BrainControllerRelevanceWorkerInput {
+     bool hasArrivalCoordinates = false;
+     double arrivalLatitudeDeg = 0.0;
+     double arrivalLongitudeDeg = 0.0;
+-    bool terminalRelevanceV2Enabled = false;
+-    bool vnasSectorPrecedenceEnabled = false;
++    bool centerRadioRangeEnabled = false;
+     double terminalTransmitterRadiusNm = 5.0;
+     std::uint64_t terminalRelevancePolicyHash = 0;
+     std::uint64_t vnasTerminalEvidenceHash = 0;
+@@ -464,8 +463,7 @@ struct BrainOwnedControllerRelevanceInputRequest {
+     bool hasArrivalCoordinates = false;
+     double arrivalLatitudeDeg = 0.0;
+     double arrivalLongitudeDeg = 0.0;
+-    bool terminalRelevanceV2Enabled = false;
+-    bool vnasSectorPrecedenceEnabled = false;
++    bool centerRadioRangeEnabled = false;
+     double terminalTransmitterRadiusNm = 5.0;
+     std::uint64_t vnasTerminalEvidenceHash = 0;
+     std::shared_ptr<const VnasTerminalEvidenceSnapshot> vnasTerminalEvidence;
+diff --git a/brain/include/XVatsim/brain/BrainTypes.h b/brain/include/XVatsim/brain/BrainTypes.h
+index e025b410668edaf20f520eab730b39fcd2520a3b..c32c75aa46fc8b7a791c901d801068018748d2d4 100644
+--- a/brain/include/XVatsim/brain/BrainTypes.h
++++ b/brain/include/XVatsim/brain/BrainTypes.h
+@@ -712,6 +712,18 @@ enum class DisplayRelation {
+     Hidden,
+ };
+ 
++// The sole Brain-owned authority classification for an APP/DEP candidate
++// evaluated against a filed endpoint. Vote totals may still be retained in
++// diagnostics, but they must never be used to derive this relationship.
++enum class TerminalEndpointRelationship {
++    NotApplicable,
++    DirectEndpoint,
++    ExplicitParent,
++    NearbyOnly,
++    Unrelated,
++    Unknown,
++};
++
+ struct BoardStationSnapshot {
+     StationRole role = StationRole::Other;
+     std::string callsign;
+@@ -723,6 +735,9 @@ struct BoardStationSnapshot {
+     bool hasRouteEntryDistance = false;
+     double routeEntryDistanceNm = 0.0;
+     std::string polygonKey;
++    TerminalEndpointRelationship terminalRelationship =
++        TerminalEndpointRelationship::NotApplicable;
++    std::string terminalRelationshipProof;
+     std::string sourceEvidenceId;
+     std::string sourceEvidenceType;
+     std::string sourceEvidenceDomain;
+@@ -754,6 +769,9 @@ struct FinalDisplayStationSnapshot {
+     double routeEntryDistanceNm = 0.0;
+     std::string polygonKey;
+     DisplayRelation displayRelation = DisplayRelation::Unknown;
++    TerminalEndpointRelationship terminalRelationship =
++        TerminalEndpointRelationship::NotApplicable;
++    std::string terminalRelationshipProof;
+     std::string sourceEvidenceId;
+     std::string sourceEvidenceType;
+     std::string sourceEvidenceDomain;
+@@ -787,6 +805,11 @@ enum class OverlayTone {
+ struct OverlayTextLine {
+     std::string text;
+     OverlayTone tone = OverlayTone::Normal;
++    bool centerFrequencySelectable = false;
++    std::string centerCallsign;
++    std::string centerFrequency;
++    std::string centerStableKey;
++    std::string centerPlanKey;
+ };
+ 
+ enum class OverlayVersionTone {
+diff --git a/brain/src/BrainControllerDecision.cpp b/brain/src/BrainControllerDecision.cpp
+index 097d5a9b3c0e47150c872dd61b43100c03b6794d..49271448a1fbacf415d33ae0a6c4adde66803c66 100644
+--- a/brain/src/BrainControllerDecision.cpp
++++ b/brain/src/BrainControllerDecision.cpp
+@@ -17,10 +17,28 @@ std::string JoinReason(const std::string& left, const std::string& right) {
+     return left + "+" + right;
+ }
+ 
+-}  // namespace
++const char* TerminalRelationshipToken(
++    TerminalEndpointRelationship relationship) {
++    switch (relationship) {
++        case TerminalEndpointRelationship::DirectEndpoint:
++            return "DIRECT_ENDPOINT";
++        case TerminalEndpointRelationship::ExplicitParent:
++            return "EXPLICIT_PARENT";
++        case TerminalEndpointRelationship::NearbyOnly:
++            return "NEARBY_ONLY";
++        case TerminalEndpointRelationship::Unrelated:
++            return "UNRELATED";
++        case TerminalEndpointRelationship::Unknown:
++            return "UNKNOWN";
++        case TerminalEndpointRelationship::NotApplicable:
++        default:
++            return "NOT_APPLICABLE";
++    }
++}
+ 
+-BrainControllerDecisionReceipt DecideBrainControllerCandidate(
+-    const BrainControllerDecisionInput& input) {
++BrainControllerDecisionReceipt CollectEvidence(
++    const BrainControllerDecisionInput& input,
++    bool diagnosticOnly) {
+     BrainControllerDecisionReceipt receipt;
+ 
+     // Every raw fact remains countable. Only facts with the same explicit
+@@ -29,6 +47,7 @@ BrainControllerDecisionReceipt DecideBrainControllerCandidate(
+     for (const auto& raw : input.votes) {
+         auto vote = raw;
+         vote.score = Ternary(vote.score);
++        if (diagnosticOnly) vote.contributesToScore = false;
+         if (vote.source.empty()) vote.source = "unknown";
+         if (vote.score > 0) ++receipt.rawPositiveFacts;
+         else if (vote.score < 0) ++receipt.rawNegativeFacts;
+@@ -60,6 +79,14 @@ BrainControllerDecisionReceipt DecideBrainControllerCandidate(
+         }
+         receipt.votes.push_back(std::move(vote));
+     }
++    return receipt;
++}
++
++}  // namespace
++
++BrainControllerDecisionReceipt DecideBrainControllerCandidate(
++    const BrainControllerDecisionInput& input) {
++    auto receipt = CollectEvidence(input, false);
+ 
+     if (!input.ineligibleReason.empty()) receipt.reason = input.ineligibleReason;
+     else if (!input.actionable) receipt.reason = "brain-ineligible-offline";
+@@ -86,6 +113,44 @@ BrainControllerDecisionReceipt DecideBrainControllerCandidate(
+     return receipt;
+ }
+ 
++BrainControllerDecisionReceipt DecideBrainTerminalControllerCandidate(
++    const BrainControllerDecisionInput& input,
++    TerminalEndpointRelationship relationship,
++    std::string relationshipProof,
++    bool relationshipBoardEligible,
++    std::string relationshipIneligibleReason) {
++    // Terminal evidence retains its original polarity so diagnostics can show
++    // what each source reported. Every fact is forcibly non-scoring here.
++    auto receipt = CollectEvidence(input, true);
++    receipt.terminalRelationship = relationship;
++    receipt.terminalRelationshipProof = std::move(relationshipProof);
++
++    if (!input.ineligibleReason.empty()) receipt.reason = input.ineligibleReason;
++    else if (!input.actionable) receipt.reason = "brain-ineligible-offline";
++    else if (input.atis) receipt.reason = "brain-ineligible-atis";
++    else if (!input.supportedFacility) receipt.reason = "brain-ineligible-facility";
++    else if (input.guardFrequency) receipt.reason = "brain-ineligible-guard";
++    else if (!input.phaseApplicable) receipt.reason = "brain-ineligible-phase";
++    else if (!relationshipBoardEligible) {
++        receipt.reason = relationshipIneligibleReason.empty()
++            ? "brain-terminal-relationship-suppressed"
++            : std::move(relationshipIneligibleReason);
++    } else if (relationship == TerminalEndpointRelationship::DirectEndpoint) {
++        receipt.accepted = true;
++        receipt.reason = "brain-terminal-direct-endpoint-display";
++    } else if (relationship == TerminalEndpointRelationship::ExplicitParent) {
++        receipt.accepted = true;
++        receipt.reason = "brain-terminal-explicit-parent-display";
++    } else if (relationship == TerminalEndpointRelationship::NearbyOnly) {
++        receipt.reason = "brain-terminal-nearby-only-hidden";
++    } else if (relationship == TerminalEndpointRelationship::Unrelated) {
++        receipt.reason = "brain-terminal-unrelated-hidden";
++    } else {
++        receipt.reason = "brain-terminal-relationship-unknown-hidden";
++    }
++    return receipt;
++}
++
+ std::string FormatBrainControllerDecisionReceipt(
+     const BrainControllerDecisionReceipt& receipt) {
+     std::ostringstream out;
+@@ -93,6 +158,14 @@ std::string FormatBrainControllerDecisionReceipt(
+         << receipt.rawNegativeFacts << "/" << receipt.rawNeutralFacts
+         << ":brain-votes=" << receipt.positiveVotes << "/"
+         << receipt.negativeVotes << "/" << receipt.neutralVotes;
++    if (receipt.terminalRelationship !=
++        TerminalEndpointRelationship::NotApplicable) {
++        out << ":terminal-relationship="
++            << TerminalRelationshipToken(receipt.terminalRelationship);
++        if (!receipt.terminalRelationshipProof.empty()) {
++            out << "[" << receipt.terminalRelationshipProof << "]";
++        }
++    }
+     for (const auto& vote : receipt.votes) {
+         out << ":" << vote.source << "="
+             << (vote.score > 0 ? "+1" : vote.score < 0 ? "-1" : "0")
+diff --git a/brain/src/BrainControllerEvidencePipeline.cpp b/brain/src/BrainControllerEvidencePipeline.cpp
+index ae9ad46360d14a1bdd13d7824b6fb364c6befd5c..e954020e0a0e83ed7520c6677822895b3b436ff3 100644
+--- a/brain/src/BrainControllerEvidencePipeline.cpp
++++ b/brain/src/BrainControllerEvidencePipeline.cpp
+@@ -392,7 +392,7 @@ std::size_t EditDistance(const std::string& left, const std::string& right) {
+     return previous.back();
+ }
+ 
+-BrainControllerEvidenceVote TerminalVatsimVote(
++BrainControllerEvidenceVote TerminalVatsimIdentityFact(
+     const RadioReachableControllerCandidate& candidate,
+     StationRole role,
+     const std::string& airport,
+@@ -461,10 +461,9 @@ bool CallsignHasExactEndpointPrefix(
+     return false;
+ }
+ 
+-BrainControllerEvidenceVote VatsimRosterVote(
++BrainControllerEvidenceVote VatsimRosterIdentityFact(
+     const RadioReachableControllerCandidate& candidate,
+-    const std::string& airport,
+-    bool claimScopedNeutrality) {
++    const std::string& airport) {
+     std::ostringstream provenance;
+     provenance << "declared=" << candidate.sourceRosterDeclaredRecords
+                << ",retained=" << candidate.sourceRosterRetainedRecords
+@@ -508,7 +507,7 @@ BrainControllerEvidenceVote VatsimRosterVote(
+               "different-direct-endpoint-controller-present",
+               provenance.str())
+         : Vote(
+-              "vatsim-roster", claimScopedNeutrality ? 0 : -1,
++              "vatsim-roster", 0,
+               "no-direct-endpoint-controller",
+               provenance.str(),
+               "vatsim-roster-endpoint-absence");
+@@ -556,20 +555,18 @@ bool OneCharacterPrefixVariant(
+ struct VatspyResult {
+     BrainControllerEvidenceVote vote;
+     std::optional<BrainControllerEvidenceVote> callsignClue;
+-    bool endpointPositive = false;
+ };
+ 
+-VatspyResult VatspyVote(
++VatspyResult VatspyIdentityFact(
+     const BrainControllerRelevanceWorkerInput& input,
+     const RadioReachableControllerCandidate& candidate,
+-    const std::string& airport,
+-    bool claimScopedNeutrality) {
++    const std::string& airport) {
+     VatspyResult result;
+     std::string prefix;
+     if (!SplitCallsign(candidate.callsign, &prefix, nullptr)) {
+         result.vote = Vote(
+             "vatspy-parse",
+-            claimScopedNeutrality ? 0 : -1,
++            0,
+             "callsign-prefix-unavailable");
+         return result;
+     }
+@@ -595,7 +592,6 @@ VatspyResult VatspyVote(
+             (prefix.size() > expected.size() &&
+              prefix.compare(0, expected.size(), expected) == 0 &&
+              (prefix[expected.size()] == '-' || prefix[expected.size()] == '_'))) {
+-            result.endpointPositive = true;
+             result.vote = Vote(
+                 "vatspy-parse",
+                 1,
+@@ -621,10 +617,9 @@ VatspyResult VatspyVote(
+         bestShared + 2 >= std::max(prefix.size(), Upper(best->callsignPrefix).size())) {
+         const auto expected = Upper(best->callsignPrefix);
+         if (OneCharacterPrefixVariant(prefix, expected)) {
+-            result.endpointPositive = true;
+             result.vote = Vote(
+                 "vatspy-parse",
+-                1,
++                0,
+                 "near-exact-airport-alias-prefix-match",
+                 best->source + ":" + prefix + "~" + best->callsignPrefix,
+                 "vatspy-endpoint-identity");
+@@ -632,7 +627,7 @@ VatspyResult VatspyVote(
+         }
+         result.vote = Vote(
+             "vatspy-parse",
+-            claimScopedNeutrality ? 0 : -1,
++            0,
+             "airport-alias-mismatch",
+             best->source + ":" + prefix + "!=" + best->callsignPrefix,
+             "vatspy-endpoint-identity");
+@@ -648,7 +643,7 @@ VatspyResult VatspyVote(
+ 
+     result.vote = Vote(
+         "vatspy-parse",
+-        claimScopedNeutrality ? 0 : -1,
++        0,
+         "airport-alias-mismatch",
+         prefix + "!=" + endpointAliases.front()->callsignPrefix);
+     return result;
+@@ -705,64 +700,47 @@ int BestOnlineVnasRank(
+     return best;
+ }
+ 
+-struct VnasEvaluation {
+-    BrainControllerEvidenceVote vote;
+-    bool ownershipApplicable = true;
+-};
+-
+-VnasEvaluation VnasVote(
++BrainControllerEvidenceVote VnasOwnershipFact(
+     const BrainControllerRelevanceWorkerInput& input,
+     const RadioReachableControllerCandidate& candidate,
+     const std::string& airport) {
+     if (!UsAirport(airport)) {
+-        return {Vote("vnas", 0, "outside-us-scope", Upper(airport)), true};
++        return Vote("vnas", 0, "outside-us-scope", Upper(airport));
+     }
+     if (!input.vnasTerminalEvidence ||
+         !input.vnasTerminalEvidence->enabled) {
+-        return {Vote("vnas", 0, "disabled"), true};
++        return Vote("vnas", 0, "disabled");
+     }
+     const auto& snapshot = *input.vnasTerminalEvidence;
+     if (!snapshot.available || snapshot.stale) {
+-        return {Vote("vnas", 0, "unavailable-or-stale"), true};
++        return Vote("vnas", 0, "unavailable-or-stale");
+     }
+     if (const auto* record = FindVnasRecord(input, candidate, airport)) {
+         if (record->ownershipFactsComplete && !record->serviceCompatible) {
+-            return {
+-                Vote(
+-                    "vnas",
+-                    -1,
+-                    "operation-incompatible",
+-                    record->proof),
+-                false,
+-            };
++            return Vote(
++                "vnas",
++                -1,
++                "operation-incompatible",
++                record->proof);
+         }
+         const auto rank = VnasOwnershipRank(*record);
+         const auto bestRank = BestOnlineVnasRank(input, airport);
+         if (rank > 0 && rank < bestRank) {
+-            return {
+-                Vote(
+-                    "vnas",
+-                    0,
+-                    "lower-operational-owner-online",
+-                    record->proof),
+-                false,
+-            };
++            return Vote(
++                "vnas",
++                0,
++                "lower-operational-owner-online",
++                record->proof);
+         }
+-        return {
+-            Vote("vnas", 1, "endpoint-ownership-match", record->proof),
+-            true,
+-        };
++        return Vote("vnas", 1, "endpoint-ownership-match", record->proof);
+     }
+     if (snapshot.facilityDataComplete && snapshot.ownershipDataAvailable) {
+-        return {
+-            Vote("vnas", -1, "complete-us-data-no-endpoint-match"),
+-            true,
+-        };
++        return Vote("vnas", -1, "complete-us-data-no-endpoint-match");
+     }
+-    return {Vote("vnas", 0, "incomplete-us-data-no-match"), true};
++    return Vote("vnas", 0, "incomplete-us-data-no-match");
+ }
+ 
+-BrainControllerEvidenceVote DistanceVote(
++BrainControllerEvidenceVote TerminalRadioServiceFact(
+     const BrainControllerRelevanceWorkerInput& input,
+     const RadioReachableControllerCandidate& candidate,
+     bool departure) {
+@@ -817,7 +795,7 @@ bool SourceAuthorityMatch(
+     return false;
+ }
+ 
+-BrainControllerEvidenceVote SourceAuthorityVote(
++BrainControllerEvidenceVote RouteAuthorityContextFact(
+     const BrainControllerRelevanceWorkerInput& input,
+     const RadioReachableControllerCandidate& candidate) {
+     std::string sourceProof;
+@@ -834,11 +812,10 @@ BrainControllerEvidenceVote SourceAuthorityVote(
+         "source-authority", 0, "no-source-authority-match");
+ }
+ 
+-BrainControllerEvidenceVote TerminalOwnerVote(
++BrainControllerEvidenceVote TerminalOwnerDiagnosticFact(
+     const RadioReachableControllerCandidate& candidate,
+     const BrainTerminalAuthorityWorkerOutput& authority,
+-    StationRole role,
+-    bool claimScopedNeutrality) {
++    StationRole role) {
+     if (!IsAppDep(role)) {
+         return Vote("terminal-source", 0, "not-appdep-authority-scope");
+     }
+@@ -854,65 +831,88 @@ BrainControllerEvidenceVote TerminalOwnerVote(
+     }
+     return Vote(
+         "terminal-source",
+-        claimScopedNeutrality ? 0 : -1,
+-        "terminal-owner-mismatch",
+-        owner);
++        0,
++        "terminal-owner-mismatch-diagnostic-only",
++        owner,
++        {},
++        false);
++}
++
++struct TerminalPolygonEvaluation {
++    BrainControllerEvidenceVote fact;
++    bool sourceUsable = false;
++    bool exactPositionMatched = false;
++    bool containsEndpoint = false;
++    bool intersectsEndpointContext = false;
++    std::string proof;
++};
++
++bool TerminalPolygonMatchesCandidate(
++    const BrainTerminalPolygonFact& polygon,
++    const std::string& callsignPrefix,
++    const std::string& callsignSuffix) {
++    const auto sourceSuffix = Upper(polygon.serviceSuffix);
++    if (!sourceSuffix.empty() && sourceSuffix != callsignSuffix) {
++        return false;
++    }
++    return std::any_of(
++        polygon.controllerPrefixes.begin(),
++        polygon.controllerPrefixes.end(),
++        [&](const auto& sourcePrefix) {
++            const auto expected = Upper(sourcePrefix);
++            return callsignPrefix == expected ||
++                   (callsignPrefix.size() > expected.size() &&
++                    callsignPrefix.compare(0, expected.size(), expected) == 0 &&
++                    (callsignPrefix[expected.size()] == '_' ||
++                     callsignPrefix[expected.size()] == '-'));
++        });
+ }
+ 
+-BrainControllerEvidenceVote TerminalPolygonVote(
++TerminalPolygonEvaluation EvaluateTerminalPolygonRelationship(
+     const RadioReachableControllerCandidate& candidate,
+     const BrainTerminalAuthorityWorkerOutput& authority,
+-    StationRole role,
+-    bool enabled) {
+-    if (!enabled) {
+-        return Vote("endpoint-polygon", 0, "endpoint-polygon-gate-disabled");
+-    }
++    StationRole role) {
++    TerminalPolygonEvaluation result;
+     if (!IsAppDep(role)) {
+-        return Vote("endpoint-polygon", 0, "not-appdep-polygon-scope");
++        result.fact = Vote(
++            "endpoint-polygon", 0, "not-appdep-polygon-scope", {}, {}, false);
++        return result;
+     }
+     if (!authority.available || !authority.resolved || authority.stale) {
+-        return Vote("endpoint-polygon", 0, "endpoint-polygon-unavailable");
++        result.fact = Vote(
++            "endpoint-polygon", 0, "endpoint-polygon-unavailable", {}, {}, false);
++        return result;
+     }
++    result.sourceUsable = true;
+ 
+     std::string callsignPrefix;
+     std::string callsignSuffix;
+     if (!SplitCallsign(candidate.callsign, &callsignPrefix, &callsignSuffix)) {
+-        return Vote("endpoint-polygon", 0, "controller-position-unparseable");
++        result.fact = Vote(
++            "endpoint-polygon", 0, "controller-position-unparseable", {}, {}, false);
++        return result;
+     }
+     callsignPrefix = Upper(callsignPrefix);
+     callsignSuffix = Upper(callsignSuffix);
+ 
+     for (const auto& polygon : authority.polygons) {
+-        const auto sourceSuffix = Upper(polygon.serviceSuffix);
+-        if (!sourceSuffix.empty() && sourceSuffix != callsignSuffix) {
+-            continue;
+-        }
+-        const auto prefixMatch = std::any_of(
+-            polygon.controllerPrefixes.begin(),
+-            polygon.controllerPrefixes.end(),
+-            [&](const auto& sourcePrefix) {
+-                const auto expected = Upper(sourcePrefix);
+-                return callsignPrefix == expected ||
+-                       (callsignPrefix.size() > expected.size() &&
+-                        callsignPrefix.compare(0, expected.size(), expected) == 0 &&
+-                        (callsignPrefix[expected.size()] == '_' ||
+-                         callsignPrefix[expected.size()] == '-'));
+-            });
+-        if (!prefixMatch) {
++        if (!TerminalPolygonMatchesCandidate(
++                polygon, callsignPrefix, callsignSuffix)) {
+             continue;
+         }
+-        const auto owner = TerminalOwnerToken(candidate.callsign);
+-        const auto directOwner = std::any_of(
+-            authority.ownerTokens.begin(),
+-            authority.ownerTokens.end(),
+-            [&](const auto& expected) { return Upper(expected) == owner; });
+-        if (polygon.containsAirport && directOwner) {
+-            return Vote(
++        result.exactPositionMatched = true;
++        const auto polygonProof = authority.airportIcao + ":" + polygon.polygonKey;
++        if (polygon.containsAirport) {
++            result.containsEndpoint = true;
++            result.proof = polygonProof;
++            result.fact = Vote(
+                 "endpoint-polygon",
+                 1,
+                 "exact-source-direct-endpoint-polygon",
+-                authority.airportIcao + ":" + polygon.polygonKey,
+-                "simaware-endpoint-polygon");
++                polygonProof,
++                "simaware-endpoint-polygon",
++                false);
++            return result;
+         }
+         const auto distinctEndpointPolygon = std::none_of(
+             authority.polygonKeys.begin(),
+@@ -920,21 +920,59 @@ BrainControllerEvidenceVote TerminalPolygonVote(
+             [&](const auto& anchorKey) {
+                 return Upper(anchorKey) == Upper(polygon.polygonKey);
+             });
+-        if (polygon.intersectsEndpointAnchor && distinctEndpointPolygon) {
+-            return Vote(
+-                "endpoint-polygon",
+-                1,
+-                "exact-source-nearby-endpoint-polygon",
+-                authority.airportIcao + ":" + polygon.polygonKey,
+-                "simaware-endpoint-polygon");
++        if (polygon.intersectsEndpointAnchorContextOnly &&
++            distinctEndpointPolygon) {
++            result.intersectsEndpointContext = true;
++            result.proof = polygonProof;
+         }
+     }
+-    return Vote(
+-        "endpoint-polygon",
+-        0,
+-        authority.polygons.empty()
+-            ? "endpoint-polygon-package-empty"
+-            : "no-exact-source-position-match");
++    if (result.exactPositionMatched) {
++        result.fact = Vote(
++            "endpoint-polygon",
++            0,
++            result.intersectsEndpointContext
++                ? "adjacent-endpoint-polygon-context-only"
++                : "exact-source-polygon-does-not-contain-endpoint",
++            result.proof,
++            "simaware-endpoint-polygon",
++            false);
++    } else {
++        result.fact = Vote(
++            "endpoint-polygon",
++            0,
++            authority.polygons.empty()
++                ? "endpoint-polygon-package-empty"
++                : "no-exact-source-position-match",
++            {},
++            "simaware-endpoint-polygon",
++            false);
++    }
++    return result;
++}
++
++bool HasOperationalDirectTerminalCandidate(
++    const BrainControllerRelevanceWorkerInput& input,
++    const BrainTerminalAuthorityWorkerOutput& authority,
++    const std::string& airport,
++    const RadioReachableControllerCandidate* excluded) {
++    for (const auto& other : input.candidates) {
++        if (&other == excluded ||
++            other.group != RadioReachableFacilityGroup::AppDep) {
++            continue;
++        }
++        const auto operational = EvaluateOperationalEligibility(other);
++        if (!operational.eligible || operational.atis) continue;
++        const auto* vnasRecord = FindVnasRecord(input, other, airport);
++        if (vnasRecord != nullptr &&
++            vnasRecord->ownershipFactsComplete &&
++            !vnasRecord->serviceCompatible) {
++            continue;
++        }
++        const auto polygon = EvaluateTerminalPolygonRelationship(
++            other, authority, Role(other));
++        if (polygon.containsEndpoint) return true;
++    }
++    return false;
+ }
+ 
+ const std::vector<BrainAirportFrequencyRecord>& FrequencyRecords(
+@@ -944,7 +982,7 @@ const std::vector<BrainAirportFrequencyRecord>& FrequencyRecords(
+                      : input.airportFrequencies.arrivalFrequencies;
+ }
+ 
+-BrainControllerEvidenceVote PublishedFrequencyVote(
++BrainControllerEvidenceVote PublishedFrequencyDiagnosticFact(
+     const BrainControllerRelevanceWorkerInput& input,
+     const RadioReachableControllerCandidate& candidate,
+     StationRole role,
+@@ -982,6 +1020,25 @@ struct EndpointEvaluation {
+     std::string airport;
+ };
+ 
++int TerminalRelationshipSelectionRank(
++    TerminalEndpointRelationship relationship) {
++    switch (relationship) {
++        case TerminalEndpointRelationship::DirectEndpoint:
++            return 5;
++        case TerminalEndpointRelationship::ExplicitParent:
++            return 4;
++        case TerminalEndpointRelationship::NearbyOnly:
++            return 3;
++        case TerminalEndpointRelationship::Unrelated:
++            return 2;
++        case TerminalEndpointRelationship::Unknown:
++            return 1;
++        case TerminalEndpointRelationship::NotApplicable:
++        default:
++            return 0;
++    }
++}
++
+ EndpointEvaluation EvaluateTerminal(
+     const BrainControllerRelevanceWorkerInput& input,
+     const RadioReachableControllerCandidate& candidate,
+@@ -994,30 +1051,29 @@ EndpointEvaluation EvaluateTerminal(
+     evaluation.airport = departure ? input.departureIcao : input.arrivalIcao;
+ 
+     auto operational = EvaluateOperationalEligibility(candidate);
+-    const auto claimScopedNeutrality = input.terminalRelevanceV2Enabled;
+-    const auto vatspy = VatspyVote(
+-        input, candidate, evaluation.airport, claimScopedNeutrality);
+-    auto roster = VatsimRosterVote(
+-        candidate, evaluation.airport, claimScopedNeutrality);
++    // Terminal identity clues are diagnostics only. The typed relationship
++    // below is the sole source of endpoint-board authority.
++    const auto vatspy = VatspyIdentityFact(
++        input, candidate, evaluation.airport);
++    auto roster = VatsimRosterIdentityFact(
++        candidate, evaluation.airport);
+     auto feedHealth = VatsimFeedHealthFact(candidate);
+-    auto distance = DistanceVote(input, candidate, departure);
+-    auto vnas = VnasVote(input, candidate, evaluation.airport);
+-    auto sourceAuthority = SourceAuthorityVote(input, candidate);
+-    auto terminalOwner = TerminalOwnerVote(
++    auto distance = TerminalRadioServiceFact(input, candidate, departure);
++    auto vnas = VnasOwnershipFact(input, candidate, evaluation.airport);
++    auto sourceAuthority = RouteAuthorityContextFact(input, candidate);
++    auto terminalOwner = TerminalOwnerDiagnosticFact(
+         candidate,
+         departure ? input.departureTerminalAuthority
+                   : input.arrivalTerminalAuthority,
+-        role,
+-        claimScopedNeutrality);
+-    auto terminalPolygon = TerminalPolygonVote(
++        role);
++    auto terminalPolygon = EvaluateTerminalPolygonRelationship(
+         candidate,
+         departure ? input.departureTerminalAuthority
+                   : input.arrivalTerminalAuthority,
+-        role,
+-        input.terminalRelevanceV2Enabled);
+-    auto published = PublishedFrequencyVote(
++        role);
++    auto published = PublishedFrequencyDiagnosticFact(
+         input, candidate, role, departure);
+-    auto vatsim = TerminalVatsimVote(
++    auto vatsim = TerminalVatsimIdentityFact(
+         candidate, role, evaluation.airport, routeContextMatch);
+     auto routeContext = Vote(
+         "route-context",
+@@ -1035,16 +1091,6 @@ EndpointEvaluation EvaluateTerminal(
+     decision.guardFrequency = false;
+     decision.phaseApplicable = phaseApplicable;
+     decision.ineligibleReason = operational.reason;
+-    decision.relationAvailable =
+-        vatsim.score > 0 || vatspy.endpointPositive || distance.score > 0 ||
+-        vnas.vote.score > 0 ||
+-        sourceAuthority.score > 0 || terminalOwner.score > 0 ||
+-        terminalPolygon.score > 0 ||
+-        published.score > 0 || routeContext.score > 0;
+-    decision.ownershipApplicable =
+-        !input.vnasSectorPrecedenceEnabled || vnas.ownershipApplicable;
+-    decision.supportedTiesDisplay =
+-        input.terminalRelevanceV2Enabled || routeContextMatch;
+     decision.votes = std::move(operational.facts);
+     decision.votes.insert(
+         decision.votes.end(), {
+@@ -1052,11 +1098,11 @@ EndpointEvaluation EvaluateTerminal(
+         std::move(vatsim),
+         std::move(roster),
+         vatspy.vote,
+-        std::move(vnas.vote),
+-        std::move(distance),
++        vnas,
++        distance,
+         std::move(sourceAuthority),
+         std::move(terminalOwner),
+-        std::move(terminalPolygon),
++        terminalPolygon.fact,
+         std::move(published),
+         std::move(routeContext),
+     });
+@@ -1064,12 +1110,97 @@ EndpointEvaluation EvaluateTerminal(
+         decision.votes.push_back(std::move(*vatspy.callsignClue));
+     }
+     AppendXPilot4CorrelationVote(input, candidate, &decision.votes);
+-    evaluation.receipt = DecideBrainControllerCandidate(decision);
+-    return evaluation;
+-}
+ 
+-int ReceiptMargin(const BrainControllerDecisionReceipt& receipt) {
+-    return receipt.positiveVotes - receipt.negativeVotes;
++    // Delivery, Ground, Tower, and other airport-local rows are outside the
++    // APP/DEP ownership contract and retain their existing relevance decision.
++    if (!IsAppDep(role)) {
++        decision.relationAvailable = std::any_of(
++            decision.votes.begin(),
++            decision.votes.end(),
++            [](const auto& fact) { return fact.score > 0; });
++        decision.ownershipApplicable = true;
++        decision.supportedTiesDisplay = routeContextMatch;
++        evaluation.receipt = DecideBrainControllerCandidate(decision);
++        return evaluation;
++    }
++
++    TerminalEndpointRelationship relationship =
++        TerminalEndpointRelationship::Unknown;
++    std::string relationshipProof = "required-source-position-or-ownership-unproven";
++    bool relationshipBoardEligible = true;
++    std::string relationshipIneligibleReason;
++
++    const auto& terminalAuthority = departure
++        ? input.departureTerminalAuthority
++        : input.arrivalTerminalAuthority;
++    const auto* vnasRecord = FindVnasRecord(
++        input, candidate, evaluation.airport);
++
++    if (vnasRecord != nullptr &&
++        vnasRecord->ownershipFactsComplete &&
++        !vnasRecord->serviceCompatible) {
++        relationship = TerminalEndpointRelationship::Unrelated;
++        relationshipProof = "dynamic-vnas-operation-incompatible@" +
++            vnasRecord->proof +
++            (terminalPolygon.containsEndpoint
++                 ? ":overrides-candidate-polygon-containment"
++                 : "");
++    } else if (terminalPolygon.containsEndpoint) {
++        relationship = TerminalEndpointRelationship::DirectEndpoint;
++        relationshipProof = "candidate-polygon-contains-endpoint@" +
++            terminalPolygon.proof;
++    } else if (vnasRecord != nullptr &&
++               vnasRecord->serviceCompatible &&
++               input.vnasTerminalEvidence != nullptr &&
++               input.vnasTerminalEvidence->available &&
++               !input.vnasTerminalEvidence->stale &&
++               input.vnasTerminalEvidence->facilityDataComplete) {
++        relationship = TerminalEndpointRelationship::ExplicitParent;
++        relationshipProof = "explicit-vnas-endpoint-owner@" + vnasRecord->proof;
++        const auto parentRank = VnasOwnershipRank(*vnasRecord);
++        const auto bestRank = BestOnlineVnasRank(input, evaluation.airport);
++        if (parentRank > 0 && parentRank < bestRank) {
++            relationshipBoardEligible = false;
++            relationshipIneligibleReason =
++                "brain-terminal-explicit-parent-suppressed-by-higher-owner";
++        } else if (HasOperationalDirectTerminalCandidate(
++                       input,
++                       terminalAuthority,
++                       evaluation.airport,
++                       &candidate)) {
++            relationshipBoardEligible = false;
++            relationshipIneligibleReason =
++                "brain-terminal-explicit-parent-suppressed-by-direct-endpoint";
++        }
++    } else if (vnas.score < 0) {
++        relationship = TerminalEndpointRelationship::Unrelated;
++        relationshipProof = "complete-vnas-source-no-applicable-owner@" +
++            vnas.provenance;
++    } else if (distance.score > 0) {
++        relationship = TerminalEndpointRelationship::NearbyOnly;
++        relationshipProof = "local-radio-service-only@" + distance.provenance;
++    } else if (terminalPolygon.sourceUsable &&
++               terminalPolygon.exactPositionMatched) {
++        relationship = TerminalEndpointRelationship::Unrelated;
++        relationshipProof =
++            "exact-candidate-polygon-does-not-contain-endpoint@" +
++            terminalPolygon.proof;
++    } else {
++        relationship = TerminalEndpointRelationship::Unknown;
++        if (!terminalPolygon.sourceUsable) {
++            relationshipProof = "terminal-geometry-unavailable-or-stale";
++        } else if (!terminalPolygon.exactPositionMatched) {
++            relationshipProof = "exact-source-position-not-mapped";
++        }
++    }
++
++    evaluation.receipt = DecideBrainTerminalControllerCandidate(
++        decision,
++        relationship,
++        std::move(relationshipProof),
++        relationshipBoardEligible,
++        std::move(relationshipIneligibleReason));
++    return evaluation;
+ }
+ 
+ const std::vector<RouteSectorMatchSnapshot>& CurrentSectors(
+@@ -1362,7 +1493,7 @@ CenterEvaluation EvaluateCenter(
+     decision.ineligibleReason = operational.reason;
+     decision.relationAvailable = evaluation.matched;
+     decision.radioReachable =
+-        !input.terminalRelevanceV2Enabled || evaluation.radioReachable;
++        !input.centerRadioRangeEnabled || evaluation.radioReachable;
+     decision.votes = {
+         VatsimVote(candidate, StationRole::Center),
+         Vote(
+@@ -1441,6 +1572,8 @@ BrainOwnedCandidateCompletion MakeCompletion(
+                                                       : station.frequency;
+     completion.facilityGroup = candidate.group;
+     completion.displayRelation = receipt.accepted ? relation : DisplayRelation::Hidden;
++    completion.terminalRelationship = receipt.terminalRelationship;
++    completion.terminalRelationshipProof = receipt.terminalRelationshipProof;
+     completion.decision = receipt.accepted ? BrainOwnedCandidateDecision::Accepted
+                                            : BrainOwnedCandidateDecision::Rejected;
+     completion.displayed = false;
+@@ -1466,8 +1599,15 @@ void AppendUnique(
+     const BrainOwnedCandidateCompletion& completion,
+     ModuleBoardSnapshot* board,
+     std::unordered_set<std::string>* keys) {
++    const auto terminalRelationshipEligible =
++        !IsAppDep(station.role) ||
++        station.terminalRelationship ==
++            TerminalEndpointRelationship::DirectEndpoint ||
++        station.terminalRelationship ==
++            TerminalEndpointRelationship::ExplicitParent;
+     if (board == nullptr || keys == nullptr ||
+         completion.decision != BrainOwnedCandidateDecision::Accepted ||
++        !terminalRelationshipEligible ||
+         station.frequency.empty()) {
+         return;
+     }
+@@ -1596,8 +1736,10 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerEvidencePipeline(
+                 currentCenterRoots.end());
+         const EndpointEvaluation* selected = nullptr;
+         if (departure.receipt.accepted && arrival.receipt.accepted) {
+-            selected = ReceiptMargin(departure.receipt) >=
+-                           ReceiptMargin(arrival.receipt)
++            selected = TerminalRelationshipSelectionRank(
++                           departure.receipt.terminalRelationship) >=
++                           TerminalRelationshipSelectionRank(
++                               arrival.receipt.terminalRelationship)
+                 ? &departure
+                 : &arrival;
+         } else if (departure.receipt.accepted) {
+@@ -1609,8 +1751,10 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerEvidencePipeline(
+         } else if (arrivalPhase && !departurePhase) {
+             selected = &arrival;
+         } else {
+-            selected = ReceiptMargin(departure.receipt) >=
+-                           ReceiptMargin(arrival.receipt)
++            selected = TerminalRelationshipSelectionRank(
++                           departure.receipt.terminalRelationship) >=
++                           TerminalRelationshipSelectionRank(
++                               arrival.receipt.terminalRelationship)
+                 ? &departure
+                 : &arrival;
+         }
+@@ -1620,6 +1764,10 @@ BrainControllerRelevanceWorkerOutput RunBrainControllerEvidencePipeline(
+             : DisplayRelation::ArrivalPrep;
+         station.polygonKey = selected->departure ? input.currentPolygonKey
+                                                  : input.arrivalPolygonKey;
++        station.terminalRelationship =
++            selected->receipt.terminalRelationship;
++        station.terminalRelationshipProof =
++            selected->receipt.terminalRelationshipProof;
+         auto completion = MakeCompletion(
+             input,
+             candidate,
+diff --git a/brain/src/BrainControllerRelevanceWorker.cpp b/brain/src/BrainControllerRelevanceWorker.cpp
+index 16c70290b7dcbe3d2c272a0c4349ff4843596644..05ff4c68c21101d0cb239477fad06d174b2ef094 100644
+--- a/brain/src/BrainControllerRelevanceWorker.cpp
++++ b/brain/src/BrainControllerRelevanceWorker.cpp
+@@ -86,8 +86,7 @@ std::uint64_t HashRadioTuningIdentity(const RadioStateSnapshot& radios) {
+ }
+ 
+ std::uint64_t HashTerminalRelevancePolicy(
+-    bool enabled,
+-    bool vnasSectorPrecedenceEnabled,
++    bool centerRadioRangeEnabled,
+     double transmitterRadiusNm,
+     bool hasDepartureCoordinates,
+     double departureLatitudeDeg,
+@@ -96,11 +95,9 @@ std::uint64_t HashTerminalRelevancePolicy(
+     double arrivalLatitudeDeg,
+     double arrivalLongitudeDeg) {
+     std::uint64_t hash = 1469598103934665603ULL;
+-    HashCombine(&hash, static_cast<std::uint64_t>(enabled ? 1u : 0u));
+     HashCombine(
+         &hash,
+-        static_cast<std::uint64_t>(
+-            vnasSectorPrecedenceEnabled ? 1u : 0u));
++        static_cast<std::uint64_t>(centerRadioRangeEnabled ? 1u : 0u));
+     HashCombine(
+         &hash,
+         static_cast<std::uint64_t>(std::llround(transmitterRadiusNm * 1000.0)));
+@@ -163,670 +160,6 @@ std::string NormalizeCallsign(std::string value) {
+     return value;
+ }
+ 
+-std::vector<std::string> BuildAirportTokens(const std::string& airportIcao) {
+-    std::vector<std::string> tokens;
+-    const auto normalized = NormalizeIcaoInput(airportIcao);
+-    if (normalized.empty()) {
+-        return tokens;
+-    }
+-
+-    tokens.push_back(normalized);
+-    if (normalized.size() == 4) {
+-        tokens.push_back(normalized.substr(1));
+-    }
+-    if (normalized.size() >= 3) {
+-        tokens.push_back(normalized.substr(normalized.size() - 3));
+-    }
+-
+-    std::sort(tokens.begin(), tokens.end());
+-    tokens.erase(std::unique(tokens.begin(), tokens.end()), tokens.end());
+-    return tokens;
+-}
+-
+-bool SplitControllerCallsign(
+-    const std::string& callsign,
+-    std::string* outPrefix,
+-    std::string* outSuffix) {
+-    const auto normalized = NormalizeCallsign(callsign);
+-    const auto separatorIndex = normalized.rfind('_');
+-    if (separatorIndex == std::string::npos || separatorIndex == 0 ||
+-        separatorIndex >= (normalized.size() - 1)) {
+-        return false;
+-    }
+-
+-    if (outPrefix != nullptr) {
+-        *outPrefix = normalized.substr(0, separatorIndex);
+-    }
+-    if (outSuffix != nullptr) {
+-        *outSuffix = normalized.substr(separatorIndex + 1);
+-    }
+-    return true;
+-}
+-
+-bool ControllerMatchesAirport(
+-    const std::string& callsign,
+-    const std::vector<std::string>& airportTokens) {
+-    std::string prefix;
+-    if (!SplitControllerCallsign(callsign, &prefix, nullptr)) {
+-        return false;
+-    }
+-
+-    return std::any_of(
+-        airportTokens.begin(),
+-        airportTokens.end(),
+-        [&](const auto& token) {
+-            return prefix == token ||
+-                   (prefix.size() > token.size() &&
+-                    prefix.compare(0, token.size(), token) == 0 &&
+-                    (prefix[token.size()] == '_' ||
+-                     prefix[token.size()] == '-'));
+-        });
+-}
+-
+-std::string TerminalServiceTokenFromControllerCallsign(std::string callsign) {
+-    callsign = NormalizeCallsign(std::move(callsign));
+-    const auto lastSeparator = callsign.rfind('_');
+-    if (lastSeparator == std::string::npos ||
+-        lastSeparator >= callsign.size() - 1) {
+-        return {};
+-    }
+-
+-    const auto role = callsign.substr(lastSeparator + 1);
+-    if (role != "APP" && role != "DEP") {
+-        return {};
+-    }
+-
+-    const auto terminalBase = callsign.substr(0, lastSeparator);
+-    if (terminalBase.empty()) {
+-        return {};
+-    }
+-
+-    const auto firstSeparator = callsign.find('_');
+-    const auto serviceOwner =
+-        (firstSeparator == std::string::npos || firstSeparator == 0)
+-            ? terminalBase
+-            : terminalBase.substr(0, firstSeparator);
+-    return serviceOwner.empty() ? std::string{} : serviceOwner + "_" + role;
+-}
+-
+-bool TerminalAuthorityFactAvailable(
+-    const BrainTerminalAuthorityWorkerOutput& authority) {
+-    return authority.available &&
+-           authority.resolved &&
+-           !authority.stale &&
+-           !authority.ownerTokens.empty();
+-}
+-
+-bool AirportFrequencyFactAvailable(
+-    const BrainAirportFrequencyWorkerOutput& frequencies) {
+-    return frequencies.available &&
+-           frequencies.resolved &&
+-           !frequencies.stale;
+-}
+-
+-struct AirportFrequencyEvidence {
+-    bool available = false;
+-    bool endpointRoleFacts = false;
+-    bool frequencyFound = false;
+-    bool roleMatch = false;
+-    StationRole matchedRole = StationRole::Other;
+-    std::string suffix;
+-};
+-
+-std::string StationRoleToken(StationRole role) {
+-    switch (role) {
+-        case StationRole::Delivery:
+-            return "DEL";
+-        case StationRole::Ground:
+-            return "GND";
+-        case StationRole::Tower:
+-            return "TWR";
+-        case StationRole::Departure:
+-        case StationRole::Approach:
+-            return "APP_DEP";
+-        case StationRole::Atis:
+-            return "ATIS";
+-        case StationRole::Ctaf:
+-            return "CTAF";
+-        case StationRole::Unicom:
+-            return "UNICOM";
+-        case StationRole::Center:
+-            return "CTR";
+-        case StationRole::Other:
+-        default:
+-            return "OTHER";
+-    }
+-}
+-
+-bool FrequencyRecordRoleMatches(
+-    StationRole candidateRole,
+-    StationRole frequencyRole) {
+-    if ((candidateRole == StationRole::Approach ||
+-         candidateRole == StationRole::Departure) &&
+-        (frequencyRole == StationRole::Approach ||
+-         frequencyRole == StationRole::Departure)) {
+-        return true;
+-    }
+-    return candidateRole == frequencyRole;
+-}
+-
+-const std::vector<BrainAirportFrequencyRecord>& EndpointFrequencyRecords(
+-    const BrainAirportFrequencyWorkerOutput& frequencies,
+-    BrainAirportFrequencyEndpoint endpoint) {
+-    static const std::vector<BrainAirportFrequencyRecord> kEmpty;
+-    if (endpoint == BrainAirportFrequencyEndpoint::Departure) {
+-        return frequencies.departureFrequencies;
+-    }
+-    if (endpoint == BrainAirportFrequencyEndpoint::Arrival) {
+-        return frequencies.arrivalFrequencies;
+-    }
+-    return kEmpty;
+-}
+-
+-AirportFrequencyEvidence ResolveAirportFrequencyEvidence(
+-    const BrainControllerRelevanceWorkerInput& input,
+-    const RadioReachableControllerCandidate& candidate,
+-    BrainAirportFrequencyEndpoint endpoint,
+-    StationRole candidateRole) {
+-    AirportFrequencyEvidence evidence;
+-    if (!AirportFrequencyFactAvailable(input.airportFrequencies)) {
+-        return evidence;
+-    }
+-    evidence.available = true;
+-
+-    const auto normalizedFrequency = NormalizeFrequency(candidate.frequency);
+-    if (normalizedFrequency.empty()) {
+-        return evidence;
+-    }
+-
+-    for (const auto& record :
+-         EndpointFrequencyRecords(input.airportFrequencies, endpoint)) {
+-        if (FrequencyRecordRoleMatches(candidateRole, record.role)) {
+-            evidence.endpointRoleFacts = true;
+-        }
+-        if (NormalizeFrequency(record.frequency) != normalizedFrequency) {
+-            continue;
+-        }
+-        evidence.frequencyFound = true;
+-        evidence.matchedRole = record.role;
+-        if (FrequencyRecordRoleMatches(candidateRole, record.role)) {
+-            evidence.roleMatch = true;
+-        }
+-    }
+-
+-    const auto endpointToken =
+-        endpoint == BrainAirportFrequencyEndpoint::Departure ? "dep" : "arr";
+-    if (evidence.roleMatch) {
+-        evidence.suffix = ":freq=" + std::string(endpointToken) + "-" +
+-                          StationRoleToken(evidence.matchedRole);
+-    } else if (evidence.frequencyFound) {
+-        evidence.suffix = ":freq=" + std::string(endpointToken) + "-other-" +
+-                          StationRoleToken(evidence.matchedRole);
+-    } else {
+-        evidence.suffix = ":freq=" + std::string(endpointToken) + "-miss";
+-    }
+-    return evidence;
+-}
+-
+-std::string AirportFrequencyEvidenceSuffix(
+-    const AirportFrequencyEvidence& evidence) {
+-    return evidence.suffix;
+-}
+-
+-std::string CompactAuthorityValues(
+-    const std::vector<std::string>& values,
+-    std::size_t maxValues = 2) {
+-    std::vector<std::string> compactValues;
+-    compactValues.reserve(values.size());
+-    for (const auto& value : values) {
+-        auto normalized = NormalizeCallsign(value);
+-        if (normalized.empty()) {
+-            continue;
+-        }
+-        if (std::find(
+-                compactValues.begin(),
+-                compactValues.end(),
+-                normalized) == compactValues.end()) {
+-            compactValues.push_back(std::move(normalized));
+-        }
+-    }
+-
+-    if (compactValues.empty()) {
+-        return "none";
+-    }
+-
+-    std::ostringstream stream;
+-    const auto count = std::min(maxValues, compactValues.size());
+-    for (std::size_t index = 0; index < count; ++index) {
+-        if (index > 0) {
+-            stream << '+';
+-        }
+-        stream << compactValues[index];
+-    }
+-    if (compactValues.size() > count) {
+-        stream << "+more";
+-    }
+-    return stream.str();
+-}
+-
+-std::string TerminalAuthorityFactSuffix(
+-    const BrainTerminalAuthorityWorkerOutput& authority,
+-    bool includeStatus) {
+-    std::ostringstream stream;
+-    if (!authority.ownerTokens.empty()) {
+-        stream << ":owner=" << CompactAuthorityValues(authority.ownerTokens);
+-    }
+-    if (!authority.polygonKeys.empty()) {
+-        stream << ":poly=" << CompactAuthorityValues(authority.polygonKeys);
+-    }
+-    if ((includeStatus || stream.str().empty()) && !authority.status.empty()) {
+-        stream << ":status=" << NormalizeCallsign(authority.status);
+-    }
+-    return stream.str();
+-}
+-
+-std::string TerminalAuthorityDecisionReason(
+-    const std::string& baseReason,
+-    const std::string& candidateOwner,
+-    const BrainTerminalAuthorityWorkerOutput& authority) {
+-    std::string reason = baseReason;
+-    if (!candidateOwner.empty()) {
+-        reason += ":" + candidateOwner;
+-    }
+-    reason += TerminalAuthorityFactSuffix(
+-        authority,
+-        baseReason.find("unavailable") != std::string::npos);
+-    return reason;
+-}
+-
+-bool ControllerMatchesTerminalAuthority(
+-    const std::string& callsign,
+-    const BrainTerminalAuthorityWorkerOutput& authority,
+-    std::string* outCandidateOwner) {
+-    const auto candidateOwner =
+-        TerminalServiceTokenFromControllerCallsign(callsign);
+-    if (outCandidateOwner != nullptr) {
+-        *outCandidateOwner = candidateOwner;
+-    }
+-    if (candidateOwner.empty() || !TerminalAuthorityFactAvailable(authority)) {
+-        return false;
+-    }
+-
+-    return std::any_of(
+-        authority.ownerTokens.begin(),
+-        authority.ownerTokens.end(),
+-        [&](const auto& ownerToken) {
+-            return NormalizeCallsign(ownerToken) == candidateOwner;
+-        });
+-}
+-
+-bool FrequencyTuned(
+-    const std::string& frequency,
+-    const RadioStateSnapshot& radioStateSnapshot) {
+-    const auto normalizedTarget = NormalizeFrequency(frequency);
+-    if (normalizedTarget.empty()) {
+-        return false;
+-    }
+-
+-    return NormalizeFrequency(radioStateSnapshot.com1ActiveFrequency) ==
+-               normalizedTarget ||
+-           NormalizeFrequency(radioStateSnapshot.com2ActiveFrequency) ==
+-               normalizedTarget;
+-}
+-
+-bool GuardFrequency(const std::string& frequency) {
+-    const auto normalizedFrequency = NormalizeFrequency(frequency);
+-    return normalizedFrequency == "121500" || normalizedFrequency == "199998";
+-}
+-
+-StationRole RoleFromRadioCandidate(
+-    const RadioReachableControllerCandidate& candidate) {
+-    switch (candidate.group) {
+-        case RadioReachableFacilityGroup::Delivery:
+-            return StationRole::Delivery;
+-        case RadioReachableFacilityGroup::Ground:
+-            return StationRole::Ground;
+-        case RadioReachableFacilityGroup::Tower:
+-            return StationRole::Tower;
+-        case RadioReachableFacilityGroup::AppDep: {
+-            std::string suffix;
+-            if (SplitControllerCallsign(candidate.callsign, nullptr, &suffix) &&
+-                suffix == "DEP") {
+-                return StationRole::Departure;
+-            }
+-            return StationRole::Approach;
+-        }
+-        case RadioReachableFacilityGroup::Center:
+-            return StationRole::Center;
+-        case RadioReachableFacilityGroup::Atis:
+-            return StationRole::Atis;
+-        case RadioReachableFacilityGroup::Other:
+-        default:
+-            return StationRole::Other;
+-    }
+-}
+-
+-void AppendStationUnique(
+-    const BoardStationSnapshot& station,
+-    ModuleBoardSnapshot* board,
+-    std::unordered_set<std::string>* insertedKeys) {
+-    if (board == nullptr || insertedKeys == nullptr || station.frequency.empty() ||
+-        GuardFrequency(station.frequency)) {
+-        return;
+-    }
+-
+-    const auto key =
+-        std::to_string(static_cast<int>(station.role)) + "|" +
+-        NormalizeCallsign(station.callsign) + "|" +
+-        NormalizeFrequency(station.frequency);
+-    if (!insertedKeys->insert(key).second) {
+-        return;
+-    }
+-
+-    board->stations.push_back(station);
+-    board->available = true;
+-}
+-
+-std::string CandidateStableKey(
+-    const RadioReachableControllerCandidate& candidate) {
+-    if (!candidate.stableKey.empty()) {
+-        return candidate.stableKey;
+-    }
+-
+-    return NormalizeCallsign(candidate.callsign) + "|" +
+-           NormalizeFrequency(candidate.frequency) + "|" +
+-           std::to_string(static_cast<int>(candidate.group));
+-}
+-
+-void RecordCandidateDecision(
+-    const BrainControllerRelevanceWorkerInput& input,
+-    const RadioReachableControllerCandidate& candidate,
+-    BrainOwnedCandidateDecision decision,
+-    const std::string& reason,
+-    const BoardStationSnapshot& station,
+-    DisplayRelation displayRelation,
+-    std::vector<BrainOwnedCandidateCompletion>* completions) {
+-    if (completions == nullptr) {
+-        return;
+-    }
+-
+-    auto keyedCandidate = candidate;
+-    keyedCandidate.stableKey = CandidateStableKey(candidate);
+-
+-    BrainOwnedCandidateCompletion completion;
+-    completion.radioBoardHash = input.radioBoardHash;
+-    completion.routePolygonHash = input.routePolygonHash;
+-    completion.workflowStage = input.workflowStage;
+-    completion.currentPolygonIndex = input.currentPolygonIndex;
+-    completion.currentPolygonKey = input.currentPolygonKey;
+-    completion.matchedPolygonKey = station.polygonKey;
+-    completion.callsign = candidate.callsign;
+-    completion.frequency = candidate.frequency;
+-    completion.facilityGroup = candidate.group;
+-    completion.displayRelation = displayRelation;
+-    completion.decision = decision;
+-    completion.displayed = false;
+-    completion.hasRouteEntryDistance = station.hasRouteEntryDistance;
+-    completion.routeEntryDistanceNm = station.routeEntryDistanceNm;
+-    completion.reason = reason;
+-    completion.stableKey = BuildBrainOwnedCandidateCompletionKey(
+-        input.radioBoardHash,
+-        input.routePolygonHash,
+-        input.workflowStage,
+-        input.currentPolygonKey,
+-        keyedCandidate);
+-    if (completion.frequency.empty()) {
+-        completion.frequency = station.frequency;
+-    }
+-    completions->push_back(std::move(completion));
+-}
+-
+-bool WildcardMatch(std::string pattern, std::string value) {
+-    if (pattern.empty()) {
+-        return false;
+-    }
+-
+-    std::size_t patternIndex = 0;
+-    std::size_t valueIndex = 0;
+-    std::size_t starIndex = std::string::npos;
+-    std::size_t valueRetryIndex = 0;
+-    while (valueIndex < value.size()) {
+-        if (patternIndex < pattern.size() &&
+-            pattern[patternIndex] == value[valueIndex]) {
+-            ++patternIndex;
+-            ++valueIndex;
+-            continue;
+-        }
+-
+-        if (patternIndex < pattern.size() && pattern[patternIndex] == '*') {
+-            starIndex = patternIndex++;
+-            valueRetryIndex = valueIndex;
+-            continue;
+-        }
+-
+-        if (starIndex != std::string::npos) {
+-            patternIndex = starIndex + 1;
+-            valueIndex = ++valueRetryIndex;
+-            continue;
+-        }
+-
+-        return false;
+-    }
+-
+-    while (patternIndex < pattern.size() && pattern[patternIndex] == '*') {
+-        ++patternIndex;
+-    }
+-    return patternIndex == pattern.size();
+-}
+-
+-bool CallsignMatchesPattern(
+-    const std::string& rawPattern,
+-    const std::string& rawCallsign) {
+-    const auto pattern = NormalizeCallsign(rawPattern);
+-    const auto callsign = NormalizeCallsign(rawCallsign);
+-    if (pattern.empty() || callsign.empty()) {
+-        return false;
+-    }
+-    if (pattern.find('*') != std::string::npos) {
+-        return WildcardMatch(pattern, callsign);
+-    }
+-    return pattern == callsign;
+-}
+-
+-std::vector<std::string> CallsignPrefixCandidates(
+-    const std::string& rawCallsign) {
+-    std::vector<std::string> prefixes;
+-    const auto callsign = NormalizeCallsign(rawCallsign);
+-    if (callsign.empty()) {
+-        return prefixes;
+-    }
+-
+-    prefixes.push_back(callsign);
+-    const auto firstSeparator = callsign.find('_');
+-    if (firstSeparator != std::string::npos && firstSeparator > 0) {
+-        prefixes.push_back(callsign.substr(0, firstSeparator));
+-    }
+-    const auto lastSeparator = callsign.rfind('_');
+-    if (lastSeparator != std::string::npos && lastSeparator > 0) {
+-        prefixes.push_back(callsign.substr(0, lastSeparator));
+-    }
+-
+-    std::sort(prefixes.begin(), prefixes.end());
+-    prefixes.erase(std::unique(prefixes.begin(), prefixes.end()), prefixes.end());
+-    return prefixes;
+-}
+-
+-bool CallsignMatchesPrefix(
+-    const std::string& rawPrefix,
+-    const std::string& rawCallsign) {
+-    const auto prefix = NormalizeCallsign(rawPrefix);
+-    if (prefix.empty() || prefix.size() < 2) {
+-        return false;
+-    }
+-
+-    for (const auto& candidatePrefix : CallsignPrefixCandidates(rawCallsign)) {
+-        if (candidatePrefix == prefix) {
+-            return true;
+-        }
+-        if (candidatePrefix.size() > prefix.size() &&
+-            candidatePrefix.compare(0, prefix.size(), prefix) == 0 &&
+-            (candidatePrefix[prefix.size()] == '_' ||
+-             candidatePrefix[prefix.size()] == '-')) {
+-            return true;
+-        }
+-    }
+-    return false;
+-}
+-
+-bool SectorHasCenterMetadata(const RouteSectorMatchSnapshot& sector) {
+-    return !sector.controllerCallsignPatterns.empty() ||
+-           !sector.controllerPrefixes.empty() ||
+-           !sector.matchTokens.empty();
+-}
+-
+-bool SectorsHaveCenterMetadata(
+-    const std::vector<RouteSectorMatchSnapshot>& sectors) {
+-    return std::any_of(
+-        sectors.begin(),
+-        sectors.end(),
+-        [](const auto& sector) { return SectorHasCenterMetadata(sector); });
+-}
+-
+-bool SectorMatchesCenterCandidate(
+-    const RouteSectorMatchSnapshot& sector,
+-    const RadioReachableControllerCandidate& candidate,
+-    std::string* reason) {
+-    for (const auto& pattern : sector.controllerCallsignPatterns) {
+-        if (CallsignMatchesPattern(pattern, candidate.callsign)) {
+-            if (reason != nullptr) {
+-                *reason = "pattern:" + NormalizeCallsign(pattern);
+-            }
+-            return true;
+-        }
+-    }
+-
+-    for (const auto& prefix : sector.controllerPrefixes) {
+-        if (CallsignMatchesPrefix(prefix, candidate.callsign)) {
+-            if (reason != nullptr) {
+-                *reason = "prefix:" + NormalizeCallsign(prefix);
+-            }
+-            return true;
+-        }
+-    }
+-
+-    for (const auto& token : sector.matchTokens) {
+-        if (CallsignMatchesPrefix(token, candidate.callsign)) {
+-            if (reason != nullptr) {
+-                *reason = "token:" + NormalizeCallsign(token);
+-            }
+-            return true;
+-        }
+-    }
+-
+-    if (CallsignMatchesPrefix(sector.identifier, candidate.callsign)) {
+-        if (reason != nullptr) {
+-            *reason = "sector:" + NormalizeCallsign(sector.identifier);
+-        }
+-        return true;
+-    }
+-    return false;
+-}
+-
+-struct CenterRouteMatch {
+-    bool hasRouteMetadata = false;
+-    bool matched = false;
+-    std::string polygonKey;
+-    DisplayRelation displayRelation = DisplayRelation::Unknown;
+-    bool hasRouteEntryDistance = false;
+-    double routeEntryDistanceNm = 0.0;
+-    std::string reason;
+-};
+-
+-CenterRouteMatch MatchCenterToRoutePolygon(
+-    const BrainControllerRelevanceWorkerInput& input,
+-    const RadioReachableControllerCandidate& candidate) {
+-    CenterRouteMatch match;
+-    const auto& currentSectors = input.route != nullptr
+-        ? input.route->currentSectors
+-        : input.currentSectors;
+-    const auto& nextSectors = input.route != nullptr
+-        ? input.route->nextSectors
+-        : input.nextSectors;
+-    match.hasRouteMetadata =
+-        SectorsHaveCenterMetadata(currentSectors) ||
+-        SectorsHaveCenterMetadata(nextSectors);
+-
+-    for (const auto& sector : currentSectors) {
+-        std::string proof;
+-        if (SectorMatchesCenterCandidate(sector, candidate, &proof)) {
+-            match.matched = true;
+-            match.polygonKey =
+-                !sector.identifier.empty() ? sector.identifier : input.currentPolygonKey;
+-            match.displayRelation = DisplayRelation::CurrentPolygon;
+-            match.hasRouteEntryDistance = false;
+-            match.routeEntryDistanceNm = 0.0;
+-            match.reason = "center-current-polygon-match:" + proof;
+-            return match;
+-        }
+-    }
+-
+-    for (const auto& sector : nextSectors) {
+-        std::string proof;
+-        if (SectorMatchesCenterCandidate(sector, candidate, &proof)) {
+-            match.matched = true;
+-            match.polygonKey =
+-                !sector.identifier.empty() ? sector.identifier : input.nextPolygonKey;
+-            match.displayRelation = DisplayRelation::NextPolygon;
+-            match.hasRouteEntryDistance = true;
+-            match.routeEntryDistanceNm =
+-                std::max(0.0, sector.entryDistanceNm);
+-            match.reason = "center-next-polygon-match:" + proof;
+-            return match;
+-        }
+-    }
+-
+-    match.reason = match.hasRouteMetadata ? "center-not-route-polygon-match"
+-                                          : "center-route-metadata-unavailable";
+-    return match;
+-}
+-
+-struct CenterCandidate {
+-    BoardStationSnapshot station;
+-};
+-
+-std::string ControllerRootToken(const std::string& callsign) {
+-    const auto normalized = NormalizeCallsign(callsign);
+-    if (normalized.empty()) {
+-        return {};
+-    }
+-
+-    const auto separator = normalized.find('_');
+-    return separator == std::string::npos ? normalized
+-                                          : normalized.substr(0, separator);
+-}
+-
+-std::unordered_set<std::string> BuildCurrentRouteCenterRoots(
+-    const BrainControllerRelevanceWorkerInput& input) {
+-    std::unordered_set<std::string> roots;
+-    for (const auto& candidate : input.candidates) {
+-        if (candidate.group != RadioReachableFacilityGroup::Center) {
+-            continue;
+-        }
+-
+-        const auto routeMatch = MatchCenterToRoutePolygon(input, candidate);
+-        if (!routeMatch.matched ||
+-            routeMatch.displayRelation != DisplayRelation::CurrentPolygon) {
+-            continue;
+-        }
+-
+-        const auto root = ControllerRootToken(candidate.callsign);
+-        if (!root.empty()) {
+-            roots.insert(root);
+-        }
+-    }
+-    return roots;
+-}
+-
+ constexpr const char* kAuthorityRelevancePreviewSurvivor =
+     "brain-preview-authority-relevance-survivor";
+ constexpr const char* kAuthorityRelevancePreviewRejectedNonActionable =
+@@ -1200,20 +533,6 @@ BuildBrainAuthorityRelevanceDecisionPreviewInternal(
+     return preview;
+ }
+ 
+-void AppendSelectedCenterStations(
+-    const std::vector<CenterCandidate>& centerCandidates,
+-    ModuleBoardSnapshot* enrouteBoard,
+-    std::unordered_set<std::string>* enrouteKeys) {
+-    if (enrouteBoard == nullptr || enrouteKeys == nullptr ||
+-        centerCandidates.empty()) {
+-        return;
+-    }
+-
+-    for (const auto& candidate : centerCandidates) {
+-        AppendStationUnique(candidate.station, enrouteBoard, enrouteKeys);
+-    }
+-}
+-
+ }  // namespace
+ 
+ BrainAuthorityRelevanceDecisionPreview
+@@ -1292,14 +611,10 @@ BrainControllerRelevanceWorkerInput BuildBrainOwnedControllerRelevanceInput(
+     input.hasArrivalCoordinates = request.hasArrivalCoordinates;
+     input.arrivalLatitudeDeg = request.arrivalLatitudeDeg;
+     input.arrivalLongitudeDeg = request.arrivalLongitudeDeg;
+-    input.terminalRelevanceV2Enabled = request.terminalRelevanceV2Enabled;
+-    input.vnasSectorPrecedenceEnabled =
+-        request.terminalRelevanceV2Enabled &&
+-        request.vnasSectorPrecedenceEnabled;
++    input.centerRadioRangeEnabled = request.centerRadioRangeEnabled;
+     input.terminalTransmitterRadiusNm = request.terminalTransmitterRadiusNm;
+     input.terminalRelevancePolicyHash = HashTerminalRelevancePolicy(
+-        input.terminalRelevanceV2Enabled,
+-        input.vnasSectorPrecedenceEnabled,
++        input.centerRadioRangeEnabled,
+         input.terminalTransmitterRadiusNm,
+         input.hasDepartureCoordinates,
+         input.departureLatitudeDeg,
+diff --git a/brain/src/BrainDisplayIntent.cpp b/brain/src/BrainDisplayIntent.cpp
+index bd43526b1ba36234f04886975d03a6d2a5ef6e03..6c5f7775d9c7df526073e9b77b94f19c19abd549 100644
+--- a/brain/src/BrainDisplayIntent.cpp
++++ b/brain/src/BrainDisplayIntent.cpp
+@@ -436,6 +436,9 @@ FinalDisplayStationSnapshot ToFinalDisplayStation(
+     displayStation.hasRouteEntryDistance = station.hasRouteEntryDistance;
+     displayStation.routeEntryDistanceNm = station.routeEntryDistanceNm;
+     displayStation.polygonKey = station.polygonKey;
++    displayStation.terminalRelationship = station.terminalRelationship;
++    displayStation.terminalRelationshipProof =
++        station.terminalRelationshipProof;
+     return displayStation;
+ }
+ 
+@@ -3106,6 +3109,10 @@ void HashStation(std::uint64_t* hash, const FinalDisplayStationSnapshot& station
+     HashCombine(hash, station.annotation);
+     HashCombine(hash, station.polygonKey);
+     HashCombine(hash, static_cast<std::uint64_t>(station.displayRelation));
++    HashCombine(
++        hash,
++        static_cast<std::uint64_t>(station.terminalRelationship));
++    HashCombine(hash, station.terminalRelationshipProof);
+     HashCombine(hash, static_cast<std::uint64_t>(station.tuned ? 1u : 0u));
+     HashCombine(hash, static_cast<std::uint64_t>(station.next ? 1u : 0u));
+     HashCombine(hash, static_cast<std::uint64_t>(station.standby ? 1u : 0u));
+diff --git a/brain/src/BrainOrchestrator.cpp b/brain/src/BrainOrchestrator.cpp
+index 69898d6ffe8500b136bf1d10306dd5f30a512dc7..40b97a6e93358f537486f6be7bd48572b89d1326 100644
+--- a/brain/src/BrainOrchestrator.cpp
++++ b/brain/src/BrainOrchestrator.cpp
+@@ -248,7 +248,8 @@ OverlayTone ToneForDisplayRelation(DisplayRelation relation) {
+ 
+ OverlayTextLine FormatBoardLine(
+     const FinalDisplayStationSnapshot& station,
+-    BoardSource boardSource) {
++    bool centerFrequencySelectionEnabled,
++    const std::string& centerSelectionPlanKey) {
+     OverlayTextLine line;
+     if (HasDisplayRelationTone(station.displayRelation)) {
+         line.tone = ToneForDisplayRelation(station.displayRelation);
+@@ -282,6 +283,16 @@ OverlayTextLine FormatBoardLine(
+     }
+ 
+     line.text = SanitizeDisplayText(std::move(text), kMaxDisplayLineChars);
++    if (centerFrequencySelectionEnabled &&
++        station.role == StationRole::Center &&
++        !station.offline &&
++        !frequency.empty()) {
++        line.centerFrequencySelectable = true;
++        line.centerCallsign = callsign;
++        line.centerFrequency = frequency;
++        line.centerStableKey = station.stableCompletionKey;
++        line.centerPlanKey = centerSelectionPlanKey;
++    }
+     return line;
+ }
+ 
+@@ -423,7 +434,8 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
+     const TransceiverResolutionSnapshot& transceiverResolutionSnapshot,
+     const FinalDisplaySnapshot& finalDisplaySnapshot,
+     const ManualQuerySnapshot& manualQuerySnapshot,
+-    const OverlayUpdateSnapshot& updateSnapshot) {
++    const OverlayUpdateSnapshot& updateSnapshot,
++    const std::string& centerSelectionPlanKey) {
+     (void)controllerFeedSnapshot;
+ 
+     OverlayViewModel model;
+@@ -440,11 +452,17 @@ OverlayViewModel BrainOrchestrator::BuildOverlayViewModel(
+     };
+ 
+     if (finalDisplaySnapshot.available || !finalDisplaySnapshot.stations.empty()) {
++        const auto centerFrequencySelectionEnabled =
++            radioStateSnapshot.standbyAssistEnabled;
+         const auto countToDisplay =
+             std::min(finalDisplaySnapshot.stations.size(), kMaxDisplayedStations);
+         for (std::size_t index = 0; index < countToDisplay; ++index) {
+             const auto& station = finalDisplaySnapshot.stations[index];
+-            bodyLines.push_back(FormatBoardLine(station, finalDisplaySnapshot.source));
++            bodyLines.push_back(
++                FormatBoardLine(
++                    station,
++                    centerFrequencySelectionEnabled,
++                    centerSelectionPlanKey));
+         }
+         if (finalDisplaySnapshot.stations.size() > countToDisplay) {
+             bodyLines.push_back(
+diff --git a/brain/src/BrainOwnedRuntime.cpp b/brain/src/BrainOwnedRuntime.cpp
+index 4467f4c566224c9a4519117fb59b079b20ac0ecc..2bae520d7b5d0a8f34077989a6cc65b8943790a8 100644
+--- a/brain/src/BrainOwnedRuntime.cpp
++++ b/brain/src/BrainOwnedRuntime.cpp
+@@ -117,7 +117,7 @@ std::uint64_t HashTerminalAuthorityFact(
+         HashCombine(&hash, NormalizeCallsign(polygon.polygonKey));
+         HashCombine(&hash, NormalizeCallsign(polygon.serviceSuffix));
+         HashCombine(&hash, polygon.containsAirport);
+-        HashCombine(&hash, polygon.intersectsEndpointAnchor);
++        HashCombine(&hash, polygon.intersectsEndpointAnchorContextOnly);
+         for (const auto& prefix : polygon.controllerPrefixes) {
+             HashCombine(&hash, NormalizeCallsign(prefix));
+         }
+@@ -1853,6 +1853,10 @@ bool TrySelectArrivalRegionalSequenceTarget(
+     std::size_t stableOrder = 0;
+     for (std::size_t index = 0; index < output->board.stations.size(); ++index) {
+         const auto& station = output->board.stations[index];
++        if (input.manualCenterTierResolved &&
++            station.role == StationRole::Center) {
++            continue;
++        }
+         if (station.offline || !IsStandbyEligibleRole(station.role) ||
+             station.frequency.empty() ||
+             IsBlockedControllerFrequency(station.frequency)) {
+@@ -4846,6 +4850,14 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
+     const auto lastPilotIdentitySnapshot = state->lastPilotIdentitySnapshot;
+     const auto lastFlightPlanSnapshot = state->lastFlightPlanSnapshot;
+     const auto lastNetworkPlanSnapshot = state->lastNetworkPlanSnapshot;
++    const auto manualCenterTierResolved = state->manualCenterTierResolved;
++    const auto manualCenterTierPlanKey = state->manualCenterTierPlanKey;
++    const auto manuallySelectedCenterCallsign =
++        state->manuallySelectedCenterCallsign;
++    const auto manuallySelectedCenterFrequency =
++        state->manuallySelectedCenterFrequency;
++    const auto manualCenterSelectionGeneration =
++        state->manualCenterSelectionGeneration;
+     BrainXPilot4BridgeRuntimeState xpilot4Bridge;
+     if (preserveXPilot4BridgeSession) {
+         xpilot4Bridge = std::move(state->xpilot4Bridge);
+@@ -4863,6 +4875,14 @@ void ResetBrainOwnedRuntimeCachePreservingFlightContext(
+     state->lastPilotIdentitySnapshot = lastPilotIdentitySnapshot;
+     state->lastFlightPlanSnapshot = lastFlightPlanSnapshot;
+     state->lastNetworkPlanSnapshot = lastNetworkPlanSnapshot;
++    state->manualCenterTierResolved = manualCenterTierResolved;
++    state->manualCenterTierPlanKey = manualCenterTierPlanKey;
++    state->manuallySelectedCenterCallsign =
++        manuallySelectedCenterCallsign;
++    state->manuallySelectedCenterFrequency =
++        manuallySelectedCenterFrequency;
++    state->manualCenterSelectionGeneration =
++        manualCenterSelectionGeneration;
+     if (preserveXPilot4BridgeSession) {
+         state->xpilot4Bridge = std::move(xpilot4Bridge);
+     }
+@@ -6423,6 +6443,105 @@ BrainOwnedStandbyAssistPlanOutput BuildBrainOwnedStandbyAssistPlan(
+     return finalize();
+ }
+ 
++BrainOwnedCenterFrequencySelectionDecision
++DecideBrainOwnedCenterFrequencySelection(
++    const BrainOwnedRuntimeState& state,
++    const BrainOwnedCenterFrequencySelectionRequest& request) {
++    BrainOwnedCenterFrequencySelectionDecision decision;
++    decision.requestSequence = request.requestSequence;
++    decision.callsign = request.callsign;
++    decision.frequency = request.frequency;
++    decision.planKey = request.planKey;
++
++    if (request.requestSequence == 0) {
++        decision.reason = "invalid-request-sequence";
++        return decision;
++    }
++    if (request.planKey.empty() || request.planKey != state.lastPlanKey) {
++        decision.reason = "stale-plan";
++        return decision;
++    }
++    if (!request.radios.valid || !request.radios.standbyAssistEnabled) {
++        decision.reason = "standby-assist-unavailable";
++        return decision;
++    }
++    if (NormalizeFrequency(request.frequency).empty() ||
++        IsBlockedControllerFrequency(request.frequency)) {
++        decision.reason = "invalid-center-frequency";
++        return decision;
++    }
++
++    const FinalDisplayStationSnapshot* selectedCenter = nullptr;
++    for (const auto& station : state.finalDisplaySnapshot.stations) {
++        if (!IsLiveRouteCenterStation(station)) {
++            continue;
++        }
++        if (NormalizeCallsign(station.callsign) !=
++                NormalizeCallsign(request.callsign) ||
++            !FrequencyMatches(station.frequency, request.frequency)) {
++            continue;
++        }
++        if (!request.stableKey.empty() &&
++            !station.stableCompletionKey.empty() &&
++            request.stableKey != station.stableCompletionKey) {
++            continue;
++        }
++        selectedCenter = &station;
++    }
++
++    if (selectedCenter == nullptr) {
++        decision.reason = "center-row-no-longer-displayed";
++        return decision;
++    }
++
++    decision.callsign = selectedCenter->callsign;
++    decision.frequency = selectedCenter->frequency;
++    decision.alreadyCom1Active =
++        IsCom1ActiveFrequency(selectedCenter->frequency, request.radios);
++    decision.shouldWriteCom1Active = !decision.alreadyCom1Active;
++    decision.accepted = true;
++    decision.reason = decision.alreadyCom1Active
++        ? "center-already-com1-active"
++        : "center-frequency-selection-accepted";
++    return decision;
++}
++
++BrainOwnedCenterFrequencySelectionDecision
++CompleteBrainOwnedCenterFrequencySelection(
++    BrainOwnedRuntimeState* state,
++    BrainOwnedCenterFrequencySelectionDecision decision,
++    bool writeSucceeded) {
++    decision.writeSucceeded =
++        !decision.shouldWriteCom1Active || writeSucceeded;
++    if (state == nullptr || !decision.accepted) {
++        if (state == nullptr && decision.reason.empty()) {
++            decision.reason = "runtime-state-unavailable";
++        }
++        return decision;
++    }
++    if (!decision.writeSucceeded) {
++        decision.reason = "com1-active-write-failed";
++        return decision;
++    }
++
++    state->manualCenterTierResolved = true;
++    state->manualCenterTierPlanKey = decision.planKey;
++    state->manuallySelectedCenterCallsign = decision.callsign;
++    state->manuallySelectedCenterFrequency = decision.frequency;
++    ++state->manualCenterSelectionGeneration;
++    if (state->manualCenterSelectionGeneration == 0) {
++        state->manualCenterSelectionGeneration = 1;
++    }
++    decision.selectionGeneration =
++        state->manualCenterSelectionGeneration;
++    decision.completed = true;
++    decision.reason = decision.alreadyCom1Active
++        ? "center-tier-resolved-from-active-row"
++        : "center-frequency-tuned-and-tier-resolved";
++    ResetBrainOwnedStandbyAssistLatch(state);
++    return decision;
++}
++
+ BrainOwnedStandbyAssistSideEffectDecision
+ DecideBrainOwnedStandbyAssistSideEffect(
+     BrainOwnedRuntimeState* state,
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 3c75002636d9fecc846b47904c282c637de1deed..7ff3d83976600b4a0636fd143a8eecf836f42daa 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -52,6 +52,8 @@ Responsibilities:
+   lifecycle clearing, and PDC capture closure
+ - publish immutable, generation-tagged accessory preparation snapshots and
+   the complete brain-approved accessory presentation state
++- validate manual Center-frequency selections against the current plan and
++  live final board, and own the resulting Arrival Center-tier resolution state
+ 
+ ### Overlay
+ 
+@@ -62,6 +64,8 @@ Responsibilities:
+ - expose text-entry facts without owning controller logic
+ - report bounded ORB-click and exact first-visible revision facts without
+   deciding drawer selection, acknowledgement, status, content, or lifecycle
++- report bounded exact-frequency Center-click facts without deciding whether
++  COM1 may be tuned or which standby tier follows
+ - own presentation-only drawer scrolling, shared window geometry, hit testing,
+   raster resources, texture-local signatures, and rendering
+ 
+@@ -233,11 +237,16 @@ direction is recorded in `docs/XPLANE_SDK_4_4_PANEL_GRAPHICS_DIRECTION.md`.
+ ## V2.0.2 Brain Evidence And PDC Boundary
+ 
+ V2.0.2 keeps controller selection inside the Brain. Controller workers report
+-bounded mechanical evidence as yes, no, or neutral votes; they do not suppress
+-candidates. The Brain receives VATSIM and VATSpy identity, airport-distance,
+-route-geometry, declared-extension, and US vNAS evidence when available. This
+-supports callsign variations and extended Australian Center coverage without a
+-second decision path.
++bounded mechanical facts; they do not suppress candidates. Center/FIR and
++airport-local domains retain their existing evidence decision. APP/DEP endpoint
++membership is stricter: the Brain assigns exactly one typed relationship
++(`DIRECT_ENDPOINT`, `EXPLICIT_PARENT`, `NEARBY_ONLY`, `UNRELATED`, or
++`UNKNOWN`). Only exact candidate-polygon containment or a fresh explicit vNAS
++ownership relationship may create an APP/DEP endpoint row. Radio distance,
++polygon adjacency, callsign similarity, roster presence, route context, and
++published frequency remain diagnostics and cannot vote a terminal row into the
++board. The typed relationship and its proof travel with the immutable board to
++the final UI and Standby Assist consumers.
+ 
+ The PDC service uses a five-second Brain-owned cadence. A worker reads bounded
+ xPilot network-log ranges and reports protocol facts. The Brain alone admits
+diff --git a/docs/user_guide/XVatsim_User_Guide.md b/docs/user_guide/XVatsim_User_Guide.md
+index 2bec6a4c6c1d63e4a830ee99dd2f6f07c45e5620..8593f84c7f93ba83bec3816c44cf80206a9283f7 100644
+--- a/docs/user_guide/XVatsim_User_Guide.md
++++ b/docs/user_guide/XVatsim_User_Guide.md
+@@ -33,6 +33,13 @@ Assist can place UNICOM `122.800` in COM1 standby when no eligible controller is
+ online. Aircraft electrical-state handling and diagnostic log limits were also
+ strengthened for more custom-aircraft compatibility and bounded disk use.
+ 
++When Standby Assist is on and two or more live Center controllers are shown,
++the numeric Center frequencies can be selected directly on the overlay. This
++loads the selected Center into COM1 active. During Arrival, Assist then keeps
++moving through the normal terminal sequence instead of loading another Center.
++Approach/Departure, Tower, CTAF, UNICOM, Ground, and Delivery rows are display
++only and cannot be selected this way.
++
+ The new Manager can retrieve a future XVatsim payload only after validating its
+ HTTPS location, exact size, SHA-256 hash, safe contents, version, and every
+ managed file. Installation still requires the pilot to select Install, Update,
+@@ -145,6 +152,13 @@ Color and labels matter:
+ 
+ Tuning a frequency does not make a row green by itself. XVatsim colors controller rows from route and authority context, not from radio tuning alone.
+ 
++If `ASST ON` is shown, you can select the numeric frequency on any live Center
++row to tune it directly into COM1 active. This is intended for a Center handoff
++when Assist guessed the wrong Center for standby, including Center service
++published with an `_FSS` callsign. Only the frequency number is selectable, and
++a press must start and finish on that same number. Other controller roles
++remain read-only.
++
+ In Version 2.2.0, the Brain owns the final radio-board order, controller relevance decisions, information ORBs and drawers, update notice state, and Standby Assist target. COM1 active frequency is the only radio state that advances the next Standby Assist target; COM2 can be displayed, but it does not mark a controller row active or move the assist pointer.
+ 
+ When an update is available, XVatsim shows a dismissible update notice panel
+@@ -325,6 +339,11 @@ lookup is pending or after it fails. All targets use the same Brain-approved
+ COM1 standby writer and existing radio safety checks. The overlay shows
+ `ASST ON` or `ASST OFF`.
+ 
++After a displayed Center frequency is selected during Arrival, Standby Assist
++treats the Center tier as resolved for that flight plan and chooses from the
++remaining regional sequence. Selecting another displayed Center later changes
++COM1 active again without moving standby back to a different Center.
++
+ ## Keyboard Commands In X-Plane
+ 
+ XVatsim registers several X-Plane commands. You can bind these to keyboard keys, joystick buttons, or hardware controls.
+diff --git a/modules/overlay/README.md b/modules/overlay/README.md
+index d146b8923b0f88b632dadd51c5c0ab6e0270f7ab..d673f74ea850b54a66b602c17f717056f4dbae58 100644
+--- a/modules/overlay/README.md
++++ b/modules/overlay/README.md
+@@ -11,6 +11,8 @@ the overlay renders only the selected brain-approved snapshot.
+ Overlay responsibilities are presentation-only:
+ 
+ - produce bounded ORB-click facts for the plugin to consume exactly once;
++- expose precise numeric-frequency hit targets only for Brain-approved Center
++  rows and produce bounded Center-selection facts without tuning a radio;
+ - resolve shared card, rail, drawer, drag, resize, clamp, and hit-test geometry;
+ - keep mouse-wheel drawer scrolling separate from main-card scrolling;
+ - retain only the selected drawer's presentation offset and render plan;
+@@ -123,3 +125,9 @@ consumed click with its captured drawer, brain decision, immutable command, and
+ terminal publication fact. The older render-bound dispatcher is isolated test
+ support only and has no production behavioral or reporting authority.
+ 
++Center-frequency input follows the same capture-only boundary. Mouse-down arms
++one exact rendered numeric frequency, mouse-up must hit the same current target,
++and the overlay queues only the callsign, frequency, and stable row identity.
++The Brain revalidates the current plan, Assist state, live board, Center role,
++and multi-Center condition before the plugin may write COM1 active.
++
+diff --git a/modules/overlay/include/XVatsim/modules/overlay/OverlayWindow.h b/modules/overlay/include/XVatsim/modules/overlay/OverlayWindow.h
+index 704c559e3b86e2c349674f3a2373a1ad495177be..fb4b190666f8a76edded959abf73b1280539a303 100644
+--- a/modules/overlay/include/XVatsim/modules/overlay/OverlayWindow.h
++++ b/modules/overlay/include/XVatsim/modules/overlay/OverlayWindow.h
+@@ -6,6 +6,7 @@
+ #include <memory>
+ #include <optional>
+ #include <string>
++#include <vector>
+ 
+ #include "XVatsim/brain/BrainTypes.h"
+ #include "XVatsim/modules/overlay/OverlayAccessoryCore.h"
+@@ -21,6 +22,29 @@ using OverlayAccessoryPreparationFailureCallback = void (*)(
+     AccessoryPreparationWorkerFailure failure,
+     void* refcon);
+ 
++struct OverlayCenterFrequencyRenderTarget {
++    int designLeft = 0;
++    int designTop = 0;
++    int designRight = 0;
++    int designBottom = 0;
++    std::string callsign;
++    std::string frequency;
++    std::string stableKey;
++    std::string planKey;
++};
++
++struct OverlayCenterFrequencyClickFact {
++    std::uint64_t requestSequence = 0;
++    std::uint64_t notificationSequence = 0;
++    std::uint64_t mouseDownMicroseconds = 0;
++    std::uint64_t mouseUpMicroseconds = 0;
++    std::uint64_t mouseCallbackExitedMicroseconds = 0;
++    std::string callsign;
++    std::string frequency;
++    std::string stableKey;
++    std::string planKey;
++};
++
+ struct OverlayAccessoryIntegrationCounters {
+     std::uint64_t clickFactsProduced = 0;
+     std::uint64_t clickFactsDropped = 0;
+@@ -64,6 +88,10 @@ public:
+         OverlayAccessoryPreparationFailureCallback callback,
+         void* refcon);
+     bool BeginAccessoryInputDispatch(OverlayAccessoryClickFact* outFact);
++    bool ConsumeCenterFrequencyClickFact(
++        OverlayCenterFrequencyClickFact* outFact);
++    bool HasPendingCenterFrequencyClickFacts() const;
++    std::size_t DiscardPendingCenterFrequencyClickFacts();
+     bool HasPendingAccessoryClickFacts() const;
+     bool HasPendingAccessoryWork() const;
+     std::uint64_t GetAccessoryInputNotificationSequence() const;
+@@ -159,6 +187,12 @@ private:
+     void QueueAccessoryClick(
+         brain::BrainOwnedAccessoryDrawerId drawer,
+         std::uint64_t mouseCallbackEnteredMicroseconds);
++    std::optional<OverlayCenterFrequencyRenderTarget>
++    HitTestCenterFrequency(int x, int y) const;
++    void QueueCenterFrequencyClick(
++        const OverlayCenterFrequencyRenderTarget& target,
++        std::uint64_t mouseDownMicroseconds,
++        std::uint64_t mouseUpMicroseconds);
+     void RecordAccessoryPerformance(
+         AccessoryPerformanceCategory category,
+         std::uint64_t elapsedMicroseconds);
+@@ -201,6 +235,18 @@ private:
+     bool windowVisible_ = false;
+     bool overlayEnabled_ = true;
+     int scrollOffset_ = 0;
++    std::vector<OverlayCenterFrequencyRenderTarget>
++        centerFrequencyRenderTargets_;
++    std::optional<OverlayCenterFrequencyRenderTarget>
++        armedCenterFrequencyTarget_;
++    std::uint64_t armedCenterFrequencyMouseDownMicroseconds_ = 0;
++    static constexpr std::size_t kCenterFrequencyClickCapacity = 16;
++    std::array<OverlayCenterFrequencyClickFact,
++               kCenterFrequencyClickCapacity> centerFrequencyClickFacts_{};
++    std::size_t centerFrequencyClickHead_ = 0;
++    std::size_t centerFrequencyClickSize_ = 0;
++    std::uint64_t nextCenterFrequencyClickSequence_ = 1;
++    std::uint64_t centerFrequencyClickNotificationSequence_ = 0;
+     float animationProgress_ = 0.0f;
+     float animationTarget_ = 0.0f;
+     float animationLastTimestampSeconds_ = -1.0f;
+diff --git a/modules/overlay/src/OverlayWindow.cpp b/modules/overlay/src/OverlayWindow.cpp
+index 566a1a9d6aa3167d2efae621b7b7ddc4d80d4012..7743c6a2bef10cc7a4b43d06e1292c543d70fd42 100644
+--- a/modules/overlay/src/OverlayWindow.cpp
++++ b/modules/overlay/src/OverlayWindow.cpp
+@@ -558,6 +558,12 @@ std::size_t BuildRenderSignature(
+     for (const auto& line : sections.listLines) {
+         signature = HashCombine(signature, line.text);
+         signature ^= static_cast<std::size_t>(static_cast<int>(line.tone) * 23);
++        signature ^= static_cast<std::size_t>(
++            line.centerFrequencySelectable ? 227 : 229);
++        signature = HashCombine(signature, line.centerCallsign);
++        signature = HashCombine(signature, line.centerFrequency);
++        signature = HashCombine(signature, line.centerStableKey);
++        signature = HashCombine(signature, line.centerPlanKey);
+     }
+     return signature;
+ }
+@@ -604,6 +610,29 @@ void DrawTextBlock(
+         &brush);
+ }
+ 
++float MeasureTextWidth(
++    Graphics* graphics,
++    const std::string& text,
++    Font* font) {
++    if (graphics == nullptr || font == nullptr || text.empty()) {
++        return 0.0f;
++    }
++    StringFormat format;
++    format.SetAlignment(StringAlignmentNear);
++    format.SetLineAlignment(StringAlignmentNear);
++    format.SetFormatFlags(StringFormatFlagsNoWrap);
++    const auto wideText = ToWide(text);
++    RectF measured;
++    graphics->MeasureString(
++        wideText.c_str(),
++        static_cast<INT>(wideText.size()),
++        font,
++        PointF(0.0f, 0.0f),
++        &format,
++        &measured);
++    return measured.Width;
++}
++
+ void FillRoundedRect(
+     Graphics* graphics,
+     const RectF& rect,
+@@ -813,7 +842,12 @@ RasterImage RenderCaseImage(bool automaticMode) {
+ 
+ RasterImage RenderCardImage(
+     const OverlaySections& sections,
+-    int scrollOffset) {
++    int scrollOffset,
++    std::vector<OverlayCenterFrequencyRenderTarget>*
++        centerFrequencyTargets = nullptr) {
++    if (centerFrequencyTargets != nullptr) {
++        centerFrequencyTargets->clear();
++    }
+     Bitmap bitmap(kCardWidth, kCardHeight, PixelFormat32bppARGB);
+     Graphics graphics(&bitmap);
+     ConfigureGraphics(&graphics);
+@@ -972,6 +1006,34 @@ RasterImage RenderCardImage(
+             toneColor = yellow;
+         }
+         DrawTextBlock(&graphics, RectF(46.0f, rowY, 308.0f, 20.0f), line.text, &rowFont, toneColor);
++        if (centerFrequencyTargets != nullptr &&
++            line.centerFrequencySelectable &&
++            !line.centerFrequency.empty()) {
++            const auto frequencyPosition =
++                line.text.find(line.centerFrequency);
++            if (frequencyPosition != std::string::npos) {
++                const auto prefix = line.text.substr(0, frequencyPosition);
++                const auto throughFrequency = line.text.substr(
++                    0, frequencyPosition + line.centerFrequency.size());
++                const auto prefixWidth =
++                    MeasureTextWidth(&graphics, prefix, &rowFont);
++                const auto throughFrequencyWidth =
++                    MeasureTextWidth(&graphics, throughFrequency, &rowFont);
++                OverlayCenterFrequencyRenderTarget target;
++                target.designLeft = static_cast<int>(std::floor(
++                    46.0f + prefixWidth - 3.0f));
++                target.designRight = static_cast<int>(std::ceil(
++                    46.0f + throughFrequencyWidth + 3.0f));
++                target.designTop = static_cast<int>(std::floor(rowY - 1.0f));
++                target.designBottom =
++                    static_cast<int>(std::ceil(rowY + 21.0f));
++                target.callsign = line.centerCallsign;
++                target.frequency = line.centerFrequency;
++                target.stableKey = line.centerStableKey;
++                target.planKey = line.centerPlanKey;
++                centerFrequencyTargets->push_back(std::move(target));
++            }
++        }
+         rowY += 22.0f;
+     }
+ 
+@@ -1434,6 +1496,14 @@ void OverlayWindow::Create() {
+     accessoryIntegrationCounters_ = {};
+     accessoryClickWakeRequests_ = 0;
+     accessoryClickCallbackExitMarks_ = 0;
++    centerFrequencyRenderTargets_.clear();
++    centerFrequencyClickFacts_ = {};
++    centerFrequencyClickHead_ = 0;
++    centerFrequencyClickSize_ = 0;
++    nextCenterFrequencyClickSequence_ = 1;
++    centerFrequencyClickNotificationSequence_ = 0;
++    armedCenterFrequencyTarget_.reset();
++    armedCenterFrequencyMouseDownMicroseconds_ = 0;
+     accessoryPerformance_ = std::make_unique<AccessoryPerformanceCollector>();
+     accessoryPerformance_->ResetForNewProcess(accessoryPerformanceEpoch_++);
+     animationProgress_ = 0.0f;
+@@ -1516,6 +1586,8 @@ void OverlayWindow::Destroy() {
+     accessoryAnchorState_ = {};
+     dragMoved_ = false;
+     accessoryClickQueue_ = {};
++    centerFrequencyRenderTargets_.clear();
++    (void)DiscardPendingCenterFrequencyClickFacts();
+     if (!accessoryVisiblePublicationState_.HasRetainedTerminal() &&
+         accessoryPublicationFacts_.PendingCount() == 0) {
+         accessoryVisiblePublicationState_ = {};
+@@ -2133,6 +2205,33 @@ bool OverlayWindow::BeginAccessoryInputDispatch(
+     return began;
+ }
+ 
++bool OverlayWindow::ConsumeCenterFrequencyClickFact(
++    OverlayCenterFrequencyClickFact* outFact) {
++    if (centerFrequencyClickSize_ == 0) {
++        return false;
++    }
++    if (outFact != nullptr) {
++        *outFact = centerFrequencyClickFacts_[centerFrequencyClickHead_];
++    }
++    centerFrequencyClickHead_ =
++        (centerFrequencyClickHead_ + 1) % kCenterFrequencyClickCapacity;
++    --centerFrequencyClickSize_;
++    return true;
++}
++
++bool OverlayWindow::HasPendingCenterFrequencyClickFacts() const {
++    return centerFrequencyClickSize_ != 0;
++}
++
++std::size_t OverlayWindow::DiscardPendingCenterFrequencyClickFacts() {
++    const auto discarded = centerFrequencyClickSize_;
++    centerFrequencyClickHead_ = 0;
++    centerFrequencyClickSize_ = 0;
++    armedCenterFrequencyTarget_.reset();
++    armedCenterFrequencyMouseDownMicroseconds_ = 0;
++    return discarded;
++}
++
+ bool OverlayWindow::HasPendingAccessoryClickFacts() const {
+     return accessoryClickQueue_.PendingCount() != 0;
+ }
+@@ -2539,6 +2638,7 @@ void OverlayWindow::Hide() {
+     HandleAccessoryVisibilityLoss(
+         "visible-eligibility-lost-before-first-frame");
+     DiscardPendingAccessoryClickFacts();
++    (void)DiscardPendingCenterFrequencyClickFacts();
+     StopAccessoryPreparation();
+     ResetOverlayUpdateTiming();
+     const auto totalStarted = OverlayClock::now();
+@@ -2559,6 +2659,7 @@ void OverlayWindow::Hide() {
+     animationTarget_ = 0.0f;
+     lastWakeState_ = false;
+     scrollOffset_ = 0;
++    centerFrequencyRenderTargets_.clear();
+     cardTextureDirty_ = true;
+     gLastOverlayUpdateTiming.bodyUs += ElapsedOverlayUsSince(bodyStarted);
+     if (window_ != nullptr) {
+@@ -2626,6 +2727,13 @@ int OverlayWindow::HandleMouseClickCallback(
+             self->hasPendingRecallRequest_ = true;
+             return 1;
+         }
++        const auto centerFrequencyHit = self->HitTestCenterFrequency(x, y);
++        if (centerFrequencyHit.has_value()) {
++            self->armedCenterFrequencyTarget_ = *centerFrequencyHit;
++            self->armedCenterFrequencyMouseDownMicroseconds_ =
++                mouseCallbackEnteredMicroseconds;
++            return 1;
++        }
+         const auto resizeCorner = self->ResolveResizeCorner(x, y);
+         if (resizeCorner != ResizeCorner::None) {
+             self->StartResizing(x, y, resizeCorner);
+@@ -2636,6 +2744,19 @@ int OverlayWindow::HandleMouseClickCallback(
+     }
+ 
+     if (mouse == xplm_MouseDrag) {
++        if (self->armedCenterFrequencyTarget_.has_value()) {
++            const auto hit = self->HitTestCenterFrequency(x, y);
++            const auto& armed = *self->armedCenterFrequencyTarget_;
++            if (!hit.has_value() ||
++                hit->callsign != armed.callsign ||
++                hit->frequency != armed.frequency ||
++                hit->stableKey != armed.stableKey ||
++                hit->planKey != armed.planKey) {
++                self->armedCenterFrequencyTarget_.reset();
++                self->armedCenterFrequencyMouseDownMicroseconds_ = 0;
++            }
++            return 1;
++        }
+         if (self->resizing_) {
+             self->ContinueResizing(x, y);
+         } else {
+@@ -2645,6 +2766,23 @@ int OverlayWindow::HandleMouseClickCallback(
+     }
+ 
+     if (mouse == xplm_MouseUp) {
++        if (self->armedCenterFrequencyTarget_.has_value()) {
++            const auto armed = *self->armedCenterFrequencyTarget_;
++            const auto hit = self->HitTestCenterFrequency(x, y);
++            if (hit.has_value() &&
++                hit->callsign == armed.callsign &&
++                hit->frequency == armed.frequency &&
++                hit->stableKey == armed.stableKey &&
++                hit->planKey == armed.planKey) {
++                self->QueueCenterFrequencyClick(
++                    armed,
++                    self->armedCenterFrequencyMouseDownMicroseconds_,
++                    AccessoryWallClockMicroseconds());
++            }
++            self->armedCenterFrequencyTarget_.reset();
++            self->armedCenterFrequencyMouseDownMicroseconds_ = 0;
++            return 1;
++        }
+         self->StopDragging();
+         self->StopResizing();
+         return 1;
+@@ -2669,6 +2807,8 @@ int OverlayWindow::HandleRightClickCallback(
+     }
+     self->StopDragging();
+     self->StopResizing();
++    self->armedCenterFrequencyTarget_.reset();
++    self->armedCenterFrequencyMouseDownMicroseconds_ = 0;
+     return 1;
+ }
+ 
+@@ -2680,6 +2820,8 @@ int OverlayWindow::HandleMouseWheelCallback(XPLMWindowID windowId, int x, int y,
+     if (self == nullptr) {
+         return 0;
+     }
++    self->armedCenterFrequencyTarget_.reset();
++    self->armedCenterFrequencyMouseDownMicroseconds_ = 0;
+ 
+     if (self->accessoryDrawerOpen_) {
+         AccessoryPresentationScrollInput input;
+@@ -2748,8 +2890,11 @@ XPLMCursorStatus OverlayWindow::HandleCursorCallback(XPLMWindowID windowId, int
+     const auto accessoryHit = self == nullptr
+         ? AccessoryHitTestResult{}
+         : HitTestAccessoryOrb(self->accessoryLayout_, x, y);
++    const auto centerFrequencyHit = self == nullptr
++        ? std::optional<OverlayCenterFrequencyRenderTarget>{}
++        : self->HitTestCenterFrequency(x, y);
+     if (self != nullptr &&
+-        (accessoryHit.handled ||
++        (accessoryHit.handled || centerFrequencyHit.has_value() ||
+          self->ResolveResizeCorner(x, y) != ResizeCorner::None ||
+          self->IsInDragRegion(x, y) ||
+          self->IsInAcknowledgeAction(x, y) ||
+@@ -2879,7 +3024,11 @@ void OverlayWindow::Draw() {
+ 
+     const auto signature = BuildRenderSignature(sections, scrollOffset_, textEntryActive_, animationTarget_);
+     if (cardTextureDirty_ || signature != lastCardSignature_) {
+-        UploadTexture(&cardTextureId_, RenderCardImage(sections, scrollOffset_));
++        std::vector<OverlayCenterFrequencyRenderTarget> frequencyTargets;
++        UploadTexture(
++            &cardTextureId_,
++            RenderCardImage(sections, scrollOffset_, &frequencyTargets));
++        centerFrequencyRenderTargets_ = std::move(frequencyTargets);
+         cardTextureDirty_ = false;
+         lastCardSignature_ = signature;
+         mainCardProductionSignature_ = std::to_string(signature);
+@@ -3454,6 +3603,67 @@ void OverlayWindow::QueueAccessoryClick(
+     }
+ }
+ 
++std::optional<OverlayCenterFrequencyRenderTarget>
++OverlayWindow::HitTestCenterFrequency(int x, int y) const {
++    if (window_ == nullptr || !windowVisible_ ||
++        animationProgress_ < 0.98f || textEntryActive_ ||
++        viewModel_.systemNotice.visible || dragging_ || resizing_) {
++        return std::nullopt;
++    }
++
++    int left = 0;
++    int top = 0;
++    int right = 0;
++    int bottom = 0;
++    XPLMGetWindowGeometry(window_, &left, &top, &right, &bottom);
++    const auto layout = ResolveLayout(left, top, animationProgress_, scale_);
++    for (const auto& target : centerFrequencyRenderTargets_) {
++        ScreenRect rect;
++        rect.left = layout.cardLeft + ScaleValue(target.designLeft, scale_);
++        rect.right = layout.cardLeft + ScaleValue(target.designRight, scale_);
++        rect.top = layout.cardTop - ScaleValue(target.designTop, scale_);
++        rect.bottom =
++            layout.cardTop - ScaleValue(target.designBottom, scale_);
++        if (rect.Contains(x, y)) {
++            return target;
++        }
++    }
++    return std::nullopt;
++}
++
++void OverlayWindow::QueueCenterFrequencyClick(
++    const OverlayCenterFrequencyRenderTarget& target,
++    std::uint64_t mouseDownMicroseconds,
++    std::uint64_t mouseUpMicroseconds) {
++    if (target.callsign.empty() || target.frequency.empty() ||
++        centerFrequencyClickSize_ >= kCenterFrequencyClickCapacity) {
++        return;
++    }
++
++    OverlayCenterFrequencyClickFact fact;
++    fact.requestSequence = nextCenterFrequencyClickSequence_++;
++    fact.notificationSequence =
++        ++centerFrequencyClickNotificationSequence_;
++    fact.mouseDownMicroseconds = mouseDownMicroseconds;
++    fact.mouseUpMicroseconds = mouseUpMicroseconds;
++    fact.callsign = target.callsign;
++    fact.frequency = target.frequency;
++    fact.stableKey = target.stableKey;
++    fact.planKey = target.planKey;
++    const auto tail =
++        (centerFrequencyClickHead_ + centerFrequencyClickSize_) %
++        kCenterFrequencyClickCapacity;
++    centerFrequencyClickFacts_[tail] = fact;
++    ++centerFrequencyClickSize_;
++
++    if (accessoryInputWakeCallback_ != nullptr) {
++        accessoryInputWakeCallback_(
++            fact.notificationSequence, accessoryInputWakeRefcon_);
++    }
++    centerFrequencyClickFacts_[tail].mouseCallbackExitedMicroseconds =
++        AccessoryWallClockMicroseconds();
++}
++
+ std::uint64_t OverlayWindow::AccessoryWallClockMicroseconds() {
+     return static_cast<std::uint64_t>(
+         std::chrono::duration_cast<std::chrono::microseconds>(
+diff --git a/modules/radio_state/include/XVatsim/modules/radio_state/RadioStateSampler.h b/modules/radio_state/include/XVatsim/modules/radio_state/RadioStateSampler.h
+index 3dd493ee682a4e399860585d503f78380d2e6c7b..b5ddff614785aa3515a88038112e29b0eac8be74 100644
+--- a/modules/radio_state/include/XVatsim/modules/radio_state/RadioStateSampler.h
++++ b/modules/radio_state/include/XVatsim/modules/radio_state/RadioStateSampler.h
+@@ -12,6 +12,7 @@ public:
+ 
+     brain::RadioStateSnapshot Sample();
+     void Reset();
++    bool SetCom1ActiveFrequency(const std::string& frequency);
+     bool SetCom1StandbyFrequency(const std::string& frequency);
+ 
+ private:
+@@ -36,6 +37,7 @@ private:
+         void* refcon);
+ 
+     void* com1ActiveFrequencyRef_ = nullptr;
++    bool com1ActiveUsesLegacyFormat_ = false;
+     void* com2ActiveFrequencyRef_ = nullptr;
+     void* com1StandbyFrequencyRef_ = nullptr;
+     bool com1StandbyUsesLegacyFormat_ = false;
+diff --git a/modules/radio_state/src/RadioStateSampler.cpp b/modules/radio_state/src/RadioStateSampler.cpp
+index 7289bb59c6c2d4cbc13d441de1c6c77fc1d86060..12a0ed6c8e7d51d2c52a669e0a3e46cfe5a23a31 100644
+--- a/modules/radio_state/src/RadioStateSampler.cpp
++++ b/modules/radio_state/src/RadioStateSampler.cpp
+@@ -287,6 +287,9 @@ void RadioStateSampler::ResolveDataRefs() {
+     if (com1ActiveFrequencyRef_ == nullptr) {
+         com1ActiveFrequencyRef_ =
+             XPLMFindDataRef("sim/cockpit/radios/com1_freq_hz");
++        if (com1ActiveFrequencyRef_ != nullptr) {
++            com1ActiveUsesLegacyFormat_ = true;
++        }
+     }
+     if (com2ActiveFrequencyRef_ == nullptr) {
+         com2ActiveFrequencyRef_ =
+@@ -307,6 +310,7 @@ void RadioStateSampler::ResolveDataRefs() {
+ 
+ void RadioStateSampler::ResetDataRefs() {
+     com1ActiveFrequencyRef_ = nullptr;
++    com1ActiveUsesLegacyFormat_ = false;
+     com2ActiveFrequencyRef_ = nullptr;
+     com1StandbyFrequencyRef_ = nullptr;
+     com1StandbyUsesLegacyFormat_ = false;
+@@ -626,4 +630,29 @@ bool RadioStateSampler::SetCom1StandbyFrequency(const std::string& frequency) {
+     return true;
+ }
+ 
++bool RadioStateSampler::SetCom1ActiveFrequency(const std::string& frequency) {
++    ResolveDataRefs();
++    if (com1ActiveFrequencyRef_ == nullptr) {
++        return false;
++    }
++
++    const auto dataRefHandle = static_cast<XPLMDataRef>(com1ActiveFrequencyRef_);
++    const auto dataRefTypes = XPLMGetDataRefTypes(dataRefHandle);
++    if ((dataRefTypes & xplmType_Int) == 0 ||
++        !XPLMCanWriteDataRef(dataRefHandle)) {
++        return false;
++    }
++
++    const auto channelNumber =
++        ParseFrequencyChannel(frequency, com1ActiveUsesLegacyFormat_);
++    if (channelNumber <= 0 ||
++        !IsValidComFrequencyChannel(
++            channelNumber, com1ActiveUsesLegacyFormat_)) {
++        return false;
++    }
++
++    XPLMSetDatai(dataRefHandle, channelNumber);
++    return true;
++}
++
+ }  // namespace xvatsim::modules::radio_state
+diff --git a/modules/terminal_authority/src/TerminalAuthorityResolver.cpp b/modules/terminal_authority/src/TerminalAuthorityResolver.cpp
+index 755519575cd8838eb222e15156c60b1e3c6ac62b..3bc1c3b2529af53917c5af449b18eeaa318634fa 100644
+--- a/modules/terminal_authority/src/TerminalAuthorityResolver.cpp
++++ b/modules/terminal_authority/src/TerminalAuthorityResolver.cpp
+@@ -435,17 +435,25 @@ bool PolygonsIntersect(
+ brain::BrainTerminalPolygonFact BuildTerminalPolygonFact(
+     const core::authority::AuthorityPolygon& polygon,
+     bool containsAirport,
+-    bool intersectsEndpointAnchor) {
++    bool intersectsEndpointAnchorContextOnly) {
+     brain::BrainTerminalPolygonFact fact;
+     fact.polygonKey = polygon.polygonKey;
+     fact.name = polygon.name;
+     fact.serviceSuffix = polygon.controllerSuffix;
+     fact.controllerPrefixes = polygon.controllerPrefixes;
+-    if (fact.controllerPrefixes.empty() && !polygon.polygonKey.empty()) {
++    // A facility may log on under either a published position prefix (for
++    // example LAX_*) or the source polygon/facility identifier itself (SCT_*).
++    // Preserve both exact source mappings in the Brain fact packet.
++    if (!polygon.polygonKey.empty() &&
++        std::find(
++            fact.controllerPrefixes.begin(),
++            fact.controllerPrefixes.end(),
++            polygon.polygonKey) == fact.controllerPrefixes.end()) {
+         fact.controllerPrefixes.push_back(polygon.polygonKey);
+     }
+     fact.containsAirport = containsAirport;
+-    fact.intersectsEndpointAnchor = intersectsEndpointAnchor;
++    fact.intersectsEndpointAnchorContextOnly =
++        intersectsEndpointAnchorContextOnly;
+     fact.source = "SIMAWARE_TRACON";
+     for (const auto& ring : polygon.rings) {
+         brain::BrainTerminalPolygonRing factRing;
+@@ -908,9 +916,9 @@ TerminalAuthorityResolver::ResolveFromCatalog(
+         const auto containsAirport = std::find(
+             endpointAnchors.begin(), endpointAnchors.end(), &polygon) !=
+             endpointAnchors.end();
+-        auto intersectsEndpointAnchor = containsAirport;
+-        if (!intersectsEndpointAnchor) {
+-            intersectsEndpointAnchor = std::any_of(
++        auto intersectsEndpointAnchorContextOnly = containsAirport;
++        if (!intersectsEndpointAnchorContextOnly) {
++            intersectsEndpointAnchorContextOnly = std::any_of(
+                 endpointAnchors.begin(),
+                 endpointAnchors.end(),
+                 [&](const auto* anchor) {
+@@ -918,12 +926,14 @@ TerminalAuthorityResolver::ResolveFromCatalog(
+                            PolygonsIntersect(polygon, *anchor);
+                 });
+         }
+-        if (!intersectsEndpointAnchor) {
++        if (!intersectsEndpointAnchorContextOnly) {
+             continue;
+         }
+ 
+         output.polygons.push_back(BuildTerminalPolygonFact(
+-            polygon, containsAirport, intersectsEndpointAnchor));
++            polygon,
++            containsAirport,
++            intersectsEndpointAnchorContextOnly));
+         if (!containsAirport) {
+             continue;
+         }
+diff --git a/plugin/src/XVatsimPlugin.cpp b/plugin/src/XVatsimPlugin.cpp
+index 06ab141cd195dfffec5a731f507b6ee0b85cf3b8..e29ef7e699b7e27dcbb95f754c87f29aac893fe3 100644
+--- a/plugin/src/XVatsimPlugin.cpp
++++ b/plugin/src/XVatsimPlugin.cpp
+@@ -462,6 +462,7 @@ void RequestAccessoryFlightLoopWake(
+     void* refcon);
+ bool RequestImmediateGatedFlightLoopCallback();
+ bool ServicePendingAccessoryInput();
++bool ServicePendingCenterFrequencyInput();
+ void DrainAccessoryPublicationFacts();
+ void DiscardPendingAccessoryClickFacts();
+ void LogRadioBoardCandidateDiffTrace(
+@@ -762,6 +763,10 @@ std::uint64_t HashOperationalPresentationIdentity(
+     HashCombineBool(&hash, gBrainOwnedRuntimeState.cruiseAltitudeReachedThisFlight);
+     HashCombineDouble(&hash, gBrainOwnedRuntimeState.activeCruiseTargetFt);
+     HashCombineString(&hash, gBrainOwnedRuntimeState.diversionOverrideSourceKey);
++    HashCombine(
++        &hash,
++        static_cast<std::size_t>(
++            gBrainOwnedRuntimeState.manualCenterSelectionGeneration));
+     HashCombineBool(&hash, gPluginSettings.terminalRelevanceV2Enabled);
+     HashCombineBool(&hash, gPluginSettings.vnasSectorPrecedenceEnabled);
+     HashCombineBool(&hash, gPluginSettings.standbyAssistEnabled);
+@@ -975,6 +980,10 @@ void ApplyStandbyRecommendation(
+         gPluginSettings.directCtafStandbyAssistEnabled;
+     standbyInput.directCtafGateSource =
+         gPluginSettings.directCtafStandbyAssistGateSource;
++    standbyInput.manualCenterTierResolved =
++        gBrainOwnedRuntimeState.manualCenterTierResolved &&
++        gBrainOwnedRuntimeState.manualCenterTierPlanKey ==
++            standbyInput.planKey;
+     standbyInput.board = *boardSnapshot;
+     standbyInput.ctafUnicomAdvisoryCandidates =
+         ctafUnicomAdvisoryCandidates;
+@@ -4339,6 +4348,7 @@ void ResetPresentationStateForColdDark() {
+ void DiscardPendingAccessoryClickFacts() {
+     gAccessoryInputAccounting.lifecycleDiscards +=
+         gOverlayWindow.DiscardPendingAccessoryClickFacts();
++    (void)gOverlayWindow.DiscardPendingCenterFrequencyClickFacts();
+ }
+ 
+ void ResetSessionState() {
+@@ -4609,6 +4619,68 @@ bool RequestImmediateGatedFlightLoopCallback() {
+     return true;
+ }
+ 
++bool ServicePendingCenterFrequencyInput() {
++    if (!gPluginRuntimeEnabled) {
++        return false;
++    }
++
++    bool performedWork = false;
++    std::size_t cycleBudget = 4;
++    xvatsim::modules::overlay::OverlayCenterFrequencyClickFact fact;
++    while (cycleBudget-- != 0 &&
++           gOverlayWindow.ConsumeCenterFrequencyClickFact(&fact)) {
++        performedWork = true;
++        auto radios = gRadioStateSampler.Sample();
++        radios.standbyAssistEnabled =
++            gPluginSettings.standbyAssistEnabled;
++
++        xvatsim::brain::BrainOwnedCenterFrequencySelectionRequest request;
++        request.requestSequence = fact.requestSequence;
++        request.planKey = fact.planKey;
++        request.callsign = fact.callsign;
++        request.frequency = fact.frequency;
++        request.stableKey = fact.stableKey;
++        request.radios = radios;
++        auto decision =
++            xvatsim::brain::DecideBrainOwnedCenterFrequencySelection(
++                gBrainOwnedRuntimeState, request);
++
++        bool writeSucceeded = !decision.shouldWriteCom1Active;
++        if (decision.accepted && decision.shouldWriteCom1Active) {
++            writeSucceeded = gRadioStateSampler.SetCom1ActiveFrequency(
++                decision.frequency);
++        }
++        decision =
++            xvatsim::brain::CompleteBrainOwnedCenterFrequencySelection(
++                &gBrainOwnedRuntimeState,
++                std::move(decision),
++                writeSucceeded);
++
++        AppendDeferredDiagnosticsLogLine(
++            [fact, decision]() {
++                std::ostringstream line;
++                line << "event=center-frequency-ui-selection"
++                     << " requestSequence=" << fact.requestSequence
++                     << " callsign="
++                     << SanitizeLogText(decision.callsign, 32)
++                     << " frequency="
++                     << SanitizeLogText(decision.frequency, 16)
++                     << " accepted=" << (decision.accepted ? 1 : 0)
++                     << " writeRequested="
++                     << (decision.shouldWriteCom1Active ? 1 : 0)
++                     << " writeSucceeded="
++                     << (decision.writeSucceeded ? 1 : 0)
++                     << " completed=" << (decision.completed ? 1 : 0)
++                     << " selectionGeneration="
++                     << decision.selectionGeneration
++                     << " reason="
++                     << SanitizeLogText(decision.reason, 64);
++                return line.str();
++            });
++    }
++    return performedWork;
++}
++
+ bool ServicePendingAccessoryInput() {
+     if (!gPluginRuntimeEnabled) return false;
+     bool performedWork = false;
+@@ -6781,11 +6853,10 @@ void RefreshOverlayFromBrainEngineer3() {
+         const auto* relevanceRadioSnapshot = &radioSnapshot;
+         bool terminalEvidenceScopeApplied = false;
+         std::size_t endpointScopeIdentity = 0;
+-        if (gPluginSettings.terminalRelevanceV2Enabled &&
+-            (workflowDecision.stage ==
++        if (workflowDecision.stage ==
+                  xvatsim::brain::WorkflowStage::Departure ||
+              workflowDecision.stage ==
+-                 xvatsim::brain::WorkflowStage::Arrival)) {
++                 xvatsim::brain::WorkflowStage::Arrival) {
+             terminalEvidenceScopeApplied = true;
+             HashCombine(
+                 &endpointScopeIdentity,
+@@ -6901,7 +6972,7 @@ void RefreshOverlayFromBrainEngineer3() {
+             vnasDepartureIcao,
+             vnasArrivalIcao,
+             gatedRadioSnapshot.candidates,
+-            gPluginSettings.terminalRelevanceV2Enabled);
++            true);
+         diagnostics.vnasFeedUs = ElapsedMicrosecondsSince(timingStarted);
+         diagnostics.vnasFeedMs = diagnostics.vnasFeedUs / 1000;
+         diagnostics.vnasStatus =
+@@ -6923,11 +6994,11 @@ void RefreshOverlayFromBrainEngineer3() {
+             flightContext.hasDestinationCoordinates;
+         relevanceRequest.arrivalLatitudeDeg = flightContext.destinationLatDeg;
+         relevanceRequest.arrivalLongitudeDeg = flightContext.destinationLonDeg;
+-        relevanceRequest.terminalRelevanceV2Enabled =
++        // Preserve the legacy setting only for its historical Center radio
++        // range behavior. APP/DEP endpoint authority is always the typed
++        // relationship path and cannot be rolled back to vote authority.
++        relevanceRequest.centerRadioRangeEnabled =
+             gPluginSettings.terminalRelevanceV2Enabled;
+-        relevanceRequest.vnasSectorPrecedenceEnabled =
+-            gPluginSettings.terminalRelevanceV2Enabled &&
+-            gPluginSettings.vnasSectorPrecedenceEnabled;
+         relevanceRequest.terminalTransmitterRadiusNm =
+             kTerminalTransmitterRadiusNm;
+         relevanceRequest.vnasTerminalEvidenceHash =
+@@ -7123,7 +7194,8 @@ void RefreshOverlayFromBrainEngineer3() {
+         *transceiverResolutionSnapshot,
+         finalDisplaySnapshot,
+         gBrainOwnedRuntimeState.manualQuerySnapshot,
+-        updateSnapshot);
++        updateSnapshot,
++        gBrainOwnedRuntimeState.lastPlanKey);
+     diagnostics.overlayBuildUs = ElapsedMicrosecondsSince(timingStarted);
+     diagnostics.overlayBuildMs = diagnostics.overlayBuildUs / 1000;
+     if (DiagnosticJobsEnabled()) {
+@@ -7183,9 +7255,11 @@ float FlightLoopCallback(
+ 
+     const bool accessoryPendingAtEntry =
+         gOverlayWindow.HasPendingAccessoryWork() ||
++        gOverlayWindow.HasPendingCenterFrequencyClickFacts() ||
+         gOverlayWindow.GetAccessoryInputNotificationSequence() !=
+             gAccessoryInputAccounting.lastObservedNotificationSequence;
+     if (accessoryPendingAtEntry) {
++        (void)ServicePendingCenterFrequencyInput();
+         (void)ServicePendingAccessoryInput();
+         ++gAccessoryInputAccounting.activeCadenceReturns;
+         const auto cadence =
+@@ -7378,15 +7452,11 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
+             gBrainOwnedRuntimeState.operatingMode.generation));
+     AppendDiagnosticsLogLine(
+         std::string{"event=terminal-relevance-policy policy="} +
+-            (gPluginSettings.terminalRelevanceV2Enabled
+-                 ? "equal-source-v2"
+-                 : "legacy") +
++            "typed-endpoint-relationship" +
+             " endpointTransmitterRadiusNm=" +
+             std::to_string(kTerminalTransmitterRadiusNm) +
+-            " vnas=us-only vnasSectorPrecedence=" +
+-            (gPluginSettings.vnasSectorPrecedenceEnabled ? "enabled"
+-                                                         : "disabled") +
+-            " rollbackSettings=terminal_relevance_v2:false|vnas_sector_precedence:false",
++            " vnas=us-only parentPrecedence=always-enforced"
++            " legacyTerminalVoteRollback=removed",
+         xvatsim::modules::runtime_workers::DiagnosticsImportance::Critical);
+     RegisterPluginCommands();
+     RegisterPluginMenu();
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_arrival_egll_thames_polygon_overlap.scn b/tools/regression_harness/scenarios/brain_controller_relevance_arrival_egll_thames_polygon_overlap.scn
+index 6fd84b59ee02b78ae8faeb7b696b1d6c8d3c81dd..903fd563e5c4b30889140ee886282ca8b491c4ec 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_arrival_egll_thames_polygon_overlap.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_arrival_egll_thames_polygon_overlap.scn
+@@ -24,6 +24,6 @@ transceiver.station=callsign=THAMES_APP;frequency=132.700;lat=51.535020;lon=-0.4
+ 
+ expect.terminal_authority_owners=EGLL_APP,EGLL_DEP
+ expect.terminal_authority_polygons=EGLL
+-expect.brain_controller_relevance_arrival_callsigns=THAMES_APP
+-expect.brain_controller_relevance_completions=THAMES_APP:accepted
+-expect.brain_controller_relevance_completions_contains=endpoint-polygon=+1[exact-source-nearby-endpoint-polygon@EGLL:THAMES,terminal-source=0[terminal-owner-mismatch
++expect.brain_controller_relevance_arrival_callsigns=<none>
++expect.brain_controller_relevance_completions=THAMES_APP:rejected
++expect.brain_controller_relevance_completions_contains=terminal-relationship=UNRELATED,endpoint-polygon=0[adjacent-endpoint-polygon-context-only@EGLL:THAMES,brain-terminal-unrelated-hidden
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_arrival_terminal_owner_filters_klax.scn b/tools/regression_harness/scenarios/brain_controller_relevance_arrival_terminal_owner_filters_klax.scn
+index 71e597fe3e6111319aff4c7aa8c90d6bfe68ae8d..634e7a51a0e4aa383ce16d76c7cf99c7457e09be 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_arrival_terminal_owner_filters_klax.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_arrival_terminal_owner_filters_klax.scn
+@@ -13,8 +13,8 @@ terminal_authority.lat=33.942500
+ terminal_authority.lon=-118.408100
+ terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=LAX;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+ terminal_authority.feature=id=SCT;name=SoCal Departure;suffix=DEP;prefixes=LAX;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+-terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=ONT;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+-terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SAN;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
++terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=ONT;polygon=33.0,-117.9|35.0,-117.9|35.0,-116.0|33.0,-116.0
++terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SAN;polygon=32.0,-119.0|33.5,-119.0|33.5,-116.0|32.0,-116.0
+ terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SCT;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+ 
+ controller.entry=callsign=LAX_APP;frequency=124.500;facility=5;actionable=true;atis=false
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_arrival_terminal_owner_filters_ksan.scn b/tools/regression_harness/scenarios/brain_controller_relevance_arrival_terminal_owner_filters_ksan.scn
+index 1e6eb35c61d8d54dc65cd32bfdae57360bd45d47..f6091afe27ec6e454a4b8cbc95b211fa9ef5ae7d 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_arrival_terminal_owner_filters_ksan.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_arrival_terminal_owner_filters_ksan.scn
+@@ -12,8 +12,8 @@ terminal_authority.airport_icao=KSAN
+ terminal_authority.lat=32.733600
+ terminal_authority.lon=-117.189700
+ terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SAN;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+-terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=LAX;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+-terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=ONT;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
++terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=LAX;polygon=33.0,-119.0|35.0,-119.0|35.0,-116.0|33.0,-116.0
++terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=ONT;polygon=33.0,-118.0|35.0,-118.0|35.0,-116.0|33.0,-116.0
+ terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SCT;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+ 
+ controller.entry=callsign=SAN_W1_APP;frequency=119.600;facility=5;actionable=true;atis=false
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal_majority_accepts_kmdw_chi_app.scn b/tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal_majority_accepts_kmdw_chi_app.scn
+index f65c9c46ad729b3e691ef95e1097338c2715ca94..30fe552b35a1751fd967618541e8eec4a10288cc 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal_majority_accepts_kmdw_chi_app.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal_majority_accepts_kmdw_chi_app.scn
+@@ -11,7 +11,7 @@ brain_controller_relevance.stage=Departure
+ terminal_authority.airport_icao=KMDW
+ terminal_authority.lat=41.785972
+ terminal_authority.lon=-87.752417
+-terminal_authority.feature=id=C90;name=Chicago TRACON;polygon=41.0,-88.5|42.5,-88.5|42.5,-86.8|41.0,-86.8
++terminal_authority.feature=id=C90;name=Chicago TRACON;prefixes=CHI;polygon=41.0,-88.5|42.5,-88.5|42.5,-86.8|41.0,-86.8
+ 
+ route.current_sector=identifier=KZAU;entryDistanceNm=0;matchTokens=KZAU;controllerPatterns=CHI_*_CTR;controllerPrefixes=CHI
+ 
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal_owner_filters_klax.scn b/tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal_owner_filters_klax.scn
+index caabdecbe3a6846158ee4273140036a3f81e4459..d5f7704548d4aa8c2e707122a4d4c3f097621d68 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal_owner_filters_klax.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal_owner_filters_klax.scn
+@@ -11,8 +11,8 @@ terminal_authority.lat=33.942500
+ terminal_authority.lon=-118.408100
+ terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=LAX;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+ terminal_authority.feature=id=SCT;name=SoCal Departure;suffix=DEP;prefixes=LAX;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+-terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=ONT;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+-terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SAN;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
++terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=ONT;polygon=33.0,-117.9|35.0,-117.9|35.0,-116.0|33.0,-116.0
++terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SAN;polygon=32.0,-119.0|33.5,-119.0|33.5,-116.0|32.0,-116.0
+ terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SCT;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+ 
+ controller.entry=callsign=LAX_APP;frequency=124.500;facility=5;actionable=true;atis=false
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal_owner_filters_ksan.scn b/tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal_owner_filters_ksan.scn
+index b05c23b63ffb983d38ec3a48ce511d31f8d763a5..b38c87ec7c7216b0b478c1b59d793aaa7904fd5c 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal_owner_filters_ksan.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_departure_terminal_owner_filters_ksan.scn
+@@ -10,8 +10,8 @@ terminal_authority.airport_icao=KSAN
+ terminal_authority.lat=32.733600
+ terminal_authority.lon=-117.189700
+ terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SAN;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+-terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=LAX;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+-terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=ONT;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
++terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=LAX;polygon=33.0,-119.0|35.0,-119.0|35.0,-116.0|33.0,-116.0
++terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=ONT;polygon=33.0,-118.0|35.0,-118.0|35.0,-116.0|33.0,-116.0
+ terminal_authority.feature=id=SCT;name=SoCal Approach;suffix=APP;prefixes=SCT;polygon=32.0,-119.0|35.0,-119.0|35.0,-116.0|32.0,-116.0
+ 
+ controller.entry=callsign=SAN_W1_APP;frequency=119.600;facility=5;actionable=true;atis=false
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_v2_faa_pseudo_frequency_miss_is_neutral.scn b/tools/regression_harness/scenarios/brain_controller_relevance_v2_faa_pseudo_frequency_miss_is_neutral.scn
+index f96b54510f863cf528d9182e3356bdc70034d734..3fc378e3136d07d707053d9bea9afd6468fd2cff 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_v2_faa_pseudo_frequency_miss_is_neutral.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_v2_faa_pseudo_frequency_miss_is_neutral.scn
+@@ -25,5 +25,5 @@ transceiver.stale=false
+ transceiver.candidate=callsign=IAD_M_APP;frequency=126.650;distanceNm=85;score=100;lat=39.1754;lon=-76.6683
+ transceiver.station=callsign=IAD_M_APP;frequency=126.650;lat=39.1754;lon=-76.6683
+ 
+-expect.brain_controller_relevance_arrival_callsigns=IAD_M_APP
+-expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,published-frequency=0[role-frequency-not-confirmed,terminal-source=0,brain-positive-majority-display
++expect.brain_controller_relevance_arrival_callsigns=<none>
++expect.brain_controller_relevance_completions_contains=IAD_M_APP:rejected,terminal-relationship=NEARBY_ONLY,published-frequency=0[role-frequency-not-confirmed,terminal-source=0,brain-terminal-nearby-only-hidden
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_v2_kcrq_prefers_san_w_over_sct_fallback.scn b/tools/regression_harness/scenarios/brain_controller_relevance_v2_kcrq_prefers_san_w_over_sct_fallback.scn
+index 6d107646e3d59cff4f9670c20f8c3a1ed73a144b..c8bbd134cb1e14cc04c5c8ba14a3efdab38737aa 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_v2_kcrq_prefers_san_w_over_sct_fallback.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_v2_kcrq_prefers_san_w_over_sct_fallback.scn
+@@ -24,4 +24,4 @@ vnas.controller_feed_json={"updatedAt":"2026-09-07T02:30:00Z","controllers":[{"a
+ vnas.artcc_facility_json={"id":"ZLA","facility":{"id":"ZLA","type":"Artcc","positions":[],"childFacilities":[{"id":"SCT","type":"Tracon","starsConfiguration":{"internalAirports":["CRQ","LAX"],"areas":[{"id":"A_SAN","name":"San Diego","underlyingAirports":["CRQ"]},{"id":"A_LAX","name":"Del Rey","underlyingAirports":["LAX"]},{"id":"A_ALL","name":"Consolidated","underlyingAirports":["CRQ","LAX"]}],"tcps":[{"id":"T_6G","subset":6,"sectorId":"G"},{"id":"T_5W","subset":5,"sectorId":"W","parentTcpId":"T_6G"},{"id":"T_6S","subset":6,"sectorId":"S","parentTcpId":"T_6G"}]},"positions":[{"id":"P_SAN_W","callsign":"SAN_W_APP","frequency":119600000,"starsConfiguration":{"areaId":"A_SAN","tcpId":"T_5W"}},{"id":"P_LAX_S","callsign":"LAX_S_DEP","frequency":124300000,"starsConfiguration":{"areaId":"A_LAX","tcpId":"T_6S"}},{"id":"P_SCT","callsign":"SCT_APP","frequency":128050000,"starsConfiguration":{"areaId":"A_ALL","tcpId":"T_6G"}}],"childFacilities":[]}]}}
+ 
+ expect.brain_controller_relevance_departure_callsigns=SAN_W_APP
+-expect.brain_controller_relevance_completions_contains=SAN_W_APP:accepted,SCT_APP:rejected,vnas=0[lower-operational-owner-online,brain-ineligible-operational-ownership
++expect.brain_controller_relevance_completions_contains=SAN_W_APP:accepted,terminal-relationship=EXPLICIT_PARENT,SCT_APP:rejected,vnas=0[lower-operational-owner-online,brain-terminal-explicit-parent-suppressed-by-higher-owner
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_v2_klax_arrival_excludes_departure_sector.scn b/tools/regression_harness/scenarios/brain_controller_relevance_v2_klax_arrival_excludes_departure_sector.scn
+index 5dfbd247abc59bc89b794d0cfb23ecb3424d10f5..3010e4c1a6c67d422ecfdadd8f73769227dd2c9d 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_v2_klax_arrival_excludes_departure_sector.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_v2_klax_arrival_excludes_departure_sector.scn
+@@ -12,6 +12,11 @@ flight.has_destination_coordinates=true
+ brain_controller_relevance.stage=Arrival
+ brain_controller_relevance.v2_enabled=true
+ 
++terminal_authority.airport_icao=KLAX
++terminal_authority.lat=33.9425
++terminal_authority.lon=-118.4081
++terminal_authority.feature=id=LAX;name=Los Angeles Departure;suffix=DEP;prefixes=LAX;polygon=33.0,-119.0|35.0,-119.0|35.0,-117.0|33.0,-117.0
++
+ controller.entry=callsign=LAX_S_DEP;frequency=124.300;facility=5;actionable=true;atis=false
+ controller.entry=callsign=SCT_APP;frequency=128.050;facility=5;actionable=true;atis=false
+ transceiver.available=true
+@@ -23,4 +28,4 @@ vnas.controller_feed_json={"updatedAt":"2026-09-07T02:33:00Z","controllers":[{"a
+ vnas.artcc_facility_json={"id":"ZLA","facility":{"id":"ZLA","type":"Artcc","positions":[],"childFacilities":[{"id":"SCT","type":"Tracon","starsConfiguration":{"internalAirports":["LAX"],"areas":[{"id":"A_LAX","name":"Del Rey","underlyingAirports":["LAX"]},{"id":"A_ALL","name":"Consolidated","underlyingAirports":["LAX"]}],"tcps":[{"id":"T_6G","subset":6,"sectorId":"G"},{"id":"T_6S","subset":6,"sectorId":"S","parentTcpId":"T_6G"}]},"positions":[{"id":"P_LAX_S","callsign":"LAX_S_DEP","frequency":124300000,"starsConfiguration":{"areaId":"A_LAX","tcpId":"T_6S"}},{"id":"P_SCT","callsign":"SCT_APP","frequency":128050000,"starsConfiguration":{"areaId":"A_ALL","tcpId":"T_6G"}}],"childFacilities":[]}]}}
+ 
+ expect.brain_controller_relevance_arrival_callsigns=SCT_APP
+-expect.brain_controller_relevance_completions_contains=LAX_S_DEP:rejected,vnas=-1[operation-incompatible,brain-ineligible-operational-ownership,SCT_APP:accepted
++expect.brain_controller_relevance_completions_contains=LAX_S_DEP:rejected,terminal-relationship=UNRELATED[dynamic-vnas-operation-incompatible,overrides-candidate-polygon-containment,vnas=-1[operation-incompatible,brain-terminal-unrelated-hidden,SCT_APP:accepted,terminal-relationship=EXPLICIT_PARENT
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_v2_klax_departure_prefers_lax_s.scn b/tools/regression_harness/scenarios/brain_controller_relevance_v2_klax_departure_prefers_lax_s.scn
+index 0a9f029e63235b2cb32bddf88ff1a596d45f1678..b6375f9350150b93294e6e6377f5f717b2addfe7 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_v2_klax_departure_prefers_lax_s.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_v2_klax_departure_prefers_lax_s.scn
+@@ -23,4 +23,4 @@ vnas.controller_feed_json={"updatedAt":"2026-09-07T02:32:00Z","controllers":[{"a
+ vnas.artcc_facility_json={"id":"ZLA","facility":{"id":"ZLA","type":"Artcc","positions":[],"childFacilities":[{"id":"SCT","type":"Tracon","starsConfiguration":{"internalAirports":["LAX"],"areas":[{"id":"A_LAX","name":"Del Rey","underlyingAirports":["LAX"]},{"id":"A_ARR","name":"Los Angeles","underlyingAirports":["LAX"]},{"id":"A_ALL","name":"Consolidated","underlyingAirports":["LAX"]}],"tcps":[{"id":"T_6G","subset":6,"sectorId":"G"},{"id":"T_6S","subset":6,"sectorId":"S","parentTcpId":"T_6G"},{"id":"T_6L","subset":6,"sectorId":"L","parentTcpId":"T_6S"},{"id":"T_6N","subset":6,"sectorId":"N","parentTcpId":"T_6S"},{"id":"T_6K","subset":6,"sectorId":"K","parentTcpId":"T_6S"},{"id":"T_2A","subset":2,"sectorId":"A","parentTcpId":"T_6G"},{"id":"T_2F","subset":2,"sectorId":"F","parentTcpId":"T_6G"}]},"positions":[{"id":"P_LAX_S","callsign":"LAX_S_DEP","frequency":124300000,"starsConfiguration":{"areaId":"A_LAX","tcpId":"T_6S"}},{"id":"P_LAX_L","callsign":"LAX_L_APP","frequency":134900000,"starsConfiguration":{"areaId":"A_LAX","tcpId":"T_6L"}},{"id":"P_LAX_N","callsign":"LAX_N_DEP","frequency":125200000,"starsConfiguration":{"areaId":"A_LAX","tcpId":"T_6N"}},{"id":"P_LAX_K","callsign":"LAX_K_APP","frequency":127400000,"starsConfiguration":{"areaId":"A_LAX","tcpId":"T_6K"}},{"id":"P_LAX_A","callsign":"LAX_A_APP","frequency":124900000,"starsConfiguration":{"areaId":"A_ARR","tcpId":"T_2A"}},{"id":"P_LAX_F","callsign":"LAX_F_APP","frequency":124050000,"starsConfiguration":{"areaId":"A_ARR","tcpId":"T_2F"}},{"id":"P_SCT","callsign":"SCT_APP","frequency":128050000,"starsConfiguration":{"areaId":"A_ALL","tcpId":"T_6G"}}],"childFacilities":[{"id":"LAX","type":"Atct","tdlsConfiguration":{"opConfigs":[{"sids":[{"name":"LAXX1","transitions":[{"name":"SLI","defaultDepFreq":"124.30"}]}]}]},"positions":[],"childFacilities":[]}]}]}}
+ 
+ expect.brain_controller_relevance_departure_callsigns=LAX_S_DEP
+-expect.brain_controller_relevance_completions_contains=LAX_S_DEP:accepted,SCT_APP:rejected,vnas=0[lower-operational-owner-online,brain-ineligible-operational-ownership
++expect.brain_controller_relevance_completions_contains=LAX_S_DEP:accepted,terminal-relationship=EXPLICIT_PARENT,SCT_APP:rejected,vnas=0[lower-operational-owner-online,brain-terminal-explicit-parent-suppressed-by-higher-owner
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_v2_klax_departure_tdls_owner_beats_arrival_child.scn b/tools/regression_harness/scenarios/brain_controller_relevance_v2_klax_departure_tdls_owner_beats_arrival_child.scn
+index 451511dd6fa1d9245c0d9e6f30ec32064f2e60bb..ee25598186ec449040df6e4e94f86597ac6d6101 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_v2_klax_departure_tdls_owner_beats_arrival_child.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_v2_klax_departure_tdls_owner_beats_arrival_child.scn
+@@ -23,4 +23,4 @@ vnas.controller_feed_json={"updatedAt":"2026-09-07T03:32:00Z","controllers":[{"a
+ vnas.artcc_facility_json={"id":"ZLA","facility":{"id":"ZLA","type":"Artcc","positions":[],"childFacilities":[{"id":"SCT","type":"Tracon","starsConfiguration":{"internalAirports":["LAX"],"areas":[{"id":"A_LAX","name":"Del Rey","underlyingAirports":["LAX"]}],"tcps":[{"id":"T_6S","subset":6,"sectorId":"S"},{"id":"T_6L","subset":6,"sectorId":"L","parentTcpId":"T_6S"}]},"positions":[{"id":"P_LAX_S","callsign":"LAX_S_DEP","frequency":124300000,"starsConfiguration":{"areaId":"A_LAX","tcpId":"T_6S"}},{"id":"P_LAX_L","callsign":"LAX_L_APP","frequency":134900000,"starsConfiguration":{"areaId":"A_LAX","tcpId":"T_6L"}}],"childFacilities":[{"id":"LAX","type":"Atct","tdlsConfiguration":{"opConfigs":[{"sids":[{"name":"LAXX1","transitions":[{"name":"SLI","defaultDepFreq":"124.30"}]}]}]},"positions":[],"childFacilities":[]}]}]}}
+ 
+ expect.brain_controller_relevance_departure_callsigns=LAX_S_DEP
+-expect.brain_controller_relevance_completions_contains=LAX_S_DEP:accepted,LAX_L_APP:rejected,vnas=0[lower-operational-owner-online,brain-ineligible-operational-ownership
++expect.brain_controller_relevance_completions_contains=LAX_S_DEP:accepted,terminal-relationship=EXPLICIT_PARENT,LAX_L_APP:rejected,vnas=0[lower-operational-owner-online,brain-terminal-explicit-parent-suppressed-by-higher-owner
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_v2_rollback_switch_restores_legacy.scn b/tools/regression_harness/scenarios/brain_controller_relevance_v2_rollback_switch_restores_legacy.scn
+deleted file mode 100644
+index fae4285fe693bcc85a4503b42fa9555ba15cd138..0000000000000000000000000000000000000000
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_v2_rollback_switch_restores_legacy.scn
++++ /dev/null
+@@ -1,27 +0,0 @@
+-name=Brain Controller Relevance V2 Rollback Switch Restores Legacy
+-now_seconds=1000
+-
+-state.flight_active=true
+-flight.callsign=SWA123
+-flight.departure_icao=KMDW
+-flight.destination_icao=KBWI
+-flight.destination_lat=39.1754
+-flight.destination_lon=-76.6683
+-flight.has_destination_coordinates=true
+-
+-brain_controller_relevance.stage=Arrival
+-brain_controller_relevance.v2_enabled=false
+-
+-terminal_authority.airport_icao=KBWI
+-terminal_authority.lat=39.1754
+-terminal_authority.lon=-76.6683
+-terminal_authority.feature=id=PCT;name=Potomac Approach;prefixes=BWI;polygon=38.5,-78.0|40.0,-78.0|40.0,-75.5|38.5,-75.5
+-
+-controller.entry=callsign=IAD_M_APP;frequency=126.650;facility=5;actionable=true;atis=false
+-transceiver.available=true
+-transceiver.stale=false
+-transceiver.candidate=callsign=IAD_M_APP;frequency=126.650;distanceNm=200;score=100;lat=38.9445;lon=-77.4558
+-transceiver.station=callsign=IAD_M_APP;frequency=126.650;lat=39.1754;lon=-76.6683
+-
+-expect.brain_controller_relevance_arrival_callsigns=<none>
+-expect.brain_controller_relevance_completions_contains=IAD_M_APP:rejected,frequency-distance=+1,terminal-source=-1,brain-legacy-tie-hidden
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_v2_tie_fails_safe_to_display.scn b/tools/regression_harness/scenarios/brain_controller_relevance_v2_tie_fails_safe_to_display.scn
+deleted file mode 100644
+index af02956e849dd6f5cf465c1a04169c9fe8291c12..0000000000000000000000000000000000000000
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_v2_tie_fails_safe_to_display.scn
++++ /dev/null
+@@ -1,27 +0,0 @@
+-name=Brain Controller Relevance V2 Claim Scoped Neutrality Displays
+-now_seconds=1000
+-
+-state.flight_active=true
+-flight.callsign=TEST123
+-flight.departure_icao=KDEN
+-flight.destination_icao=KONT
+-flight.destination_lat=34.0560
+-flight.destination_lon=-117.6010
+-flight.has_destination_coordinates=true
+-
+-brain_controller_relevance.stage=Arrival
+-brain_controller_relevance.v2_enabled=true
+-
+-terminal_authority.airport_icao=KONT
+-terminal_authority.lat=34.0560
+-terminal_authority.lon=-117.6010
+-terminal_authority.feature=id=SCT;name=SoCal Approach;prefixes=ONT;polygon=33.0,-119.0|35.0,-119.0|35.0,-116.0|33.0,-116.0
+-
+-controller.entry=callsign=LAX_S_DEP;frequency=124.300;facility=5;actionable=true;atis=false
+-transceiver.available=true
+-transceiver.stale=false
+-transceiver.candidate=callsign=LAX_S_DEP;frequency=124.300;distanceNm=80;score=100;lat=34.0560;lon=-117.6010
+-transceiver.station=callsign=LAX_S_DEP;frequency=124.300;lat=34.0560;lon=-117.6010
+-
+-expect.brain_controller_relevance_arrival_callsigns=LAX_S_DEP
+-expect.brain_controller_relevance_completions_contains=LAX_S_DEP:accepted,frequency-distance=+1,terminal-source=0,brain-positive-majority-display
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_v2_vnas_missing_frequency_is_neutral.scn b/tools/regression_harness/scenarios/brain_controller_relevance_v2_vnas_missing_frequency_is_neutral.scn
+index c137f65a3cf8d468147777617189d23ce064a5f0..a5235d0532e28b464b9908b3d6af6b084cb9fdcb 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_v2_vnas_missing_frequency_is_neutral.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_v2_vnas_missing_frequency_is_neutral.scn
+@@ -25,5 +25,5 @@ transceiver.station=callsign=IAD_M_APP;frequency=126.650;lat=39.1754;lon=-76.668
+ 
+ vnas.controller_feed_json={"updatedAt":"2026-09-06T20:00:00Z","controllers":[{"artccId":"ZDC","primaryFacilityId":"PCT","primaryPositionId":"01PCTMULRRCOMBINED0000000","isActive":true,"isObserver":false,"positions":[{"facilityId":"PCT","facilityName":"Potomac TRACON","positionId":"01PCTMULRRCOMBINED0000000","positionName":"MULRR [Comb]","positionType":"Tracon","defaultCallsign":"IAD_M_APP","frequency":126650000,"isPrimary":true,"isActive":true}],"vatsimData":{"callsign":"IAD_M_APP"}}]}
+ 
+-expect.brain_controller_relevance_arrival_callsigns=IAD_M_APP
+-expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,vnas=0[incomplete-us-data-no-match,frequency-distance=+1,terminal-source=0,brain-positive-majority-display
++expect.brain_controller_relevance_arrival_callsigns=<none>
++expect.brain_controller_relevance_completions_contains=IAD_M_APP:rejected,terminal-relationship=NEARBY_ONLY,vnas=0[incomplete-us-data-no-match,frequency-distance=+1,terminal-source=0,brain-terminal-nearby-only-hidden
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_v2_vnas_precedence_switch_restores_fail_safe.scn b/tools/regression_harness/scenarios/brain_controller_relevance_v2_vnas_precedence_switch_restores_fail_safe.scn
+deleted file mode 100644
+index 7eda20e78c4598e27aef67936072568c13d49e01..0000000000000000000000000000000000000000
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_v2_vnas_precedence_switch_restores_fail_safe.scn
++++ /dev/null
+@@ -1,27 +0,0 @@
+-name=Brain Controller Relevance V2 vNAS Precedence Switch Restores Fail Safe
+-now_seconds=1000
+-
+-state.flight_active=true
+-flight.callsign=SWA102
+-flight.departure_icao=KCRQ
+-flight.departure_lat=33.1283
+-flight.departure_lon=-117.2800
+-flight.has_departure_coordinates=true
+-flight.destination_icao=KLAS
+-
+-brain_controller_relevance.stage=Departure
+-brain_controller_relevance.v2_enabled=true
+-brain_controller_relevance.vnas_sector_precedence_enabled=false
+-
+-controller.entry=callsign=SAN_W_APP;frequency=119.600;facility=5;actionable=true;atis=false
+-controller.entry=callsign=SCT_APP;frequency=128.050;facility=5;actionable=true;atis=false
+-transceiver.available=true
+-transceiver.stale=false
+-transceiver.station=callsign=SAN_W_APP;frequency=119.600;lat=33.1283;lon=-117.2800;facility=5;actionable=true
+-transceiver.station=callsign=SCT_APP;frequency=128.050;lat=33.1283;lon=-117.2800;facility=5;actionable=true
+-
+-vnas.controller_feed_json={"controllers":[{"artccId":"ZLA","isActive":true,"positions":[{"facilityId":"SCT","positionId":"P_SAN_W","positionType":"Tracon","frequency":119600000,"isActive":true,"starsData":{"areaId":"A_SAN","assumedTcps":["5W"]}}],"vatsimData":{"callsign":"SAN_W_APP","primaryFrequency":119600000}},{"artccId":"ZLA","isActive":true,"positions":[{"facilityId":"SCT","positionId":"P_SCT","positionType":"Tracon","frequency":128050000,"isActive":true,"starsData":{"areaId":"A_ALL","assumedTcps":["6G"]}}],"vatsimData":{"callsign":"SCT_APP","primaryFrequency":128050000}}]}
+-vnas.artcc_facility_json={"id":"ZLA","facility":{"id":"ZLA","positions":[],"childFacilities":[{"id":"SCT","starsConfiguration":{"internalAirports":["CRQ"],"areas":[{"id":"A_SAN","underlyingAirports":["CRQ"]},{"id":"A_ALL","underlyingAirports":["CRQ"]}],"tcps":[{"id":"T_6G","subset":6,"sectorId":"G"},{"id":"T_5W","subset":5,"sectorId":"W","parentTcpId":"T_6G"}]},"positions":[{"id":"P_SAN_W","callsign":"SAN_W_APP","starsConfiguration":{"areaId":"A_SAN","tcpId":"T_5W"}},{"id":"P_SCT","callsign":"SCT_APP","starsConfiguration":{"areaId":"A_ALL","tcpId":"T_6G"}}],"childFacilities":[]}]}}
+-
+-expect.brain_controller_relevance_departure_callsigns=SAN_W_APP,SCT_APP
+-expect.brain_controller_relevance_completions_contains=SAN_W_APP:accepted,SCT_APP:accepted
+diff --git a/tools/regression_harness/scenarios/brain_controller_relevance_v2_vnas_unavailable_is_neutral.scn b/tools/regression_harness/scenarios/brain_controller_relevance_v2_vnas_unavailable_is_neutral.scn
+index 9aac49b588d53d93f98c2fa9865f1d0c5a25a920..137123b491479c2e5c4d556a67e733a297ddc454 100644
+--- a/tools/regression_harness/scenarios/brain_controller_relevance_v2_vnas_unavailable_is_neutral.scn
++++ b/tools/regression_harness/scenarios/brain_controller_relevance_v2_vnas_unavailable_is_neutral.scn
+@@ -23,5 +23,5 @@ transceiver.stale=false
+ transceiver.candidate=callsign=IAD_M_APP;frequency=126.650;distanceNm=90;score=100;lat=39.1754;lon=-76.6683
+ transceiver.station=callsign=IAD_M_APP;frequency=126.650;lat=39.1754;lon=-76.6683
+ 
+-expect.brain_controller_relevance_arrival_callsigns=IAD_M_APP
+-expect.brain_controller_relevance_completions_contains=IAD_M_APP:accepted,vnas=0[unavailable-or-stale,published-frequency=0,brain-positive-majority-display
++expect.brain_controller_relevance_arrival_callsigns=<none>
++expect.brain_controller_relevance_completions_contains=IAD_M_APP:rejected,terminal-relationship=NEARBY_ONLY,vnas=0[unavailable-or-stale,published-frequency=0,brain-terminal-nearby-only-hidden
+diff --git a/tools/regression_harness/scenarios/brain_controller_scope_arrival_egll_excludes_worldwide_app.scn b/tools/regression_harness/scenarios/brain_controller_scope_arrival_egll_excludes_worldwide_app.scn
+index 413887ab69c42c8fc378d3955365d0c8df80e0ea..949bc9ad18f1e0ce6bac86f4a2b8158936beade4 100644
+--- a/tools/regression_harness/scenarios/brain_controller_scope_arrival_egll_excludes_worldwide_app.scn
++++ b/tools/regression_harness/scenarios/brain_controller_scope_arrival_egll_excludes_worldwide_app.scn
+@@ -25,6 +25,6 @@ transceiver.station=callsign=EDDF_N_APP;frequency=120.800;lat=50.033333;lon=8.57
+ 
+ expect.terminal_authority_owners=EGLL_APP,EGLL_DEP
+ expect.terminal_authority_polygons=EGLL
+-expect.brain_controller_relevance_arrival_callsigns=THAMES_APP
+-expect.brain_controller_relevance_completions=THAMES_APP:accepted
+-expect.brain_controller_relevance_completions_contains=endpoint-polygon=+1[exact-source-nearby-endpoint-polygon@EGLL:THAMES
++expect.brain_controller_relevance_arrival_callsigns=<none>
++expect.brain_controller_relevance_completions=THAMES_APP:rejected
++expect.brain_controller_relevance_completions_contains=terminal-relationship=UNRELATED,endpoint-polygon=0[adjacent-endpoint-polygon-context-only@EGLL:THAMES
+diff --git a/tools/regression_harness/src/ControllerOperationalEligibilityProbe.cpp b/tools/regression_harness/src/ControllerOperationalEligibilityProbe.cpp
+index 61a9e02795238b9a4c699054ccd66bdb5615b084..0fe5c09689cab8a9d0b5654a6c6c78dc9a3d2c0e 100644
+--- a/tools/regression_harness/src/ControllerOperationalEligibilityProbe.cpp
++++ b/tools/regression_harness/src/ControllerOperationalEligibilityProbe.cpp
+@@ -53,8 +53,7 @@ BrainControllerRelevanceWorkerInput BuildClevelandInput(
+     input.hasArrivalCoordinates = true;
+     input.arrivalLatitudeDeg = 41.4117;
+     input.arrivalLongitudeDeg = -81.8498;
+-    input.terminalRelevanceV2Enabled = true;
+-    input.vnasSectorPrecedenceEnabled = true;
++    input.centerRadioRangeEnabled = true;
+     input.terminalTransmitterRadiusNm = 5.0;
+     input.arrivalTerminalAuthority.available = true;
+     input.arrivalTerminalAuthority.resolved = true;
+@@ -595,7 +594,7 @@ int RunEndpointTerminalPolygonOwnershipProbe() {
+         egllPolygon->containsAirport &&
+         thamesPolygon != authority.polygons.end() &&
+         !thamesPolygon->containsAirport &&
+-        thamesPolygon->intersectsEndpointAnchor;
++        thamesPolygon->intersectsEndpointAnchorContextOnly;
+ 
+     RadioReachableControllerCandidate candidate;
+     candidate.callsign = "THAMES_APP";
+@@ -621,7 +620,7 @@ int RunEndpointTerminalPolygonOwnershipProbe() {
+     input.hasArrivalCoordinates = true;
+     input.arrivalLatitudeDeg = request.airportLatitudeDeg;
+     input.arrivalLongitudeDeg = request.airportLongitudeDeg;
+-    input.terminalRelevanceV2Enabled = true;
++    input.centerRadioRangeEnabled = true;
+     input.terminalTransmitterRadiusNm = 5.0;
+     input.arrivalTerminalAuthorityHash = 903;
+     input.arrivalTerminalAuthority = authority;
+diff --git a/tools/regression_harness/src/main.cpp b/tools/regression_harness/src/main.cpp
+index 8116b87f25bba2d5fd88a123eec1c076728d0f81..045aac8dce6c708800aee165173d62bd4c6f3df6 100644
+--- a/tools/regression_harness/src/main.cpp
++++ b/tools/regression_harness/src/main.cpp
+@@ -112,6 +112,7 @@ struct ScenarioExpectations {
+     std::vector<std::string> displayCallsigns;
+     std::vector<std::string> overlayBodyLines;
+     std::vector<std::string> overlayBodyTones;
++    std::vector<std::string> overlaySelectableCenterFrequencies;
+     std::optional<std::string> overlayVersionText;
+     std::optional<std::string> overlayVersionAlternateText;
+     std::optional<std::string> overlayVersionTone;
+@@ -547,6 +548,11 @@ struct ScenarioData {
+     bool standbyAssistUseDisplayBoardWithCtafAdvisories = false;
+     std::optional<bool> standbyAssistWriteSucceeded;
+     std::optional<std::string> standbyAssistWriterResultCode;
++    bool applyCenterFrequencySelection = false;
++    std::string centerFrequencySelectionCallsign;
++    std::string centerFrequencySelectionFrequency;
++    std::string centerFrequencySelectionStableKey;
++    bool centerFrequencySelectionWriteSucceeded = true;
+     xvatsim::brain::RouteSectorSnapshot routeSectorSnapshot;
+     xvatsim::brain::AirportSectorSnapshot departureAirportSectorSnapshot;
+     xvatsim::brain::AirportSectorSnapshot arrivalAirportSectorSnapshot;
+@@ -1891,6 +1897,18 @@ std::vector<std::string> ExtractOverlayBodyTones(
+     return tones;
+ }
+ 
++std::vector<std::string> ExtractOverlaySelectableCenterFrequencies(
++    const xvatsim::brain::OverlayViewModel& overlayModel) {
++    std::vector<std::string> frequencies;
++    for (const auto& line : overlayModel.bodyLines) {
++        if (line.centerFrequencySelectable) {
++            frequencies.push_back(
++                line.centerCallsign + "@" + line.centerFrequency);
++        }
++    }
++    return frequencies;
++}
++
+ std::string OverlayVersionToneToken(
+     xvatsim::brain::OverlayVersionTone tone) {
+     switch (tone) {
+@@ -5037,6 +5055,10 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
+         scenario->radioStateSnapshot.com1StandbyFrequency = value;
+         return true;
+     }
++    if (key == "radio.standby_assist_enabled") {
++        return ParseBool(
++            value, &scenario->radioStateSnapshot.standbyAssistEnabled);
++    }
+     if (key == "xpilot.connected") {
+         return ParseBool(value, &scenario->xPilotSessionSnapshot.connected);
+     }
+@@ -5206,6 +5228,11 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
+         scenario->expectations.overlayBodyTones = Split(value, ',');
+         return true;
+     }
++    if (key == "expect.overlay_selectable_center_frequencies") {
++        scenario->expectations.overlaySelectableCenterFrequencies =
++            Split(value, ',');
++        return true;
++    }
+     if (key == "expect.overlay_version_text") {
+         scenario->expectations.overlayVersionText = value;
+         return true;
+@@ -6502,6 +6529,25 @@ bool AssignScenarioProperty(ScenarioData* scenario, const std::string& key, cons
+     if (key == "standby_assist.enabled") {
+         return ParseBool(value, &scenario->standbyAssistEnabled);
+     }
++    if (key == "center_frequency_selection.apply") {
++        return ParseBool(value, &scenario->applyCenterFrequencySelection);
++    }
++    if (key == "center_frequency_selection.callsign") {
++        scenario->centerFrequencySelectionCallsign = value;
++        return true;
++    }
++    if (key == "center_frequency_selection.frequency") {
++        scenario->centerFrequencySelectionFrequency = value;
++        return true;
++    }
++    if (key == "center_frequency_selection.stable_key") {
++        scenario->centerFrequencySelectionStableKey = value;
++        return true;
++    }
++    if (key == "center_frequency_selection.write_succeeded") {
++        return ParseBool(
++            value, &scenario->centerFrequencySelectionWriteSucceeded);
++    }
+     if (key == "standby_assist.direct_ctaf_enabled" ||
+         key == "standby_assist.direct_ctaf_standby_assist_enabled") {
+         const auto parsed =
+@@ -24938,11 +24984,8 @@ int main(int argc, char** argv) {
+         scenario.workflowState.flightContext.destinationLatDeg;
+     controllerRelevanceInput.arrivalLongitudeDeg =
+         scenario.workflowState.flightContext.destinationLonDeg;
+-    controllerRelevanceInput.terminalRelevanceV2Enabled =
++    controllerRelevanceInput.centerRadioRangeEnabled =
+         scenario.controllerRelevanceV2Enabled;
+-    controllerRelevanceInput.vnasSectorPrecedenceEnabled =
+-        scenario.controllerRelevanceV2Enabled &&
+-        scenario.controllerRelevanceVnasSectorPrecedenceEnabled;
+     controllerRelevanceInput.terminalTransmitterRadiusNm =
+         scenario.controllerRelevanceTerminalRadiusNm;
+     controllerRelevanceInput.vnasTerminalEvidenceHash =
+@@ -25120,6 +25163,39 @@ int main(int argc, char** argv) {
+                 publisherInput);
+     }
+ 
++    xvatsim::brain::BrainOwnedRuntimeState centerFrequencySelectionState;
++    xvatsim::brain::BrainOwnedCenterFrequencySelectionDecision
++        centerFrequencySelectionDecision;
++    if (scenario.applyCenterFrequencySelection) {
++        const auto selectionPlanKey =
++            scenario.standbyAssistPlanKey.empty()
++                ? std::string("HARNESS")
++                : scenario.standbyAssistPlanKey;
++        centerFrequencySelectionState.lastPlanKey = selectionPlanKey;
++        centerFrequencySelectionState.finalDisplaySnapshot = displayBoard;
++
++        xvatsim::brain::BrainOwnedCenterFrequencySelectionRequest request;
++        request.requestSequence = 1;
++        request.planKey = selectionPlanKey;
++        request.callsign = scenario.centerFrequencySelectionCallsign;
++        request.frequency = scenario.centerFrequencySelectionFrequency;
++        request.stableKey = scenario.centerFrequencySelectionStableKey;
++        request.radios = scenario.radioStateSnapshot;
++        centerFrequencySelectionDecision =
++            xvatsim::brain::DecideBrainOwnedCenterFrequencySelection(
++                centerFrequencySelectionState, request);
++        centerFrequencySelectionDecision =
++            xvatsim::brain::CompleteBrainOwnedCenterFrequencySelection(
++                &centerFrequencySelectionState,
++                std::move(centerFrequencySelectionDecision),
++                scenario.centerFrequencySelectionWriteSucceeded);
++        if (centerFrequencySelectionDecision.completed &&
++            centerFrequencySelectionDecision.writeSucceeded) {
++            scenario.radioStateSnapshot.com1ActiveFrequency =
++                centerFrequencySelectionDecision.frequency;
++        }
++    }
++
+     if (scenario.applyStandbyAssist) {
+         xvatsim::brain::BrainOwnedStandbyAssistPlanInput standbyInput;
+         standbyInput.workflowStage =
+@@ -25135,6 +25211,10 @@ int main(int argc, char** argv) {
+             scenario.standbyAssistDirectCtafEnabled;
+         standbyInput.directCtafGateSource =
+             scenario.standbyAssistDirectCtafGateSource;
++        standbyInput.manualCenterTierResolved =
++            centerFrequencySelectionState.manualCenterTierResolved &&
++            centerFrequencySelectionState.manualCenterTierPlanKey ==
++                standbyInput.planKey;
+         if (shouldRunCtafUnicomPublisherProbe) {
+             standbyInput.board =
+                 scenario.standbyAssistUseDisplayBoardWithCtafAdvisories
+@@ -25198,7 +25278,10 @@ int main(int argc, char** argv) {
+             scenario.transceiverResolutionSnapshot,
+             displayBoard,
+             xvatsim::brain::ManualQuerySnapshot{},
+-            overlayUpdateSnapshot);
++            overlayUpdateSnapshot,
++            scenario.standbyAssistPlanKey.empty()
++                ? std::string("HARNESS")
++                : scenario.standbyAssistPlanKey);
+ 
+     std::cout << "Scenario: " << scenario.name << "\n";
+     std::cout << "PreflightParseOk: "
+@@ -25419,6 +25502,22 @@ int main(int argc, char** argv) {
+                       << "\n";
+         }
+     }
++    if (scenario.applyCenterFrequencySelection) {
++        std::cout << "CenterFrequencySelection: accepted="
++                  << (centerFrequencySelectionDecision.accepted ? 1 : 0)
++                  << ",write="
++                  << (centerFrequencySelectionDecision.shouldWriteCom1Active
++                          ? 1
++                          : 0)
++                  << ",completed="
++                  << (centerFrequencySelectionDecision.completed ? 1 : 0)
++                  << ",tierResolved="
++                  << (centerFrequencySelectionState.manualCenterTierResolved
++                          ? 1
++                          : 0)
++                  << ",reason="
++                  << centerFrequencySelectionDecision.reason << "\n";
++    }
+     if (shouldRunCtafUnicomPublisherProbe) {
+         std::cout << "CtafUnicomEvidenceSummary: "
+                   << CtafUnicomEvidenceSummaryText(
+@@ -25619,6 +25718,12 @@ int main(int argc, char** argv) {
+         std::cout << " " << tone;
+     }
+     std::cout << "\n";
++    std::cout << "OverlaySelectableCenterFrequencies:";
++    for (const auto& frequency :
++         ExtractOverlaySelectableCenterFrequencies(overlayModel)) {
++        std::cout << " " << frequency;
++    }
++    std::cout << "\n";
+     std::cout << "OverlayVersionText: "
+               << overlayModel.version.text << "\n";
+     std::cout << "OverlayVersionAlternateText: "
+@@ -26852,6 +26957,14 @@ int main(int argc, char** argv) {
+         return *mismatch;
+     }
+ 
++    if (const auto mismatch = CheckStringList(
++            "overlaySelectableCenterFrequencies",
++            scenario.expectations.overlaySelectableCenterFrequencies,
++            ExtractOverlaySelectableCenterFrequencies(overlayModel));
++        mismatch.has_value()) {
++        return *mismatch;
++    }
++
+     if (scenario.expectations.overlayVersionText.has_value() &&
+         overlayModel.version.text != *scenario.expectations.overlayVersionText) {
+         return PrintMismatch(

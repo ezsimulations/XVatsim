@@ -10,6 +10,7 @@
 #include <mutex>
 #include <optional>
 #include <sstream>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -264,6 +265,91 @@ void EnforceRetention(
     }
 }
 
+std::uint64_t HashLogicalRecord(std::string_view value) {
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (const auto byte : value) {
+        hash ^= static_cast<unsigned char>(byte);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+std::string HexDigest(std::uint64_t value) {
+    std::ostringstream stream;
+    stream << std::hex << std::setw(16) << std::setfill('0') << value;
+    return stream.str();
+}
+
+std::string ExtractEventToken(std::string_view line) {
+    const auto marker = line.find("event=");
+    if (marker == std::string_view::npos) return "unknown";
+    const auto begin = marker + 6;
+    auto end = line.find_first_of(" \r\n\t", begin);
+    if (end == std::string_view::npos) end = line.size();
+    const auto count = std::min<std::size_t>(end - begin, 48);
+    std::string event;
+    event.reserve(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto value = line[begin + index];
+        const auto safe =
+            (value >= 'a' && value <= 'z') ||
+            (value >= 'A' && value <= 'Z') ||
+            (value >= '0' && value <= '9') || value == '-' || value == '_';
+        event.push_back(safe ? value : '_');
+    }
+    return event.empty() ? "unknown" : event;
+}
+
+std::string Base64Encode(std::string_view input) {
+    static constexpr char kAlphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string output;
+    output.reserve(((input.size() + 2) / 3) * 4);
+    for (std::size_t offset = 0; offset < input.size(); offset += 3) {
+        const auto remaining = input.size() - offset;
+        const auto first = static_cast<unsigned char>(input[offset]);
+        const auto second = remaining > 1
+            ? static_cast<unsigned char>(input[offset + 1])
+            : 0;
+        const auto third = remaining > 2
+            ? static_cast<unsigned char>(input[offset + 2])
+            : 0;
+        const auto packed =
+            (static_cast<std::uint32_t>(first) << 16) |
+            (static_cast<std::uint32_t>(second) << 8) |
+            static_cast<std::uint32_t>(third);
+        output.push_back(kAlphabet[(packed >> 18) & 0x3f]);
+        output.push_back(kAlphabet[(packed >> 12) & 0x3f]);
+        output.push_back(remaining > 1 ? kAlphabet[(packed >> 6) & 0x3f] : '=');
+        output.push_back(remaining > 2 ? kAlphabet[packed & 0x3f] : '=');
+    }
+    return output;
+}
+
+const char* FlightLoopPhaseToken(FlightLoopPhase phase) {
+    switch (phase) {
+        case FlightLoopPhase::UpdateService: return "update";
+        case FlightLoopPhase::AircraftBoundary: return "aircraftBoundary";
+        case FlightLoopPhase::XPilotBoundary: return "xpilotBoundary";
+        case FlightLoopPhase::VatsimRadioInputs: return "vatsimRadioInputs";
+        case FlightLoopPhase::RefreshGate: return "refreshGate";
+        case FlightLoopPhase::ControllerPlans: return "controllerPlans";
+        case FlightLoopPhase::FlightContextCtaf: return "flightContextCtaf";
+        case FlightLoopPhase::Route: return "route";
+        case FlightLoopPhase::RadioBoard: return "radioBoard";
+        case FlightLoopPhase::VnasScope: return "vnasScope";
+        case FlightLoopPhase::Authority: return "authority";
+        case FlightLoopPhase::WorkflowPublisher: return "workflowPublisher";
+        case FlightLoopPhase::AtisAsyncFacts: return "atisAsyncFacts";
+        case FlightLoopPhase::AssistCommit: return "assistCommit";
+        case FlightLoopPhase::Wake: return "wake";
+        case FlightLoopPhase::Overlay: return "overlay";
+        case FlightLoopPhase::Shell: return "shell";
+        case FlightLoopPhase::Count: break;
+    }
+    return "unknown";
+}
+
 }  // namespace
 
 struct AsyncDiagnosticsWriter::Implementation {
@@ -291,40 +377,56 @@ struct AsyncDiagnosticsWriter::Implementation {
         RouteEvidenceRecord routeEvidence;
     };
 
-    struct FixedQueue {
+    // Production diagnostic records have one producer (the X-Plane plugin
+    // thread) and one consumer (this writer). Keeping these lanes lock-free
+    // prevents normal consumer activity from making the flight loop discard a
+    // record through mutex contention.
+    struct FixedSpscRecordQueue {
         std::vector<std::optional<Record>> slots;
-        std::size_t head = 0;
-        std::size_t tail = 0;
-        std::size_t count = 0;
+        std::atomic<std::size_t> writeIndex{0};
+        std::atomic<std::size_t> readIndex{0};
 
         void Reset(std::size_t capacity) {
             slots.clear();
-            slots.resize(capacity);
-            head = 0;
-            tail = 0;
-            count = 0;
+            slots.resize(capacity + 1);
+            writeIndex.store(0, std::memory_order_relaxed);
+            readIndex.store(0, std::memory_order_relaxed);
         }
 
-        bool Full() const {
-            return count == slots.size();
+        bool TryPush(Record record) {
+            const auto write = writeIndex.load(std::memory_order_relaxed);
+            const auto next = (write + 1) % slots.size();
+            if (next == readIndex.load(std::memory_order_acquire)) {
+                return false;
+            }
+            slots[write].emplace(std::move(record));
+            writeIndex.store(next, std::memory_order_release);
+            return true;
         }
 
-        bool Empty() const {
-            return count == 0;
+        bool TryPop(Record* record) {
+            const auto read = readIndex.load(std::memory_order_relaxed);
+            if (read == writeIndex.load(std::memory_order_acquire)) {
+                return false;
+            }
+            *record = std::move(*slots[read]);
+            slots[read].reset();
+            readIndex.store(
+                (read + 1) % slots.size(), std::memory_order_release);
+            return true;
         }
 
-        void Push(Record record) {
-            slots[tail].emplace(std::move(record));
-            tail = (tail + 1) % slots.size();
-            ++count;
+        bool Empty() const noexcept {
+            return readIndex.load(std::memory_order_acquire) ==
+                   writeIndex.load(std::memory_order_acquire);
         }
 
-        Record Pop() {
-            Record record = std::move(*slots[head]);
-            slots[head].reset();
-            head = (head + 1) % slots.size();
-            --count;
-            return record;
+        std::size_t Depth() const noexcept {
+            const auto read = readIndex.load(std::memory_order_acquire);
+            const auto write = writeIndex.load(std::memory_order_acquire);
+            return write >= read
+                ? write - read
+                : slots.size() - (read - write);
         }
     };
 
@@ -453,8 +555,8 @@ struct AsyncDiagnosticsWriter::Implementation {
     mutable std::mutex queueMutex;
     std::condition_variable workReady;
     std::condition_variable idleChanged;
-    FixedQueue routineQueue;
-    FixedQueue criticalQueue;
+    FixedSpscRecordQueue routineQueue;
+    FixedSpscRecordQueue criticalQueue;
     FixedSpscFlightLoopTimingQueue flightLoopTimingQueue;
     FixedSpscRouteEvidenceQueue routeEvidenceQueue;
     std::thread worker;
@@ -485,6 +587,11 @@ struct AsyncDiagnosticsWriter::Implementation {
     std::atomic<std::uint64_t> dequeuedFlightLoopTiming{0};
     std::atomic<std::uint64_t> dequeuedRouteEvidence{0};
     std::atomic<std::uint64_t> written{0};
+    std::atomic<std::uint64_t> writtenPhysicalLines{0};
+    std::atomic<std::uint64_t> splitLogicalRecords{0};
+    std::atomic<std::uint64_t> splitPhysicalLines{0};
+    std::atomic<std::uint64_t> maximumLogicalRecordBytes{0};
+    std::atomic<std::uint64_t> maximumPhysicalLineBytes{0};
     std::atomic<std::uint64_t> writtenFlightLoopTiming{0};
     std::atomic<std::uint64_t> writtenRouteEvidence{0};
     std::atomic<std::uint64_t> droppedContention{0};
@@ -507,6 +614,7 @@ struct AsyncDiagnosticsWriter::Implementation {
     std::atomic<std::uint64_t> maximumFlightLoopTimingProducerMicroseconds{0};
     std::atomic<std::uint64_t> maximumRouteEvidenceProducerMicroseconds{0};
     std::atomic<std::uint64_t> nextRouteEvidenceSequence{0};
+    std::atomic<std::uint64_t> nextLogicalRecordSequence{0};
     std::atomic<std::uint64_t> lastSubmittedRouteEvidenceSequence{0};
     std::atomic<std::uint64_t> lastWrittenRouteEvidenceSequence{0};
     std::atomic<std::uint64_t> workerThreadIdentity{0};
@@ -525,6 +633,11 @@ struct AsyncDiagnosticsWriter::Implementation {
         dequeuedFlightLoopTiming.store(0, std::memory_order_relaxed);
         dequeuedRouteEvidence.store(0, std::memory_order_relaxed);
         written.store(0, std::memory_order_relaxed);
+        writtenPhysicalLines.store(0, std::memory_order_relaxed);
+        splitLogicalRecords.store(0, std::memory_order_relaxed);
+        splitPhysicalLines.store(0, std::memory_order_relaxed);
+        maximumLogicalRecordBytes.store(0, std::memory_order_relaxed);
+        maximumPhysicalLineBytes.store(0, std::memory_order_relaxed);
         writtenFlightLoopTiming.store(0, std::memory_order_relaxed);
         writtenRouteEvidence.store(0, std::memory_order_relaxed);
         droppedContention.store(0, std::memory_order_relaxed);
@@ -549,6 +662,7 @@ struct AsyncDiagnosticsWriter::Implementation {
         maximumRouteEvidenceProducerMicroseconds.store(
             0, std::memory_order_relaxed);
         nextRouteEvidenceSequence.store(0, std::memory_order_relaxed);
+        nextLogicalRecordSequence.store(0, std::memory_order_relaxed);
         lastSubmittedRouteEvidenceSequence.store(
             0, std::memory_order_relaxed);
         lastWrittenRouteEvidenceSequence.store(0, std::memory_order_relaxed);
@@ -604,37 +718,19 @@ struct AsyncDiagnosticsWriter::Implementation {
             UpdateMaximum(&maximumProducerMicroseconds, ElapsedMicroseconds(started));
             return false;
         }
-        if (!queueMutex.try_lock()) {
-            droppedContention.fetch_add(1, std::memory_order_relaxed);
-            if (importance == DiagnosticsImportance::Critical) {
-                droppedCriticalContention.fetch_add(
-                    1, std::memory_order_relaxed);
-            } else {
-                droppedRoutineContention.fetch_add(
-                    1, std::memory_order_relaxed);
-            }
-            UpdateMaximum(&maximumProducerMicroseconds, ElapsedMicroseconds(started));
-            return false;
-        }
-        if (options.artificialQueueLockHoldForTesting.count() > 0) {
-            std::this_thread::sleep_for(
-                options.artificialQueueLockHoldForTesting);
-        }
-
-        bool accepted = false;
         auto& queue = importance == DiagnosticsImportance::Critical
             ? criticalQueue
             : routineQueue;
-        if (!accepting.load(std::memory_order_relaxed)) {
+        bool accepted = false;
+        if (!accepting.load(std::memory_order_acquire)) {
             rejectedNotRunning.fetch_add(1, std::memory_order_relaxed);
-        } else if (queue.Full()) {
+        } else if (!queue.TryPush(std::move(record))) {
             if (importance == DiagnosticsImportance::Critical) {
                 droppedCriticalFull.fetch_add(1, std::memory_order_relaxed);
             } else {
                 droppedRoutineFull.fetch_add(1, std::memory_order_relaxed);
             }
         } else {
-            queue.Push(std::move(record));
             accepted = true;
             if (importance == DiagnosticsImportance::Critical) {
                 submittedCritical.fetch_add(1, std::memory_order_relaxed);
@@ -644,9 +740,8 @@ struct AsyncDiagnosticsWriter::Implementation {
             UpdateMaximum(
                 &maximumQueueDepth,
                 static_cast<std::uint64_t>(
-                    routineQueue.count + criticalQueue.count));
+                    routineQueue.Depth() + criticalQueue.Depth()));
         }
-        queueMutex.unlock();
         if (accepted) {
             workReady.notify_one();
         }
@@ -770,7 +865,7 @@ struct AsyncDiagnosticsWriter::Implementation {
             options.logDirectory /
             (std::string{kDiagnosticsLogFilePrefix} + dateToken +
              kDiagnosticsLogFileSuffix);
-        output.open(path, std::ios::app);
+        output.open(path, std::ios::app | std::ios::binary);
         if (!output) {
             storageFailures.fetch_add(1, std::memory_order_relaxed);
             output.close();
@@ -811,7 +906,7 @@ struct AsyncDiagnosticsWriter::Implementation {
                 std::chrono::steady_clock::now() + std::chrono::seconds(1);
             return false;
         }
-        output.open(openPath, std::ios::app);
+        output.open(openPath, std::ios::app | std::ios::binary);
         if (!output) {
             storageFailures.fetch_add(1, std::memory_order_relaxed);
             output.close();
@@ -938,9 +1033,21 @@ struct AsyncDiagnosticsWriter::Implementation {
                << " refreshUs=" << timing.refreshUs
                << " diagnosticsSubmissionUs="
                << timing.diagnosticsSubmissionUs
+               << " threadCpuStatus="
+               << (timing.threadCpuAvailable ? "available" : "unavailable")
+               << " threadCpuUs=" << timing.threadCpuUs
+               << " phaseReconciliationUs="
+               << timing.refreshPhaseReconciliationUs
                << " accessoryPath=" << (timing.accessoryPath ? 1 : 0)
                << " activeCadence=" << (timing.activeCadence ? 1 : 0)
-               << " measurementBoundary=immediately-before-telemetry-publish";
+               << " measurementBoundary=immediately-before-telemetry-publish"
+               << " phases=";
+        for (std::size_t index = 0; index < timing.phaseWallUs.size(); ++index) {
+            if (index > 0) stream << ",";
+            stream << FlightLoopPhaseToken(
+                          static_cast<FlightLoopPhase>(index))
+                   << ":" << timing.phaseWallUs[index];
+        }
         return stream.str();
     }
 
@@ -966,18 +1073,101 @@ struct AsyncDiagnosticsWriter::Implementation {
             formattingFailures.fetch_add(1, std::memory_order_relaxed);
             return;
         }
+        UpdateMaximum(
+            &maximumLogicalRecordBytes,
+            static_cast<std::uint64_t>(line.size()));
         if (!EnsureOutput(record)) {
             return;
         }
-        std::ostringstream serialized;
-        serialized << "tick=" << record.tickSeconds << " " << line << '\n';
-        const auto serializedLine = serialized.str();
-        if (!EnsureCapacityFor(serializedLine.size(), record.tickSeconds)) {
-            return;
+
+        const auto serialize = [tick = record.tickSeconds](
+                                   const std::string& payload) {
+            std::ostringstream serialized;
+            serialized << "tick=" << tick << " " << payload << '\n';
+            return serialized.str();
+        };
+
+        std::vector<std::string> physicalPayloads;
+        const auto direct = serialize(line);
+        const auto containsPhysicalBreak =
+            line.find('\n') != std::string::npos ||
+            line.find('\r') != std::string::npos;
+        const bool split = containsPhysicalBreak ||
+            direct.size() > options.maximumPhysicalLineBytes;
+        if (!split) {
+            physicalPayloads.push_back(line);
+        } else {
+            constexpr std::size_t kRawPartBytes = 2000;
+            const auto logicalSequence =
+                nextLogicalRecordSequence.fetch_add(
+                    1, std::memory_order_relaxed) +
+                1;
+            const auto sourceEvent = ExtractEventToken(line);
+            const auto digest = HexDigest(HashLogicalRecord(line));
+            const auto partCount = std::max<std::size_t>(
+                1, (line.size() + kRawPartBytes - 1) / kRawPartBytes);
+            {
+                std::ostringstream header;
+                header << "event=diagnostic-record-oversize"
+                       << " recordSequence=" << logicalSequence
+                       << " sourceEvent=" << sourceEvent
+                       << " originalBytes=" << line.size()
+                       << " digest=" << digest
+                       << " encoding=base64"
+                       << " partCount=" << partCount;
+                physicalPayloads.push_back(header.str());
+            }
+            for (std::size_t part = 0; part < partCount; ++part) {
+                const auto offset = part * kRawPartBytes;
+                const auto count = std::min(kRawPartBytes, line.size() - offset);
+                std::ostringstream payload;
+                payload << "event=diagnostic-record-part"
+                        << " recordSequence=" << logicalSequence
+                        << " sourceEvent=" << sourceEvent
+                        << " originalBytes=" << line.size()
+                        << " digest=" << digest
+                        << " encoding=base64"
+                        << " part=" << (part + 1)
+                        << " partCount=" << partCount
+                        << " payload="
+                        << Base64Encode(
+                               std::string_view{line}.substr(offset, count));
+                physicalPayloads.push_back(payload.str());
+            }
+            splitLogicalRecords.fetch_add(1, std::memory_order_relaxed);
+            splitPhysicalLines.fetch_add(
+                static_cast<std::uint64_t>(physicalPayloads.size()),
+                std::memory_order_relaxed);
         }
-        output.write(
-            serializedLine.data(),
-            static_cast<std::streamsize>(serializedLine.size()));
+
+        for (const auto& payload : physicalPayloads) {
+            const auto serializedLine = serialize(payload);
+            if (serializedLine.size() > options.maximumPhysicalLineBytes) {
+                formattingFailures.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+            if (!EnsureCapacityFor(serializedLine.size(), record.tickSeconds)) {
+                return;
+            }
+            output.write(
+                serializedLine.data(),
+                static_cast<std::streamsize>(serializedLine.size()));
+            if (!output) {
+                storageFailures.fetch_add(1, std::memory_order_relaxed);
+                output.close();
+                openDateToken.clear();
+                openPath.clear();
+                openDateBytes = 0;
+                nextStorageAttempt =
+                    std::chrono::steady_clock::now() + std::chrono::seconds(1);
+                return;
+            }
+            openDateBytes += serializedLine.size();
+            writtenPhysicalLines.fetch_add(1, std::memory_order_relaxed);
+            UpdateMaximum(
+                &maximumPhysicalLineBytes,
+                static_cast<std::uint64_t>(serializedLine.size()));
+        }
         output.flush();
         if (!output) {
             storageFailures.fetch_add(1, std::memory_order_relaxed);
@@ -989,7 +1179,6 @@ struct AsyncDiagnosticsWriter::Implementation {
                 std::chrono::steady_clock::now() + std::chrono::seconds(1);
             return;
         }
-        openDateBytes += serializedLine.size();
         written.fetch_add(1, std::memory_order_relaxed);
         if (flightLoopTiming) {
             writtenFlightLoopTiming.fetch_add(1, std::memory_order_relaxed);
@@ -1036,7 +1225,10 @@ struct AsyncDiagnosticsWriter::Implementation {
                     continue;
                 }
                 if (!criticalQueue.Empty()) {
-                    record.emplace(criticalQueue.Pop());
+                    Record queued;
+                    if (criticalQueue.TryPop(&queued)) {
+                        record.emplace(std::move(queued));
+                    }
                 } else if (pdcMailboxState == PdcMailboxState::Queued) {
                     pdcRequestToRead.emplace(std::move(pdcRequest));
                     pdcMailboxState = PdcMailboxState::Working;
@@ -1061,9 +1253,15 @@ struct AsyncDiagnosticsWriter::Implementation {
                             dequeuedRouteEvidence.fetch_add(
                                 1, std::memory_order_relaxed);
                         } else {
-                            record.emplace(routineQueue.Pop());
+                            Record queued;
+                            if (routineQueue.TryPop(&queued)) {
+                                record.emplace(std::move(queued));
+                            }
                         }
                     }
+                }
+                if (!record.has_value() && !pdcRequestToRead.has_value()) {
+                    continue;
                 }
                 recordInFlight = true;
                 if (record.has_value()) {
@@ -1125,6 +1323,7 @@ bool AsyncDiagnosticsWriter::Start(DiagnosticsWriterOptions options) {
         options.routeEvidenceQueueCapacity == 0 ||
         options.routeEvidenceQueueCapacity ==
             std::numeric_limits<std::size_t>::max() ||
+         options.maximumPhysicalLineBytes < 3072 ||
         (options.maximumDateLogBytes > 0 &&
          options.maximumDateLogBytes < 1024) ||
         options.logDirectory.empty()) {
@@ -1249,6 +1448,16 @@ DiagnosticsWriterSnapshot AsyncDiagnosticsWriter::Snapshot() const {
     snapshot.dequeuedRouteEvidence =
         state.dequeuedRouteEvidence.load(std::memory_order_relaxed);
     snapshot.written = state.written.load(std::memory_order_relaxed);
+    snapshot.writtenPhysicalLines =
+        state.writtenPhysicalLines.load(std::memory_order_relaxed);
+    snapshot.splitLogicalRecords =
+        state.splitLogicalRecords.load(std::memory_order_relaxed);
+    snapshot.splitPhysicalLines =
+        state.splitPhysicalLines.load(std::memory_order_relaxed);
+    snapshot.maximumLogicalRecordBytes =
+        state.maximumLogicalRecordBytes.load(std::memory_order_relaxed);
+    snapshot.maximumPhysicalLineBytes =
+        state.maximumPhysicalLineBytes.load(std::memory_order_relaxed);
     snapshot.writtenFlightLoopTiming =
         state.writtenFlightLoopTiming.load(std::memory_order_relaxed);
     snapshot.writtenRouteEvidence =

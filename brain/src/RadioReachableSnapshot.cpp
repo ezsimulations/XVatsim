@@ -7,6 +7,7 @@
 #include <cmath>
 #include <iomanip>
 #include <sstream>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -20,8 +21,6 @@ constexpr int kVatsimGroundFacility = 3;
 constexpr int kVatsimTowerFacility = 4;
 constexpr int kVatsimApproachFacility = 5;
 constexpr int kVatsimCenterFacility = 6;
-constexpr std::size_t kMaxTerminalEvidenceCandidates = 512;
-constexpr double kEarthRadiusNm = 3440.065;
 
 std::string Trim(const std::string& value) {
     auto begin = value.begin();
@@ -60,168 +59,6 @@ std::string NormalizeFrequency(std::string frequency) {
         }
     }
     return normalized;
-}
-
-bool SplitControllerCallsign(
-    const std::string& callsign,
-    std::string* prefix,
-    std::string* suffix) {
-    const auto normalized = ToUpper(Trim(callsign));
-    const auto separator = normalized.rfind('_');
-    if (separator == std::string::npos || separator == 0 ||
-        separator + 1 >= normalized.size()) {
-        return false;
-    }
-    if (prefix != nullptr) *prefix = normalized.substr(0, separator);
-    if (suffix != nullptr) *suffix = normalized.substr(separator + 1);
-    return true;
-}
-
-bool PrefixMatches(const std::string& actual, const std::string& expected) {
-    const auto normalizedActual = ToUpper(Trim(actual));
-    const auto normalizedExpected = ToUpper(Trim(expected));
-    return !normalizedExpected.empty() &&
-        (normalizedActual == normalizedExpected ||
-         (normalizedActual.size() > normalizedExpected.size() &&
-          normalizedActual.compare(
-              0, normalizedExpected.size(), normalizedExpected) == 0 &&
-          (normalizedActual[normalizedExpected.size()] == '_' ||
-           normalizedActual[normalizedExpected.size()] == '-')));
-}
-
-std::size_t SharedPrefixLength(
-    const std::string& left,
-    const std::string& right) {
-    const auto count = std::min(left.size(), right.size());
-    std::size_t shared = 0;
-    while (shared < count && left[shared] == right[shared]) ++shared;
-    return shared;
-}
-
-bool OneCharacterEndpointAliasVariant(
-    const std::string& actual,
-    const std::string& expected) {
-    const auto left = ToUpper(Trim(actual));
-    const auto right = ToUpper(Trim(expected));
-    if (left.size() < 2 || right.size() < 2 ||
-        (left.size() + 1 != right.size() &&
-         right.size() + 1 != left.size())) {
-        return false;
-    }
-    const auto shared = SharedPrefixLength(left, right);
-    if (shared < 2 || shared + 2 < std::max(left.size(), right.size())) {
-        return false;
-    }
-    const auto& shorter = left.size() < right.size() ? left : right;
-    const auto& longer = left.size() < right.size() ? right : left;
-    return longer.compare(0, shorter.size(), shorter) == 0;
-}
-
-bool AuthorityPositionMatch(
-    const std::string& callsignPrefix,
-    const std::string& callsignSuffix,
-    const BrainTerminalAuthorityWorkerOutput& authority) {
-    if (!authority.available || !authority.resolved || authority.stale) {
-        return false;
-    }
-    for (const auto& polygon : authority.polygons) {
-        const auto expectedSuffix = ToUpper(Trim(polygon.serviceSuffix));
-        if (!expectedSuffix.empty() && expectedSuffix != callsignSuffix) {
-            continue;
-        }
-        if (std::any_of(
-                polygon.controllerPrefixes.begin(),
-                polygon.controllerPrefixes.end(),
-                [&](const auto& expectedPrefix) {
-                    return PrefixMatches(callsignPrefix, expectedPrefix);
-                })) {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool EndpointAliasMatch(
-    const std::string& callsignPrefix,
-    const std::string& airportIcao,
-    const RouteSectorSnapshot* route) {
-    if (route == nullptr) return false;
-    const auto endpoint = ToUpper(Trim(airportIcao));
-    for (const auto& alias : route->airportCallsignAliases) {
-        if (ToUpper(Trim(alias.airportIcao)) != endpoint) continue;
-        const auto expected = ToUpper(Trim(alias.callsignPrefix));
-        if (PrefixMatches(callsignPrefix, expected) ||
-            OneCharacterEndpointAliasVariant(callsignPrefix, expected)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-double DegreesToRadians(double value) {
-    return value * 3.14159265358979323846 / 180.0;
-}
-
-double GreatCircleDistanceNm(
-    double latitude1Deg,
-    double longitude1Deg,
-    double latitude2Deg,
-    double longitude2Deg) {
-    const auto latitude1 = DegreesToRadians(latitude1Deg);
-    const auto latitude2 = DegreesToRadians(latitude2Deg);
-    const auto latitudeDelta = DegreesToRadians(latitude2Deg - latitude1Deg);
-    const auto longitudeDelta = DegreesToRadians(longitude2Deg - longitude1Deg);
-    const auto sinLatitude = std::sin(latitudeDelta / 2.0);
-    const auto sinLongitude = std::sin(longitudeDelta / 2.0);
-    const auto haversine = sinLatitude * sinLatitude +
-        std::cos(latitude1) * std::cos(latitude2) *
-            sinLongitude * sinLongitude;
-    return kEarthRadiusNm * 2.0 * std::asin(
-        std::min(1.0, std::sqrt(std::max(0.0, haversine))));
-}
-
-bool TransmitterNearEndpoint(
-    const TransceiverControllerEvidenceSnapshot& evidence,
-    const BrainEndpointTerminalEvidenceScope& endpoint,
-    double radiusNm) {
-    if (!endpoint.hasAirportCoordinates || radiusNm <= 0.0) return false;
-    return std::any_of(
-        evidence.stations.begin(),
-        evidence.stations.end(),
-        [&](const auto& station) {
-            return std::isfinite(station.latitudeDeg) &&
-                std::isfinite(station.longitudeDeg) &&
-                (station.latitudeDeg != 0.0 || station.longitudeDeg != 0.0) &&
-                GreatCircleDistanceNm(
-                    endpoint.airportLatitudeDeg,
-                    endpoint.airportLongitudeDeg,
-                    station.latitudeDeg,
-                    station.longitudeDeg) <= radiusNm;
-        });
-}
-
-bool EndpointScopedAppDepEvidence(
-    const TransceiverControllerEvidenceSnapshot& evidence,
-    const BrainTerminalAuthorityWorkerOutput& departureAuthority,
-    const BrainTerminalAuthorityWorkerOutput& arrivalAuthority,
-    const RouteSectorSnapshot* route,
-    const BrainEndpointTerminalEvidenceScope& departureScope,
-    const BrainEndpointTerminalEvidenceScope& arrivalScope,
-    double terminalTransmitterRadiusNm) {
-    std::string prefix;
-    std::string suffix;
-    if (!SplitControllerCallsign(evidence.callsign, &prefix, &suffix) ||
-        (suffix != "APP" && suffix != "DEP")) {
-        return false;
-    }
-    return AuthorityPositionMatch(prefix, suffix, departureAuthority) ||
-        AuthorityPositionMatch(prefix, suffix, arrivalAuthority) ||
-        EndpointAliasMatch(prefix, departureScope.airportIcao, route) ||
-        EndpointAliasMatch(prefix, arrivalScope.airportIcao, route) ||
-        TransmitterNearEndpoint(
-            evidence, departureScope, terminalTransmitterRadiusNm) ||
-        TransmitterNearEndpoint(
-            evidence, arrivalScope, terminalTransmitterRadiusNm);
 }
 
 void HashCombine(std::uint64_t* seed, std::uint64_t value) {
@@ -838,128 +675,6 @@ RadioReachableControllerSnapshot BuildRadioReachableControllerSnapshotFromTransc
     return snapshot;
 }
 
-RadioReachableControllerSnapshot
-BuildBrainEndpointScopedControllerSnapshot(
-    const RadioReachableControllerSnapshot& snapshot,
-    const TransceiverResolutionSnapshot& transceiverSnapshot,
-    const BrainTerminalAuthorityWorkerOutput& departureAuthority,
-    const BrainTerminalAuthorityWorkerOutput& arrivalAuthority,
-    const RouteSectorSnapshot* route,
-    const BrainEndpointTerminalEvidenceScope& departureScope,
-    const BrainEndpointTerminalEvidenceScope& arrivalScope,
-    double terminalTransmitterRadiusNm) {
-    auto augmented = snapshot;
-    if (!augmented.available || augmented.stale ||
-        !transceiverSnapshot.available || transceiverSnapshot.stale) {
-        return augmented;
-    }
-
-    std::unordered_set<std::string> existingCallsigns;
-    existingCallsigns.reserve(augmented.candidates.size());
-    for (const auto& candidate : augmented.candidates) {
-        existingCallsigns.insert(ToUpper(Trim(candidate.callsign)));
-    }
-
-    std::size_t appDepEvidence = 0;
-    std::size_t added = 0;
-    std::size_t excludedOutsideEndpointScope = 0;
-    for (const auto& evidence : transceiverSnapshot.controllerEvidence) {
-        if (added >= kMaxTerminalEvidenceCandidates) {
-            break;
-        }
-        ControllerSnapshot controller;
-        controller.callsign = evidence.callsign;
-        controller.frequency = evidence.controllerFrequency;
-        controller.facility = evidence.facility;
-        controller.actionable = evidence.actionable;
-        controller.atis = evidence.atis;
-        controller.visualRangeNm = evidence.visualRangeNm;
-        if (ClassifyRadioReachableFacility(controller) !=
-                RadioReachableFacilityGroup::AppDep ||
-            controller.atis) {
-            continue;
-        }
-        ++appDepEvidence;
-
-        const auto callsign = ToUpper(Trim(controller.callsign));
-        if (callsign.empty() || existingCallsigns.find(callsign) !=
-                                    existingCallsigns.end()) {
-            continue;
-        }
-        if (!EndpointScopedAppDepEvidence(
-                evidence,
-                departureAuthority,
-                arrivalAuthority,
-                route,
-                departureScope,
-                arrivalScope,
-                terminalTransmitterRadiusNm)) {
-            ++excludedOutsideEndpointScope;
-            continue;
-        }
-        const auto frequency = NormalizeFrequency(
-            evidence.resolvedDisplayFrequency.empty()
-                ? evidence.controllerFrequency
-                : evidence.resolvedDisplayFrequency);
-        if (frequency.empty()) {
-            continue;
-        }
-
-        RadioReachableControllerCandidate candidate;
-        candidate.callsign = callsign;
-        candidate.frequency = frequency;
-        candidate.sourcePrimaryFrequency =
-            NormalizeFrequency(evidence.controllerFrequency);
-        candidate.sourcePrimaryFrequencyProvided = true;
-        candidate.vatsimFacility = controller.facility;
-        candidate.vatsimFacilityProvided = true;
-        candidate.group = RadioReachableFacilityGroup::AppDep;
-        candidate.source = augmented.source;
-        candidate.actionable = controller.actionable;
-        candidate.atis = controller.atis;
-        candidate.textAtis = evidence.textAtis;
-        candidate.visualRangeNm = controller.visualRangeNm;
-        candidate.sourceRosterAvailable = augmented.sourceRosterAvailable;
-        candidate.sourceRosterStale = augmented.sourceRosterStale;
-        candidate.sourceRosterComplete = augmented.sourceRosterComplete;
-        candidate.sourceRosterTruncated = augmented.sourceRosterTruncated;
-        candidate.sourceRosterDeclaredRecords =
-            augmented.sourceRosterDeclaredRecords;
-        candidate.sourceRosterRetainedRecords =
-            augmented.sourceRosterRetainedRecords;
-        candidate.sourceRosterRejectedRecords =
-            augmented.sourceRosterRejectedRecords;
-        candidate.sourceRosterDigest = augmented.sourceRosterDigest;
-        candidate.sourceRoster = augmented.sourceRoster;
-        PopulateAllStationCoordinates(&evidence, &candidate);
-        PopulateOriginalTransceivers(&evidence, &candidate);
-        candidate.stableKey = BuildStableKey(
-            candidate.callsign, candidate.frequency, candidate.group);
-        augmented.candidates.push_back(std::move(candidate));
-        existingCallsigns.insert(callsign);
-        IncrementGroupCount(
-            &augmented.counts, RadioReachableFacilityGroup::AppDep);
-        ++added;
-    }
-
-    if (added > 0) {
-        SortRadioReachableCandidates(&augmented);
-        augmented.stableHash = BuildStableHash(augmented);
-        augmented.changeReason += "+endpoint-terminal-evidence";
-    }
-    std::ostringstream status;
-    status << augmented.statusLine
-           << " globalControllerEvidence="
-           << transceiverSnapshot.controllerEvidence.size()
-           << " globalAppDepEvidence=" << appDepEvidence
-           << " endpointScopedAdded=" << added
-           << " excludedOutsideEndpointScope="
-           << excludedOutsideEndpointScope
-           << " hash=" << HashToHex(augmented.stableHash);
-    augmented.statusLine = status.str();
-    return augmented;
-}
-
 std::uint64_t HashBrainRadioControllerDecisionEvidence(
     const RadioReachableControllerSnapshot& snapshot) {
     std::uint64_t hash = 1469598103934665603ull;
@@ -1161,6 +876,7 @@ RadioReachableVerificationFeed BuildRadioReachableVerificationFeed(
 
     std::unordered_set<std::string> verifyKeys;
     const auto useDiff = diff != nullptr && diff->available && !diff->stale;
+    feed.fullBoardSnapshot = !useDiff;
     if (useDiff) {
         verifyKeys.insert(diff->addedStableKeys.begin(), diff->addedStableKeys.end());
     }
@@ -1197,6 +913,92 @@ RadioReachableVerificationFeed BuildRadioReachableVerificationFeed(
     }
     feed.statusLine = stream.str();
     return feed;
+}
+
+VnasLiveOwnershipSnapshot BuildRadioScopedVnasLiveOwnershipSnapshot(
+    const VnasLiveOwnershipSnapshot& source,
+    const RadioReachableControllerSnapshot& radioBoard) {
+    VnasLiveOwnershipSnapshot scoped;
+    scoped.enabled = source.enabled;
+    scoped.available = source.available;
+    scoped.stale = source.stale;
+    scoped.facilityDataComplete = source.facilityDataComplete;
+    scoped.ownershipDataAvailable = source.ownershipDataAvailable;
+    scoped.generation = source.generation;
+
+    std::unordered_set<std::string> admittedCallsigns;
+    admittedCallsigns.reserve(radioBoard.candidates.size());
+    if (radioBoard.available && !radioBoard.stale) {
+        for (const auto& candidate : radioBoard.candidates) {
+            admittedCallsigns.insert(ToUpper(Trim(candidate.callsign)));
+        }
+    }
+    for (auto fact : source.facts) {
+        if (admittedCallsigns.find(ToUpper(Trim(fact.controllerCallsign))) ==
+            admittedCallsigns.end()) {
+            continue;
+        }
+        std::sort(fact.ownedAirportCodes.begin(), fact.ownedAirportCodes.end());
+        std::sort(
+            fact.departureAirportCodes.begin(),
+            fact.departureAirportCodes.end());
+        scoped.facts.push_back(std::move(fact));
+    }
+    std::sort(
+        scoped.facts.begin(),
+        scoped.facts.end(),
+        [](const auto& left, const auto& right) {
+            return std::tie(
+                       left.controllerCallsign,
+                       left.controllerFrequency,
+                       left.sourcePositionId,
+                       left.livePositionId,
+                       left.tcpToken) <
+                std::tie(
+                       right.controllerCallsign,
+                       right.controllerFrequency,
+                       right.sourcePositionId,
+                       right.livePositionId,
+                       right.tcpToken);
+        });
+
+    std::uint64_t hash = 1469598103934665603ull;
+    HashCombine(&hash, scoped.enabled);
+    HashCombine(&hash, scoped.available);
+    HashCombine(&hash, scoped.stale);
+    HashCombine(&hash, scoped.facilityDataComplete);
+    HashCombine(&hash, scoped.ownershipDataAvailable);
+    HashCombine(&hash, static_cast<std::uint64_t>(scoped.facts.size()));
+    for (const auto& fact : scoped.facts) {
+        HashCombine(&hash, ToUpper(Trim(fact.controllerCallsign)));
+        HashCombine(&hash, NormalizeFrequency(fact.controllerFrequency));
+        HashCombine(&hash, ToUpper(Trim(fact.artccId)));
+        HashCombine(&hash, ToUpper(Trim(fact.facilityId)));
+        HashCombine(&hash, ToUpper(Trim(fact.livePositionId)));
+        HashCombine(&hash, ToUpper(Trim(fact.livePositionCallsign)));
+        HashCombine(&hash, ToUpper(Trim(fact.sourcePositionId)));
+        HashCombine(&hash, ToUpper(Trim(fact.sourcePositionCallsign)));
+        HashCombine(&hash, NormalizeFrequency(fact.sourcePositionFrequency));
+        HashCombine(&hash, ToUpper(Trim(fact.tcpToken)));
+        HashCombine(
+            &hash,
+            static_cast<std::uint64_t>(fact.ownershipKind));
+        for (const auto& airport : fact.ownedAirportCodes) {
+            HashCombine(&hash, ToUpper(Trim(airport)));
+        }
+        for (const auto& airport : fact.departureAirportCodes) {
+            HashCombine(&hash, ToUpper(Trim(airport)));
+        }
+    }
+    scoped.stableHash = hash;
+    std::ostringstream status;
+    status << "VNAS_RADIO_SCOPE available=" << (scoped.available ? 1 : 0)
+           << " stale=" << (scoped.stale ? 1 : 0)
+           << " radioCandidates=" << radioBoard.candidates.size()
+           << " sourceFacts=" << source.facts.size()
+           << " selectedFacts=" << scoped.facts.size();
+    scoped.statusLine = status.str();
+    return scoped;
 }
 
 std::vector<std::string> RadioReachableCandidateSummaries(

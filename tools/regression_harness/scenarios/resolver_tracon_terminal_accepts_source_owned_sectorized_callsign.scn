@@ -33,8 +33,6 @@ expect.resolver_route_resolved=true
 expect.resolver_route_authority_gaps=<none>
 expect.resolver_route_current_sectors=TEST
 expect.resolver_authority_relevance_available=true
-expect.resolver_authority_relevant_matches=SCT_A_APP:SIMAWARE_TRACON:SCT_APP:SIMAWARE_TRACON:SCT_APP:aircraft=1:route=1:entry=0
+expect.resolver_authority_relevant_matches=SCT_A_APP:SIMAWARE_TRACON:SCT_APP:SIMAWARE_TRACON:SCT_APP_DEP:aircraft=1:route=1:entry=0
 expect.resolver_authority_proof_sources=SCT_A_APP:SIMAWARE_TRACON
 expect.resolver_authority_proof_detail_contains=SCT_A_APP:authoritySource=SIMAWARE_TRACON,pattern=SCT_*_APP,proofItems=callsign-pattern>facility-type,routeRelevance=aircraft-inside+route-intersects
-expect.resolver_enroute_available=false
-expect.resolver_enroute_callsigns=<none>

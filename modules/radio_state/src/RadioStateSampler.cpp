@@ -203,20 +203,22 @@ brain::RadioStateSnapshot RadioStateSampler::Sample() {
         ((com2SelectedForTx && (pttActive || userAircraftTransmitting)) ||
          ReadBool(com2TxRef_) ||
          com2TxOverride);
-    snapshot.com1RxActive =
-        snapshot.com1Powered &&
-        (xpilotCom1RxActive ||
-         latchedCom1RxActive ||
-         com1RxOverride ||
-         ReadBool(com1RxRef_) ||
-         com1Active);
-    snapshot.com2RxActive =
-        snapshot.com2Powered &&
-        (xpilotCom2RxActive ||
-         latchedCom2RxActive ||
-         com2RxOverride ||
-         ReadBool(com2RxRef_) ||
-         com2Active);
+    snapshot.com1RxActive = EvaluateRadioReceiveActive({
+        snapshot.com1Powered,
+        xpilotCom1RxActive,
+        latchedCom1RxActive,
+        com1RxOverride,
+        ReadBool(com1RxRef_),
+        com1Active,
+    });
+    snapshot.com2RxActive = EvaluateRadioReceiveActive({
+        snapshot.com2Powered,
+        xpilotCom2RxActive,
+        latchedCom2RxActive,
+        com2RxOverride,
+        ReadBool(com2RxRef_),
+        com2Active,
+    });
 
     snapshot.com1TxAvailable = snapshot.com1TxAvailable || snapshot.com1TxActive;
     snapshot.com2TxAvailable = snapshot.com2TxAvailable || snapshot.com2TxActive;
@@ -287,6 +289,9 @@ void RadioStateSampler::ResolveDataRefs() {
     if (com1ActiveFrequencyRef_ == nullptr) {
         com1ActiveFrequencyRef_ =
             XPLMFindDataRef("sim/cockpit/radios/com1_freq_hz");
+        if (com1ActiveFrequencyRef_ != nullptr) {
+            com1ActiveUsesLegacyFormat_ = true;
+        }
     }
     if (com2ActiveFrequencyRef_ == nullptr) {
         com2ActiveFrequencyRef_ =
@@ -307,6 +312,7 @@ void RadioStateSampler::ResolveDataRefs() {
 
 void RadioStateSampler::ResetDataRefs() {
     com1ActiveFrequencyRef_ = nullptr;
+    com1ActiveUsesLegacyFormat_ = false;
     com2ActiveFrequencyRef_ = nullptr;
     com1StandbyFrequencyRef_ = nullptr;
     com1StandbyUsesLegacyFormat_ = false;
@@ -507,13 +513,11 @@ float RadioStateSampler::ActivityPollCallback(
     self->cachedCom1RxSignal_ =
         ReadBool(self->xpilotCom1RxRef_) ||
         ReadBool(self->com1RxRef_) ||
-        ReadBool(self->com1RxOverrideRef_) ||
-        ReadBool(self->com1ActiveRef_);
+        ReadBool(self->com1RxOverrideRef_);
     self->cachedCom2RxSignal_ =
         ReadBool(self->xpilotCom2RxRef_) ||
         ReadBool(self->com2RxRef_) ||
-        ReadBool(self->com2RxOverrideRef_) ||
-        ReadBool(self->com2ActiveRef_);
+        ReadBool(self->com2RxOverrideRef_);
 
     if (self->cachedCom1RxSignal_) {
         self->lastCom1RxSeenSeconds_ = nowSeconds;
@@ -619,6 +623,31 @@ bool RadioStateSampler::SetCom1StandbyFrequency(const std::string& frequency) {
     const auto channelNumber = ParseFrequencyChannel(frequency, com1StandbyUsesLegacyFormat_);
     if (channelNumber <= 0 ||
         !IsValidComFrequencyChannel(channelNumber, com1StandbyUsesLegacyFormat_)) {
+        return false;
+    }
+
+    XPLMSetDatai(dataRefHandle, channelNumber);
+    return true;
+}
+
+bool RadioStateSampler::SetCom1ActiveFrequency(const std::string& frequency) {
+    ResolveDataRefs();
+    if (com1ActiveFrequencyRef_ == nullptr) {
+        return false;
+    }
+
+    const auto dataRefHandle = static_cast<XPLMDataRef>(com1ActiveFrequencyRef_);
+    const auto dataRefTypes = XPLMGetDataRefTypes(dataRefHandle);
+    if ((dataRefTypes & xplmType_Int) == 0 ||
+        !XPLMCanWriteDataRef(dataRefHandle)) {
+        return false;
+    }
+
+    const auto channelNumber =
+        ParseFrequencyChannel(frequency, com1ActiveUsesLegacyFormat_);
+    if (channelNumber <= 0 ||
+        !IsValidComFrequencyChannel(
+            channelNumber, com1ActiveUsesLegacyFormat_)) {
         return false;
     }
 

@@ -38,5 +38,3 @@ expect.resolver_authority_diagnostics=<none>
 expect.resolver_authority_relevant_matches=AUS_N_CTR:SPECIAL_SECTOR_DATA:AUS1:SPECIAL_SECTOR_DATA:AUS-AIRSPACE_0:aircraft=1:route=1:entry=0
 expect.resolver_authority_proof_sources=AUS_N_CTR:SPECIAL_SECTOR_DATA
 expect.resolver_authority_proof_detail_contains=AUS_N_CTR:authoritySource=SPECIAL_SECTOR_DATA,proofItems=callsign-pattern>facility-type>published-frequency>FREQUENCY_OWNED_MATCH,routeRelevance=aircraft-inside+route-intersects
-expect.resolver_enroute_available=true
-expect.resolver_enroute_callsigns=AUS_N_CTR

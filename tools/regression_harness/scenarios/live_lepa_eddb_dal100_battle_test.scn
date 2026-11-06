@@ -3398,15 +3398,7 @@ expect.authority_catalog_ids=AIRPORT_LOCAL:EDDB_GND,AIRPORT_LOCAL:LEPA_GND,AIRPO
 expect.authority_active_matches=EDDB_A_GND:AIRPORT_LOCAL:EDDB_GND:EDDB:EDDB_A_GND,LEPA_APP:SIMAWARE_TRACON:LEPA_APP:LEPA_APP:LEPA_APP,LEPA_GND:AIRPORT_LOCAL:LEPA_GND:LEPA:LEPA_GND,LEPA_TWR:AIRPORT_LOCAL:LEPA_TWR:LEPA:LEPA_TWR
 expect.authority_active_polygon_matches=EDDB_A_GND:AIRPORT_LOCAL:EDDB_GND:AIRPORT_LOCAL:EDDB:EDDB:EDDB_A_GND,LEPA_APP:SIMAWARE_TRACON:LEPA_APP:SIMAWARE_TRACON:LEPA_APP:LEPA:LEPA_APP,LEPA_GND:AIRPORT_LOCAL:LEPA_GND:AIRPORT_LOCAL:LEPA:LEPA:LEPA_GND,LEPA_TWR:AIRPORT_LOCAL:LEPA_TWR:AIRPORT_LOCAL:LEPA:LEPA:LEPA_TWR
 expect.authority_relevant_polygon_matches=EDDB_A_GND:AIRPORT_LOCAL:EDDB_GND:AIRPORT_LOCAL:EDDB:aircraft=0:route=1:entry=877,LEPA_APP:SIMAWARE_TRACON:LEPA_APP:SIMAWARE_TRACON:LEPA_APP:aircraft=1:route=1:entry=0,LEPA_GND:AIRPORT_LOCAL:LEPA_GND:AIRPORT_LOCAL:LEPA:aircraft=1:route=1:entry=0,LEPA_TWR:AIRPORT_LOCAL:LEPA_TWR:AIRPORT_LOCAL:LEPA:aircraft=1:route=1:entry=0
-expect.resolver_authority_status=AUTHORITY candidates=21 authorities=11 polygons=10 routeKeys=3 active=2 relevant=2 diagnostics=39 activationGaps=0 stage=NEAR_ROUTE_WINDOW window=200nm deferred=7
-expect.resolver_authority_relevant_matches=LECB_CTR:TRANSCEIVER:LECB_CTR:VATSPY_BOUNDARY:LECB:aircraft=1:route=1:entry=0,LEPA_APP:SIMAWARE_TRACON:LEPA_APP:SIMAWARE_TRACON:LEPA_APP:aircraft=1:route=1:entry=0
-expect.resolver_authority_proof_sources=LECB_CTR:TRANSCEIVER_GEO_ROUTE,LEPA_APP:SIMAWARE_TRACON
-expect.resolver_authority_proof_detail_contains=LEPA_APP:authoritySource=SIMAWARE_TRACON,LECB_CTR:frequency=132355,proofItems=facility-type>transceiver-frequency>transceiver-geometry>route-relevant-polygon
-expect.resolver_enroute_available=true
-expect.resolver_enroute_callsigns=LECB_CTR
-expect.departure_collected_available=true
-expect.departure_collected_callsigns=LEPA_GND,LEPA_TWR,LEPA_APP
-expect.arrival_airspace_available=false
-expect.arrival_airspace_callsigns=<none>
-expect.arrival_local_available=true
-expect.arrival_local_callsigns=EDDB_A_GND
+expect.resolver_authority_status=AUTHORITY candidates=47 authorities=1387 polygons=1054 routeKeys=3 active=9 relevant=1 diagnostics=47 activationGaps=0 stage=NEAR_ROUTE_WINDOW window=200nm deferred=7
+expect.resolver_authority_relevant_matches=LEPA_APP:SIMAWARE_TRACON:LEPA_APP:SIMAWARE_TRACON:LEPA_APP:aircraft=1:route=1:entry=0
+expect.resolver_authority_proof_sources=LEPA_APP:SIMAWARE_TRACON
+expect.resolver_authority_proof_detail_contains=LEPA_APP:authoritySource=SIMAWARE_TRACON

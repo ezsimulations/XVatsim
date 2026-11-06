@@ -536,7 +536,7 @@ Offline results:
 - Release plugin build: passed;
 - complete applicable regression set: `911 / 911` passed; and
 - the one excluded machine-locked scenario is the previously documented
-  xPilot 3.0.2 binary fingerprint test. This machine has the xPilot 4 beta
+  xPilot 3.0.2 binary fingerprint test. This machine has the xPilot 4.0.0 beta 9
   binary (`2,257,072` bytes, SHA-256
   `DEA6B12F64C0E35F9E61398B9AA659C3A8896886B4890D4EC89C50ACD6CD22A2`),
   while that test requires the unavailable 3.0.2 binary. Its relative-path

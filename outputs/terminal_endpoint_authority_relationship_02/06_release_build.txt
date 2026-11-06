@@ -1,0 +1,36 @@
+Terminal Endpoint Authority Relationship Gate 02
+Final Release plugin build
+Date: 2026-10-25
+Command: cmake --build build --config Release --target XVatsimPlugin
+Exit code: 0
+
+MSBuild version 18.8.2+ce25c0108 for .NET Framework
+
+  XVatsimAircraftState.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\aircraft_state\Release\XVatsimAircraftState.lib
+  XVatsimBrain.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\brain\Release\XVatsimBrain.lib
+  XVatsimVatsimDataFeed.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\vatsim_data_feed\Release\XVatsimVatsimDataFeed.lib
+  XVatsimControllerFeed.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\controller_feed\Release\XVatsimControllerFeed.lib
+  XVatsimCtafLookup.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\ctaf_lookup\Release\XVatsimCtafLookup.lib
+  XVatsimDiversionContext.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\diversion_context\Release\XVatsimDiversionContext.lib
+  XVatsimFlightPlan.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\flight_plan\Release\XVatsimFlightPlan.lib
+  XVatsimMetar.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\metar\Release\XVatsimMetar.lib
+  XVatsimNetworkPlanLink.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\network_plan_link\Release\XVatsimNetworkPlanLink.lib
+  XVatsimOverlayAccessoryCore.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\overlay\Release\XVatsimOverlayAccessoryCore.lib
+  XVatsimOverlay.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\overlay\Release\XVatsimOverlay.lib
+  XVatsimPilotIdentity.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\pilot_identity\Release\XVatsimPilotIdentity.lib
+  XVatsimRadioState.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\radio_state\Release\XVatsimRadioState.lib
+  XVatsimWorkflowCore.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\core\Release\XVatsimWorkflowCore.lib
+  XVatsimRouteSector.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\route_sector\Release\XVatsimRouteSector.lib
+  XVatsimRuntimeWorkers.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\runtime_workers\Release\XVatsimRuntimeWorkers.lib
+  XVatsimSettingsStore.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\settings_store\Release\XVatsimSettingsStore.lib
+  XVatsimTerminalAuthority.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\terminal_authority\Release\XVatsimTerminalAuthority.lib
+  XVatsimTransceiverResolver.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\transceiver_resolver\Release\XVatsimTransceiverResolver.lib
+  XVatsimUpdateChecker.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\update_checker\Release\XVatsimUpdateChecker.lib
+  XVatsimVnasData.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\vnas_data\Release\XVatsimVnasData.lib
+  XVatsimXPilotBridge.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\modules\xpilot_bridge\Release\XVatsimXPilotBridge.lib
+  XVatsimPlugin.vcxproj -> C:\Users\DARRON\OneDrive\Documents\XVatsim\build\dist\XVatsim\win_x64\XVatsim.xpl
+
+
+Algorithm : SHA256
+Hash      : 2995B14FF92F9FBD352D81581660D789187501563AA235A31C91F80934CC2160
+Path      : C:\Users\DARRON\OneDrive\Documents\XVatsim\build\dist\XVatsim\win_x64\XVatsim.xpl

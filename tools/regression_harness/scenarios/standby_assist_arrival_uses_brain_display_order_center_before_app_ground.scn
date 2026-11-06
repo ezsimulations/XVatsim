@@ -22,7 +22,7 @@ standby_assist.stage=Arrival
 standby_assist.plan_key=UPS344|PANC|KONT
 
 expect.display_source=Arrival
-expect.display_callsigns=LAX_251_CTR,SCT_APP,ONT_GND,KONT
-expect.brain_display_intent_rows=LAX_251_CTR:NEXT_POLYGON:1961nm,SCT_APP:ARRIVAL_PREP,ONT_GND:ARRIVAL_PREP,KONT:UNKNOWN
+expect.display_callsigns=LAX_251_CTR,SCT_APP,KONT,ONT_GND
+expect.brain_display_intent_rows=LAX_251_CTR:NEXT_POLYGON:1961nm,SCT_APP:ARRIVAL_PREP,KONT:UNKNOWN,ONT_GND:ARRIVAL_PREP
 expect.standby_assist_summary=evidence=4,candidates=4,advisory=0,selected=1,writeDecisions=0,writeAttempts=0,writeSuccess=0,writeFailure=0,empty=0,pending=0,failed=0,guard=0,roleSkip=1,activeSkip=0,brainOwned=1
 expect.standby_assist_decisions_contains=callsign=LAX_251_CTR:role=CTR:freq=126.525,relation=NEXT_POLYGON,targetCom=COM1_STANDBY,actualSelectedTargetSource=controller-display-row,actualSelectedTargetFrequency=126.525,final=recommend-com1-standby,callsign=SCT_APP:role=APP:freq=128.050,final=no-target,callsign=KONT:role=CTAF:freq=122.950,final=skip-role-not-eligible

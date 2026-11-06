@@ -4586,9 +4586,7 @@ expect.resolver_route_authority_gaps=current:LPPC,next:LECS,next:LECL,next:DAAA
 expect.resolver_route_current_sectors=LPPC
 expect.resolver_route_next_sectors=LECM,LECS,LECL,LECB,DAAA
 expect.resolver_authority_relevance_available=true
-expect.resolver_authority_status=AUTHORITY candidates=41 authorities=10 polygons=9 routeKeys=3 active=5 relevant=5 diagnostics=71 activationGaps=0 stage=NEAR_ROUTE_WINDOW window=200nm deferred=3
-expect.resolver_authority_relevant_matches=LECM_CTR:TRANSCEIVER:LECM_CTR:VATSPY_BOUNDARY:LECM-ALL:aircraft=0:route=1:entry=147,LECS_CTR:TRANSCEIVER:LECS_CTR:VATSPY_BOUNDARY:LECS:aircraft=0:route=1:entry=147,LPPC_CTR:TRANSCEIVER:LPPC_CTR:VATSPY_BOUNDARY:LPPC:aircraft=1:route=1:entry=0,LPPC_S_CTR:TRANSCEIVER:LPPC_S_CTR:VATSPY_BOUNDARY:LPPC:aircraft=1:route=1:entry=0,LPPT_APP:SIMAWARE_TRACON:LPPT_APP:SIMAWARE_TRACON:LPPT_APP:aircraft=1:route=1:entry=0
-expect.resolver_authority_proof_sources=LECM_CTR:TRANSCEIVER_GEO_ROUTE,LECS_CTR:TRANSCEIVER_GEO_ROUTE,LPPC_CTR:TRANSCEIVER_GEO_ROUTE,LPPC_S_CTR:TRANSCEIVER_GEO_ROUTE,LPPT_APP:SIMAWARE_TRACON
-expect.resolver_authority_proof_detail_contains=LPPT_APP:authoritySource=SIMAWARE_TRACON,LECM_CTR:frequency=132980,LECS_CTR:frequency=132475,proofItems=facility-type>transceiver-frequency>transceiver-geometry>route-relevant-polygon
-expect.resolver_enroute_available=true
-expect.resolver_enroute_callsigns=LPPC_S_CTR,LPPC_CTR,LECS_CTR,LECM_CTR
+expect.resolver_authority_status=AUTHORITY candidates=86 authorities=1389 polygons=1054 routeKeys=3 active=24 relevant=2 diagnostics=86 activationGaps=0 stage=NEAR_ROUTE_WINDOW window=200nm deferred=3
+expect.resolver_authority_relevant_matches=LPPC_S_CTR:VATSPY_FIR:LPPC-S:VATSPY_BOUNDARY:LPPC-S:aircraft=0:route=1:entry=49,LPPT_APP:SIMAWARE_TRACON:LPPT_APP:SIMAWARE_TRACON:LPPT_APP_DEP:aircraft=1:route=1:entry=0
+expect.resolver_authority_proof_sources=LPPC_S_CTR:VATSPY_FIR,LPPT_APP:SIMAWARE_TRACON
+expect.resolver_authority_proof_detail_contains=LPPC_S_CTR:authoritySource=VATSPY_FIR,LPPT_APP:authoritySource=SIMAWARE_TRACON

@@ -1,0 +1,11 @@
+Terminal Endpoint Authority Relationship Gate 02
+Post-fix KNGU/PCT production-seam proof
+Date: 2026-10-25
+Command: build/tools/XVatsimRegressionHarness.exe tools/regression_harness/scenarios/brain_controller_relevance_departure_kngu_rejects_adjacent_pct_app.scn
+Exit code: 0
+Scenario: Brain Controller Relevance Departure KNGU Rejects Adjacent PCT APP
+TerminalAuthorityOwners: ORF_APP ORF_DEP
+TerminalAuthorityPolygons: ORF
+BrainControllerRelevanceDepartureCallsigns:
+BrainControllerRelevanceCompletions: PCT_APP:rejected:departure-terminal-evidence:brain-facts=3/1/10:brain-votes=0/0/0:terminal-relationship=UNRELATED[exact-candidate-polygon-does-not-contain-endpoint@KNGU:PCT]:frequency-distance=-1[outside-airport-radius@59.8nm<=5.0nm@fact-only]:operational-source-facility=+1[numeric-facility-operational@facility=5@fact-only]:operational-source-primary=+1[source-primary-present@119.850@fact-only]:operational-source-role=+1[controller-role-not-observer@PCT_APP@fact-only]:published-frequency=0[airport-frequency-data-unavailable@fact-only]:route-context=0[no-current-center-root-match@fact-only]:endpoint-polygon=0[adjacent-endpoint-polygon-context-only@KNGU:PCT@fact-only]:source-authority=0[source-authority-unavailable@fact-only]:terminal-source=0[terminal-owner-mismatch-diagnostic-only@PCT_APP@fact-only]:vatsim-feed-health=0[controller-roster-health-unknown@declared=1,retained=0,rejected=0@fact-only]:vatsim-parse=0[live-role-valid-endpoint-relationship-unknown@PCT@fact-only]:vatsim-roster=0[controller-roster-incomplete@declared=1,retained=0,rejected=0,truncated=0@fact-only]:vatspy-parse=0[airport-alias-data-unavailable@fact-only]:vnas=0[unavailable-or-stale@fact-only]:brain-final=hide:brain-reason=brain-terminal-unrelated-hidden
+

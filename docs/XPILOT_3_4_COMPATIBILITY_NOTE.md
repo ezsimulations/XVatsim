@@ -4,6 +4,31 @@ Status: research and design only
 Recorded: 2026-09-24
 Current XVatsim release: 2.0.2
 
+## Current supported-generation baseline — 2026-10-27
+
+XVatsim maintains two parallel xPilot integrations:
+
+- xPilot `3.2` remains supported through the legacy low-frequency network-log
+  integration and its separately qualified legacy behavior;
+- xPilot `4.0.0-beta.9` is the version currently installed on the development
+  and live-test machine and uses the read-only xPilot 4 companion bridge.
+
+The installed beta 9 X-Plane plugin is `2,257,072` bytes with SHA-256
+`DEA6B12F64C0E35F9E61398B9AA659C3A8896886B4890D4EC89C50ACD6CD22A2`.
+That fingerprint is recorded to prove the machine state and generation
+boundary. It is not substituted for the legacy xPilot 3 private-dataref
+fingerprint. The beta 9 binary must fail the legacy gate, while the xPilot 4
+companion remains its authorized observation path.
+
+Offline proof on this baseline:
+
+- dual-generation Manager compatibility probe: `40 / 40` passed;
+- xPilot 4 companion build against pinned SDK commit `3f3472f`: passed with
+  zero warnings and zero errors;
+- xPilot 4 companion probe: `21 / 21` passed; and
+- complete XVatsim saved-scenario suite: `927 / 927` passed, including the
+  installed beta 9 generation-boundary fixture.
+
 ## Live finding
 
 xPilot 4.0.0-beta.6 received and displayed a PDC/private message, but XVatsim
